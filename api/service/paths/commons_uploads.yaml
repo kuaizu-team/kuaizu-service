@@ -37,26 +37,5 @@ post:
       content:
         application/json:
           schema:
-            allOf:
-              - $ref: ../components/schemas/BaseResponse.yaml
-              - type: object
-                properties:
-                  data:
-                    type: object
-                    properties:
-                      fileId:
-                        type: string
-                        description: 文件唯一标识
-                        example: f47ac10b-58cc-4372-a567-0e02b2c3d479
-                      url:
-                        type: string
-                        description: 文件访问URL
-                        example: https://cdn.example.com/uploads/123.jpg
-                      size:
-                        type: integer
-                        description: 文件大小（字节）
-                        example: 204800
-                      mimeType:
-                        type: string
-                        description: 文件MIME类型
-                        example: image/jpeg
+            $ref: ../components/schemas/BaseResponse.yaml
+             

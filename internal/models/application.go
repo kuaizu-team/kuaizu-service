@@ -8,15 +8,13 @@ import (
 
 // ProjectApplication represents a project application in the database
 type ProjectApplication struct {
-	ID          int
-	ProjectID   int
-	UserID      int
-	ApplyReason *string
-	Contact     *string
-	Status      int // 0-待审核, 1-已通过, 2-已拒绝
-	ReplyMsg    *string
-	AppliedAt   time.Time
-	UpdatedAt   time.Time
+	ID        int
+	ProjectID int
+	UserID    int
+	Contact   *string
+	Status    int // 0-待审核, 1-已通过, 2-已拒绝
+	AppliedAt time.Time
+	UpdatedAt time.Time
 
 	// Joined fields
 	ProjectName *string
@@ -31,10 +29,8 @@ func (a *ProjectApplication) ToVO() *api.ProjectApplicationVO {
 		Id:          &a.ID,
 		ProjectId:   &a.ProjectID,
 		ProjectName: a.ProjectName,
-		ApplyReason: a.ApplyReason,
 		Contact:     a.Contact,
 		Status:      &status,
-		ReplyMsg:    a.ReplyMsg,
 		AppliedAt:   &a.AppliedAt,
 	}
 

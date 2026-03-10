@@ -62,6 +62,11 @@ func (m *MockOrderRepo) GetOrderItems(ctx context.Context, orderID int) ([]*mode
 	return args.Get(0).([]*models.OrderItem), args.Error(1)
 }
 
+func (m *MockOrderRepo) UpdateStatus(ctx context.Context, id int, status int) error {
+	args := m.Called(ctx, id, status)
+	return args.Error(0)
+}
+
 type MockProjectRepo struct {
 	mock.Mock
 }

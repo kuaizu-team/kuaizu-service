@@ -1,9 +1,7 @@
-# This workflow will build a golang project
-# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-go
-
-name: Release
+name: CI & Release
 
 on:
+  workflow_dispatch:
   pull_request:
     branches: [ "main" ]
   push:
@@ -11,27 +9,58 @@ on:
       - 'v*'
 
 permissions:
-  contents: write # 允许发布 Release
+  contents: write
 
 jobs:
-  goreleaser:
+  # Job 1: 编译检查 (PR 阶段执行)
+  # 只有在 Pull Request 或手动触发且不是 Tag 时运行
+  check:
+    if: |
+      github.event_name == 'pull_request' || 
+      github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # 必须设为 0 以获取所有历史记录生成 Changelog
+          fetch-depth: 0
 
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
           go-version: '1.24'
           cache: true
+
+      - name: GoReleaser Check
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: latest
+          args: check # 仅检查 .goreleaser.yaml 配置和基础编译
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Job 2: 正式发布 (Push Tag 阶段执行)
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache: true
+
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v6
         with:
           distribution: goreleaser
           version: latest
-          args: ${{ github.event_name == 'pull_request' && 'build --snapshot' || 'release --clean' }}
+          args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

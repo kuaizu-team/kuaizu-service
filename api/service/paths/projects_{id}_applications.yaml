@@ -19,7 +19,7 @@ get:
       schema:
         $ref: ../components/schemas/ApplicationStatus.yaml
   responses:
-    '200':
+    "200":
       description: 成功
       content:
         application/json:
@@ -45,14 +45,15 @@ post:
           properties:
             applyReason:
               type: string
-              description: 自我介绍/申请理由
+              deprecated: true
+              description: 自我介绍/申请理由(已弃用)
               example: 我有2年的Java开发经验...
             contact:
               type: string
               description: 联系方式
-              example: '微信: example123'
+              example: "微信: example123"
   responses:
-    '200':
+    "200":
       description: 申请成功
       content:
         application/json:

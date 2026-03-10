@@ -75,9 +75,9 @@ erDiagram
         int id PK
         int project_id FK
         int user_id FK "申请人"
-        string apply_reason "申请理由/留言"
+        string apply_reason "申请理由/留言(已弃用)"
         int status "状态(0待审/1通过/2拒绝)"
-        string reply_msg "队长回复"
+        string reply_msg "队长回复(已弃用)"
         timestamp applied_at
     }
 

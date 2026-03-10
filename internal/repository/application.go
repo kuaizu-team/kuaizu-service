@@ -64,13 +64,10 @@ func (r *ApplicationRepository) List(ctx context.Context, params ApplicationList
 	offset := (params.Page - 1) * params.Size
 	query := fmt.Sprintf(`
 		SELECT
-			pa.id, pa.project_id, pa.user_id, pa.apply_reason, pa.contact,
-			pa.status, pa.reply_msg, pa.applied_at, pa.updated_at,
+			pa.id, pa.project_id, pa.user_id, pa.contact,
+			pa.status, pa.applied_at, pa.updated_at,
 			p.name as project_name,
-			u.id, u.openid, u.nickname, u.phone, u.email,
-			u.school_id, u.major_id, u.grade, u.olive_branch_count,
-			u.free_branch_used_today, u.last_active_date,
-			u.auth_status, u.auth_img_url, u.created_at
+			u.id, u.openid, u.nickname, u.phone, u.email, u.avatar_url
 		FROM project_application pa
 		LEFT JOIN project p ON pa.project_id = p.id
 		LEFT JOIN `+"`user`"+` u ON pa.user_id = u.id
@@ -91,13 +88,10 @@ func (r *ApplicationRepository) List(ctx context.Context, params ApplicationList
 		var app models.ProjectApplication
 		var applicant models.User
 		err := rows.Scan(
-			&app.ID, &app.ProjectID, &app.UserID, &app.ApplyReason, &app.Contact,
-			&app.Status, &app.ReplyMsg, &app.AppliedAt, &app.UpdatedAt,
+			&app.ID, &app.ProjectID, &app.UserID, &app.Contact,
+			&app.Status, &app.AppliedAt, &app.UpdatedAt,
 			&app.ProjectName,
-			&applicant.ID, &applicant.OpenID, &applicant.Nickname, &applicant.Phone, &applicant.Email,
-			&applicant.SchoolID, &applicant.MajorID, &applicant.Grade, &applicant.OliveBranchCount,
-			&applicant.FreeBranchUsedToday, &applicant.LastActiveDate,
-			&applicant.AuthStatus, &applicant.AuthImgUrl, &applicant.CreatedAt,
+			&applicant.ID, &applicant.OpenID, &applicant.Nickname, &applicant.Phone, &applicant.Email, &applicant.AvatarUrl,
 		)
 		if err != nil {
 			return nil, 0, fmt.Errorf("scan application: %w", err)
@@ -113,12 +107,12 @@ func (r *ApplicationRepository) List(ctx context.Context, params ApplicationList
 func (r *ApplicationRepository) Create(ctx context.Context, app *models.ProjectApplication) error {
 	query := `
 		INSERT INTO project_application (
-			project_id, user_id, apply_reason, contact, status
-		) VALUES (?, ?, ?, ?, ?)
+			project_id, user_id, contact, status
+		) VALUES (?, ?, ?, ?)
 	`
 
 	result, err := r.db.ExecContext(ctx, query,
-		app.ProjectID, app.UserID, app.ApplyReason, app.Contact, app.Status,
+		app.ProjectID, app.UserID, app.Contact, app.Status,
 	)
 	if err != nil {
 		return fmt.Errorf("create application: %w", err)
@@ -137,16 +131,16 @@ func (r *ApplicationRepository) Create(ctx context.Context, app *models.ProjectA
 func (r *ApplicationRepository) GetByID(ctx context.Context, id int) (*models.ProjectApplication, error) {
 	query := `
 		SELECT
-			pa.id, pa.project_id, pa.user_id, pa.apply_reason, pa.contact,
-			pa.status, pa.reply_msg, pa.applied_at, pa.updated_at
+			pa.id, pa.project_id, pa.user_id, pa.contact,
+			pa.status, pa.applied_at, pa.updated_at
 		FROM project_application pa
 		WHERE pa.id = ?
 	`
 
 	var app models.ProjectApplication
 	err := r.db.QueryRowxContext(ctx, query, id).Scan(
-		&app.ID, &app.ProjectID, &app.UserID, &app.ApplyReason, &app.Contact,
-		&app.Status, &app.ReplyMsg, &app.AppliedAt, &app.UpdatedAt,
+		&app.ID, &app.ProjectID, &app.UserID, &app.Contact,
+		&app.Status, &app.AppliedAt, &app.UpdatedAt,
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -170,10 +164,10 @@ func (r *ApplicationRepository) CheckDuplicate(ctx context.Context, projectID, u
 }
 
 // UpdateStatus updates the status and reply message of an application
-func (r *ApplicationRepository) UpdateStatus(ctx context.Context, id int, status int, replyMsg *string) error {
-	query := `UPDATE project_application SET status = ?, reply_msg = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`
+func (r *ApplicationRepository) UpdateStatus(ctx context.Context, id int, status int) error {
+	query := `UPDATE project_application SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`
 
-	result, err := r.db.ExecContext(ctx, query, status, replyMsg, id)
+	result, err := r.db.ExecContext(ctx, query, status, id)
 	if err != nil {
 		return fmt.Errorf("update application status: %w", err)
 	}

@@ -243,3 +243,20 @@ func (r *OrderRepository) UpdatePaymentStatusTx(ctx context.Context, tx *sqlx.Tx
 
 	return nil
 }
+
+// UpdateStatus updates only the order status
+func (r *OrderRepository) UpdateStatus(ctx context.Context, id int, status int) error {
+	query := `
+		UPDATE ` + "`order`" + ` SET
+			status = ?,
+			updated_at = NOW()
+		WHERE id = ?
+	`
+
+	_, err := r.db.ExecContext(ctx, query, status, id)
+	if err != nil {
+		return fmt.Errorf("update order status: %w", err)
+	}
+
+	return nil
+}

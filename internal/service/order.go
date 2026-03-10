@@ -144,3 +144,32 @@ func (s *OrderService) InitiatePayment(ctx context.Context, userID int, openID s
 
 	return paymentParams, nil
 }
+
+// CancelOrder cancels an unpaid order (status must be 0).
+func (s *OrderService) CancelOrder(ctx context.Context, userID, orderID int) (*models.Order, error) {
+	order, err := s.repo.Order.GetByID(ctx, orderID)
+	if err != nil {
+		return nil, ErrInternal("获取订单详情失败")
+	}
+	if order == nil {
+		return nil, ErrNotFound("订单不存在")
+	}
+	if order.UserID != userID {
+		return nil, ErrForbidden("无权操作此订单")
+	}
+	if order.Status != 0 {
+		return nil, ErrBadRequest("订单状态不允许取消")
+	}
+
+	if err := s.repo.Order.UpdateStatus(ctx, orderID, 2); err != nil {
+		return nil, ErrInternal("取消订单失败")
+	}
+
+	// Re-fetch to return updated order
+	updated, err := s.repo.Order.GetByID(ctx, orderID)
+	if err != nil {
+		return nil, ErrInternal("获取更新后的订单失败")
+	}
+
+	return updated, nil
+}

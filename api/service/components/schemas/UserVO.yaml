@@ -4,8 +4,6 @@ properties:
     type: integer
   nickname:
     type: string
-  avatarUrl:
-    type: string
   phone:
     type: string
   email:
@@ -31,6 +29,12 @@ properties:
   authImgUrl:
     type: string
     description: 学生证认证图
+  avatarUrl:
+    type: string
+    description: 头像
+  coverImage:
+    type: string
+    description: 封面图
   createdAt:
     type: string
     format: date-time

@@ -84,3 +84,59 @@ func (s *CommonsService) SubmitCertification(ctx context.Context, userID int, fi
 
 	return result, nil
 }
+
+// UploadAvatar uploads a new avatar for the user, deletes the old one from OSS,
+// and persists the new URL to the database.
+func (s *CommonsService) UploadAvatar(ctx context.Context, userID int, file multipart.File, header *multipart.FileHeader) (*oss.UploadResult, error) {
+	// 1. 查询旧头像
+	user, err := s.userRepo.GetByID(ctx, userID)
+	if err != nil {
+		return nil, ErrInternal("获取用户信息失败")
+	}
+
+	// 2. 上传新文件
+	result, err := s.UploadFile(file, header)
+	if err != nil {
+		return nil, err
+	}
+
+	// 3. 删除旧头像（忽略删除失败）
+	if user != nil && user.AvatarUrl != nil && *user.AvatarUrl != "" {
+		_ = s.DeleteFile(*user.AvatarUrl)
+	}
+
+	// 4. 更新数据库
+	if err := s.userRepo.UpdateAvatarUrl(ctx, userID, result.Key); err != nil {
+		return nil, ErrInternal("更新头像失败")
+	}
+
+	return result, nil
+}
+
+// UploadCoverImage uploads a new cover image for the user, deletes the old one
+// from OSS, and persists the new URL to the database.
+func (s *CommonsService) UploadCoverImage(ctx context.Context, userID int, file multipart.File, header *multipart.FileHeader) (*oss.UploadResult, error) {
+	// 1. 查询旧封面图
+	user, err := s.userRepo.GetByID(ctx, userID)
+	if err != nil {
+		return nil, ErrInternal("获取用户信息失败")
+	}
+
+	// 2. 上传新文件
+	result, err := s.UploadFile(file, header)
+	if err != nil {
+		return nil, err
+	}
+
+	// 3. 删除旧封面图（忽略删除失败）
+	if user != nil && user.CoverImage != nil && *user.CoverImage != "" {
+		_ = s.DeleteFile(*user.CoverImage)
+	}
+
+	// 4. 更新数据库
+	if err := s.userRepo.UpdateCoverImage(ctx, userID, result.Key); err != nil {
+		return nil, ErrInternal("更新封面图失败")
+	}
+
+	return result, nil
+}

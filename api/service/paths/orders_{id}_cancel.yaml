@@ -1,0 +1,25 @@
+parameters:
+  - name: id
+    in: path
+    required: true
+    schema:
+      type: integer
+    description: 订单ID
+post:
+  tags:
+    - Orders
+  summary: 撤销未支付订单
+  description: 仅允许取消待支付状态(status=0)的订单
+  operationId: cancelOrder
+  responses:
+    "200":
+      description: 成功
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/BaseResponse.yaml
+              - type: object
+                properties:
+                  data:
+                    $ref: ../components/schemas/OrderVO.yaml

@@ -26,6 +26,7 @@ type TalentProfile struct {
 	MajorName  *string `db:"major_name"`
 	Phone      *string `db:"phone"`
 	Email      *string `db:"email"`
+	AvatarUrl  *string `db:"avatar_url"`
 }
 
 // parseSkills parses the skill_summary JSON string into a string slice
@@ -53,6 +54,7 @@ func (t *TalentProfile) ToVO() *api.TalentProfileVO {
 		Skills:          t.parseSkills(),
 		IsPublicContact: &t.IsPublicContact,
 		Status:          &status,
+		AvatarUrl:       ptrFullURL(t.AvatarUrl),
 	}
 }
 
@@ -71,6 +73,7 @@ func (t *TalentProfile) ToDetailVO(showContact bool) *api.TalentProfileDetailVO 
 		ProjectExperience: t.ProjectExperience,
 		IsPublicContact:   &t.IsPublicContact,
 		Status:            &status,
+		AvatarUrl:         ptrFullURL(t.AvatarUrl),
 	}
 
 	// Only show contact info if allowed

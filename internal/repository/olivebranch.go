@@ -50,10 +50,11 @@ func (r *OliveBranchRepository) ListByReceiverID(ctx context.Context, params Oli
 	query := `
 		SELECT 
 			ob.id, ob.sender_id, ob.receiver_id, ob.related_project_id,
-			ob.type, ob.cost_type, ob.has_sms_notify, ob.message, ob.status,
+			ob.type, ob.cost_type, ob.status,
 			ob.created_at, ob.updated_at,
 			p.name AS project_name,
-			s.id, s.nickname, s.phone, s.email, s.auth_status
+			s.id, s.nickname, s.phone, s.email, s.auth_status,
+			s.avatar_url
 		FROM olive_branch_record ob
 		LEFT JOIN project p ON ob.related_project_id = p.id
 		LEFT JOIN ` + "`user`" + ` s ON ob.sender_id = s.id
@@ -79,10 +80,11 @@ func (r *OliveBranchRepository) ListByReceiverID(ctx context.Context, params Oli
 
 		err := rows.Scan(
 			&ob.ID, &ob.SenderID, &ob.ReceiverID, &ob.RelatedProjectID,
-			&ob.Type, &ob.CostType, &ob.HasSmsNotify, &ob.Message, &ob.Status,
+			&ob.Type, &ob.CostType, &ob.Status,
 			&ob.CreatedAt, &ob.UpdatedAt,
 			&ob.ProjectName,
 			&sender.ID, &sender.Nickname, &sender.Phone, &sender.Email, &sender.AuthStatus,
+			&sender.AvatarUrl,
 		)
 		if err != nil {
 			return nil, 0, fmt.Errorf("scan olive branch: %w", err)
@@ -99,7 +101,7 @@ func (r *OliveBranchRepository) GetByID(ctx context.Context, id int) (*models.Ol
 	query := `
 		SELECT 
 			ob.id, ob.sender_id, ob.receiver_id, ob.related_project_id,
-			ob.type, ob.cost_type, ob.has_sms_notify, ob.message, ob.status,
+			ob.type, ob.cost_type, ob.status,
 			ob.created_at, ob.updated_at,
 			p.name AS project_name
 		FROM olive_branch_record ob
@@ -110,7 +112,7 @@ func (r *OliveBranchRepository) GetByID(ctx context.Context, id int) (*models.Ol
 	var ob models.OliveBranch
 	err := r.db.QueryRowxContext(ctx, query, id).Scan(
 		&ob.ID, &ob.SenderID, &ob.ReceiverID, &ob.RelatedProjectID,
-		&ob.Type, &ob.CostType, &ob.HasSmsNotify, &ob.Message, &ob.Status,
+		&ob.Type, &ob.CostType, &ob.Status,
 		&ob.CreatedAt, &ob.UpdatedAt,
 		&ob.ProjectName,
 	)
@@ -129,13 +131,13 @@ func (r *OliveBranchRepository) Create(ctx context.Context, ob *models.OliveBran
 	query := `
 		INSERT INTO olive_branch_record (
 			sender_id, receiver_id, related_project_id,
-			type, cost_type, has_sms_notify, message, status
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+			type, cost_type, status
+		) VALUES (?, ?, ?, ?, ?, ?)
 	`
 
 	result, err := r.db.ExecContext(ctx, query,
 		ob.SenderID, ob.ReceiverID, ob.RelatedProjectID,
-		ob.Type, ob.CostType, ob.HasSmsNotify, ob.Message, ob.Status,
+		ob.Type, ob.CostType, ob.Status,
 	)
 	if err != nil {
 		return fmt.Errorf("create olive branch: %w", err)
@@ -199,10 +201,11 @@ func (r *OliveBranchRepository) ListBySenderID(ctx context.Context, params Olive
 	query := `
 		SELECT 
 			ob.id, ob.sender_id, ob.receiver_id, ob.related_project_id,
-			ob.type, ob.cost_type, ob.has_sms_notify, ob.message, ob.status,
+			ob.type, ob.cost_type, ob.status,
 			ob.created_at, ob.updated_at,
 			p.name AS project_name,
-			r.id, r.nickname, r.phone, r.email, r.auth_status
+			r.id, r.nickname, r.phone, r.email, r.auth_status,
+			r.avatar_url
 		FROM olive_branch_record ob
 		LEFT JOIN project p ON ob.related_project_id = p.id
 		LEFT JOIN ` + "`user`" + ` r ON ob.receiver_id = r.id
@@ -228,10 +231,11 @@ func (r *OliveBranchRepository) ListBySenderID(ctx context.Context, params Olive
 
 		err := rows.Scan(
 			&ob.ID, &ob.SenderID, &ob.ReceiverID, &ob.RelatedProjectID,
-			&ob.Type, &ob.CostType, &ob.HasSmsNotify, &ob.Message, &ob.Status,
+			&ob.Type, &ob.CostType, &ob.Status,
 			&ob.CreatedAt, &ob.UpdatedAt,
 			&ob.ProjectName,
 			&receiver.ID, &receiver.Nickname, &receiver.Phone, &receiver.Email, &receiver.AuthStatus,
+			&receiver.AvatarUrl,
 		)
 		if err != nil {
 			return nil, 0, fmt.Errorf("scan olive branch: %w", err)

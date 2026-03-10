@@ -12,10 +12,7 @@ properties:
   type:
     type: integer
     description: 类型:1-人才互联,2-项目邀请(弃用)
-  hasSmsNotify:
-    type: boolean
-    description: 是否购买短信通知
-    default: false
   message:
     type: string
-    description: 邀请留言
+    deprecated: true
+    description: 邀请留言(已弃用)

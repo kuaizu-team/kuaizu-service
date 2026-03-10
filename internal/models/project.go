@@ -33,27 +33,20 @@ type Project struct {
 // ToVO converts Project to API ProjectVO
 func (p *Project) ToVO() *api.ProjectVO {
 	status := api.ProjectStatus(p.Status)
-	direction := api.Direction(*p.Direction)
 
 	vo := &api.ProjectVO{
-		Id:              &p.ID,
-		Name:            &p.Name,
-		Description:     p.Description,
-		SchoolId:        p.SchoolID,
-		SchoolName:      p.SchoolName,
-		MemberCount:     p.MemberCount,
-		Status:          &status,
-		PromotionStatus: &p.PromotionStatus,
-		ViewCount:       &p.ViewCount,
-		CreatedAt:       &p.CreatedAt,
-	}
-
-	if p.Direction != nil {
-		vo.Direction = &direction
-	}
-
-	if p.PromotionExpireTime != nil {
-		vo.PromotionExpireTime = p.PromotionExpireTime
+		Id:                  &p.ID,
+		Name:                &p.Name,
+		Description:         p.Description,
+		Direction:           (*api.Direction)(p.Direction),
+		SchoolId:            p.SchoolID,
+		SchoolName:          p.SchoolName,
+		MemberCount:         p.MemberCount,
+		Status:              &status,
+		PromotionStatus:     &p.PromotionStatus,
+		ViewCount:           &p.ViewCount,
+		CreatedAt:           &p.CreatedAt,
+		PromotionExpireTime: p.PromotionExpireTime,
 	}
 
 	return vo
@@ -62,12 +55,12 @@ func (p *Project) ToVO() *api.ProjectVO {
 // ToDetailVO converts Project to API ProjectDetailVO
 func (p *Project) ToDetailVO() *api.ProjectDetailVO {
 	status := api.ProjectStatus(p.Status)
-	direction := api.Direction(*p.Direction)
 
 	vo := &api.ProjectDetailVO{
 		Id:                   &p.ID,
 		Name:                 &p.Name,
 		Description:          p.Description,
+		Direction:            (*api.Direction)(p.Direction),
 		SchoolId:             p.SchoolID,
 		SchoolName:           p.SchoolName,
 		MemberCount:          p.MemberCount,
@@ -78,14 +71,7 @@ func (p *Project) ToDetailVO() *api.ProjectDetailVO {
 		IsCrossSchool:        p.IsCrossSchool,
 		EducationRequirement: p.EducationRequirement,
 		SkillRequirement:     p.SkillRequirement,
-	}
-
-	if p.Direction != nil {
-		vo.Direction = &direction
-	}
-
-	if p.PromotionExpireTime != nil {
-		vo.PromotionExpireTime = p.PromotionExpireTime
+		PromotionExpireTime:  p.PromotionExpireTime,
 	}
 
 	if p.Creator != nil {

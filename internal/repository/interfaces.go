@@ -17,6 +17,7 @@ type OrderRepo interface {
 	UpdatePaymentStatus(ctx context.Context, id int, status int, wxPayNo string, payTime time.Time) error
 	UpdatePaymentStatusTx(ctx context.Context, tx *sqlx.Tx, id int, status int, wxPayNo string, payTime time.Time) error
 	GetOrderItems(ctx context.Context, orderID int) ([]*models.OrderItem, error)
+	UpdateStatus(ctx context.Context, id int, status int) error
 }
 
 // ProjectRepo defines the interface for project repository operations used by services.
@@ -63,6 +64,8 @@ type UserRepo interface {
 	FindEmailRecipients(ctx context.Context, excludeUserID int, limit int) ([]*EmailRecipient, error)
 	SetEmailOptOut(ctx context.Context, userID int, optOut bool) error
 	UpdateAuthImgUrl(ctx context.Context, userID int, authImgUrl string) error
+	UpdateAvatarUrl(ctx context.Context, userID int, avatarUrl string) error
+	UpdateCoverImage(ctx context.Context, userID int, coverImage string) error
 	GetEduCertInfoByID(ctx context.Context, userID int) (CertInfo, error)
 }
 
@@ -72,7 +75,7 @@ type ApplicationRepo interface {
 	Create(ctx context.Context, app *models.ProjectApplication) error
 	GetByID(ctx context.Context, id int) (*models.ProjectApplication, error)
 	CheckDuplicate(ctx context.Context, projectID, userID int) (bool, error)
-	UpdateStatus(ctx context.Context, id int, status int, replyMsg *string) error
+	UpdateStatus(ctx context.Context, id int, status int) error
 }
 
 // OliveBranchRepo defines the interface for olive branch repository operations.

@@ -10,14 +10,16 @@ properties:
     $ref: ./UserVO.yaml
   applyReason:
     type: string
-    description: 申请理由/留言
+    deprecated: true
+    description: 申请理由/留言(已弃用)
   contact:
     type: string
   status:
     $ref: ./ApplicationStatus.yaml
   replyMsg:
     type: string
-    description: 队长回复
+    deprecated: true
+    description: 队长回复(已弃用)
   appliedAt:
     type: string
     format: date-time

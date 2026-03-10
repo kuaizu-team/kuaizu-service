@@ -90,6 +90,8 @@ paths:
     $ref: paths/orders_my.yaml
   /orders/{id}/pay:
     $ref: paths/orders_{id}_pay.yaml
+  /orders/{id}/cancel:
+    $ref: paths/orders_{id}_cancel.yaml
   /email/unsubscribe:
     $ref: paths/email_unsubscribe.yaml
   /email/promotion/trigger:

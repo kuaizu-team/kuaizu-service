@@ -21,3 +21,6 @@ properties:
   isPublicContact:
     type: boolean
     description: 是否公开联系方式
+  avatarUrl:
+    type: string
+    description: 头像URL

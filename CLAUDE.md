@@ -1,1 +1,1 @@
-AGENTS.md
+.vscode/AGENTS.md

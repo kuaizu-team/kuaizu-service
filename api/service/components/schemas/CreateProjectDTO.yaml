@@ -3,6 +3,7 @@ required:
   - name
   - description
   - memberCount
+  - isCrossSchool
 properties:
   name:
     type: string

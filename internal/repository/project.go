@@ -127,9 +127,7 @@ func (r *ProjectRepository) GetByID(ctx context.Context, id int) (*models.Projec
 			p.education_requirement, p.skill_requirement,
 			s.school_name,
 			u.id, u.openid, u.nickname, u.phone, u.email,
-			u.school_id, u.major_id, u.grade, u.olive_branch_count,
-			u.free_branch_used_today, u.last_active_date,
-			u.auth_status, u.auth_img_url, u.created_at
+			u.auth_status, u.avatar_url, u.created_at
 		FROM project p
 		LEFT JOIN school s ON p.school_id = s.id
 		LEFT JOIN ` + "`user`" + ` u ON p.creator_id = u.id
@@ -146,9 +144,7 @@ func (r *ProjectRepository) GetByID(ctx context.Context, id int) (*models.Projec
 		&p.EducationRequirement, &p.SkillRequirement,
 		&p.SchoolName,
 		&creator.ID, &creator.OpenID, &creator.Nickname, &creator.Phone, &creator.Email,
-		&creator.SchoolID, &creator.MajorID, &creator.Grade, &creator.OliveBranchCount,
-		&creator.FreeBranchUsedToday, &creator.LastActiveDate,
-		&creator.AuthStatus, &creator.AuthImgUrl, &creator.CreatedAt,
+		&creator.AuthStatus, &creator.AvatarUrl, &creator.CreatedAt,
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {

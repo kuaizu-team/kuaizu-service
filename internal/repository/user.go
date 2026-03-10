@@ -27,7 +27,8 @@ func (r *UserRepository) GetByID(ctx context.Context, id int) (*models.User, err
 			u.id, u.openid, u.nickname, u.phone, u.email,
 			u.school_id, u.major_id, u.grade, u.olive_branch_count,
 			u.free_branch_used_today, u.last_active_date,
-			u.auth_status, u.auth_img_url, u.created_at,
+			u.auth_status, u.auth_img_url, u.avatar_url, u.cover_image,
+			u.created_at,
 			s.school_name, s.school_code,
 			m.major_name, m.class_id
 		FROM ` + "`user`" + ` u
@@ -41,7 +42,8 @@ func (r *UserRepository) GetByID(ctx context.Context, id int) (*models.User, err
 		&user.ID, &user.OpenID, &user.Nickname, &user.Phone, &user.Email,
 		&user.SchoolID, &user.MajorID, &user.Grade, &user.OliveBranchCount,
 		&user.FreeBranchUsedToday, &user.LastActiveDate,
-		&user.AuthStatus, &user.AuthImgUrl, &user.CreatedAt,
+		&user.AuthStatus, &user.AuthImgUrl, &user.AvatarUrl, &user.CoverImage,
+		&user.CreatedAt,
 		&user.SchoolName, &user.SchoolCode,
 		&user.MajorName, &user.ClassID,
 	)
@@ -62,7 +64,8 @@ func (r *UserRepository) GetByOpenID(ctx context.Context, openid string) (*model
 			u.id, u.openid, u.nickname, u.phone, u.email,
 			u.school_id, u.major_id, u.grade, u.olive_branch_count,
 			u.free_branch_used_today, u.last_active_date,
-			u.auth_status, u.auth_img_url, u.created_at,
+			u.auth_status, u.auth_img_url, u.avatar_url, u.cover_image,
+			u.created_at,
 			s.school_name, s.school_code,
 			m.major_name, m.class_id
 		FROM ` + "`user`" + ` u
@@ -76,7 +79,8 @@ func (r *UserRepository) GetByOpenID(ctx context.Context, openid string) (*model
 		&user.ID, &user.OpenID, &user.Nickname, &user.Phone, &user.Email,
 		&user.SchoolID, &user.MajorID, &user.Grade, &user.OliveBranchCount,
 		&user.FreeBranchUsedToday, &user.LastActiveDate,
-		&user.AuthStatus, &user.AuthImgUrl, &user.CreatedAt,
+		&user.AuthStatus, &user.AuthImgUrl, &user.AvatarUrl, &user.CoverImage,
+		&user.CreatedAt,
 		&user.SchoolName, &user.SchoolCode,
 		&user.MajorName, &user.ClassID,
 	)
@@ -140,7 +144,6 @@ func (r *UserRepository) Update(ctx context.Context, user *models.User) error {
 			school_id = ?,
 			major_id = ?,
 			grade = ?,
-			auth_img_url = ?,
 			auth_status = ?
 		WHERE id = ?
 	`
@@ -152,7 +155,6 @@ func (r *UserRepository) Update(ctx context.Context, user *models.User) error {
 		user.SchoolID,
 		user.MajorID,
 		user.Grade,
-		user.AuthImgUrl,
 		user.AuthStatus,
 		user.ID,
 	)
@@ -307,7 +309,7 @@ func (r *UserRepository) ListUsers(ctx context.Context, params UserListParams) (
 			u.id, u.openid, u.nickname, u.phone, u.email,
 			u.school_id, u.major_id, u.grade, u.olive_branch_count,
 			u.free_branch_used_today, u.last_active_date,
-			u.auth_status, u.auth_img_url, u.created_at,
+			u.auth_status, u.auth_img_url, u.avatar_url, u.cover_image, u.created_at,
 			s.school_name, s.school_code,
 			m.major_name, m.class_id
 		FROM `+"`user`"+` u
@@ -332,7 +334,7 @@ func (r *UserRepository) ListUsers(ctx context.Context, params UserListParams) (
 			&u.ID, &u.OpenID, &u.Nickname, &u.Phone, &u.Email,
 			&u.SchoolID, &u.MajorID, &u.Grade, &u.OliveBranchCount,
 			&u.FreeBranchUsedToday, &u.LastActiveDate,
-			&u.AuthStatus, &u.AuthImgUrl, &u.CreatedAt,
+			&u.AuthStatus, &u.AuthImgUrl, &u.AvatarUrl, &u.CoverImage, &u.CreatedAt,
 			&u.SchoolName, &u.SchoolCode,
 			&u.MajorName, &u.ClassID,
 		)
@@ -412,6 +414,28 @@ func (r *UserRepository) UpdateAuthImgUrl(ctx context.Context, userID int, authI
 		return fmt.Errorf("update user auth img url: %w", err)
 	}
 
+	return nil
+}
+
+// UpdateAvatarUrl updates user's avatar URL
+func (r *UserRepository) UpdateAvatarUrl(ctx context.Context, userID int, avatarUrl string) error {
+	query := `UPDATE ` + "`user`" + ` SET avatar_url = ? WHERE id = ?`
+
+	_, err := r.db.ExecContext(ctx, query, avatarUrl, userID)
+	if err != nil {
+		return fmt.Errorf("update user avatar url: %w", err)
+	}
+	return nil
+}
+
+// UpdateCoverImage updates user's cover image URL
+func (r *UserRepository) UpdateCoverImage(ctx context.Context, userID int, coverImage string) error {
+	query := `UPDATE ` + "`user`" + ` SET cover_image = ? WHERE id = ?`
+
+	_, err := r.db.ExecContext(ctx, query, coverImage, userID)
+	if err != nil {
+		return fmt.Errorf("update user cover image: %w", err)
+	}
 	return nil
 }
 

@@ -78,7 +78,7 @@ func (r *TalentProfileRepository) List(ctx context.Context, params TalentProfile
 			tp.id, tp.user_id, tp.self_evaluation, tp.skill_summary,
 			tp.project_experience, tp.mbti, tp.status, tp.is_public_contact,
 			tp.created_at, tp.updated_at,
-			u.nickname, s.school_name, m.major_name, u.phone, u.email
+			u.nickname, s.school_name, m.major_name, u.phone, u.email, u.avatar_url
 		FROM talent_profile tp
 		LEFT JOIN `+"`user`"+` u ON tp.user_id = u.id
 		LEFT JOIN school s ON u.school_id = s.id
@@ -102,7 +102,7 @@ func (r *TalentProfileRepository) List(ctx context.Context, params TalentProfile
 			&p.ID, &p.UserID, &p.SelfEvaluation, &p.SkillSummary,
 			&p.ProjectExperience, &p.MBTI, &p.Status, &p.IsPublicContact,
 			&p.CreatedAt, &p.UpdatedAt,
-			&p.Nickname, &p.SchoolName, &p.MajorName, &p.Phone, &p.Email,
+			&p.Nickname, &p.SchoolName, &p.MajorName, &p.Phone, &p.Email, &p.AvatarUrl,
 		)
 		if err != nil {
 			return nil, 0, fmt.Errorf("scan talent profile: %w", err)

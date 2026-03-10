@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"time"
 
 	alioss "github.com/aliyun/aliyun-oss-go-sdk/oss"
@@ -67,4 +68,29 @@ func (c *Client) Delete(key string) error {
 		return fmt.Errorf("oss delete object: %w", err)
 	}
 	return nil
+}
+
+// FullURL returns the complete URL for a relative key stored in the database.
+// The relative key is the path under basePath (e.g. "2006/01/02/file.jpg").
+func (c *Client) FullURL(relativePath string) string {
+	if relativePath == "" {
+		return ""
+	}
+	return fmt.Sprintf("%s/%s/%s", strings.TrimRight(c.domain, "/"), strings.TrimRight(c.basePath, "/"), strings.TrimLeft(relativePath, "/"))
+}
+
+// FullURL is a package-level helper that resolves a relative OSS key to a
+// complete URL using OSS_DOMAIN and OSS_BASE_PATH environment variables.
+// This allows model/VO layers to build full URLs without holding a Client.
+func FullURL(relativePath string) string {
+	if relativePath == "" {
+		return ""
+	}
+	domain := strings.TrimRight(os.Getenv("OSS_DOMAIN"), "/")
+	basePath := strings.TrimRight(os.Getenv("OSS_BASE_PATH"), "/")
+	relativePath = strings.TrimLeft(relativePath, "/")
+	if basePath == "" {
+		return fmt.Sprintf("%s/%s", domain, relativePath)
+	}
+	return fmt.Sprintf("%s/%s/%s", domain, basePath, relativePath)
 }

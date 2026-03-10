@@ -68,17 +68,9 @@ func (s *Server) SendOliveBranch(ctx echo.Context) error {
 		return BadRequest(ctx, "请求参数错误")
 	}
 
-	hasSms := false
-	if req.HasSmsNotify != nil {
-		hasSms = *req.HasSmsNotify
-	}
-
 	ob, err := s.svc.OliveBranch.SendOliveBranch(ctx.Request().Context(), userID, service.SendRequest{
 		ReceiverID:       req.ReceiverId,
-		Type:             req.Type,
 		RelatedProjectID: req.RelatedProjectId,
-		HasSmsNotify:     hasSms,
-		Message:          req.Message,
 	})
 	if err != nil {
 		return mapServiceError(ctx, err)

@@ -5,6 +5,10 @@ import (
 )
 
 // UploadFile handles POST /commons/uploads
+// 根据 form 字段 `type` 区分上传用途：
+//   - avatar:     上传用户头像，同时更新 user.avatar_url
+//   - background: 上传用户封面图，同时更新 user.cover_image
+//   - (其他/空):  仅上传，返回 URL，不更新数据库
 func (s *Server) UploadFile(ctx echo.Context) error {
 	file, header, err := ctx.Request().FormFile("file")
 	if err != nil {
@@ -12,10 +16,26 @@ func (s *Server) UploadFile(ctx echo.Context) error {
 	}
 	defer file.Close()
 
-	result, err := s.svc.Commons.UploadFile(file, header)
-	if err != nil {
-		return mapServiceError(ctx, err)
-	}
+	uploadType := ctx.FormValue("type")
 
-	return Success(ctx, map[string]string{"url": result.URL})
+	switch uploadType {
+	case "avatar":
+		userID := GetUserID(ctx)
+		result, err := s.svc.Commons.UploadAvatar(ctx.Request().Context(), userID, file, header)
+		if err != nil {
+			return mapServiceError(ctx, err)
+		}
+		return Success(ctx, map[string]string{"url": result.URL})
+
+	case "background":
+		userID := GetUserID(ctx)
+		result, err := s.svc.Commons.UploadCoverImage(ctx.Request().Context(), userID, file, header)
+		if err != nil {
+			return mapServiceError(ctx, err)
+		}
+		return Success(ctx, map[string]string{"url": result.URL})
+
+	default:
+		return BadRequest(ctx, "无效的文件类型")
+	}
 }

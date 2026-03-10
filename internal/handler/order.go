@@ -122,3 +122,15 @@ func (s *Server) InitiatePayment(ctx echo.Context, id int) error {
 		PaySign:   &paymentParams.PaySign,
 	})
 }
+
+// CancelOrder handles POST /orders/{id}/cancel
+func (s *Server) CancelOrder(ctx echo.Context, id int) error {
+	userID := GetUserID(ctx)
+
+	order, err := s.svc.Order.CancelOrder(ctx.Request().Context(), userID, id)
+	if err != nil {
+		return mapServiceError(ctx, err)
+	}
+
+	return Success(ctx, order.ToVO())
+}

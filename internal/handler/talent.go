@@ -66,6 +66,20 @@ func (s *Server) UpsertTalentProfile(ctx echo.Context) error {
 		return InvalidParams(ctx, err)
 	}
 
+	// 文字内容审核
+	var auditTexts []string
+	if req.SelfEvaluation != nil {
+		auditTexts = append(auditTexts, *req.SelfEvaluation)
+	}
+	if req.ProjectExperience != nil {
+		auditTexts = append(auditTexts, *req.ProjectExperience)
+	}
+	if len(auditTexts) > 0 {
+		if err := s.svc.ContentAudit.CheckText(ctx.Request().Context(), auditTexts...); err != nil {
+			return BadRequest(ctx, "内容包含违规信息，请修改后重试")
+		}
+	}
+
 	// Convert skills array to JSON string
 	var skillSummary *string
 	if req.Skills != nil {
