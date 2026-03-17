@@ -21,38 +21,59 @@ jobs:
           chmod 600 ~/.ssh/id_rsa
           ssh-keyscan -p ${{ secrets.SSH_PORT || 22 }} -H ${{ secrets.SSH_HOST }} >> ~/.ssh/known_hosts
 
+      - name: Build Docker image
+        run: |
+          export VERSION=${{ github.ref_name }}
+          export COMMIT=${{ github.sha }}
+          docker build \
+            --build-arg VERSION=$VERSION \
+            --build-arg COMMIT=$COMMIT \
+            -t kuaizu-server:$VERSION .
+          # 同时标记为 latest 方便 compose 使用
+          docker tag kuaizu-server:$VERSION kuaizu-server:latest
+
+      - name: Save Docker image to tarball
+        run: |
+          docker save kuaizu-server:${{ github.ref_name }} | gzip > kuaizu-server.tar.gz
+
+      - name: Transfer image and config to server
+        run: |
+          # 创建目录
+          ssh -p ${{ secrets.SSH_PORT || 22 }} ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} "mkdir -p ~/kuaizu-server"
+          
+          # 传输镜像打包文件 (使用 scp 不需要 rsync)
+          scp -P ${{ secrets.SSH_PORT || 22 }} kuaizu-server.tar.gz ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:~/kuaizu-server/
+          
+          # 传输 docker-compose.yml
+          scp -P ${{ secrets.SSH_PORT || 22 }} docker-compose.yml ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:~/kuaizu-server/
+
       - name: Create .env.docker on server
         run: |
           ssh -p ${{ secrets.SSH_PORT || 22 }} ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} << 'EOF'
-            cd ~/kuaizu-server || mkdir -p ~/kuaizu-server
+            cd ~/kuaizu-server
             cat > .env.docker << 'ENVEOF'
           ${{ secrets.ENV_DOCKER }}
           ENVEOF
           EOF
 
-      - name: Deploy to server
-        run: |
-          rsync -avz --delete \
-            -e "ssh -p ${{ secrets.SSH_PORT || 22 }}" \
-            --exclude='.git' \
-            --exclude='.env' \
-            --exclude='.env.docker' \
-            --exclude='bin' \
-            --exclude='tmp' \
-            ./ ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:~/kuaizu-server/
-
-      - name: Build and restart services
+      - name: Load image and restart services
         run: |
           ssh -p ${{ secrets.SSH_PORT || 22 }} ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} << 'EOF'
             cd ~/kuaizu-server
+            
+            # 加载镜像 (从压缩包)
+            gunzip -c kuaizu-server.tar.gz | docker load
+            
             # 使用环境变量传递版本信息
             export VERSION=${{ github.ref_name }}
-            export COMMIT=${{ github.sha }}
             
+            # 重启服务
             docker-compose down
-            docker-compose build --no-cache
             docker-compose up -d
             docker-compose ps
+            
+            # 清理临时文件
+            rm kuaizu-server.tar.gz
           EOF
 
       - name: Cleanup old images
