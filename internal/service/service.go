@@ -15,6 +15,7 @@ type Services struct {
 	OliveBranch      *OliveBranchService
 	Commons          *CommonsService
 	ContentAudit     *ContentAuditService
+	TalentProfile    *TalentProfileService
 	Project          *ProjectService
 	Message          *MessageService
 	User             *UserService
@@ -34,6 +35,7 @@ func New(repo *repository.Repository, ossClient *oss.Client) *Services {
 		OliveBranch:      NewOliveBranchService(repo),
 		Commons:          NewCommonsService(ossClient, repo.User),
 		ContentAudit:     contentAudit,
+		TalentProfile:    NewTalentProfileService(repo, contentAudit),
 		Project:          NewProjectService(repo, contentAudit, message),
 		Message:          message,
 		User:             NewUserService(repo, message),

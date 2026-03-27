@@ -15,7 +15,7 @@ type TalentProfile struct {
 	SkillSummary      *string    `db:"skill_summary"` // JSON array stored as string
 	ProjectExperience *string    `db:"project_experience"`
 	MBTI              *string    `db:"mbti"`
-	Status            *int       `db:"status"` // 0: 下架, 1: 上架
+	Status            *int       `db:"status"` // 0: 隐私/下架, 1: 上架, 2: 审核中
 	CreatedAt         *time.Time `db:"created_at"`
 	UpdatedAt         *time.Time `db:"updated_at"`
 

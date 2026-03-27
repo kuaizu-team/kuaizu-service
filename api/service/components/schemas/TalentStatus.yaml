@@ -2,7 +2,9 @@ type: integer
 enum:
   - 0
   - 1
+  - 2
 description: |
   人才档案状态:
-  - 0: 下架
+  - 0: 隐私/下架
   - 1: 上架
+  - 2: 审核中

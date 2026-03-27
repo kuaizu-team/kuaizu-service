@@ -18,11 +18,11 @@ get:
 delete:
   tags:
     - TalentProfiles
-  summary: 下架我的人才名片
+  summary: 将我的人才名片设为隐私下架
   operationId: deleteMyTalentProfile
   responses:
     '200':
-      description: 下架成功
+      description: 设置成功
       content:
         application/json:
           schema:

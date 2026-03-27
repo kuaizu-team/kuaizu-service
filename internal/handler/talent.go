@@ -1,8 +1,6 @@
 package handler
 
 import (
-	"encoding/json"
-
 	"github.com/labstack/echo/v4"
 	"github.com/trv3wood/kuaizu-server/api"
 	"github.com/trv3wood/kuaizu-server/internal/models"
@@ -66,51 +64,9 @@ func (s *Server) UpsertTalentProfile(ctx echo.Context) error {
 		return InvalidParams(ctx, err)
 	}
 
-	// 文字内容审核
-	var auditTexts []string
-	if req.SelfEvaluation != nil {
-		auditTexts = append(auditTexts, *req.SelfEvaluation)
-	}
-	if req.ProjectExperience != nil {
-		auditTexts = append(auditTexts, *req.ProjectExperience)
-	}
-	if len(auditTexts) > 0 {
-		if err := s.svc.ContentAudit.CheckText(ctx.Request().Context(), auditTexts...); err != nil {
-			return BadRequest(ctx, "内容包含违规信息，请修改后重试")
-		}
-	}
-
-	// Convert skills array to JSON string
-	var skillSummary *string
-	if req.Skills != nil {
-		data, _ := json.Marshal(*req.Skills)
-		s := string(data)
-		skillSummary = &s
-	}
-
-	// Default status to 1 (active) if not provided
-	status := 1
-	if req.Status != nil {
-		status = int(*req.Status)
-	}
-
-	profile := &models.TalentProfile{
-		UserID:            userID,
-		SelfEvaluation:    req.SelfEvaluation,
-		SkillSummary:      skillSummary,
-		ProjectExperience: req.ProjectExperience,
-		MBTI:              req.Mbti,
-		Status:            &status,
-	}
-
-	if err := s.repo.TalentProfile.Upsert(ctx.Request().Context(), profile); err != nil {
-		return InternalError(ctx, "保存人才档案失败")
-	}
-
-	// Fetch the updated profile to return
-	updated, err := s.repo.TalentProfile.GetByUserID(ctx.Request().Context(), userID)
-	if err != nil || updated == nil {
-		return InternalError(ctx, "获取人才档案失败")
+	updated, err := s.svc.TalentProfile.UpsertTalentProfile(ctx.Request().Context(), userID, req)
+	if err != nil {
+		return mapServiceError(ctx, err)
 	}
 
 	return Success(ctx, updated.ToDetailVO())
@@ -170,8 +126,8 @@ func (s *Server) GetMyTalentProfile(ctx echo.Context) error {
 func (s *Server) DeleteMyTalentProfile(ctx echo.Context) error {
 	userID := GetUserID(ctx)
 
-	if err := s.repo.TalentProfile.DeleteByUserID(ctx.Request().Context(), userID); err != nil {
-		return InternalError(ctx, "删除人才档案失败")
+	if err := s.svc.TalentProfile.SetTalentProfilePrivate(ctx.Request().Context(), userID); err != nil {
+		return mapServiceError(ctx, err)
 	}
 
 	return Success(ctx, nil)

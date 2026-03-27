@@ -97,8 +97,9 @@ const (
 
 // Talent Profile Status
 const (
-	TalentStatusOffline = 0 // 下架
-	TalentStatusOnline  = 1 // 上架
+	TalentStatusPrivate   = 0 // 隐私/下架
+	TalentStatusOnline    = 1 // 上架
+	TalentStatusReviewing = 2 // 审核中
 )
 
 // User Auth Status
