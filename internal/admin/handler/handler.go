@@ -2,6 +2,7 @@ package handler
 
 import (
 	"errors"
+	"strconv"
 
 	"github.com/labstack/echo/v4"
 	"github.com/trv3wood/kuaizu-server/internal/repository"
@@ -36,4 +37,12 @@ func mapServiceError(ctx echo.Context, err error) error {
 		}
 	}
 	return response.InternalError(ctx, err.Error())
+}
+
+func parseIDParam(ctx echo.Context, name, label string) (int, error) {
+	id, err := strconv.Atoi(ctx.Param(name))
+	if err != nil {
+		return 0, response.BadRequest(ctx, "invalid "+label+" id")
+	}
+	return id, nil
 }

@@ -119,3 +119,29 @@ func (s *TalentProfileService) SetTalentProfilePrivate(ctx context.Context, user
 
 	return nil
 }
+
+// ReviewTalentProfile reviews a talent profile from reviewing to approved or private.
+func (s *TalentProfileService) ReviewTalentProfile(ctx context.Context, id, status int) error {
+	if status != models.TalentStatusPrivate && status != models.TalentStatusOnline {
+		return ErrBadRequest("无效的人才档案状态")
+	}
+
+	profile, err := s.repo.TalentProfile.GetByID(ctx, id)
+	if err != nil {
+		log.Printf("[TalentProfileService.ReviewTalentProfile] repository error getting profile: %v", err)
+		return ErrInternal("获取人才档案失败")
+	}
+	if profile == nil {
+		return ErrNotFound("人才档案不存在")
+	}
+	if profile.Status == nil || *profile.Status != models.TalentStatusReviewing {
+		return ErrBadRequest("当前人才档案状态不允许审核")
+	}
+
+	if err := s.repo.TalentProfile.UpdateStatus(ctx, id, status); err != nil {
+		log.Printf("[TalentProfileService.ReviewTalentProfile] repository error updating status: %v", err)
+		return ErrInternal("审核失败")
+	}
+
+	return nil
+}

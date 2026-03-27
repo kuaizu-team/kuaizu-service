@@ -104,6 +104,7 @@ type TalentProfileRepo interface {
 	GetByID(ctx context.Context, id int) (*models.TalentProfile, error)
 	GetByUserID(ctx context.Context, userID int) (*models.TalentProfile, error)
 	Upsert(ctx context.Context, p *models.TalentProfile) error
+	UpdateStatus(ctx context.Context, id int, status int) error
 	DeleteByUserID(ctx context.Context, userID int) error
 }
 

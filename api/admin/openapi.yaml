@@ -25,6 +25,8 @@ tags:
     description: 项目大厅接口
   - name: Users
     description: 用户管理接口
+  - name: TalentProfiles
+    description: 人才档案管理接口
   - name: Feedbacks
     description: 反馈管理接口
 security:
@@ -40,6 +42,8 @@ paths:
     $ref: paths/projects.yaml
   /projects/{id}:
     $ref: paths/projects_{id}.yaml
+  /talent-profiles/{id}:
+    $ref: paths/talent-profiles_{id}.yaml
   /users:
     $ref: paths/users.yaml
   /users/{id}:

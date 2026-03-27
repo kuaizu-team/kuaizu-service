@@ -320,6 +320,20 @@ func (r *TalentProfileRepository) Upsert(ctx context.Context, p *models.TalentPr
 	return nil
 }
 
+// UpdateStatus updates the status of a talent profile by ID.
+func (r *TalentProfileRepository) UpdateStatus(ctx context.Context, id int, status int) error {
+	query := `
+		UPDATE talent_profile
+		SET status = ?, updated_at = CURRENT_TIMESTAMP
+		WHERE id = ?
+	`
+	_, err := r.db.ExecContext(ctx, query, status, id)
+	if err != nil {
+		return fmt.Errorf("update talent profile status: %w", err)
+	}
+	return nil
+}
+
 // DeleteByUserID deletes a talent profile by user ID
 func (r *TalentProfileRepository) DeleteByUserID(ctx context.Context, userID int) error {
 	query := `
