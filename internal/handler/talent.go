@@ -21,7 +21,7 @@ func (s *Server) ListTalentProfiles(ctx echo.Context, params api.ListTalentProfi
 		size = *params.Size
 	}
 
-	status := int(api.TalentStatus(1)) // 仅展示已发布的
+	status := models.TalentStatusOnline // 仅展示已发布的
 	listParams := repository.TalentProfileListParams{
 		Page:     page,
 		Size:     size,

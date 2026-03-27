@@ -2,6 +2,7 @@ package wechat
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -36,6 +37,21 @@ type getPhoneNumberResponse struct {
 	ErrCode   int        `json:"errcode,omitempty"`
 	ErrMsg    string     `json:"errmsg,omitempty"`
 	PhoneInfo *PhoneInfo `json:"phone_info,omitempty"`
+}
+
+type msgSecCheckRequest struct {
+	Content string `json:"content"`
+	Scene   int    `json:"scene,omitempty"`
+	Version int    `json:"version,omitempty"`
+}
+
+type msgSecCheckResponse struct {
+	ErrCode int    `json:"errcode,omitempty"`
+	ErrMsg  string `json:"errmsg,omitempty"`
+	Result  *struct {
+		Suggest string `json:"suggest,omitempty"`
+		Label   int    `json:"label,omitempty"`
+	} `json:"result,omitempty"`
 }
 
 // Client is a WeChat Mini Program API client
@@ -204,4 +220,54 @@ func (c *Client) GetPhoneNumber(code string) (string, error) {
 	}
 
 	return phone, nil
+}
+
+// MsgSecCheck checks whether text content is compliant.
+// https://developers.weixin.qq.com/miniprogram/dev/OpenApiDoc/sec-center/sec-check/msgSecCheck.html
+func (c *Client) MsgSecCheck(ctx context.Context, content string) error {
+	if content == "" {
+		return fmt.Errorf("content is empty")
+	}
+
+	accessToken, err := c.GetAccessToken()
+	if err != nil {
+		return fmt.Errorf("get access token: %w", err)
+	}
+
+	url := fmt.Sprintf("https://api.weixin.qq.com/wxa/msg_sec_check?access_token=%s", accessToken)
+	body, err := json.Marshal(msgSecCheckRequest{
+		Content: content,
+		Scene:   1,
+		Version: 2,
+	})
+	if err != nil {
+		return fmt.Errorf("marshal msgSecCheck request: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(body))
+	if err != nil {
+		return fmt.Errorf("create msgSecCheck request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("request msgSecCheck: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var result msgSecCheckResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return fmt.Errorf("decode msgSecCheck response: %w", err)
+	}
+
+	if result.ErrCode != 0 {
+		return fmt.Errorf("wechat api error: %d - %s", result.ErrCode, result.ErrMsg)
+	}
+
+	if result.Result != nil && (result.Result.Suggest == "risky" || result.Result.Label != 0) {
+		return fmt.Errorf("content violates wechat policy")
+	}
+
+	return nil
 }
