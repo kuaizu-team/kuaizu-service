@@ -15,10 +15,10 @@ type AuthService struct {
 	wxClient *wechat.Client
 }
 
-func NewAuthService(repo *repository.Repository) *AuthService {
+func NewAuthService(repo *repository.Repository, wxClient *wechat.Client) *AuthService {
 	return &AuthService{
 		repo:     repo,
-		wxClient: wechat.NewClient(),
+		wxClient: wxClient,
 	}
 }
 

@@ -11,12 +11,27 @@ import (
 
 // EmailPromotionService handles email promotion business logic.
 type EmailPromotionService struct {
-	repo *repository.Repository
+	repo         *repository.Repository
+	emailService promotionEmailSender
+	emailInitErr error
+}
+
+type promotionEmailSender interface {
+	SendPromotionEmails(ctx context.Context, promotion *models.EmailPromotion)
 }
 
 // NewEmailPromotionService creates a new EmailPromotionService.
 func NewEmailPromotionService(repo *repository.Repository) *EmailPromotionService {
 	return &EmailPromotionService{repo: repo}
+}
+
+// NewEmailPromotionServiceWithEmail creates a new EmailPromotionService with an injected email sender.
+func NewEmailPromotionServiceWithEmail(repo *repository.Repository, emailService *email.Service, emailInitErr error) *EmailPromotionService {
+	return &EmailPromotionService{
+		repo:         repo,
+		emailService: emailService,
+		emailInitErr: emailInitErr,
+	}
 }
 
 // TriggerPromotionResult holds the result of triggering a promotion.
@@ -107,20 +122,23 @@ func (s *EmailPromotionService) calculateMaxRecipients(ctx context.Context, orde
 
 func (s *EmailPromotionService) startAsyncEmailSending(promotion *models.EmailPromotion) {
 	go func() {
-		emailService, err := email.NewServiceFromEnv(
-			s.repo.User,
-			s.repo.Project,
-			s.repo.EmailPromotion,
-		)
-		if err != nil {
-			errMsg := "邮件服务未配置: " + err.Error()
+		if s.emailInitErr != nil {
+			errMsg := "邮件服务未配置: " + s.emailInitErr.Error()
 			promotion.Status = models.EmailPromotionStatusFailed
 			promotion.ErrorMessage = &errMsg
 			s.repo.EmailPromotion.Update(context.Background(), promotion)
 			return
 		}
 
-		emailService.SendPromotionEmails(context.Background(), promotion)
+		if s.emailService == nil {
+			errMsg := "邮件服务未配置"
+			promotion.Status = models.EmailPromotionStatusFailed
+			promotion.ErrorMessage = &errMsg
+			s.repo.EmailPromotion.Update(context.Background(), promotion)
+			return
+		}
+
+		s.emailService.SendPromotionEmails(context.Background(), promotion)
 	}()
 }
 

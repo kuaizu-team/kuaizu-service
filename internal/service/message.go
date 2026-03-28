@@ -17,10 +17,10 @@ type MessageService struct {
 	wxClient *wechat.Client
 }
 
-func NewMessageService(repo *repository.Repository) *MessageService {
+func NewMessageService(repo *repository.Repository, wxClient *wechat.Client) *MessageService {
 	return &MessageService{
 		repo:     repo,
-		wxClient: wechat.NewClient(),
+		wxClient: wxClient,
 	}
 }
 

@@ -12,12 +12,18 @@ import (
 
 // OrderService handles order-related business logic.
 type OrderService struct {
-	repo *repository.Repository
+	repo       *repository.Repository
+	payClient  *wechat.PayClient
+	payInitErr error
 }
 
 // NewOrderService creates a new OrderService.
-func NewOrderService(repo *repository.Repository) *OrderService {
-	return &OrderService{repo: repo}
+func NewOrderService(repo *repository.Repository, payClient *wechat.PayClient, payInitErr error) *OrderService {
+	return &OrderService{
+		repo:       repo,
+		payClient:  payClient,
+		payInitErr: payInitErr,
+	}
 }
 
 // CreateOrderItem is the input DTO for creating an order.
@@ -104,16 +110,13 @@ func (s *OrderService) InitiatePayment(ctx context.Context, userID int, openID s
 		return nil, ErrBadRequest("订单状态不允许支付")
 	}
 
-	payConfig, err := wechat.DefaultPayConfig()
-	if err != nil {
-		log.Printf("[OrderService.InitiatePayment] wechat config error: %v", err)
-		return nil, ErrInternal("支付配置错误: " + err.Error())
+	if s.payInitErr != nil {
+		log.Printf("[OrderService.InitiatePayment] wechat pay init error: %v", s.payInitErr)
+		return nil, ErrInternal("支付配置错误: " + s.payInitErr.Error())
 	}
-
-	payClient, err := wechat.NewPayClient(payConfig)
-	if err != nil {
-		log.Printf("[OrderService.InitiatePayment] wechat client error: %v", err)
-		return nil, ErrInternal("初始化支付客户端失败: " + err.Error())
+	if s.payClient == nil {
+		log.Printf("[OrderService.InitiatePayment] pay client is nil")
+		return nil, ErrInternal("初始化支付客户端失败")
 	}
 
 	description := "快组校园商品购买"
@@ -124,7 +127,7 @@ func (s *OrderService) InitiatePayment(ctx context.Context, userID int, openID s
 	outTradeNo := wechat.GenerateOutTradeNo(order.ID)
 	amountCents := int(order.ActualPaid * 100)
 
-	paymentParams, err := payClient.CreatePrepayOrderWithPayment(
+	paymentParams, err := s.payClient.CreatePrepayOrderWithPayment(
 		ctx,
 		outTradeNo,
 		description,

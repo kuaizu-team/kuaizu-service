@@ -14,9 +14,9 @@ type ContentAuditService struct {
 }
 
 // NewContentAuditService creates a new ContentAuditService.
-func NewContentAuditService() *ContentAuditService {
+func NewContentAuditService(wxClient *wechat.Client) *ContentAuditService {
 	return &ContentAuditService{
-		wxClient: wechat.NewClient(),
+		wxClient: wxClient,
 	}
 }
 

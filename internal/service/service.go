@@ -1,7 +1,6 @@
 package service
 
 import (
-	"github.com/trv3wood/kuaizu-server/internal/oss"
 	"github.com/trv3wood/kuaizu-server/internal/repository"
 )
 
@@ -23,17 +22,17 @@ type Services struct {
 }
 
 // New creates a new Services instance with all sub-services.
-func New(repo *repository.Repository, ossClient *oss.Client) *Services {
-	contentAudit := NewContentAuditService()
-	message := NewMessageService(repo)
+func New(repo *repository.Repository, deps *Dependencies) *Services {
+	contentAudit := NewContentAuditService(deps.WechatClient)
+	message := NewMessageService(repo, deps.WechatClient)
 	return &Services{
-		Auth:             NewAuthService(repo),
-		EmailPromotion:   NewEmailPromotionService(repo),
-		Payment:          NewPaymentService(repo),
+		Auth:             NewAuthService(repo, deps.WechatClient),
+		EmailPromotion:   NewEmailPromotionServiceWithEmail(repo, deps.EmailService, deps.EmailInitError),
+		Payment:          NewPaymentService(repo, deps.PayClient, deps.PayInitError),
 		EmailUnsubscribe: NewEmailUnsubscribeService(repo),
-		Order:            NewOrderService(repo),
+		Order:            NewOrderService(repo, deps.PayClient, deps.PayInitError),
 		OliveBranch:      NewOliveBranchService(repo),
-		Commons:          NewCommonsService(ossClient, repo.User),
+		Commons:          NewCommonsService(deps.OSSClient, repo.User),
 		ContentAudit:     contentAudit,
 		TalentProfile:    NewTalentProfileService(repo, contentAudit),
 		Project:          NewProjectService(repo, contentAudit, message),
