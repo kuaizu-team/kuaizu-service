@@ -95,6 +95,8 @@ func (s *Server) GetTalentProfile(ctx echo.Context, id int, params api.GetTalent
 			AvatarUrl:  user.AvatarUrl,
 			MajorName:  user.MajorName,
 			SchoolName: user.SchoolName,
+			Email:      user.Email,
+			Phone:      user.Phone,
 		}
 		// 返回仅包含用户基本信息的响应
 		return Success(ctx, talentProfile.ToDetailVO())

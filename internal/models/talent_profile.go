@@ -1,18 +1,65 @@
 package models
 
 import (
+	"database/sql/driver"
 	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/trv3wood/kuaizu-server/api"
 )
+
+type JSONStringArray struct {
+	Items []string
+	Valid bool
+}
+
+func (a *JSONStringArray) Scan(value interface{}) error {
+	if value == nil {
+		a.Items = nil
+		a.Valid = false
+		return nil
+	}
+
+	var data []byte
+	switch v := value.(type) {
+	case []byte:
+		data = v
+	case string:
+		data = []byte(v)
+	default:
+		return fmt.Errorf("scan JSONStringArray from %T", value)
+	}
+
+	var items []string
+	if err := json.Unmarshal(data, &items); err != nil {
+		return fmt.Errorf("unmarshal JSONStringArray: %w", err)
+	}
+
+	a.Items = items
+	a.Valid = true
+	return nil
+}
+
+func (a JSONStringArray) Value() (driver.Value, error) {
+	if !a.Valid {
+		return nil, nil
+	}
+
+	data, err := json.Marshal(a.Items)
+	if err != nil {
+		return nil, fmt.Errorf("marshal JSONStringArray: %w", err)
+	}
+
+	return data, nil
+}
 
 // TalentProfile represents a talent profile in the database
 type TalentProfile struct {
 	ID                int        `db:"id"`
 	UserID            int        `db:"user_id"`
 	SelfEvaluation    *string    `db:"self_evaluation"`
-	SkillSummary      *string    `db:"skill_summary"` // JSON array stored as string
+	SkillSummary      JSONStringArray `db:"skill_summary"`
 	ProjectExperience *string    `db:"project_experience"`
 	MBTI              *string    `db:"mbti"`
 	Status            *int       `db:"status"` // 0: 隐私/下架, 1: 上架, 2: 审核中
@@ -32,15 +79,12 @@ type TalentProfile struct {
 	MajorName  *string `db:"-"`
 }
 
-// parseSkills parses the skill_summary JSON string into a string slice
-func (t *TalentProfile) parseSkills() *[]string {
-	if t.SkillSummary == nil || *t.SkillSummary == "" {
+func (t *TalentProfile) skills() *[]string {
+	if !t.SkillSummary.Valid {
 		return nil
 	}
-	var skills []string
-	if err := json.Unmarshal([]byte(*t.SkillSummary), &skills); err != nil {
-		return nil
-	}
+
+	skills := append([]string(nil), t.SkillSummary.Items...)
 	return &skills
 }
 
@@ -53,7 +97,7 @@ func (t *TalentProfile) ToVO() *api.TalentProfileVO {
 		SchoolName: t.SchoolName,
 		MajorName:  t.MajorName,
 		Mbti:       t.MBTI,
-		Skills:     t.parseSkills(),
+		Skills:     t.skills(),
 		Status:     (*api.TalentStatus)(t.Status),
 		AvatarUrl:  ptrFullURL(t.AvatarUrl),
 	}
@@ -68,7 +112,7 @@ func (t *TalentProfile) ToDetailVO() *api.TalentProfileDetailVO {
 		SchoolName:        t.SchoolName,
 		MajorName:         t.MajorName,
 		Mbti:              t.MBTI,
-		Skills:            t.parseSkills(),
+		Skills:            t.skills(),
 		SelfEvaluation:    t.SelfEvaluation,
 		ProjectExperience: t.ProjectExperience,
 		Status:            (*api.TalentStatus)(t.Status),

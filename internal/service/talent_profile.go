@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"encoding/json"
 	"log"
 
 	"github.com/trv3wood/kuaizu-server/api"
@@ -62,15 +61,12 @@ func (s *TalentProfileService) UpsertTalentProfile(ctx context.Context, userID i
 		}
 	}
 
-	var skillSummary *string
+	var skillSummary models.JSONStringArray
 	if req.Skills != nil {
-		data, err := json.Marshal(*req.Skills)
-		if err != nil {
-			log.Printf("[TalentProfileService.UpsertTalentProfile] marshal skills error: %v", err)
-			return nil, ErrInternal("保存人才档案失败")
+		skillSummary = models.JSONStringArray{
+			Items: append([]string(nil), (*req.Skills)...),
+			Valid: true,
 		}
-		summary := string(data)
-		skillSummary = &summary
 	}
 
 	profile := &models.TalentProfile{

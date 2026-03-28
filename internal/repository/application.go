@@ -49,7 +49,7 @@ type userWithSchoolMajor struct {
 type talentProfileRow struct {
 	ID           int     `db:"id"`
 	UserID       int     `db:"user_id"`
-	SkillSummary *string `db:"skill_summary"`
+	SkillSummary models.JSONStringArray `db:"skill_summary"`
 }
 
 // List retrieves paginated applications for a project with applicant info
