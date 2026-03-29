@@ -33,7 +33,6 @@ func (o *OliveBranch) ToVO() *api.OliveBranchVO {
 		SenderId:         &o.SenderID,
 		ReceiverId:       &o.ReceiverID,
 		RelatedProjectId: &o.RelatedProjectID,
-		Type:             &o.Type,
 		CostType:         &o.CostType,
 		Status:           &status,
 		CreatedAt:        &o.CreatedAt,

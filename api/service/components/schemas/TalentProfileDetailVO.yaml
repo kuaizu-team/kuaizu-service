@@ -6,3 +6,11 @@ allOf:
         type: string
       projectExperience:
         type: string
+      email:
+        type: string
+      phone:
+        type: string
+      grade:
+        type: string
+      authStatus:
+        type: string

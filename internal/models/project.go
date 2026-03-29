@@ -45,6 +45,7 @@ func (p *Project) ToVO() *api.ProjectVO {
 		Status:          &status,
 		PromotionStatus: &p.PromotionStatus,
 		IsCrossSchool:   p.IsCrossSchool,
+		ViewCount:       &p.ViewCount,
 	}
 }
 

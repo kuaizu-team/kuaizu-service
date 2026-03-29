@@ -56,21 +56,23 @@ func (a JSONStringArray) Value() (driver.Value, error) {
 
 // TalentProfile represents a talent profile in the database
 type TalentProfile struct {
-	ID                int        `db:"id"`
-	UserID            int        `db:"user_id"`
-	SelfEvaluation    *string    `db:"self_evaluation"`
+	ID                int             `db:"id"`
+	UserID            int             `db:"user_id"`
+	SelfEvaluation    *string         `db:"self_evaluation"`
 	SkillSummary      JSONStringArray `db:"skill_summary"`
-	ProjectExperience *string    `db:"project_experience"`
-	MBTI              *string    `db:"mbti"`
-	Status            *int       `db:"status"` // 0: 隐私/下架, 1: 上架, 2: 审核中
-	CreatedAt         *time.Time `db:"created_at"`
-	UpdatedAt         *time.Time `db:"updated_at"`
+	ProjectExperience *string         `db:"project_experience"`
+	MBTI              *string         `db:"mbti"`
+	Status            *int            `db:"status"` // 0: 隐私/下架, 1: 上架, 2: 审核中
+	CreatedAt         *time.Time      `db:"created_at"`
+	UpdatedAt         *time.Time      `db:"updated_at"`
 
 	// Joined fields from user table
-	Nickname  *string `db:"nickname"`
-	Phone     *string `db:"phone"`
-	Email     *string `db:"email"`
-	AvatarUrl *string `db:"avatar_url"`
+	Nickname   *string `db:"nickname"`
+	Phone      *string `db:"phone"`
+	Email      *string `db:"email"`
+	AvatarUrl  *string `db:"avatar_url"`
+	Grade      *int    `db:"grade"`
+	AuthStatus *int    `db:"auth_status"`
 	// SchoolID/MajorID are fetched from user table and used for follow-up lookups
 	SchoolID *int `db:"school_id"`
 	MajorID  *int `db:"major_id"`
@@ -117,6 +119,8 @@ func (t *TalentProfile) ToDetailVO() *api.TalentProfileDetailVO {
 		ProjectExperience: t.ProjectExperience,
 		Status:            (*api.TalentStatus)(t.Status),
 		AvatarUrl:         ptrFullURL(t.AvatarUrl),
+		Email:             t.Email,
+		Phone:             t.Phone,
 	}
 
 	return vo

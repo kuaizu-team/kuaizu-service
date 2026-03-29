@@ -47,8 +47,8 @@ type userWithSchoolMajor struct {
 
 // talentProfileRow holds talent_profile columns for the third batch query.
 type talentProfileRow struct {
-	ID           int     `db:"id"`
-	UserID       int     `db:"user_id"`
+	ID           int                    `db:"id"`
+	UserID       int                    `db:"user_id"`
 	SkillSummary models.JSONStringArray `db:"skill_summary"`
 }
 

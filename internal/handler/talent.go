@@ -81,6 +81,11 @@ func (s *Server) GetTalentProfile(ctx echo.Context, id int, params api.GetTalent
 
 	// 如果人才档案不存在且提供了 userId，回退查找用户基本信息
 	if profile == nil && params.UserId != nil {
+		talent, err := s.repo.TalentProfile.GetByUserID(ctx.Request().Context(), *params.UserId)
+		if err == nil {
+			return Success(ctx, talent.ToDetailVO())
+		}
+
 		user, err := s.repo.User.GetByID(ctx.Request().Context(), *params.UserId)
 		if err != nil {
 			return InternalError(ctx, "获取用户信息失败")
@@ -97,6 +102,8 @@ func (s *Server) GetTalentProfile(ctx echo.Context, id int, params api.GetTalent
 			SchoolName: user.SchoolName,
 			Email:      user.Email,
 			Phone:      user.Phone,
+			Grade:      user.Grade,
+			AuthStatus: user.AuthStatus,
 		}
 		// 返回仅包含用户基本信息的响应
 		return Success(ctx, talentProfile.ToDetailVO())
