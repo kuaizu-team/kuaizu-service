@@ -82,7 +82,7 @@ func (s *Server) GetTalentProfile(ctx echo.Context, id int, params api.GetTalent
 	// 如果人才档案不存在且提供了 userId，回退查找用户基本信息
 	if profile == nil && params.UserId != nil {
 		talent, err := s.repo.TalentProfile.GetByUserID(ctx.Request().Context(), *params.UserId)
-		if err == nil {
+		if err == nil && talent != nil {
 			return Success(ctx, talent.ToDetailVO())
 		}
 
