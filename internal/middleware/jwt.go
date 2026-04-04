@@ -4,7 +4,7 @@ import (
 	"strings"
 
 	"github.com/labstack/echo/v4"
-	"github.com/trv3wood/kuaizu-server/internal/auth"
+	"github.com/kuaizu-team/kuaizu-service/internal/auth"
 )
 
 // JWTConfig holds JWT middleware configuration

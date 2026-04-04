@@ -1,7 +1,7 @@
 package service
 
 import (
-	"github.com/trv3wood/kuaizu-server/internal/repository"
+	"github.com/kuaizu-team/kuaizu-service/internal/repository"
 )
 
 // Services aggregates all service instances.

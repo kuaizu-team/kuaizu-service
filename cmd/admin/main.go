@@ -10,12 +10,12 @@ import (
 	"github.com/joho/godotenv"
 	"github.com/labstack/echo/v4"
 	echomiddleware "github.com/labstack/echo/v4/middleware"
-	"github.com/trv3wood/kuaizu-server/cmd"
-	adminhandler "github.com/trv3wood/kuaizu-server/internal/admin/handler"
-	adminmw "github.com/trv3wood/kuaizu-server/internal/admin/middleware"
-	"github.com/trv3wood/kuaizu-server/internal/db"
-	"github.com/trv3wood/kuaizu-server/internal/repository"
-	"github.com/trv3wood/kuaizu-server/internal/service"
+	"github.com/kuaizu-team/kuaizu-service/cmd"
+	adminhandler "github.com/kuaizu-team/kuaizu-service/internal/admin/handler"
+	adminmw "github.com/kuaizu-team/kuaizu-service/internal/admin/middleware"
+	"github.com/kuaizu-team/kuaizu-service/internal/db"
+	"github.com/kuaizu-team/kuaizu-service/internal/repository"
+	"github.com/kuaizu-team/kuaizu-service/internal/service"
 )
 
 var (

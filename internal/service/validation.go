@@ -3,7 +3,7 @@ package service
 import (
 	"fmt"
 
-	"github.com/trv3wood/kuaizu-server/internal/models"
+	"github.com/kuaizu-team/kuaizu-service/internal/models"
 )
 
 // IsValidStatus checks if a given status value is within the valid range for the specified field.

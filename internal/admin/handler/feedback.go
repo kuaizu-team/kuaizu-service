@@ -4,9 +4,9 @@ import (
 	"strconv"
 
 	"github.com/labstack/echo/v4"
-	adminvo "github.com/trv3wood/kuaizu-server/internal/admin/vo"
-	"github.com/trv3wood/kuaizu-server/internal/repository"
-	"github.com/trv3wood/kuaizu-server/internal/response"
+	adminvo "github.com/kuaizu-team/kuaizu-service/internal/admin/vo"
+	"github.com/kuaizu-team/kuaizu-service/internal/repository"
+	"github.com/kuaizu-team/kuaizu-service/internal/response"
 )
 
 // ListFeedbacks handles GET /admin/feedbacks

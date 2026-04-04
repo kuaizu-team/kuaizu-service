@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/trv3wood/kuaizu-server/api"
+	"github.com/kuaizu-team/kuaizu-service/api"
 )
 
 type JSONStringArray struct {

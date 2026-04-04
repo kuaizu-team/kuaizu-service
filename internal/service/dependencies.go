@@ -3,10 +3,10 @@ package service
 import (
 	"fmt"
 
-	"github.com/trv3wood/kuaizu-server/internal/email"
-	"github.com/trv3wood/kuaizu-server/internal/oss"
-	"github.com/trv3wood/kuaizu-server/internal/repository"
-	"github.com/trv3wood/kuaizu-server/internal/wechat"
+	"github.com/kuaizu-team/kuaizu-service/internal/email"
+	"github.com/kuaizu-team/kuaizu-service/internal/oss"
+	"github.com/kuaizu-team/kuaizu-service/internal/repository"
+	"github.com/kuaizu-team/kuaizu-service/internal/wechat"
 )
 
 // Dependencies holds external clients and shared integrations for service wiring.

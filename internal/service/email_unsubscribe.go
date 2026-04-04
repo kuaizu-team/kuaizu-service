@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/trv3wood/kuaizu-server/internal/repository"
+	"github.com/kuaizu-team/kuaizu-service/internal/repository"
 )
 
 // EmailUnsubscribeService handles email unsubscribe business logic.

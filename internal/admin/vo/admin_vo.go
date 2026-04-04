@@ -3,8 +3,8 @@ package vo
 import (
 	"time"
 
-	"github.com/trv3wood/kuaizu-server/internal/models"
-	"github.com/trv3wood/kuaizu-server/internal/oss"
+	"github.com/kuaizu-team/kuaizu-service/internal/models"
+	"github.com/kuaizu-team/kuaizu-service/internal/oss"
 )
 
 func intPtr(v int) *int { return &v }

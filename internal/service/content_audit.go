@@ -5,7 +5,7 @@ import (
 	"log"
 	"strings"
 
-	"github.com/trv3wood/kuaizu-server/internal/wechat"
+	"github.com/kuaizu-team/kuaizu-service/internal/wechat"
 )
 
 // ContentAuditService 文字内容审核服务

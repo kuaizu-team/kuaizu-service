@@ -4,7 +4,7 @@ import (
 	"strings"
 
 	"github.com/labstack/echo/v4"
-	adminauth "github.com/trv3wood/kuaizu-server/internal/admin/auth"
+	adminauth "github.com/kuaizu-team/kuaizu-service/internal/admin/auth"
 )
 
 // AdminJWTConfig holds admin JWT middleware configuration
