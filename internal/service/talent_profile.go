@@ -37,8 +37,7 @@ func (s *TalentProfileService) resolveUpsertStatus(status *api.TalentStatus) (*i
 		return &resolved, nil
 	}
 
-	resolved := models.TalentStatusPrivate
-	return &resolved, nil
+	return &statusInt, nil
 }
 
 // UpsertTalentProfile creates or updates the current user's talent profile.
