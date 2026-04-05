@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -40,6 +41,7 @@ type getPhoneNumberResponse struct {
 }
 
 type msgSecCheckRequest struct {
+	OpenID  string `json:"openid,omitempty"`
 	Content string `json:"content"`
 	Scene   int    `json:"scene,omitempty"`
 	Version int    `json:"version,omitempty"`
@@ -53,6 +55,9 @@ type msgSecCheckResponse struct {
 		Label   int    `json:"label,omitempty"`
 	} `json:"result,omitempty"`
 }
+
+// ErrContentBlocked indicates WeChat rejected the submitted content.
+var ErrContentBlocked = errors.New("wechat content audit rejected")
 
 // Client is a WeChat Mini Program API client
 type Client struct {
@@ -224,7 +229,10 @@ func (c *Client) GetPhoneNumber(code string) (string, error) {
 
 // MsgSecCheck checks whether text content is compliant.
 // https://developers.weixin.qq.com/miniprogram/dev/OpenApiDoc/sec-center/sec-check/msgSecCheck.html
-func (c *Client) MsgSecCheck(ctx context.Context, content string) error {
+func (c *Client) MsgSecCheck(ctx context.Context, openID, content string) error {
+	if openID == "" {
+		return fmt.Errorf("openid is empty")
+	}
 	if content == "" {
 		return fmt.Errorf("content is empty")
 	}
@@ -236,6 +244,7 @@ func (c *Client) MsgSecCheck(ctx context.Context, content string) error {
 
 	url := fmt.Sprintf("https://api.weixin.qq.com/wxa/msg_sec_check?access_token=%s", accessToken)
 	body, err := json.Marshal(msgSecCheckRequest{
+		OpenID:  openID,
 		Content: content,
 		Scene:   1,
 		Version: 2,
@@ -265,8 +274,9 @@ func (c *Client) MsgSecCheck(ctx context.Context, content string) error {
 		return fmt.Errorf("wechat api error: %d - %s", result.ErrCode, result.ErrMsg)
 	}
 
-	if result.Result != nil && (result.Result.Suggest == "risky" || result.Result.Label != 0) {
-		return fmt.Errorf("content violates wechat policy")
+	// 检查命中标签枚举值，100 正常；10001 广告；20001 时政；...
+	if result.Result != nil && result.Result.Label > 100 {
+		return ErrContentBlocked
 	}
 
 	return nil

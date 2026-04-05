@@ -57,7 +57,7 @@ func (s *TalentProfileService) UpsertTalentProfile(ctx context.Context, userID i
 	}
 	if len(auditTexts) > 0 {
 		if err := s.contentAudit.CheckText(ctx, auditTexts...); err != nil {
-			return nil, ErrBadRequest("内容包含违规信息，请修改后重试")
+			return nil, err
 		}
 	}
 

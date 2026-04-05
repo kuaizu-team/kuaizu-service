@@ -118,7 +118,7 @@ func (s *ProjectService) CreateProject(ctx context.Context, input CreateProjectI
 		auditTexts = append(auditTexts, *input.SkillRequirement)
 	}
 	if err := s.contentAudit.CheckText(ctx, auditTexts...); err != nil {
-		return nil, ErrBadRequest("内容包含违规信息，请修改后重试")
+		return nil, err
 	}
 
 	project := &models.Project{
@@ -210,7 +210,7 @@ func (s *ProjectService) UpdateProject(ctx context.Context, id, userID int, inpu
 	}
 	if len(auditTexts) > 0 {
 		if err := s.contentAudit.CheckText(ctx, auditTexts...); err != nil {
-			return nil, ErrBadRequest("内容包含违规信息，请修改后重试")
+			return nil, err
 		}
 	}
 
