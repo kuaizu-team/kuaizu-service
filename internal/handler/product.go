@@ -3,8 +3,8 @@ package handler
 import (
 	"log"
 
-	"github.com/labstack/echo/v4"
 	"github.com/kuaizu-team/kuaizu-service/api"
+	"github.com/labstack/echo/v4"
 )
 
 // ListProducts handles GET /products

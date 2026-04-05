@@ -7,11 +7,11 @@ import (
 	"time"
 
 	"github.com/jmoiron/sqlx"
+	"github.com/kuaizu-team/kuaizu-service/internal/models"
+	"github.com/kuaizu-team/kuaizu-service/internal/repository"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	"github.com/kuaizu-team/kuaizu-service/internal/models"
-	"github.com/kuaizu-team/kuaizu-service/internal/repository"
 )
 
 // --- Mock Repositories using testify/mock ---

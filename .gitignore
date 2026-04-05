@@ -35,3 +35,5 @@ dist/
 # Certificate
 *.pem
 *.p12
+
+.codex

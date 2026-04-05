@@ -4,8 +4,8 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/labstack/echo/v4"
 	"github.com/kuaizu-team/kuaizu-service/api"
+	"github.com/labstack/echo/v4"
 )
 
 // LoginWithWechat handles POST /auth/login/wechat

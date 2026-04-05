@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/labstack/echo/v4"
 	"github.com/kuaizu-team/kuaizu-service/api"
+	"github.com/labstack/echo/v4"
 )
 
 // EmailUnsubscribe 处理邮件退订

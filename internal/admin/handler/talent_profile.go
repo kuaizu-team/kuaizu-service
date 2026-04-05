@@ -3,9 +3,9 @@ package handler
 import (
 	"fmt"
 
-	"github.com/labstack/echo/v4"
 	"github.com/kuaizu-team/kuaizu-service/internal/models"
 	"github.com/kuaizu-team/kuaizu-service/internal/response"
+	"github.com/labstack/echo/v4"
 )
 
 type reviewTalentProfileRequest struct {

@@ -1,10 +1,10 @@
 package handler
 
 import (
-	"github.com/labstack/echo/v4"
 	adminauth "github.com/kuaizu-team/kuaizu-service/internal/admin/auth"
 	"github.com/kuaizu-team/kuaizu-service/internal/models"
 	"github.com/kuaizu-team/kuaizu-service/internal/response"
+	"github.com/labstack/echo/v4"
 	"golang.org/x/crypto/bcrypt"
 )
 

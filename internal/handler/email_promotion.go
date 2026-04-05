@@ -1,9 +1,9 @@
 package handler
 
 import (
-	"github.com/labstack/echo/v4"
 	"github.com/kuaizu-team/kuaizu-service/api"
 	"github.com/kuaizu-team/kuaizu-service/internal/models"
+	"github.com/labstack/echo/v4"
 )
 
 // TriggerEmailPromotion 触发邮件推广

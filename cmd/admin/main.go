@@ -8,14 +8,14 @@ import (
 	"os"
 
 	"github.com/joho/godotenv"
-	"github.com/labstack/echo/v4"
-	echomiddleware "github.com/labstack/echo/v4/middleware"
 	"github.com/kuaizu-team/kuaizu-service/cmd"
 	adminhandler "github.com/kuaizu-team/kuaizu-service/internal/admin/handler"
 	adminmw "github.com/kuaizu-team/kuaizu-service/internal/admin/middleware"
 	"github.com/kuaizu-team/kuaizu-service/internal/db"
 	"github.com/kuaizu-team/kuaizu-service/internal/repository"
 	"github.com/kuaizu-team/kuaizu-service/internal/service"
+	"github.com/labstack/echo/v4"
+	echomiddleware "github.com/labstack/echo/v4/middleware"
 )
 
 var (

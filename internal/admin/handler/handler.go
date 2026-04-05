@@ -4,10 +4,10 @@ import (
 	"errors"
 	"strconv"
 
-	"github.com/labstack/echo/v4"
 	"github.com/kuaizu-team/kuaizu-service/internal/repository"
 	"github.com/kuaizu-team/kuaizu-service/internal/response"
 	"github.com/kuaizu-team/kuaizu-service/internal/service"
+	"github.com/labstack/echo/v4"
 )
 
 // AdminServer handles admin API requests
