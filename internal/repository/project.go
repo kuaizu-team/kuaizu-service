@@ -28,6 +28,7 @@ type ListParams struct {
 	Keyword       *string
 	SchoolID      *int
 	Status        *int
+	Statuses      []int
 	Direction     *int
 	CreatorID     *int
 	IsCrossSchool *int
@@ -46,7 +47,14 @@ func (r *ProjectRepository) List(ctx context.Context, params ListParams) ([]mode
 		conditions = append(conditions, "p.school_id = ?")
 		args = append(args, *params.SchoolID)
 	}
-	if params.Status != nil {
+	if len(params.Statuses) > 0 {
+		placeholders := make([]string, len(params.Statuses))
+		for i, status := range params.Statuses {
+			placeholders[i] = "?"
+			args = append(args, status)
+		}
+		conditions = append(conditions, fmt.Sprintf("p.status IN (%s)", strings.Join(placeholders, ",")))
+	} else if params.Status != nil {
 		conditions = append(conditions, "p.status = ?")
 		args = append(args, *params.Status)
 	}
