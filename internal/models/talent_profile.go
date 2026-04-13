@@ -121,6 +121,7 @@ func (t *TalentProfile) ToDetailVO() *api.TalentProfileDetailVO {
 		AvatarUrl:         ptrFullURL(t.AvatarUrl),
 		Email:             t.Email,
 		Phone:             t.Phone,
+		Grade:             t.Grade,
 	}
 
 	return vo

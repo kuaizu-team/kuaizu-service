@@ -11,6 +11,6 @@ allOf:
       phone:
         type: string
       grade:
-        type: string
+        type: integer
       authStatus:
-        type: string
+        type: integer
