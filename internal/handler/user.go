@@ -109,6 +109,6 @@ func (s *Server) GetCertificationStatus(ctx echo.Context) error {
 	}
 	return Success(ctx, api.CertificationStatusVO{
 		Status:     (*api.AuthStatus)(&certInfo.Status),
-		AuthImgUrl: &certInfo.AuthImgUrl,
+		AuthImgUrl: certInfo.AuthImgUrl,
 	})
 }
