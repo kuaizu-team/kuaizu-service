@@ -4,9 +4,9 @@ import (
 	"context"
 	"log"
 
-	"github.com/trv3wood/kuaizu-server/api"
-	"github.com/trv3wood/kuaizu-server/internal/models"
-	"github.com/trv3wood/kuaizu-server/internal/repository"
+	"github.com/kuaizu-team/kuaizu-service/api"
+	"github.com/kuaizu-team/kuaizu-service/internal/models"
+	"github.com/kuaizu-team/kuaizu-service/internal/repository"
 )
 
 // ProjectService handles project-related business logic.
@@ -34,6 +34,10 @@ type ProjectListResult struct {
 func (s *ProjectService) ListProjects(ctx context.Context, params repository.ListParams) (*ProjectListResult, error) {
 	params.Page, params.Size = normalizePageParams(params.Page, params.Size)
 
+	if err := validateProjectListStatuses(params); err != nil {
+		return nil, err
+	}
+
 	projects, total, err := s.repo.Project.List(ctx, params)
 	if err != nil {
 		log.Printf("[ProjectService.ListProjects] repository error: %v", err)
@@ -55,6 +59,10 @@ func (s *ProjectService) ListMyProjects(ctx context.Context, userID int, params 
 	params.Page, params.Size = normalizePageParams(params.Page, params.Size)
 	params.CreatorID = &userID
 
+	if err := validateProjectListStatuses(params); err != nil {
+		return nil, err
+	}
+
 	projects, total, err := s.repo.Project.List(ctx, params)
 	if err != nil {
 		log.Printf("[ProjectService.ListMyProjects] repository error: %v", err)
@@ -69,6 +77,23 @@ func (s *ProjectService) ListMyProjects(ctx context.Context, userID int, params 
 		Page:       params.Page,
 		Size:       params.Size,
 	}, nil
+}
+
+func validateProjectListStatuses(params repository.ListParams) error {
+	if len(params.Statuses) > 0 {
+		for _, status := range params.Statuses {
+			if err := IsValidStatus("project.status", status); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
+	if params.Status != nil {
+		return IsValidStatus("project.status", *params.Status)
+	}
+
+	return nil
 }
 
 // GetProject retrieves a project by ID and asynchronously increments its view count.
@@ -118,7 +143,7 @@ func (s *ProjectService) CreateProject(ctx context.Context, input CreateProjectI
 		auditTexts = append(auditTexts, *input.SkillRequirement)
 	}
 	if err := s.contentAudit.CheckText(ctx, auditTexts...); err != nil {
-		return nil, ErrBadRequest("内容包含违规信息，请修改后重试")
+		return nil, err
 	}
 
 	project := &models.Project{
@@ -210,7 +235,7 @@ func (s *ProjectService) UpdateProject(ctx context.Context, id, userID int, inpu
 	}
 	if len(auditTexts) > 0 {
 		if err := s.contentAudit.CheckText(ctx, auditTexts...); err != nil {
-			return nil, ErrBadRequest("内容包含违规信息，请修改后重试")
+			return nil, err
 		}
 	}
 

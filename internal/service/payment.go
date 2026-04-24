@@ -3,20 +3,49 @@ package service
 import (
 	"context"
 	"log"
+	"net/http"
 	"time"
 
-	"github.com/trv3wood/kuaizu-server/internal/models"
-	"github.com/trv3wood/kuaizu-server/internal/repository"
+	"github.com/kuaizu-team/kuaizu-service/internal/models"
+	"github.com/kuaizu-team/kuaizu-service/internal/repository"
+	"github.com/kuaizu-team/kuaizu-service/internal/wechat"
+	"github.com/wechatpay-apiv3/wechatpay-go/services/payments"
 )
 
 // PaymentService handles payment-related business logic.
 type PaymentService struct {
-	repo *repository.Repository
+	repo       *repository.Repository
+	payClient  *wechat.PayClient
+	payInitErr error
 }
 
 // NewPaymentService creates a new PaymentService.
-func NewPaymentService(repo *repository.Repository) *PaymentService {
-	return &PaymentService{repo: repo}
+func NewPaymentService(repo *repository.Repository, payClient *wechat.PayClient, payInitErr error) *PaymentService {
+	return &PaymentService{
+		repo:       repo,
+		payClient:  payClient,
+		payInitErr: payInitErr,
+	}
+}
+
+// ParseNotification parses and verifies a WeChat Pay callback.
+func (s *PaymentService) ParseNotification(ctx context.Context, request *http.Request) (*payments.Transaction, error) {
+	if s.payInitErr != nil {
+		log.Printf("[PaymentService.ParseNotification] wechat pay init error: %v", s.payInitErr)
+		return nil, ErrInternal("支付配置错误")
+	}
+	if s.payClient == nil {
+		log.Printf("[PaymentService.ParseNotification] pay client is nil")
+		return nil, ErrInternal("支付配置错误")
+	}
+
+	transaction, err := s.payClient.ParseNotification(ctx, request)
+	if err != nil {
+		log.Printf("[PaymentService.ParseNotification] parse notify error: %v", err)
+		return nil, ErrBadRequest("验签失败")
+	}
+
+	return transaction, nil
 }
 
 // GetOrder retrieves an order by ID (returns nil, nil if not found).

@@ -3,9 +3,9 @@ package models
 import (
 	"time"
 
+	"github.com/kuaizu-team/kuaizu-service/api"
+	"github.com/kuaizu-team/kuaizu-service/internal/oss"
 	openapi_types "github.com/oapi-codegen/runtime/types"
-	"github.com/trv3wood/kuaizu-server/api"
-	"github.com/trv3wood/kuaizu-server/internal/oss"
 )
 
 // User represents a user in the database

@@ -9,8 +9,8 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
-	"github.com/trv3wood/kuaizu-server/internal/oss"
-	"github.com/trv3wood/kuaizu-server/internal/repository"
+	"github.com/kuaizu-team/kuaizu-service/internal/oss"
+	"github.com/kuaizu-team/kuaizu-service/internal/repository"
 )
 
 const maxFileSize = 5 * 1024 * 1024 // 5MB

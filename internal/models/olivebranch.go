@@ -3,7 +3,7 @@ package models
 import (
 	"time"
 
-	"github.com/trv3wood/kuaizu-server/api"
+	"github.com/kuaizu-team/kuaizu-service/api"
 )
 
 // OliveBranch represents an olive branch record in the database
@@ -33,7 +33,6 @@ func (o *OliveBranch) ToVO() *api.OliveBranchVO {
 		SenderId:         &o.SenderID,
 		ReceiverId:       &o.ReceiverID,
 		RelatedProjectId: &o.RelatedProjectID,
-		Type:             &o.Type,
 		CostType:         &o.CostType,
 		Status:           &status,
 		CreatedAt:        &o.CreatedAt,

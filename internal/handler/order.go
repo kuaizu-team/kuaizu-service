@@ -1,10 +1,10 @@
 package handler
 
 import (
+	"github.com/kuaizu-team/kuaizu-service/api"
+	"github.com/kuaizu-team/kuaizu-service/internal/repository"
+	"github.com/kuaizu-team/kuaizu-service/internal/service"
 	"github.com/labstack/echo/v4"
-	"github.com/trv3wood/kuaizu-server/api"
-	"github.com/trv3wood/kuaizu-server/internal/repository"
-	"github.com/trv3wood/kuaizu-server/internal/service"
 )
 
 // ListMyOrders handles GET /orders/me

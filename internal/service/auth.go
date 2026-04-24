@@ -4,10 +4,10 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/trv3wood/kuaizu-server/api"
-	"github.com/trv3wood/kuaizu-server/internal/auth"
-	"github.com/trv3wood/kuaizu-server/internal/repository"
-	"github.com/trv3wood/kuaizu-server/internal/wechat"
+	"github.com/kuaizu-team/kuaizu-service/api"
+	"github.com/kuaizu-team/kuaizu-service/internal/auth"
+	"github.com/kuaizu-team/kuaizu-service/internal/repository"
+	"github.com/kuaizu-team/kuaizu-service/internal/wechat"
 )
 
 type AuthService struct {
@@ -15,10 +15,10 @@ type AuthService struct {
 	wxClient *wechat.Client
 }
 
-func NewAuthService(repo *repository.Repository) *AuthService {
+func NewAuthService(repo *repository.Repository, wxClient *wechat.Client) *AuthService {
 	return &AuthService{
 		repo:     repo,
-		wxClient: wechat.NewClient(),
+		wxClient: wxClient,
 	}
 }
 

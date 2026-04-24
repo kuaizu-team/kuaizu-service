@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"html/template"
 
-	"github.com/trv3wood/kuaizu-server/internal/models"
+	"github.com/kuaizu-team/kuaizu-service/internal/models"
 )
 
 // ProjectPromotionData 项目推广邮件数据

@@ -2,11 +2,12 @@ package handler
 
 import (
 	"errors"
+	"strconv"
 
+	"github.com/kuaizu-team/kuaizu-service/internal/repository"
+	"github.com/kuaizu-team/kuaizu-service/internal/response"
+	"github.com/kuaizu-team/kuaizu-service/internal/service"
 	"github.com/labstack/echo/v4"
-	"github.com/trv3wood/kuaizu-server/internal/repository"
-	"github.com/trv3wood/kuaizu-server/internal/response"
-	"github.com/trv3wood/kuaizu-server/internal/service"
 )
 
 // AdminServer handles admin API requests
@@ -36,4 +37,12 @@ func mapServiceError(ctx echo.Context, err error) error {
 		}
 	}
 	return response.InternalError(ctx, err.Error())
+}
+
+func parseIDParam(ctx echo.Context, name, label string) (int, error) {
+	id, err := strconv.Atoi(ctx.Param(name))
+	if err != nil {
+		return 0, response.BadRequest(ctx, "invalid "+label+" id")
+	}
+	return id, nil
 }

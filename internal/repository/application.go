@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/jmoiron/sqlx"
-	"github.com/trv3wood/kuaizu-server/internal/models"
+	"github.com/kuaizu-team/kuaizu-service/internal/models"
 )
 
 // ApplicationRepository handles project application database operations
@@ -47,9 +47,9 @@ type userWithSchoolMajor struct {
 
 // talentProfileRow holds talent_profile columns for the third batch query.
 type talentProfileRow struct {
-	ID           int     `db:"id"`
-	UserID       int     `db:"user_id"`
-	SkillSummary *string `db:"skill_summary"`
+	ID           int                    `db:"id"`
+	UserID       int                    `db:"user_id"`
+	SkillSummary models.JSONStringArray `db:"skill_summary"`
 }
 
 // List retrieves paginated applications for a project with applicant info

@@ -411,7 +411,7 @@ CREATE TABLE `talent_profile` (
   `id` int(11) NOT NULL AUTO_INCREMENT COMMENT 'ID',
   `user_id` int(11) NOT NULL COMMENT '关联用户ID',
   `self_evaluation` text COMMENT '自我评价',
-  `skill_summary` text COMMENT '技能标签',
+  `skill_summary` json COMMENT '技能标签',
   `project_experience` text COMMENT '项目经历',
   `mbti` varchar(10) DEFAULT NULL COMMENT 'MBTI性格类型',
   `status` int(11) DEFAULT '1' COMMENT '状态:1-上架,0-下架',

@@ -1,4 +1,4 @@
-module github.com/trv3wood/kuaizu-server
+module github.com/kuaizu-team/kuaizu-service
 
 go 1.24.0
 

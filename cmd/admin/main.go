@@ -8,15 +8,14 @@ import (
 	"os"
 
 	"github.com/joho/godotenv"
+	"github.com/kuaizu-team/kuaizu-service/cmd"
+	adminhandler "github.com/kuaizu-team/kuaizu-service/internal/admin/handler"
+	adminmw "github.com/kuaizu-team/kuaizu-service/internal/admin/middleware"
+	"github.com/kuaizu-team/kuaizu-service/internal/db"
+	"github.com/kuaizu-team/kuaizu-service/internal/repository"
+	"github.com/kuaizu-team/kuaizu-service/internal/service"
 	"github.com/labstack/echo/v4"
 	echomiddleware "github.com/labstack/echo/v4/middleware"
-	"github.com/trv3wood/kuaizu-server/cmd"
-	adminhandler "github.com/trv3wood/kuaizu-server/internal/admin/handler"
-	adminmw "github.com/trv3wood/kuaizu-server/internal/admin/middleware"
-	"github.com/trv3wood/kuaizu-server/internal/db"
-	"github.com/trv3wood/kuaizu-server/internal/oss"
-	"github.com/trv3wood/kuaizu-server/internal/repository"
-	"github.com/trv3wood/kuaizu-server/internal/service"
 )
 
 var (
@@ -48,14 +47,13 @@ func main() {
 	defer pool.Close()
 	log.Println("Connected to database")
 
-	// OSS
-	ossClient, err := oss.NewClient()
+	repo := repository.New(pool)
+	deps, err := service.NewDependencies(repo)
 	if err != nil {
-		log.Fatalf("Failed to initialize OSS client: %v", err)
+		log.Fatalf("Failed to initialize service dependencies: %v", err)
 	}
 
-	repo := repository.New(pool)
-	svc := service.New(repo, ossClient)
+	svc := service.New(repo, deps)
 	server := adminhandler.NewAdminServer(repo, svc)
 
 	// Public routes
@@ -73,6 +71,7 @@ func main() {
 	adminGroup.GET("/projects", server.ListProjects)
 	adminGroup.GET("/projects/:id", server.GetProject)
 	adminGroup.PATCH("/projects/:id", server.ReviewProject)
+	adminGroup.PATCH("/talent-profiles/:id", server.ReviewTalentProfile)
 
 	adminGroup.GET("/users", server.ListUsers)
 	adminGroup.GET("/users/:id", server.GetUser)

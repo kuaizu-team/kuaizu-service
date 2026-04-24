@@ -3,7 +3,7 @@ package models
 import (
 	"time"
 
-	"github.com/trv3wood/kuaizu-server/api"
+	"github.com/kuaizu-team/kuaizu-service/api"
 )
 
 // Project represents a project in the database
@@ -45,6 +45,7 @@ func (p *Project) ToVO() *api.ProjectVO {
 		Status:          &status,
 		PromotionStatus: &p.PromotionStatus,
 		IsCrossSchool:   p.IsCrossSchool,
+		ViewCount:       &p.ViewCount,
 	}
 }
 

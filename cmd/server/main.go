@@ -7,16 +7,15 @@ import (
 	"os"
 
 	"github.com/joho/godotenv"
+	"github.com/kuaizu-team/kuaizu-service/api"
+	"github.com/kuaizu-team/kuaizu-service/cmd"
+	"github.com/kuaizu-team/kuaizu-service/internal/db"
+	"github.com/kuaizu-team/kuaizu-service/internal/handler"
+	"github.com/kuaizu-team/kuaizu-service/internal/middleware"
+	"github.com/kuaizu-team/kuaizu-service/internal/repository"
+	"github.com/kuaizu-team/kuaizu-service/internal/service"
 	"github.com/labstack/echo/v4"
 	echomiddleware "github.com/labstack/echo/v4/middleware"
-	"github.com/trv3wood/kuaizu-server/api"
-	"github.com/trv3wood/kuaizu-server/cmd"
-	"github.com/trv3wood/kuaizu-server/internal/db"
-	"github.com/trv3wood/kuaizu-server/internal/handler"
-	"github.com/trv3wood/kuaizu-server/internal/middleware"
-	"github.com/trv3wood/kuaizu-server/internal/oss"
-	"github.com/trv3wood/kuaizu-server/internal/repository"
-	"github.com/trv3wood/kuaizu-server/internal/service"
 )
 
 var (
@@ -55,15 +54,14 @@ func main() {
 	defer pool.Close()
 	log.Println("Connected to database")
 
-	// Initialize OSS client
-	ossClient, err := oss.NewClient()
+	// Initialize repository and shared service dependencies
+	repo := repository.New(pool)
+	deps, err := service.NewDependencies(repo)
 	if err != nil {
-		log.Fatalf("Failed to initialize OSS client: %v", err)
+		log.Fatalf("Failed to initialize service dependencies: %v", err)
 	}
 
-	// Initialize repository, service, and handler
-	repo := repository.New(pool)
-	svc := service.New(repo, ossClient)
+	svc := service.New(repo, deps)
 	server := handler.NewServer(repo, svc)
 
 	// Register API routes with /api/v2 prefix

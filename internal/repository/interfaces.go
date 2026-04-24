@@ -5,8 +5,8 @@ import (
 	"time"
 
 	"github.com/jmoiron/sqlx"
-	"github.com/trv3wood/kuaizu-server/api"
-	"github.com/trv3wood/kuaizu-server/internal/models"
+	"github.com/kuaizu-team/kuaizu-service/api"
+	"github.com/kuaizu-team/kuaizu-service/internal/models"
 )
 
 // OrderRepo defines the interface for order repository operations used by services.
@@ -104,6 +104,7 @@ type TalentProfileRepo interface {
 	GetByID(ctx context.Context, id int) (*models.TalentProfile, error)
 	GetByUserID(ctx context.Context, userID int) (*models.TalentProfile, error)
 	Upsert(ctx context.Context, p *models.TalentProfile) error
+	UpdateStatus(ctx context.Context, id int, status int) error
 	DeleteByUserID(ctx context.Context, userID int) error
 }
 

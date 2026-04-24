@@ -1,7 +1,7 @@
 package models
 
 import (
-	"github.com/trv3wood/kuaizu-server/api"
+	"github.com/kuaizu-team/kuaizu-service/api"
 )
 
 // Major represents a major in the database

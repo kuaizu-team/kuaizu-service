@@ -2,7 +2,9 @@ package wechat
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -37,6 +39,25 @@ type getPhoneNumberResponse struct {
 	ErrMsg    string     `json:"errmsg,omitempty"`
 	PhoneInfo *PhoneInfo `json:"phone_info,omitempty"`
 }
+
+type msgSecCheckRequest struct {
+	OpenID  string `json:"openid,omitempty"`
+	Content string `json:"content"`
+	Scene   int    `json:"scene,omitempty"`
+	Version int    `json:"version,omitempty"`
+}
+
+type msgSecCheckResponse struct {
+	ErrCode int    `json:"errcode,omitempty"`
+	ErrMsg  string `json:"errmsg,omitempty"`
+	Result  *struct {
+		Suggest string `json:"suggest,omitempty"`
+		Label   int    `json:"label,omitempty"`
+	} `json:"result,omitempty"`
+}
+
+// ErrContentBlocked indicates WeChat rejected the submitted content.
+var ErrContentBlocked = errors.New("wechat content audit rejected")
 
 // Client is a WeChat Mini Program API client
 type Client struct {
@@ -204,4 +225,59 @@ func (c *Client) GetPhoneNumber(code string) (string, error) {
 	}
 
 	return phone, nil
+}
+
+// MsgSecCheck checks whether text content is compliant.
+// https://developers.weixin.qq.com/miniprogram/dev/OpenApiDoc/sec-center/sec-check/msgSecCheck.html
+func (c *Client) MsgSecCheck(ctx context.Context, openID, content string) error {
+	if openID == "" {
+		return fmt.Errorf("openid is empty")
+	}
+	if content == "" {
+		return fmt.Errorf("content is empty")
+	}
+
+	accessToken, err := c.GetAccessToken()
+	if err != nil {
+		return fmt.Errorf("get access token: %w", err)
+	}
+
+	url := fmt.Sprintf("https://api.weixin.qq.com/wxa/msg_sec_check?access_token=%s", accessToken)
+	body, err := json.Marshal(msgSecCheckRequest{
+		OpenID:  openID,
+		Content: content,
+		Scene:   1,
+		Version: 2,
+	})
+	if err != nil {
+		return fmt.Errorf("marshal msgSecCheck request: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(body))
+	if err != nil {
+		return fmt.Errorf("create msgSecCheck request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("request msgSecCheck: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var result msgSecCheckResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return fmt.Errorf("decode msgSecCheck response: %w", err)
+	}
+
+	if result.ErrCode != 0 {
+		return fmt.Errorf("wechat api error: %d - %s", result.ErrCode, result.ErrMsg)
+	}
+
+	// 检查命中标签枚举值，100 正常；10001 广告；20001 时政；...
+	if result.Result != nil && result.Result.Label > 100 {
+		return ErrContentBlocked
+	}
+
+	return nil
 }

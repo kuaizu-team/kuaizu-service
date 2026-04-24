@@ -3,8 +3,9 @@ package middleware
 import (
 	"strings"
 
+	"github.com/kuaizu-team/kuaizu-service/internal/auth"
+	"github.com/kuaizu-team/kuaizu-service/internal/requestctx"
 	"github.com/labstack/echo/v4"
-	"github.com/trv3wood/kuaizu-server/internal/auth"
 )
 
 // JWTConfig holds JWT middleware configuration
@@ -58,6 +59,8 @@ func JWTAuth(config *JWTConfig) echo.MiddlewareFunc {
 			// This ensures the logger middleware can access these values
 			c.Set("userID", claims.UserID)
 			c.Set("openID", claims.OpenID)
+			reqCtx := requestctx.WithOpenID(c.Request().Context(), claims.OpenID)
+			c.SetRequest(c.Request().WithContext(reqCtx))
 
 			// Call next handler and preserve any error
 			if err := next(c); err != nil {

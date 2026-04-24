@@ -3,7 +3,7 @@ package service
 import (
 	"fmt"
 
-	"github.com/trv3wood/kuaizu-server/internal/models"
+	"github.com/kuaizu-team/kuaizu-service/internal/models"
 )
 
 // IsValidStatus checks if a given status value is within the valid range for the specified field.
@@ -55,8 +55,8 @@ func IsValidStatus(field string, status int) error {
 			return ErrBadRequest(fmt.Sprintf("无效的申请状态: %d", status))
 		}
 	case "talent_profile.status":
-		// 状态:1-上架,0-下架
-		if status < models.TalentStatusOffline || status > models.TalentStatusOnline {
+		// 状态:0-隐私/下架,1-上架,2-审核中
+		if status < models.TalentStatusPrivate || status > models.TalentStatusReviewing {
 			return ErrBadRequest(fmt.Sprintf("无效的人才档案状态: %d", status))
 		}
 	case "user.auth_status":

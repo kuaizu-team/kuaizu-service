@@ -3,8 +3,8 @@ package middleware
 import (
 	"strings"
 
+	adminauth "github.com/kuaizu-team/kuaizu-service/internal/admin/auth"
 	"github.com/labstack/echo/v4"
-	adminauth "github.com/trv3wood/kuaizu-server/internal/admin/auth"
 )
 
 // AdminJWTConfig holds admin JWT middleware configuration

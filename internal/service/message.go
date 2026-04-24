@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/trv3wood/kuaizu-server/internal/models"
-	"github.com/trv3wood/kuaizu-server/internal/repository"
-	"github.com/trv3wood/kuaizu-server/internal/wechat"
+	"github.com/kuaizu-team/kuaizu-service/internal/models"
+	"github.com/kuaizu-team/kuaizu-service/internal/repository"
+	"github.com/kuaizu-team/kuaizu-service/internal/wechat"
 )
 
 // MessageService handles sending notifications (WeChat, etc.)
@@ -17,10 +17,10 @@ type MessageService struct {
 	wxClient *wechat.Client
 }
 
-func NewMessageService(repo *repository.Repository) *MessageService {
+func NewMessageService(repo *repository.Repository, wxClient *wechat.Client) *MessageService {
 	return &MessageService{
 		repo:     repo,
-		wxClient: wechat.NewClient(),
+		wxClient: wxClient,
 	}
 }
 

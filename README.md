@@ -43,7 +43,7 @@ sql/               建表语句、种子数据、ER 图
 ### 1. 克隆仓库
 
 ```bash
-git clone https://github.com/trv3wood/kuaizu-server.git
+git clone https://github.com/kuaizu-team/kuaizu-service.git
 cd kuaizu-server
 ```
 

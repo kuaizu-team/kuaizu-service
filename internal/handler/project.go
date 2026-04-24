@@ -1,10 +1,10 @@
 package handler
 
 import (
+	"github.com/kuaizu-team/kuaizu-service/api"
+	"github.com/kuaizu-team/kuaizu-service/internal/repository"
+	"github.com/kuaizu-team/kuaizu-service/internal/service"
 	"github.com/labstack/echo/v4"
-	"github.com/trv3wood/kuaizu-server/api"
-	"github.com/trv3wood/kuaizu-server/internal/repository"
-	"github.com/trv3wood/kuaizu-server/internal/service"
 )
 
 // ListProjects handles GET /projects
@@ -103,8 +103,14 @@ func (s *Server) ListMyProjects(ctx echo.Context, params api.ListMyProjectsParam
 		listParams.Size = *params.Size
 	}
 	if params.Status != nil {
-		status := int(*params.Status)
-		listParams.Status = &status
+		statuses := make([]int, 0, len(*params.Status))
+		for _, status := range *params.Status {
+			statuses = append(statuses, int(status))
+		}
+		if len(statuses) == 1 {
+			listParams.Status = &statuses[0]
+		}
+		listParams.Statuses = statuses
 	}
 
 	result, err := s.svc.Project.ListMyProjects(ctx.Request().Context(), userID, listParams)

@@ -1,8 +1,8 @@
 package handler
 
 import (
+	"github.com/kuaizu-team/kuaizu-service/internal/response"
 	"github.com/labstack/echo/v4"
-	"github.com/trv3wood/kuaizu-server/internal/response"
 )
 
 type DashboradStatsResponse struct {

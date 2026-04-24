@@ -3,9 +3,9 @@ package handler
 import (
 	"errors"
 
+	"github.com/kuaizu-team/kuaizu-service/internal/response"
+	"github.com/kuaizu-team/kuaizu-service/internal/service"
 	"github.com/labstack/echo/v4"
-	"github.com/trv3wood/kuaizu-server/internal/response"
-	"github.com/trv3wood/kuaizu-server/internal/service"
 )
 
 // Re-export response types and helpers from shared package

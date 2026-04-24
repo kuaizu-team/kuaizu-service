@@ -1,12 +1,14 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
 	"time"
 
+	"github.com/kuaizu-team/kuaizu-service/internal/models"
+	"github.com/kuaizu-team/kuaizu-service/internal/service"
+	"github.com/kuaizu-team/kuaizu-service/internal/wechat"
 	"github.com/labstack/echo/v4"
-	"github.com/trv3wood/kuaizu-server/internal/models"
-	"github.com/trv3wood/kuaizu-server/internal/wechat"
 	"github.com/wechatpay-apiv3/wechatpay-go/services/payments"
 )
 
@@ -43,21 +45,13 @@ func extractPaymentInfo(transaction *payments.Transaction) (time.Time, string) {
 
 // WechatPayCallback handles POST /payment/wechat/notify
 func (s *Server) WechatPayCallback(ctx echo.Context) error {
-	// Init wechat pay client (SDK-coupled, stays in handler)
-	payConfig, err := wechat.DefaultPayConfig()
+	transaction, err := s.svc.Payment.ParseNotification(ctx.Request().Context(), ctx.Request())
 	if err != nil {
+		var svcErr *service.ServiceError
+		if errors.As(err, &svcErr) && svcErr.Code == service.ErrCodeBadRequest {
+			return ctx.JSON(http.StatusBadRequest, failResponse(svcErr.Message))
+		}
 		return ctx.JSON(http.StatusInternalServerError, failResponse("支付配置错误"))
-	}
-
-	payClient, err := wechat.NewPayClient(payConfig)
-	if err != nil {
-		return ctx.JSON(http.StatusInternalServerError, failResponse("支付配置错误"))
-	}
-
-	// Parse and verify notification (SDK-coupled)
-	transaction, err := payClient.ParseNotification(ctx.Request().Context(), ctx.Request())
-	if err != nil {
-		return ctx.JSON(http.StatusBadRequest, failResponse("验签失败: "+err.Error()))
 	}
 
 	// Validate transaction

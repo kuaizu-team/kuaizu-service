@@ -6,7 +6,7 @@ import (
 	"fmt"
 
 	"github.com/jmoiron/sqlx"
-	"github.com/trv3wood/kuaizu-server/internal/models"
+	"github.com/kuaizu-team/kuaizu-service/internal/models"
 )
 
 // EmailPromotionRepository handles email promotion database operations

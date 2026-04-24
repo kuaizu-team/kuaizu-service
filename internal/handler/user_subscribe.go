@@ -3,9 +3,9 @@ package handler
 import (
 	"strings"
 
+	"github.com/kuaizu-team/kuaizu-service/api"
+	"github.com/kuaizu-team/kuaizu-service/internal/service"
 	"github.com/labstack/echo/v4"
-	"github.com/trv3wood/kuaizu-server/api"
-	"github.com/trv3wood/kuaizu-server/internal/service"
 )
 
 // SyncUserSubscription handles POST /user/subscribe

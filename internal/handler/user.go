@@ -1,8 +1,8 @@
 package handler
 
 import (
+	"github.com/kuaizu-team/kuaizu-service/api"
 	"github.com/labstack/echo/v4"
-	"github.com/trv3wood/kuaizu-server/api"
 )
 
 // GetCurrentUser handles GET /users/me
@@ -43,7 +43,7 @@ func (s *Server) UpdateCurrentUser(ctx echo.Context) error {
 	if req.Nickname != nil {
 		// 文字内容审核
 		if err := s.svc.ContentAudit.CheckText(ctx.Request().Context(), *req.Nickname); err != nil {
-			return BadRequest(ctx, "昵称包含违规信息，请修改后重试")
+			return mapServiceError(ctx, err)
 		}
 		user.Nickname = req.Nickname
 	}

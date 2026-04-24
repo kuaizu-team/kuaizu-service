@@ -6,7 +6,7 @@ import (
 	"fmt"
 
 	"github.com/jmoiron/sqlx"
-	"github.com/trv3wood/kuaizu-server/internal/models"
+	"github.com/kuaizu-team/kuaizu-service/internal/models"
 )
 
 // OliveBranchRepository handles olive branch database operations
@@ -34,6 +34,7 @@ type obUserRow struct {
 	UNickname   *string `db:"u_nickname"`
 	UPhone      *string `db:"u_phone"`
 	UEmail      *string `db:"u_email"`
+	UGrade      *int    `db:"u_grade"`
 	UAuthStatus *int    `db:"u_auth_status"`
 	UAvatarUrl  *string `db:"u_avatar_url"`
 }
@@ -73,6 +74,7 @@ func (r *OliveBranchRepository) ListByReceiverID(ctx context.Context, params Oli
 			s.nickname    AS u_nickname,
 			s.phone       AS u_phone,
 			s.email       AS u_email,
+			s.grade       AS u_grade,
 			s.auth_status AS u_auth_status,
 			s.avatar_url  AS u_avatar_url
 		FROM olive_branch_record ob
@@ -105,6 +107,7 @@ func (r *OliveBranchRepository) ListByReceiverID(ctx context.Context, params Oli
 			Nickname:   row.UNickname,
 			Phone:      row.UPhone,
 			Email:      row.UEmail,
+			Grade:      row.UGrade,
 			AuthStatus: row.UAuthStatus,
 			AvatarUrl:  row.UAvatarUrl,
 		}
@@ -220,6 +223,7 @@ func (r *OliveBranchRepository) ListBySenderID(ctx context.Context, params Olive
 			recv.nickname    AS u_nickname,
 			recv.phone       AS u_phone,
 			recv.email       AS u_email,
+			recv.grade       AS u_grade,
 			recv.auth_status AS u_auth_status,
 			recv.avatar_url  AS u_avatar_url
 		FROM olive_branch_record ob
@@ -252,6 +256,7 @@ func (r *OliveBranchRepository) ListBySenderID(ctx context.Context, params Olive
 			Nickname:   row.UNickname,
 			Phone:      row.UPhone,
 			Email:      row.UEmail,
+			Grade:      row.UGrade,
 			AuthStatus: row.UAuthStatus,
 			AvatarUrl:  row.UAvatarUrl,
 		}

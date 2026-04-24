@@ -3,7 +3,7 @@ package models
 import (
 	"time"
 
-	"github.com/trv3wood/kuaizu-server/api"
+	"github.com/kuaizu-team/kuaizu-service/api"
 )
 
 // ProjectApplication represents a project application in the database

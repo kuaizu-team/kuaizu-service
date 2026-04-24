@@ -3,8 +3,8 @@ package handler
 import (
 	"log"
 
+	"github.com/kuaizu-team/kuaizu-service/api"
 	"github.com/labstack/echo/v4"
-	"github.com/trv3wood/kuaizu-server/api"
 )
 
 // ListSchools handles GET /dictionaries/schools

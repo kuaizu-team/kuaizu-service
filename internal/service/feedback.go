@@ -4,8 +4,8 @@ import (
 	"context"
 	"log"
 
-	"github.com/trv3wood/kuaizu-server/internal/models"
-	"github.com/trv3wood/kuaizu-server/internal/repository"
+	"github.com/kuaizu-team/kuaizu-service/internal/models"
+	"github.com/kuaizu-team/kuaizu-service/internal/repository"
 )
 
 // FeedbackService handles feedback-related business logic.

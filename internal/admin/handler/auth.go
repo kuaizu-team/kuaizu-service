@@ -1,10 +1,10 @@
 package handler
 
 import (
+	adminauth "github.com/kuaizu-team/kuaizu-service/internal/admin/auth"
+	"github.com/kuaizu-team/kuaizu-service/internal/models"
+	"github.com/kuaizu-team/kuaizu-service/internal/response"
 	"github.com/labstack/echo/v4"
-	adminauth "github.com/trv3wood/kuaizu-server/internal/admin/auth"
-	"github.com/trv3wood/kuaizu-server/internal/models"
-	"github.com/trv3wood/kuaizu-server/internal/response"
 	"golang.org/x/crypto/bcrypt"
 )
 

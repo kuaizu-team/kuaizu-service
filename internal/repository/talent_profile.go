@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/jmoiron/sqlx"
-	"github.com/trv3wood/kuaizu-server/internal/models"
+	"github.com/kuaizu-team/kuaizu-service/internal/models"
 )
 
 // TalentProfileRepository handles talent profile database operations
@@ -218,7 +218,7 @@ func (r *TalentProfileRepository) GetByID(ctx context.Context, id int) (*models.
 			tp.project_experience, tp.mbti, tp.status,
 			tp.created_at, tp.updated_at,
 			u.nickname, u.phone, u.email, u.avatar_url,
-			u.school_id, u.major_id
+			u.school_id, u.major_id, u.grade
 		FROM talent_profile tp
 		LEFT JOIN ` + "`user`" + ` u ON tp.user_id = u.id
 		WHERE tp.id = ?
@@ -249,7 +249,7 @@ func (r *TalentProfileRepository) GetByUserID(ctx context.Context, userID int) (
 			tp.project_experience, tp.mbti, tp.status,
 			tp.created_at, tp.updated_at,
 			u.nickname, u.phone, u.email,
-			u.school_id, u.major_id
+			u.school_id, u.major_id, u.grade
 		FROM talent_profile tp
 		LEFT JOIN ` + "`user`" + ` u ON tp.user_id = u.id
 		WHERE tp.user_id = ?
@@ -317,6 +317,20 @@ func (r *TalentProfileRepository) Upsert(ctx context.Context, p *models.TalentPr
 		p.ID = existing.ID
 	}
 
+	return nil
+}
+
+// UpdateStatus updates the status of a talent profile by ID.
+func (r *TalentProfileRepository) UpdateStatus(ctx context.Context, id int, status int) error {
+	query := `
+		UPDATE talent_profile
+		SET status = ?, updated_at = CURRENT_TIMESTAMP
+		WHERE id = ?
+	`
+	_, err := r.db.ExecContext(ctx, query, status, id)
+	if err != nil {
+		return fmt.Errorf("update talent profile status: %w", err)
+	}
 	return nil
 }
 

@@ -37,8 +37,8 @@ get:
 post:
   tags:
     - TalentProfiles
-  summary: 发布/修改我的人才卡片
-  description: 只有发布了才能被搜到
+  summary: 保存/提交我的人才卡片
+  description: 保存为隐私状态时不会被搜索到，提交公开展示时会先进入审核中
   operationId: upsertTalentProfile
   requestBody:
     required: true
