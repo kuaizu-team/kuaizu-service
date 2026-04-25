@@ -31,14 +31,6 @@ type TalentProfileListParams struct {
 	Status   *int
 }
 
-// TalentProfileAdminListParams contains parameters for admin-side listing (no status=1 restriction)
-type TalentProfileAdminListParams struct {
-	Page    int
-	Size    int
-	Status  *int    // nil = 全部状态
-	Keyword *string // 按昵称模糊搜索
-}
-
 // enrichSchoolMajor 为单条 TalentProfile 分别查 school/major 并回填名称
 func (r *TalentProfileRepository) enrichSchoolMajor(ctx context.Context, p *models.TalentProfile) error {
 	if p.SchoolID != nil {
@@ -352,97 +344,4 @@ func (r *TalentProfileRepository) DeleteByUserID(ctx context.Context, userID int
 		return fmt.Errorf("delete talent profile by user id: %w", err)
 	}
 	return nil
-}
-
-// ListAdmin retrieves paginated talent profiles for admin (no status=1 restriction).
-func (r *TalentProfileRepository) ListAdmin(ctx context.Context, params TalentProfileAdminListParams) ([]models.TalentProfile, int64, error) {
-	conditions := []string{"1=1"}
-	args := []interface{}{}
-
-	if params.Status != nil {
-		conditions = append(conditions, "tp.status = ?")
-		args = append(args, *params.Status)
-	}
-
-	if params.Keyword != nil && *params.Keyword != "" {
-		conditions = append(conditions, "u.nickname LIKE ?")
-		args = append(args, "%"+*params.Keyword+"%")
-	}
-
-	whereClause := strings.Join(conditions, " AND ")
-
-	countQuery := fmt.Sprintf(`
-		SELECT COUNT(*)
-		FROM talent_profile tp
-		LEFT JOIN `+"`user`"+` u ON tp.user_id = u.id
-		WHERE %s
-	`, whereClause)
-	var total int64
-	if err := r.db.QueryRowxContext(ctx, countQuery, args...).Scan(&total); err != nil {
-		return nil, 0, fmt.Errorf("count admin talent profiles: %w", err)
-	}
-
-	if params.Size <= 0 {
-		params.Size = 10
-	}
-	if params.Page <= 0 {
-		params.Page = 1
-	}
-	offset := (params.Page - 1) * params.Size
-
-	query := fmt.Sprintf(`
-		SELECT
-			tp.id, tp.user_id, tp.self_evaluation, tp.skill_summary,
-			tp.project_experience, tp.mbti, tp.status,
-			tp.created_at, tp.updated_at,
-			u.nickname, u.phone, u.email, u.avatar_url,
-			u.school_id, u.major_id, u.grade, u.auth_status
-		FROM talent_profile tp
-		LEFT JOIN `+"`user`"+` u ON tp.user_id = u.id
-		WHERE %s
-		ORDER BY tp.updated_at DESC
-		LIMIT ? OFFSET ?
-	`, whereClause)
-	args = append(args, params.Size, offset)
-
-	var profiles []models.TalentProfile
-	if err := r.db.SelectContext(ctx, &profiles, query, args...); err != nil {
-		return nil, 0, fmt.Errorf("query admin talent profiles: %w", err)
-	}
-
-	if err := r.enrichSchoolMajorBatch(ctx, profiles); err != nil {
-		return nil, 0, err
-	}
-
-	return profiles, total, nil
-}
-
-// GetByIDForAdmin retrieves a talent profile by ID with full admin fields
-// (cover_image, is_public_contact, auth_status).
-func (r *TalentProfileRepository) GetByIDForAdmin(ctx context.Context, id int) (*models.TalentProfile, error) {
-	query := `
-		SELECT
-			tp.id, tp.user_id, tp.self_evaluation, tp.skill_summary,
-			tp.project_experience, tp.mbti, tp.status, tp.is_public_contact,
-			tp.created_at, tp.updated_at,
-			u.nickname, u.phone, u.email, u.avatar_url, u.cover_image,
-			u.school_id, u.major_id, u.grade, u.auth_status
-		FROM talent_profile tp
-		LEFT JOIN ` + "`user`" + ` u ON tp.user_id = u.id
-		WHERE tp.id = ?
-	`
-
-	var p models.TalentProfile
-	if err := r.db.QueryRowxContext(ctx, query, id).StructScan(&p); err != nil {
-		if err == sql.ErrNoRows {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("query admin talent profile by id: %w", err)
-	}
-
-	if err := r.enrichSchoolMajor(ctx, &p); err != nil {
-		return nil, err
-	}
-
-	return &p, nil
 }

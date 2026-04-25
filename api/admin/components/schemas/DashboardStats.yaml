@@ -2,19 +2,11 @@ type: object
 properties:
   userCount:
     type: integer
-    description: 用户总数
   projectCount:
     type: integer
-    description: 项目总数（不含已删除）
   pendingProjectCount:
     type: integer
-    description: 待审核项目数
   pendingAuthCount:
     type: integer
-    description: 待审核学生认证数
   pendingFeedbackCount:
     type: integer
-    description: 待处理反馈数
-  pendingTalentProfileCount:
-    type: integer
-    description: 待审核名片数（status=2）

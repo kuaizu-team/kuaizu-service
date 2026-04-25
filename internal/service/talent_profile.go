@@ -115,50 +115,6 @@ func (s *TalentProfileService) SetTalentProfilePrivate(ctx context.Context, user
 	return nil
 }
 
-// AdminListTalentProfiles returns a paginated list of talent profiles for admin.
-func (s *TalentProfileService) AdminListTalentProfiles(ctx context.Context, params repository.TalentProfileAdminListParams) ([]models.TalentProfile, int64, error) {
-	profiles, total, err := s.repo.TalentProfile.ListAdmin(ctx, params)
-	if err != nil {
-		log.Printf("[TalentProfileService.AdminListTalentProfiles] repository error: %v", err)
-		return nil, 0, ErrInternal("获取名片列表失败")
-	}
-	return profiles, total, nil
-}
-
-// AdminGetTalentProfile returns the full detail of a talent profile for admin.
-func (s *TalentProfileService) AdminGetTalentProfile(ctx context.Context, id int) (*models.TalentProfile, error) {
-	profile, err := s.repo.TalentProfile.GetByIDForAdmin(ctx, id)
-	if err != nil {
-		log.Printf("[TalentProfileService.AdminGetTalentProfile] repository error: %v", err)
-		return nil, ErrInternal("获取名片详情失败")
-	}
-	if profile == nil {
-		return nil, ErrNotFound("名片不存在")
-	}
-	return profile, nil
-}
-
-// TakedownTalentProfile forcibly takes down an online talent profile (status 1 → 0).
-func (s *TalentProfileService) TakedownTalentProfile(ctx context.Context, id int) error {
-	profile, err := s.repo.TalentProfile.GetByID(ctx, id)
-	if err != nil {
-		log.Printf("[TalentProfileService.TakedownTalentProfile] repository error getting profile: %v", err)
-		return ErrInternal("获取名片失败")
-	}
-	if profile == nil {
-		return ErrNotFound("名片不存在")
-	}
-	if profile.Status == nil || *profile.Status != models.TalentStatusOnline {
-		return ErrBadRequest("当前名片未上架，无法执行下架操作")
-	}
-
-	if err := s.repo.TalentProfile.UpdateStatus(ctx, id, models.TalentStatusPrivate); err != nil {
-		log.Printf("[TalentProfileService.TakedownTalentProfile] repository error updating status: %v", err)
-		return ErrInternal("下架失败")
-	}
-	return nil
-}
-
 // ReviewTalentProfile reviews a talent profile from reviewing to approved or private.
 func (s *TalentProfileService) ReviewTalentProfile(ctx context.Context, id, status int) error {
 	if status != models.TalentStatusPrivate && status != models.TalentStatusOnline {

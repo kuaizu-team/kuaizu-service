@@ -42,12 +42,8 @@ paths:
     $ref: paths/projects.yaml
   /projects/{id}:
     $ref: paths/projects_{id}.yaml
-  /talent-profiles:
-    $ref: paths/talent-profiles.yaml
   /talent-profiles/{id}:
     $ref: paths/talent-profiles_{id}.yaml
-  /talent-profiles/{id}/takedown:
-    $ref: paths/talent-profiles_{id}_takedown.yaml
   /users:
     $ref: paths/users.yaml
   /users/{id}:
