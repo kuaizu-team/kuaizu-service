@@ -75,7 +75,12 @@ func (s *AdminServer) GetUser(ctx echo.Context) error {
 		return mapServiceError(ctx, err)
 	}
 
-	return response.Success(ctx, adminvo.NewAdminUserVO(user))
+	profile, err := s.repo.TalentProfile.GetByUserID(ctx.Request().Context(), id)
+	if err != nil {
+		return response.InternalError(ctx, "获取名片信息失败")
+	}
+
+	return response.Success(ctx, adminvo.NewAdminUserDetailVO(user, profile))
 }
 
 type reviewAuthRequest struct {

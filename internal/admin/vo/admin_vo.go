@@ -52,6 +52,22 @@ type AdminUserVO struct {
 	ClassID        *int       `json:"classId"`
 }
 
+// AdminTalentProfileVO is the admin-facing talent profile (business card) response model.
+type AdminTalentProfileVO struct {
+	ID                int      `json:"id"`
+	Status            *int     `json:"status"`
+	SelfEvaluation    *string  `json:"selfEvaluation"`
+	ProjectExperience *string  `json:"projectExperience"`
+	Skills            []string `json:"skills"`
+	MBTI              *string  `json:"mbti"`
+}
+
+// AdminUserDetailVO extends AdminUserVO with the user's talent profile.
+type AdminUserDetailVO struct {
+	AdminUserVO
+	TalentProfile *AdminTalentProfileVO `json:"talentProfile"`
+}
+
 // AdminFeedbackVO is the admin-facing feedback response model.
 type AdminFeedbackVO struct {
 	ID           int       `json:"id"`
@@ -144,6 +160,36 @@ func NewAdminFeedbackVO(f *models.Feedback) *AdminFeedbackVO {
 		CreatedAt:    f.CreatedAt,
 		UpdatedAt:    f.UpdatedAt,
 		UserNickname: f.UserNickname,
+	}
+}
+
+// NewAdminTalentProfileVO converts a TalentProfile model to AdminTalentProfileVO.
+func NewAdminTalentProfileVO(p *models.TalentProfile) *AdminTalentProfileVO {
+	if p == nil {
+		return nil
+	}
+	skills := []string{}
+	if p.SkillSummary.Valid {
+		skills = p.SkillSummary.Items
+	}
+	return &AdminTalentProfileVO{
+		ID:                p.ID,
+		Status:            p.Status,
+		SelfEvaluation:    p.SelfEvaluation,
+		ProjectExperience: p.ProjectExperience,
+		Skills:            skills,
+		MBTI:              p.MBTI,
+	}
+}
+
+// NewAdminUserDetailVO converts a User and optional TalentProfile to AdminUserDetailVO.
+func NewAdminUserDetailVO(u *models.User, p *models.TalentProfile) *AdminUserDetailVO {
+	if u == nil {
+		return nil
+	}
+	return &AdminUserDetailVO{
+		AdminUserVO:   *NewAdminUserVO(u),
+		TalentProfile: NewAdminTalentProfileVO(p),
 	}
 }
 
