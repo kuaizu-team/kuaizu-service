@@ -38,8 +38,13 @@ properties:
     description: MBTI 性格类型
   status:
     type: integer
-    description: 名片状态（0=隐私/驳回 1=上架 2=审核中）
-    enum: [0, 1, 2]
+    description: |
+      名片状态：
+        0 = 隐私/已驳回（用户自行隐私 或 管理员审核驳回）
+        1 = 已上架
+        2 = 审核中（等待管理员审核）
+        3 = 已下架（管理员对已上架名片强制下架）
+    enum: [0, 1, 2, 3]
   authStatus:
     type: integer
     nullable: true

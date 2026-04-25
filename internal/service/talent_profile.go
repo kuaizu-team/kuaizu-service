@@ -152,7 +152,7 @@ func (s *TalentProfileService) TakedownTalentProfile(ctx context.Context, id int
 		return ErrBadRequest("当前名片未上架，无法执行下架操作")
 	}
 
-	if err := s.repo.TalentProfile.UpdateStatus(ctx, id, models.TalentStatusPrivate); err != nil {
+	if err := s.repo.TalentProfile.UpdateStatus(ctx, id, models.TalentStatusTakenDown); err != nil {
 		log.Printf("[TalentProfileService.TakedownTalentProfile] repository error updating status: %v", err)
 		return ErrInternal("下架失败")
 	}

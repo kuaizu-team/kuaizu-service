@@ -21,9 +21,9 @@ get:
       name: status
       schema:
         type: integer
-        enum: [0, 1, 2]
+        enum: [0, 1, 2, 3]
       required: false
-      description: 状态筛选（0=隐私/驳回 1=上架 2=审核中），不传返回全部
+      description: 状态筛选（0=已驳回 1=已上架 2=审核中 3=已下架），不传返回全部
     - in: query
       name: keyword
       schema:

@@ -97,9 +97,10 @@ const (
 
 // Talent Profile Status
 const (
-	TalentStatusPrivate   = 0 // 隐私/下架
-	TalentStatusOnline    = 1 // 上架
-	TalentStatusReviewing = 2 // 审核中
+	TalentStatusPrivate   = 0 // 隐私 / 已驳回（管理员审核驳回 或 用户自行隐私）
+	TalentStatusOnline    = 1 // 已上架
+	TalentStatusReviewing = 2 // 审核中（用户提交，等待管理员审核）
+	TalentStatusTakenDown = 3 // 已下架（管理员对已上架名片执行强制下架）
 )
 
 // User Auth Status

@@ -32,8 +32,8 @@ func (s *AdminServer) ListTalentProfiles(ctx echo.Context) error {
 
 	if v := ctx.QueryParam("status"); v != "" {
 		status, err := strconv.Atoi(v)
-		if err != nil || (status != models.TalentStatusPrivate && status != models.TalentStatusOnline && status != models.TalentStatusReviewing) {
-			return response.BadRequest(ctx, "invalid status, must be 0, 1 or 2")
+		if err != nil || status < models.TalentStatusPrivate || status > models.TalentStatusTakenDown {
+			return response.BadRequest(ctx, "invalid status, must be 0, 1, 2 or 3")
 		}
 		params.Status = &status
 	}
