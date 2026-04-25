@@ -101,7 +101,11 @@ type MajorRepo interface {
 // TalentProfileRepo defines the interface for talent profile repository operations.
 type TalentProfileRepo interface {
 	List(ctx context.Context, params TalentProfileListParams) ([]models.TalentProfile, int64, error)
+	// ListAdmin 管理端列表：不限制 status=1，支持按 status/keyword 筛选
+	ListAdmin(ctx context.Context, params TalentProfileAdminListParams) ([]models.TalentProfile, int64, error)
 	GetByID(ctx context.Context, id int) (*models.TalentProfile, error)
+	// GetByIDForAdmin 管理端详情：额外查询 cover_image、is_public_contact、auth_status
+	GetByIDForAdmin(ctx context.Context, id int) (*models.TalentProfile, error)
 	GetByUserID(ctx context.Context, userID int) (*models.TalentProfile, error)
 	Upsert(ctx context.Context, p *models.TalentProfile) error
 	UpdateStatus(ctx context.Context, id int, status int) error

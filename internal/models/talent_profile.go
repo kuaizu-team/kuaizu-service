@@ -71,11 +71,14 @@ type TalentProfile struct {
 	Phone      *string `db:"phone"`
 	Email      *string `db:"email"`
 	AvatarUrl  *string `db:"avatar_url"`
+	CoverImage *string `db:"cover_image"`  // admin 详情使用，普通查询为 nil
 	Grade      *int    `db:"grade"`
 	AuthStatus *int    `db:"auth_status"`
 	// SchoolID/MajorID are fetched from user table and used for follow-up lookups
 	SchoolID *int `db:"school_id"`
 	MajorID  *int `db:"major_id"`
+	// talent_profile 自有字段（admin 详情使用）
+	IsPublicContact *bool `db:"is_public_contact"`
 	// Populated after follow-up queries
 	SchoolName *string `db:"-"`
 	MajorName  *string `db:"-"`

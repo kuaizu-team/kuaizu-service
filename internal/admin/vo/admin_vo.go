@@ -128,6 +128,79 @@ func NewAdminUserVO(u *models.User) *AdminUserVO {
 	return &vo
 }
 
+// AdminTalentProfileVO is the admin-facing talent profile list item model.
+type AdminTalentProfileVO struct {
+	ID         int        `json:"id"`
+	UserID     int        `json:"userId"`
+	Nickname   *string    `json:"nickname"`
+	AvatarUrl  *string    `json:"avatarUrl"`
+	SchoolName *string    `json:"schoolName"`
+	MajorName  *string    `json:"majorName"`
+	Grade      *int       `json:"grade"`
+	Skills     *[]string  `json:"skills"`
+	MBTI       *string    `json:"mbti"`
+	Status     int        `json:"status"`     // 0=隐私/驳回 1=上架 2=审核中
+	AuthStatus *int       `json:"authStatus"` // 0=未认证 1=已认证 2=认证失败
+	CreatedAt  *time.Time `json:"createdAt"`
+	UpdatedAt  *time.Time `json:"updatedAt"`
+}
+
+// AdminTalentProfileDetailVO is the admin-facing talent profile detail model.
+type AdminTalentProfileDetailVO struct {
+	AdminTalentProfileVO
+	SelfEvaluation    *string `json:"selfEvaluation"`
+	ProjectExperience *string `json:"projectExperience"`
+	Phone             *string `json:"phone"`
+	Email             *string `json:"email"`
+	CoverImage        *string `json:"coverImage"`
+	IsPublicContact   *bool   `json:"isPublicContact"`
+}
+
+// NewAdminTalentProfileVO converts a TalentProfile model to AdminTalentProfileVO.
+func NewAdminTalentProfileVO(p *models.TalentProfile) *AdminTalentProfileVO {
+	if p == nil {
+		return nil
+	}
+	vo := &AdminTalentProfileVO{
+		ID:         p.ID,
+		UserID:     p.UserID,
+		Nickname:   p.Nickname,
+		AvatarUrl:  ossFullURLPtr(p.AvatarUrl),
+		SchoolName: p.SchoolName,
+		MajorName:  p.MajorName,
+		Grade:      p.Grade,
+		MBTI:       p.MBTI,
+		AuthStatus: p.AuthStatus,
+		CreatedAt:  p.CreatedAt,
+		UpdatedAt:  p.UpdatedAt,
+	}
+	if p.Status != nil {
+		vo.Status = *p.Status
+	}
+	if p.SkillSummary.Valid {
+		skills := append([]string(nil), p.SkillSummary.Items...)
+		vo.Skills = &skills
+	}
+	return vo
+}
+
+// NewAdminTalentProfileDetailVO converts a TalentProfile model to AdminTalentProfileDetailVO.
+func NewAdminTalentProfileDetailVO(p *models.TalentProfile) *AdminTalentProfileDetailVO {
+	if p == nil {
+		return nil
+	}
+	base := NewAdminTalentProfileVO(p)
+	return &AdminTalentProfileDetailVO{
+		AdminTalentProfileVO: *base,
+		SelfEvaluation:       p.SelfEvaluation,
+		ProjectExperience:    p.ProjectExperience,
+		Phone:                p.Phone,
+		Email:                p.Email,
+		CoverImage:           ossFullURLPtr(p.CoverImage),
+		IsPublicContact:      p.IsPublicContact,
+	}
+}
+
 // NewAdminFeedbackVO converts a Feedback model to AdminFeedbackVO.
 func NewAdminFeedbackVO(f *models.Feedback) *AdminFeedbackVO {
 	if f == nil {
