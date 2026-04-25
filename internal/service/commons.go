@@ -61,13 +61,16 @@ func (s *CommonsService) DeleteFile(key string) error {
 // (if any), and updates the database with the new key. This is the single
 // service-layer entry point for the certification image upload flow.
 func (s *CommonsService) SubmitCertification(ctx context.Context, userID int, file multipart.File, header *multipart.FileHeader) (*oss.UploadResult, error) {
-	// 1. 查询旧的 auth_img_url
+	// 1. 查询旧的 auth_img_url（允许用户尚未上传过，此时为 NULL）
 	certInfo, err := s.userRepo.GetEduCertInfoByID(ctx, userID)
 	if err != nil {
 		log.Printf("[CommonsService.SubmitCertification] repository error getting cert info: %v", err)
 		return nil, ErrInternal("获取旧认证图片失败")
 	}
-	oldKey := certInfo.AuthImgUrl
+	var oldKey string
+	if certInfo.AuthImgUrl != nil {
+		oldKey = *certInfo.AuthImgUrl
+	}
 
 	// 2. 上传新文件
 	result, err := s.UploadFile(file, header)

@@ -379,8 +379,8 @@ func (r *UserRepository) UpdateCoverImage(ctx context.Context, userID int, cover
 }
 
 type CertInfo struct {
-	Status     int    `db:"auth_status"`
-	AuthImgUrl string `db:"auth_img_url"`
+	Status     int     `db:"auth_status"`
+	AuthImgUrl *string `db:"auth_img_url"`
 }
 
 func (r *UserRepository) GetEduCertInfoByID(ctx context.Context, userID int) (CertInfo, error) {
@@ -392,7 +392,7 @@ func (r *UserRepository) GetEduCertInfoByID(ctx context.Context, userID int) (Ce
 
 	var info CertInfo
 	if err := r.db.QueryRowxContext(ctx, query, userID).StructScan(&info); err != nil {
-		return CertInfo{0, ""}, fmt.Errorf("get auth status: %w", err)
+		return CertInfo{}, fmt.Errorf("get auth status: %w", err)
 	}
 
 	return info, nil
