@@ -1,0 +1,18 @@
+type: object
+description: 橄榄枝额度信息
+properties:
+  dailyFreeQuota:
+    type: integer
+    description: 每日免费额度总量(固定为5)
+  freeBranchUsedToday:
+    type: integer
+    description: 今日已用免费次数
+  freeRemaining:
+    type: integer
+    description: 今日剩余免费次数
+  paidBalance:
+    type: integer
+    description: 付费橄榄枝余额
+  totalRemaining:
+    type: integer
+    description: 总可用余额(今日剩余免费+付费余额)

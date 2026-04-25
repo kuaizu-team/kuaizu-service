@@ -1,0 +1,18 @@
+get:
+  tags:
+    - OliveBranches
+  summary: 查看我的橄榄枝额度
+  description: 查看当前用户的橄榄枝免费额度和付费余额
+  operationId: getMyOliveBranchQuota
+  responses:
+    '200':
+      description: 成功
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/BaseResponse.yaml
+              - type: object
+                properties:
+                  data:
+                    $ref: ../components/schemas/OliveBranchQuotaVO.yaml

@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"time"
+
 	"github.com/kuaizu-team/kuaizu-service/api"
 	"github.com/kuaizu-team/kuaizu-service/internal/repository"
 	"github.com/kuaizu-team/kuaizu-service/internal/service"
@@ -94,6 +96,49 @@ func (s *Server) HandleOliveBranch(ctx echo.Context, id int) error {
 	}
 
 	return Success(ctx, ob.ToVO())
+}
+
+// GetMyOliveBranchQuota handles GET /users/me/olive-branch-quota
+func (s *Server) GetMyOliveBranchQuota(ctx echo.Context) error {
+	userID := GetUserID(ctx)
+
+	user, err := s.repo.User.GetByID(ctx.Request().Context(), userID)
+	if err != nil {
+		return InternalError(ctx, "获取用户信息失败")
+	}
+	if user == nil {
+		return NotFound(ctx, "用户不存在")
+	}
+
+	const dailyFreeQuota = 5
+
+	freeBranchUsedToday := 0
+	if user.FreeBranchUsedToday != nil {
+		today := time.Now().Truncate(24 * time.Hour)
+		if user.LastActiveDate != nil && !user.LastActiveDate.Truncate(24*time.Hour).Before(today) {
+			freeBranchUsedToday = *user.FreeBranchUsedToday
+		}
+	}
+
+	paidBalance := 0
+	if user.OliveBranchCount != nil {
+		paidBalance = *user.OliveBranchCount
+	}
+
+	freeRemaining := dailyFreeQuota - freeBranchUsedToday
+	totalRemaining := freeRemaining + paidBalance
+
+	dq := dailyFreeQuota
+	fr := freeRemaining
+	tr := totalRemaining
+
+	return Success(ctx, api.OliveBranchQuotaVO{
+		DailyFreeQuota:      &dq,
+		FreeBranchUsedToday: &freeBranchUsedToday,
+		FreeRemaining:       &fr,
+		PaidBalance:         &paidBalance,
+		TotalRemaining:      &tr,
+	})
 }
 
 // GetMySentOliveBranches handles GET /users/me/sent-olive-branches
