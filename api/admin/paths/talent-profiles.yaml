@@ -1,0 +1,48 @@
+get:
+  tags:
+    - TalentProfiles
+  summary: 获取名片列表
+  description: 管理端名片列表，支持按状态/昵称筛选，不限制 status=1。
+  parameters:
+    - in: query
+      name: page
+      schema:
+        type: integer
+        default: 1
+      description: 页码（从1开始）
+    - in: query
+      name: size
+      schema:
+        type: integer
+        default: 10
+        maximum: 50
+      description: 每页条数（最大50）
+    - in: query
+      name: status
+      schema:
+        type: integer
+        enum: [0, 1, 2]
+      required: false
+      description: 状态筛选（0=隐私/驳回 1=上架 2=审核中），不传返回全部
+    - in: query
+      name: keyword
+      schema:
+        type: string
+      required: false
+      description: 按昵称模糊搜索
+  responses:
+    '200':
+      description: 成功
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/BaseResponse.yaml
+              - type: object
+                properties:
+                  data:
+                    $ref: ../components/schemas/TalentProfilePagedData.yaml
+    '401':
+      $ref: ../components/responses/Unauthorized.yaml
+    '500':
+      $ref: ../components/responses/InternalError.yaml

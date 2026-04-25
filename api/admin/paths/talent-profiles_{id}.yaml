@@ -1,13 +1,49 @@
-patch:
+get:
   tags:
     - TalentProfiles
-  summary: 审核人才档案
+  summary: 获取名片详情
+  description: 返回名片完整信息，包含自我评价、项目经历、联系方式、封面图等。
   parameters:
     - in: path
       name: id
       required: true
       schema:
         type: integer
+      description: 名片ID
+  responses:
+    '200':
+      description: 成功
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/BaseResponse.yaml
+              - type: object
+                properties:
+                  data:
+                    $ref: ../components/schemas/AdminTalentProfileDetail.yaml
+    '401':
+      $ref: ../components/responses/Unauthorized.yaml
+    '404':
+      $ref: ../components/responses/NotFound.yaml
+    '500':
+      $ref: ../components/responses/InternalError.yaml
+
+patch:
+  tags:
+    - TalentProfiles
+  summary: 审核名片（通过/驳回）
+  description: |
+    对状态为「审核中（status=2）」的名片进行审核：
+    - status=1：通过，名片上架到人才库
+    - status=0：驳回，名片恢复为隐私状态
+  parameters:
+    - in: path
+      name: id
+      required: true
+      schema:
+        type: integer
+      description: 名片ID
   requestBody:
     required: true
     content:
@@ -19,10 +55,8 @@ patch:
           properties:
             status:
               type: integer
-              description: 审核状态（1=通过，0=驳回并设为隐私）
-              enum:
-                - 1
-                - 0
+              description: 审核结果（1=通过上架，0=驳回隐私）
+              enum: [1, 0]
   responses:
     '200':
       description: 审核成功
@@ -34,8 +68,6 @@ patch:
       $ref: ../components/responses/BadRequest.yaml
     '401':
       $ref: ../components/responses/Unauthorized.yaml
-    '403':
-      $ref: ../components/responses/Forbidden.yaml
     '404':
       $ref: ../components/responses/NotFound.yaml
     '500':
