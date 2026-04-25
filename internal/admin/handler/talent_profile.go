@@ -12,6 +12,20 @@ type reviewTalentProfileRequest struct {
 	Status int `json:"status"`
 }
 
+// TakedownTalentProfile handles PATCH /admin/talent-profiles/:id/takedown
+func (s *AdminServer) TakedownTalentProfile(ctx echo.Context) error {
+	id, err := parseIDParam(ctx, "id", "talent profile")
+	if err != nil {
+		return err
+	}
+
+	if err := s.svc.TalentProfile.TakedownTalentProfile(ctx.Request().Context(), id); err != nil {
+		return mapServiceError(ctx, err)
+	}
+
+	return response.SuccessMessage(ctx, "操作成功")
+}
+
 // ReviewTalentProfile handles PATCH /admin/talent-profiles/:id
 func (s *AdminServer) ReviewTalentProfile(ctx echo.Context) error {
 	id, err := parseIDParam(ctx, "id", "talent profile")

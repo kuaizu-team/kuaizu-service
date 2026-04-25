@@ -115,6 +115,28 @@ func (s *TalentProfileService) SetTalentProfilePrivate(ctx context.Context, user
 	return nil
 }
 
+// TakedownTalentProfile (admin only) forces an online profile offline (status: 1 → 0).
+func (s *TalentProfileService) TakedownTalentProfile(ctx context.Context, id int) error {
+	profile, err := s.repo.TalentProfile.GetByID(ctx, id)
+	if err != nil {
+		log.Printf("[TalentProfileService.TakedownTalentProfile] repository error getting profile: %v", err)
+		return ErrInternal("获取人才档案失败")
+	}
+	if profile == nil {
+		return ErrNotFound("人才档案不存在")
+	}
+	if profile.Status == nil || *profile.Status != models.TalentStatusOnline {
+		return ErrBadRequest("当前名片状态不是已上架，无法下架")
+	}
+
+	if err := s.repo.TalentProfile.UpdateStatus(ctx, id, models.TalentStatusPrivate); err != nil {
+		log.Printf("[TalentProfileService.TakedownTalentProfile] repository error updating status: %v", err)
+		return ErrInternal("下架失败")
+	}
+
+	return nil
+}
+
 // ReviewTalentProfile reviews a talent profile from reviewing to approved or private.
 func (s *TalentProfileService) ReviewTalentProfile(ctx context.Context, id, status int) error {
 	if status != models.TalentStatusPrivate && status != models.TalentStatusOnline {
