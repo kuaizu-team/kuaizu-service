@@ -56,6 +56,8 @@ paths:
     $ref: paths/users_me_olive-branches.yaml
   /users/me/sent-olive-branches:
     $ref: paths/users_me_sent-olive-branches.yaml
+  /users/me/olive-branch-quota:
+    $ref: paths/users_me_olive-branch-quota.yaml
   /user/subscribe:
     $ref: paths/user_subscribe.yaml
   /projects:
