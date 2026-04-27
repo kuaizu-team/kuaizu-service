@@ -28,7 +28,7 @@ type OliveBranchListParams struct {
 	Status     *int
 }
 
-// obUserRow holds JOIN-ed user columns for olive branch queries.
+// obUserRow holds JOIN-ed user + school + major columns for olive branch queries.
 type obUserRow struct {
 	UID         int     `db:"u_id"`
 	UNickname   *string `db:"u_nickname"`
@@ -37,6 +37,12 @@ type obUserRow struct {
 	UGrade      *int    `db:"u_grade"`
 	UAuthStatus *int    `db:"u_auth_status"`
 	UAvatarUrl  *string `db:"u_avatar_url"`
+	USchoolID   *int    `db:"u_school_id"`
+	UMajorID    *int    `db:"u_major_id"`
+	USchoolName *string `db:"u_school_name"`
+	USchoolCode *string `db:"u_school_code"`
+	UMajorName  *string `db:"u_major_name"`
+	UClassID    *int    `db:"u_class_id"`
 }
 
 // obRow is the flat scan target (olive branch + user columns).
@@ -65,7 +71,7 @@ func (r *OliveBranchRepository) ListByReceiverID(ctx context.Context, params Oli
 	args := []interface{}{params.ReceiverID}
 
 	query := `
-		SELECT 
+		SELECT
 			ob.id, ob.sender_id, ob.receiver_id, ob.related_project_id,
 			ob.type, ob.cost_type, ob.status,
 			ob.created_at, ob.updated_at,
@@ -76,10 +82,18 @@ func (r *OliveBranchRepository) ListByReceiverID(ctx context.Context, params Oli
 			s.email       AS u_email,
 			s.grade       AS u_grade,
 			s.auth_status AS u_auth_status,
-			s.avatar_url  AS u_avatar_url
+			s.avatar_url  AS u_avatar_url,
+			s.school_id   AS u_school_id,
+			s.major_id    AS u_major_id,
+			sch.school_name AS u_school_name,
+			sch.school_code AS u_school_code,
+			m.major_name  AS u_major_name,
+			m.class_id    AS u_class_id
 		FROM olive_branch_record ob
 		LEFT JOIN project p ON ob.related_project_id = p.id
 		LEFT JOIN ` + "`user`" + ` s ON ob.sender_id = s.id
+		LEFT JOIN school sch ON s.school_id = sch.id
+		LEFT JOIN major m ON s.major_id = m.id
 		WHERE ob.receiver_id = ?
 	`
 	if params.Status != nil {
@@ -110,8 +124,19 @@ func (r *OliveBranchRepository) ListByReceiverID(ctx context.Context, params Oli
 			Grade:      row.UGrade,
 			AuthStatus: row.UAuthStatus,
 			AvatarUrl:  row.UAvatarUrl,
+			SchoolID:   row.USchoolID,
+			MajorID:    row.UMajorID,
+			SchoolName: row.USchoolName,
+			SchoolCode: row.USchoolCode,
+			MajorName:  row.UMajorName,
+			ClassID:    row.UClassID,
 		}
 		records = append(records, ob)
+	}
+	rows.Close()
+
+	if err := r.enrichSkills(ctx, records, func(ob *models.OliveBranch) *models.User { return ob.Sender }); err != nil {
+		return nil, 0, err
 	}
 
 	return records, total, nil
@@ -214,7 +239,7 @@ func (r *OliveBranchRepository) ListBySenderID(ctx context.Context, params Olive
 	args := []interface{}{params.SenderID}
 
 	query := `
-		SELECT 
+		SELECT
 			ob.id, ob.sender_id, ob.receiver_id, ob.related_project_id,
 			ob.type, ob.cost_type, ob.status,
 			ob.created_at, ob.updated_at,
@@ -225,10 +250,18 @@ func (r *OliveBranchRepository) ListBySenderID(ctx context.Context, params Olive
 			recv.email       AS u_email,
 			recv.grade       AS u_grade,
 			recv.auth_status AS u_auth_status,
-			recv.avatar_url  AS u_avatar_url
+			recv.avatar_url  AS u_avatar_url,
+			recv.school_id   AS u_school_id,
+			recv.major_id    AS u_major_id,
+			sch.school_name  AS u_school_name,
+			sch.school_code  AS u_school_code,
+			m.major_name     AS u_major_name,
+			m.class_id       AS u_class_id
 		FROM olive_branch_record ob
 		LEFT JOIN project p ON ob.related_project_id = p.id
 		LEFT JOIN ` + "`user`" + ` recv ON ob.receiver_id = recv.id
+		LEFT JOIN school sch ON recv.school_id = sch.id
+		LEFT JOIN major m ON recv.major_id = m.id
 		WHERE ob.sender_id = ?
 	`
 	if params.Status != nil {
@@ -259,9 +292,65 @@ func (r *OliveBranchRepository) ListBySenderID(ctx context.Context, params Olive
 			Grade:      row.UGrade,
 			AuthStatus: row.UAuthStatus,
 			AvatarUrl:  row.UAvatarUrl,
+			SchoolID:   row.USchoolID,
+			MajorID:    row.UMajorID,
+			SchoolName: row.USchoolName,
+			SchoolCode: row.USchoolCode,
+			MajorName:  row.UMajorName,
+			ClassID:    row.UClassID,
 		}
 		records = append(records, ob)
 	}
+	rows.Close()
+
+	if err := r.enrichSkills(ctx, records, func(ob *models.OliveBranch) *models.User { return ob.Receiver }); err != nil {
+		return nil, 0, err
+	}
 
 	return records, total, nil
+}
+
+// enrichSkills batch-queries talent_profile for the target users and sets User.Skills.
+// getUser extracts the relevant user (sender or receiver) from each record.
+func (r *OliveBranchRepository) enrichSkills(ctx context.Context, records []models.OliveBranch, getUser func(*models.OliveBranch) *models.User) error {
+	userIDs := make([]int, 0, len(records))
+	for i := range records {
+		if u := getUser(&records[i]); u != nil {
+			userIDs = append(userIDs, u.ID)
+		}
+	}
+	if len(userIDs) == 0 {
+		return nil
+	}
+
+	q, args, err := sqlx.In(`SELECT user_id, skill_summary FROM talent_profile WHERE user_id IN (?)`, userIDs)
+	if err != nil {
+		return fmt.Errorf("build skills IN query: %w", err)
+	}
+	q = r.db.Rebind(q)
+
+	type skillRow struct {
+		UserID       int                    `db:"user_id"`
+		SkillSummary models.JSONStringArray `db:"skill_summary"`
+	}
+	var rows []skillRow
+	if err := r.db.SelectContext(ctx, &rows, q, args...); err != nil {
+		return fmt.Errorf("batch query skills: %w", err)
+	}
+
+	skillsMap := make(map[int][]string, len(rows))
+	for _, row := range rows {
+		if row.SkillSummary.Valid {
+			skillsMap[row.UserID] = row.SkillSummary.Items
+		}
+	}
+
+	for i := range records {
+		if u := getUser(&records[i]); u != nil {
+			if skills, ok := skillsMap[u.ID]; ok {
+				u.Skills = skills
+			}
+		}
+	}
+	return nil
 }

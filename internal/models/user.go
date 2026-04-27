@@ -29,10 +29,11 @@ type User struct {
 	CreatedAt           *time.Time `db:"created_at"`
 
 	// Joined fields (not always populated)
-	SchoolName *string `db:"school_name"`
-	SchoolCode *string `db:"school_code"`
-	MajorName  *string `db:"major_name"`
-	ClassID    *int    `db:"class_id"`
+	SchoolName *string  `db:"school_name"`
+	SchoolCode *string  `db:"school_code"`
+	MajorName  *string  `db:"major_name"`
+	ClassID    *int     `db:"class_id"`
+	Skills     []string `db:"-"`
 }
 
 // ToVO converts User to API UserVO
@@ -78,6 +79,11 @@ func (u *User) ToVO() *api.UserVO {
 			MajorName: u.MajorName,
 			ClassId:   u.ClassID,
 		}
+	}
+
+	if len(u.Skills) > 0 {
+		skills := append([]string(nil), u.Skills...)
+		vo.Skills = &skills
 	}
 
 	return vo

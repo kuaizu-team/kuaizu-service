@@ -38,3 +38,8 @@ properties:
   createdAt:
     type: string
     format: date-time
+  skills:
+    type: array
+    items:
+      type: string
+    description: 技能标签（来自人才档案）
