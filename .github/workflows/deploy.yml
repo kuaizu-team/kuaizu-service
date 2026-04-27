@@ -21,9 +21,13 @@ jobs:
           chmod 600 ~/.ssh/id_rsa
           ssh-keyscan -p ${{ secrets.SSH_PORT || 22 }} -H ${{ secrets.SSH_HOST }} >> ~/.ssh/known_hosts
 
+      - name: Set image version
+        run: |
+          VERSION="${{ github.ref_name }}"
+          echo "VERSION=${VERSION//\//-}" >> $GITHUB_ENV
+
       - name: Build Docker image
         run: |
-          export VERSION=${{ github.ref_name }}
           export COMMIT=${{ github.sha }}
           docker build \
             --build-arg VERSION=$VERSION \
@@ -34,7 +38,7 @@ jobs:
 
       - name: Save Docker image to tarball
         run: |
-          docker save kuaizu-server:${{ github.ref_name }} | gzip > kuaizu-server.tar.gz
+          docker save kuaizu-server:$VERSION | gzip > kuaizu-server.tar.gz
 
       - name: Transfer image and config to server
         run: |
@@ -65,7 +69,7 @@ jobs:
             gunzip -c kuaizu-server.tar.gz | docker load
             
             # 使用环境变量传递版本信息
-            export VERSION=${{ github.ref_name }}
+            export VERSION=${{ env.VERSION }}
             
             # 重启服务
             docker-compose down
