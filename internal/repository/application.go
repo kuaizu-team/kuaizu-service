@@ -37,6 +37,7 @@ type userWithSchoolMajor struct {
 	Phone      *string `db:"phone"`
 	Email      *string `db:"email"`
 	AvatarUrl  *string `db:"avatar_url"`
+	AuthStatus *int    `db:"auth_status"`
 	SchoolID   *int    `db:"school_id"`
 	MajorID    *int    `db:"major_id"`
 	SchoolName *string `db:"school_name"`
@@ -114,7 +115,7 @@ func (r *ApplicationRepository) List(ctx context.Context, params ApplicationList
 	userQuery, userArgs, err := sqlx.In(`
 		SELECT
 			u.id, u.openid, u.nickname, u.phone, u.email, u.avatar_url,
-			u.school_id, u.major_id,
+			u.auth_status, u.school_id, u.major_id,
 			s.school_name, s.school_code,
 			m.major_name, m.class_id
 		FROM `+"`user`"+` u
@@ -142,6 +143,7 @@ func (r *ApplicationRepository) List(ctx context.Context, params ApplicationList
 			Phone:      row.Phone,
 			Email:      row.Email,
 			AvatarUrl:  row.AvatarUrl,
+			AuthStatus: row.AuthStatus,
 			SchoolID:   row.SchoolID,
 			MajorID:    row.MajorID,
 			SchoolName: row.SchoolName,
