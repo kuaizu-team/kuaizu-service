@@ -123,6 +123,7 @@ func (t *TalentProfile) ToDetailVO() *api.TalentProfileDetailVO {
 		Email:             t.Email,
 		Phone:             t.Phone,
 		Grade:             t.Grade,
+		AuthStatus:        t.AuthStatus,
 	}
 
 	return vo
