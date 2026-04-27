@@ -87,7 +87,8 @@ func (s *PaymentService) ProcessPayment(ctx context.Context, order *models.Order
 
 	switch product.Type {
 	case 1: // 橄榄枝
-		if err := s.repo.User.AddOliveBranchCountTx(ctx, tx, order.UserID, order.Quantity); err != nil {
+		totalBranches := product.OliveBranchCount() * order.Quantity
+		if err := s.repo.User.AddOliveBranchCountTx(ctx, tx, order.UserID, totalBranches); err != nil {
 			log.Printf("[PaymentService.ProcessPayment] failed to add olive branch count: %v", err)
 			return ErrInternal("处理支付失败")
 		}
