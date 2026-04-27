@@ -33,23 +33,24 @@ type AdminProjectVO struct {
 
 // AdminUserVO is the admin-facing user response model.
 type AdminUserVO struct {
-	ID             int        `json:"id"`
-	OpenID         string     `json:"openId"`
-	Nickname       *string    `json:"nickname"`
-	Phone          *string    `json:"phone"`
-	Email          *string    `json:"email"`
-	SchoolID       *int       `json:"schoolId"`
-	MajorID        *int       `json:"majorId"`
-	Grade          *int       `json:"grade"`
-	LastActiveDate *time.Time `json:"lastActiveDate"`
-	AuthStatus     *int       `json:"authStatus"`
-	AuthImgUrl     *string    `json:"authImgUrl"`
-	EmailOptOut    *bool      `json:"emailOptOut"`
-	CreatedAt      *time.Time `json:"createdAt"`
-	SchoolName     *string    `json:"schoolName"`
-	SchoolCode     *string    `json:"schoolCode"`
-	MajorName      *string    `json:"majorName"`
-	ClassID        *int       `json:"classId"`
+	ID                  int        `json:"id"`
+	OpenID              string     `json:"openId"`
+	Nickname            *string    `json:"nickname"`
+	Phone               *string    `json:"phone"`
+	Email               *string    `json:"email"`
+	SchoolID            *int       `json:"schoolId"`
+	MajorID             *int       `json:"majorId"`
+	Grade               *int       `json:"grade"`
+	LastActiveDate      *time.Time `json:"lastActiveDate"`
+	AuthStatus          *int       `json:"authStatus"`
+	AuthImgUrl          *string    `json:"authImgUrl"`
+	EmailOptOut         *bool      `json:"emailOptOut"`
+	CreatedAt           *time.Time `json:"createdAt"`
+	SchoolName          *string    `json:"schoolName"`
+	SchoolCode          *string    `json:"schoolCode"`
+	MajorName           *string    `json:"majorName"`
+	ClassID             *int       `json:"classId"`
+	TalentProfileStatus *int       `json:"talentProfileStatus"`
 }
 
 // AdminTalentProfileVO is the admin-facing talent profile (business card) response model.
@@ -107,34 +108,36 @@ func NewAdminProjectVO(p *models.Project) *AdminProjectVO {
 		SkillRequirement:     p.SkillRequirement,
 	}
 	if p.Creator != nil {
-		adminProjectVo.Creator = NewAdminUserVO(p.Creator)
+		adminProjectVo.Creator = NewAdminUserVO(p.Creator, nil)
 	}
 	return &adminProjectVo
 }
 
 // NewAdminUserVO converts a User model to AdminUserVO.
-func NewAdminUserVO(u *models.User) *AdminUserVO {
+// talentProfileStatus is optional (pass nil when not available, e.g. in detail view where TalentProfile is fetched separately).
+func NewAdminUserVO(u *models.User, talentProfileStatus *int) *AdminUserVO {
 	if u == nil {
 		return nil
 	}
 
 	vo := AdminUserVO{
-		ID:             u.ID,
-		OpenID:         u.OpenID,
-		Nickname:       u.Nickname,
-		Phone:          u.Phone,
-		Email:          u.Email,
-		SchoolID:       u.SchoolID,
-		MajorID:        u.MajorID,
-		Grade:          u.Grade,
-		LastActiveDate: u.LastActiveDate,
-		AuthImgUrl:     ossFullURLPtr(u.AuthImgUrl),
-		EmailOptOut:    u.EmailOptOut,
-		CreatedAt:      u.CreatedAt,
-		SchoolName:     u.SchoolName,
-		SchoolCode:     u.SchoolCode,
-		MajorName:      u.MajorName,
-		ClassID:        u.ClassID,
+		ID:                  u.ID,
+		OpenID:              u.OpenID,
+		Nickname:            u.Nickname,
+		Phone:               u.Phone,
+		Email:               u.Email,
+		SchoolID:            u.SchoolID,
+		MajorID:             u.MajorID,
+		Grade:               u.Grade,
+		LastActiveDate:      u.LastActiveDate,
+		AuthImgUrl:          ossFullURLPtr(u.AuthImgUrl),
+		EmailOptOut:         u.EmailOptOut,
+		CreatedAt:           u.CreatedAt,
+		SchoolName:          u.SchoolName,
+		SchoolCode:          u.SchoolCode,
+		MajorName:           u.MajorName,
+		ClassID:             u.ClassID,
+		TalentProfileStatus: talentProfileStatus,
 	}
 	if u.AuthImgUrl != nil && u.AuthStatus != nil && *u.AuthStatus == 0 {
 		vo.AuthStatus = intPtr(3) //  提交了审核材料且未认证，将状态映射为 3-审核中，方便管理员优先处理
@@ -188,7 +191,7 @@ func NewAdminUserDetailVO(u *models.User, p *models.TalentProfile) *AdminUserDet
 		return nil
 	}
 	return &AdminUserDetailVO{
-		AdminUserVO:   *NewAdminUserVO(u),
+		AdminUserVO:   *NewAdminUserVO(u, nil),
 		TalentProfile: NewAdminTalentProfileVO(p),
 	}
 }
