@@ -102,6 +102,7 @@ func (t *TalentProfile) ToVO() *api.TalentProfileVO {
 		Skills:     t.skills(),
 		Status:     (*api.TalentStatus)(t.Status),
 		AvatarUrl:  ptrFullURL(t.AvatarUrl),
+		AuthStatus: t.AuthStatus,
 	}
 }
 

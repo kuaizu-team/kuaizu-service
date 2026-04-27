@@ -16,6 +16,9 @@ properties:
       type: string
   mbti:
     type: string
+  authStatus:
+    type: integer
+    description: 认证状态 0-未认证 1-已认证 2-认证失败
   status:
     $ref: ./TalentStatus.yaml
   avatarUrl:

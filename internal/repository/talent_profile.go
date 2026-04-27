@@ -180,12 +180,12 @@ func (r *TalentProfileRepository) List(ctx context.Context, params TalentProfile
 	// Main query: talent_profile + user (2 tables), fetch school_id/major_id for follow-up
 	offset := (params.Page - 1) * params.Size
 	query := fmt.Sprintf(`
-		SELECT 
+		SELECT
 			tp.id, tp.user_id, tp.self_evaluation, tp.skill_summary,
 			tp.project_experience, tp.mbti, tp.status,
 			tp.created_at, tp.updated_at,
 			u.nickname, u.phone, u.email, u.avatar_url,
-			u.school_id, u.major_id
+			u.school_id, u.major_id, u.auth_status
 		FROM talent_profile tp
 		LEFT JOIN `+"`user`"+` u ON tp.user_id = u.id
 		WHERE %s
