@@ -22,7 +22,7 @@ func NewProductRepository(db *sqlx.DB) *ProductRepository {
 // GetAll retrieves all products
 func (r *ProductRepository) GetAll(ctx context.Context) ([]*models.Product, error) {
 	query := `
-		SELECT id, name, type, description, price, created_at, updated_at
+		SELECT id, name, type, description, price, config_json, created_at, updated_at
 		FROM product
 		ORDER BY id ASC
 	`
@@ -38,7 +38,7 @@ func (r *ProductRepository) GetAll(ctx context.Context) ([]*models.Product, erro
 // GetByID retrieves a product by ID
 func (r *ProductRepository) GetByID(ctx context.Context, id int) (*models.Product, error) {
 	query := `
-		SELECT id, name, type, description, price, created_at, updated_at
+		SELECT id, name, type, description, price, config_json, created_at, updated_at
 		FROM product
 		WHERE id = ?
 	`
