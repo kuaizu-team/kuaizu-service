@@ -518,7 +518,7 @@ func (s *ProjectService) TakedownProject(ctx context.Context, id int) error {
 		return ErrBadRequest("只有上线中的项目可以下架")
 	}
 
-	if err := s.repo.Project.UpdateStatus(ctx, id, models.ProjectStatusClosed); err != nil {
+	if err := s.repo.Project.UpdateStatus(ctx, id, models.ProjectStatusRejected); err != nil {
 		log.Printf("[ProjectService.TakedownProject] repository error updating status: %v", err)
 		return ErrInternal("下架失败")
 	}
