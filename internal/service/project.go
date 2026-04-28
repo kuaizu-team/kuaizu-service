@@ -504,6 +504,28 @@ func (s *ProjectService) ReviewApplication(ctx context.Context, applicationID, u
 	return nil
 }
 
+// TakedownProject (admin only) sets an approved project to closed/taken-down.
+func (s *ProjectService) TakedownProject(ctx context.Context, id int) error {
+	project, err := s.repo.Project.GetByID(ctx, id)
+	if err != nil {
+		log.Printf("[ProjectService.TakedownProject] repository error: %v", err)
+		return ErrInternal("获取项目失败")
+	}
+	if project == nil {
+		return ErrNotFound("项目不存在")
+	}
+	if project.Status != models.ProjectStatusApproved {
+		return ErrBadRequest("只有上线中的项目可以下架")
+	}
+
+	if err := s.repo.Project.UpdateStatus(ctx, id, models.ProjectStatusRejected); err != nil {
+		log.Printf("[ProjectService.TakedownProject] repository error updating status: %v", err)
+		return ErrInternal("下架失败")
+	}
+
+	return nil
+}
+
 // ReviewProject (admin only) updates project status and notifies creator.
 func (s *ProjectService) ReviewProject(ctx context.Context, id, status int) error {
 	project, err := s.repo.Project.GetByID(ctx, id)

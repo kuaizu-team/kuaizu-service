@@ -109,14 +109,16 @@ func (r *ProjectRepository) List(ctx context.Context, params ListParams) ([]mode
 // creatorRow holds the JOIN-ed creator columns for GetByID.
 // Column aliases (u_*) avoid conflicts with project columns of the same name.
 type creatorRow struct {
-	UID         int        `db:"u_id"`
-	UOpenID     string     `db:"u_openid"`
-	UNickname   *string    `db:"u_nickname"`
-	UPhone      *string    `db:"u_phone"`
-	UEmail      *string    `db:"u_email"`
-	UAuthStatus *int       `db:"u_auth_status"`
-	UAvatarUrl  *string    `db:"u_avatar_url"`
-	UCreatedAt  *time.Time `db:"u_created_at"`
+	UID                  int        `db:"u_id"`
+	UOpenID              string     `db:"u_openid"`
+	UNickname            *string    `db:"u_nickname"`
+	UPhone               *string    `db:"u_phone"`
+	UEmail               *string    `db:"u_email"`
+	UAuthStatus          *int       `db:"u_auth_status"`
+	UAvatarUrl           *string    `db:"u_avatar_url"`
+	UCreatedAt           *time.Time `db:"u_created_at"`
+	USchoolName          *string    `db:"u_school_name"`
+	UTalentProfileStatus *int       `db:"u_talent_profile_status"`
 }
 
 // projectRow is the flat scan target for GetByID (project + creator columns).
@@ -142,10 +144,14 @@ func (r *ProjectRepository) GetByID(ctx context.Context, id int) (*models.Projec
 			u.email       AS u_email,
 			u.auth_status AS u_auth_status,
 			u.avatar_url  AS u_avatar_url,
-			u.created_at  AS u_created_at
+			u.created_at  AS u_created_at,
+			us.school_name AS u_school_name,
+			tp.status      AS u_talent_profile_status
 		FROM project p
 		LEFT JOIN school s ON p.school_id = s.id
 		LEFT JOIN ` + "`user`" + ` u ON p.creator_id = u.id
+		LEFT JOIN school us ON u.school_id = us.id
+		LEFT JOIN talent_profile tp ON u.id = tp.user_id
 		WHERE p.id = ?
 	`
 
@@ -167,7 +173,9 @@ func (r *ProjectRepository) GetByID(ctx context.Context, id int) (*models.Projec
 		AuthStatus: row.UAuthStatus,
 		AvatarUrl:  row.UAvatarUrl,
 		CreatedAt:  row.UCreatedAt,
+		SchoolName: row.USchoolName,
 	}
+	p.CreatorTalentProfileStatus = row.UTalentProfileStatus
 	return &p, nil
 }
 

@@ -108,7 +108,7 @@ func NewAdminProjectVO(p *models.Project) *AdminProjectVO {
 		SkillRequirement:     p.SkillRequirement,
 	}
 	if p.Creator != nil {
-		adminProjectVo.Creator = NewAdminUserVO(p.Creator, nil)
+		adminProjectVo.Creator = NewAdminUserVO(p.Creator, p.CreatorTalentProfileStatus)
 	}
 	return &adminProjectVo
 }
