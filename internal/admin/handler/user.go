@@ -3,6 +3,7 @@ package handler
 import (
 	"strconv"
 
+	"github.com/jmoiron/sqlx"
 	adminvo "github.com/kuaizu-team/kuaizu-service/internal/admin/vo"
 	"github.com/kuaizu-team/kuaizu-service/internal/models"
 	"github.com/kuaizu-team/kuaizu-service/internal/repository"
@@ -45,14 +46,59 @@ func (s *AdminServer) ListUsers(ctx echo.Context) error {
 		params.Keyword = &v
 	}
 
+	if v := ctx.QueryParam("talentProfileStatus"); v != "" {
+		status, err := strconv.Atoi(v)
+		// -1 表示"从未提交名片"（无名片记录），0/1/2 为正常状态枚举
+		if err != nil || (status != -1 && (status < 0 || status > 2)) {
+			return response.BadRequest(ctx, "invalid talentProfileStatus, must be -1, 0, 1 or 2")
+		}
+		params.TalentProfileStatus = &status
+	}
+
+	if v := ctx.QueryParam("userId"); v != "" {
+		uid, err := strconv.Atoi(v)
+		if err != nil {
+			return response.BadRequest(ctx, "invalid userId")
+		}
+		params.UserID = &uid
+	}
+
 	result, err := s.svc.User.ListUsers(ctx.Request().Context(), params)
 	if err != nil {
 		return mapServiceError(ctx, err)
 	}
 
+	// Batch-query talent_profile status for all users in this page
+	talentStatusMap := make(map[int]int, len(result.List))
+	if len(result.List) > 0 {
+		userIDs := make([]int, len(result.List))
+		for i, u := range result.List {
+			userIDs[i] = u.ID
+		}
+		type tpStatusRow struct {
+			UserID int `db:"user_id"`
+			Status int `db:"status"`
+		}
+		q, args, err := sqlx.In(`SELECT user_id, status FROM talent_profile WHERE user_id IN (?)`, userIDs)
+		if err == nil {
+			q = s.repo.DB().Rebind(q)
+			var rows []tpStatusRow
+			if err := s.repo.DB().SelectContext(ctx.Request().Context(), &rows, q, args...); err == nil {
+				for _, row := range rows {
+					talentStatusMap[row.UserID] = row.Status
+				}
+			}
+		}
+	}
+
 	list := make([]adminvo.AdminUserVO, len(result.List))
 	for i := range result.List {
-		list[i] = *adminvo.NewAdminUserVO(&result.List[i])
+		var talentStatus *int
+		if status, ok := talentStatusMap[result.List[i].ID]; ok {
+			s := status
+			talentStatus = &s
+		}
+		list[i] = *adminvo.NewAdminUserVO(&result.List[i], talentStatus)
 	}
 
 	return response.Success(ctx, map[string]interface{}{
