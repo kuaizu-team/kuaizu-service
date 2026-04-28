@@ -263,8 +263,13 @@ func (r *UserRepository) ListUsers(ctx context.Context, params UserListParams) (
 	}
 
 	if params.TalentProfileStatus != nil {
-		conditions = append(conditions, "u.id IN (SELECT user_id FROM talent_profile WHERE status = ?)")
-		args = append(args, *params.TalentProfileStatus)
+		if *params.TalentProfileStatus == -1 {
+			// -1 = 从未提交名片（无任何名片记录）
+			conditions = append(conditions, "u.id NOT IN (SELECT user_id FROM talent_profile)")
+		} else {
+			conditions = append(conditions, "u.id IN (SELECT user_id FROM talent_profile WHERE status = ?)")
+			args = append(args, *params.TalentProfileStatus)
+		}
 	}
 
 	if params.UserID != nil {

@@ -48,8 +48,9 @@ func (s *AdminServer) ListUsers(ctx echo.Context) error {
 
 	if v := ctx.QueryParam("talentProfileStatus"); v != "" {
 		status, err := strconv.Atoi(v)
-		if err != nil || status < 0 || status > 2 {
-			return response.BadRequest(ctx, "invalid talentProfileStatus, must be 0, 1 or 2")
+		// -1 表示"从未提交名片"（无名片记录），0/1/2 为正常状态枚举
+		if err != nil || (status != -1 && (status < 0 || status > 2)) {
+			return response.BadRequest(ctx, "invalid talentProfileStatus, must be -1, 0, 1 or 2")
 		}
 		params.TalentProfileStatus = &status
 	}
