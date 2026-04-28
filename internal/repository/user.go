@@ -224,12 +224,14 @@ func (r *UserRepository) UpdateAuthStatus(ctx context.Context, userID int, authS
 
 // UserListParams contains parameters for listing users
 type UserListParams struct {
-	Page            int
-	Size            int
-	AuthStatus      *int
-	SchoolID        *int
-	Keyword         *string
-	AuthImgUploaded *bool
+	Page                int
+	Size                int
+	AuthStatus          *int
+	SchoolID            *int
+	Keyword             *string
+	AuthImgUploaded     *bool
+	TalentProfileStatus *int // 按名片状态过滤（0=已驳回/下架, 1=已上架, 2=审核中）
+	UserID              *int // 按用户 ID 精确查询
 }
 
 // ListUsers retrieves paginated users with optional filters
@@ -258,6 +260,16 @@ func (r *UserRepository) ListUsers(ctx context.Context, params UserListParams) (
 		} else {
 			conditions = append(conditions, "u.auth_img_url IS NOT NULL")
 		}
+	}
+
+	if params.TalentProfileStatus != nil {
+		conditions = append(conditions, "u.id IN (SELECT user_id FROM talent_profile WHERE status = ?)")
+		args = append(args, *params.TalentProfileStatus)
+	}
+
+	if params.UserID != nil {
+		conditions = append(conditions, "u.id = ?")
+		args = append(args, *params.UserID)
 	}
 
 	whereClause := strings.Join(conditions, " AND ")

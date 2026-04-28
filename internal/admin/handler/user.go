@@ -46,6 +46,22 @@ func (s *AdminServer) ListUsers(ctx echo.Context) error {
 		params.Keyword = &v
 	}
 
+	if v := ctx.QueryParam("talentProfileStatus"); v != "" {
+		status, err := strconv.Atoi(v)
+		if err != nil || status < 0 || status > 2 {
+			return response.BadRequest(ctx, "invalid talentProfileStatus, must be 0, 1 or 2")
+		}
+		params.TalentProfileStatus = &status
+	}
+
+	if v := ctx.QueryParam("userId"); v != "" {
+		uid, err := strconv.Atoi(v)
+		if err != nil {
+			return response.BadRequest(ctx, "invalid userId")
+		}
+		params.UserID = &uid
+	}
+
 	result, err := s.svc.User.ListUsers(ctx.Request().Context(), params)
 	if err != nil {
 		return mapServiceError(ctx, err)
