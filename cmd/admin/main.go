@@ -71,6 +71,7 @@ func main() {
 	adminGroup.GET("/projects", server.ListProjects)
 	adminGroup.GET("/projects/:id", server.GetProject)
 	adminGroup.PATCH("/projects/:id", server.ReviewProject)
+	adminGroup.PATCH("/projects/:id/takedown", server.TakedownProject)
 	adminGroup.PATCH("/talent-profiles/:id", server.ReviewTalentProfile)
 	adminGroup.PATCH("/talent-profiles/:id/takedown", server.TakedownTalentProfile)
 

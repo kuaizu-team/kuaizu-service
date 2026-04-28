@@ -26,8 +26,9 @@ type Project struct {
 	SkillRequirement     *string    `db:"skill_requirement"`
 
 	// Joined fields
-	SchoolName *string `db:"school_name"`
-	Creator    *User   `db:"-"`
+	SchoolName                   *string `db:"school_name"`
+	Creator                      *User   `db:"-"`
+	CreatorTalentProfileStatus   *int    `db:"-"` // 创建者名片状态（仅详情接口填充）
 }
 
 // ToVO converts Project to API ProjectVO

@@ -66,6 +66,20 @@ func (s *AdminServer) GetProject(ctx echo.Context) error {
 	return response.Success(ctx, adminvo.NewAdminProjectVO(project))
 }
 
+// TakedownProject handles PATCH /admin/projects/:id/takedown
+func (s *AdminServer) TakedownProject(ctx echo.Context) error {
+	id, err := strconv.Atoi(ctx.Param("id"))
+	if err != nil {
+		return response.BadRequest(ctx, "invalid project id")
+	}
+
+	if err := s.svc.Project.TakedownProject(ctx.Request().Context(), id); err != nil {
+		return mapServiceError(ctx, err)
+	}
+
+	return response.SuccessMessage(ctx, "操作成功")
+}
+
 type reviewProjectRequest struct {
 	Status int `json:"status"`
 }
