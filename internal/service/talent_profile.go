@@ -55,14 +55,19 @@ func (s *TalentProfileService) resolveUpsertStatus(requestedStatus *api.TalentSt
 		return &resolved, nil
 	}
 
-	// 前端有时会在编辑内容时显式传 status=0（如回传当前值或默认值），
-	// 若当前名片已上架，不应因此直接下架——同样转为待审核。
-	// 注意：用户主动下架有专用的 DELETE /talent-profiles/my 接口，
-	// 因此在 Upsert 路径里拦截此情况是安全的。
-	if statusInt == models.TalentStatusPrivate &&
-		currentStatus != nil && *currentStatus == models.TalentStatusOnline {
-		resolved := models.TalentStatusReviewing
-		return &resolved, nil
+	// 前端有时会在编辑内容时显式传 status=0（如回传当前值或默认值）。
+	// Upsert 接口仅用于编辑内容，用户主动下架有专用的 DELETE /talent-profiles/my 接口，
+	// 因此在此路径拦截"误传 0"是安全的：
+	//   · 当前已上架(1) + 传 0 → 转为待审核(2)，走正常审核流程
+	//   · 当前待审核(2) + 传 0 → 保持待审核(2)不变，不应因编辑而中断审核
+	if statusInt == models.TalentStatusPrivate && currentStatus != nil {
+		if *currentStatus == models.TalentStatusOnline {
+			resolved := models.TalentStatusReviewing
+			return &resolved, nil
+		}
+		if *currentStatus == models.TalentStatusReviewing {
+			return currentStatus, nil
+		}
 	}
 
 	return &statusInt, nil
