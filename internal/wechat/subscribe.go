@@ -45,36 +45,46 @@ func (c *Client) SendSubscribeMessage(req *SubscribeMessageRequest) error {
 		return fmt.Errorf("data is required")
 	}
 
-	accessToken, err := c.GetAccessToken()
-	if err != nil {
-		return fmt.Errorf("get access token: %w", err)
-	}
-
-	url := fmt.Sprintf(
-		"https://api.weixin.qq.com/cgi-bin/message/subscribe/send?access_token=%s",
-		accessToken,
-	)
-
 	body, err := json.Marshal(req)
 	if err != nil {
 		return fmt.Errorf("marshal request: %w", err)
 	}
 
-	httpReq, err := http.NewRequest(http.MethodPost, url, bytes.NewBuffer(body))
-	if err != nil {
-		return fmt.Errorf("create request: %w", err)
-	}
-	httpReq.Header.Set("Content-Type", "application/json")
-
-	resp, err := c.httpClient.Do(httpReq)
-	if err != nil {
-		return fmt.Errorf("send request: %w", err)
-	}
-	defer resp.Body.Close()
-
 	var result SubscribeMessageResponse
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return fmt.Errorf("decode response: %w", err)
+	for attempt := 0; attempt < 2; attempt++ {
+		accessToken, err := c.GetAccessToken()
+		if err != nil {
+			return fmt.Errorf("get access token: %w", err)
+		}
+
+		url := fmt.Sprintf(
+			"https://api.weixin.qq.com/cgi-bin/message/subscribe/send?access_token=%s",
+			accessToken,
+		)
+
+		httpReq, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))
+		if err != nil {
+			return fmt.Errorf("create request: %w", err)
+		}
+		httpReq.Header.Set("Content-Type", "application/json")
+
+		resp, err := c.httpClient.Do(httpReq)
+		if err != nil {
+			return fmt.Errorf("send request: %w", err)
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+			resp.Body.Close()
+			return fmt.Errorf("decode response: %w", err)
+		}
+		resp.Body.Close()
+
+		if isAccessTokenInvalidCode(result.ErrCode) && attempt == 0 {
+			if _, err := c.refreshAccessToken(); err != nil {
+				return fmt.Errorf("refresh access token: %w", err)
+			}
+			continue
+		}
+		break
 	}
 
 	if result.ErrCode != 0 {
