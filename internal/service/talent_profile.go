@@ -20,21 +20,54 @@ func NewTalentProfileService(repo *repository.Repository, contentAudit *ContentA
 	return &TalentProfileService{repo: repo, contentAudit: contentAudit}
 }
 
-// resolveUpsertStatus determines the actual status to save based on the requested status for upsert operations.
-func (s *TalentProfileService) resolveUpsertStatus(status *api.TalentStatus) (*int, error) {
-	if status == nil {
+// resolveUpsertStatus determines the actual status to save based on the requested status and the current status.
+//
+// Rules:
+//   - User does not specify a status (nil):
+//     · If the profile is currently Online (1) → move to Reviewing (2) so admin re-approves after edit
+//     · Otherwise keep the existing status; default to Private (0) for brand-new profiles
+//   - User explicitly requests Online (1) → demote to Reviewing (2) to prevent self-approval
+//   - Any other explicit status → use as-is (after validation)
+func (s *TalentProfileService) resolveUpsertStatus(requestedStatus *api.TalentStatus, currentStatus *int) (*int, error) {
+	if requestedStatus == nil {
+		// Pure content edit — apply automatic status transition.
+		if currentStatus != nil && *currentStatus == models.TalentStatusOnline {
+			// 已上架 → 编辑后进入待审核，管理员重新审核后再上架
+			resolved := models.TalentStatusReviewing
+			return &resolved, nil
+		}
+		// 待审核或已下架 → 保持原状态不变；全新档案 → 默认下架
+		if currentStatus != nil {
+			return currentStatus, nil
+		}
 		resolved := models.TalentStatusPrivate
 		return &resolved, nil
 	}
 
-	statusInt := int(*status)
+	statusInt := int(*requestedStatus)
 	if err := IsValidStatus("talent_profile.status", statusInt); err != nil {
 		return nil, err
 	}
 
+	// 用户不能直接将自己的状态设为"已上架"，必须经过管理员审核
 	if statusInt == models.TalentStatusOnline {
 		resolved := models.TalentStatusReviewing
 		return &resolved, nil
+	}
+
+	// 前端有时会在编辑内容时显式传 status=0（如回传当前值或默认值）。
+	// Upsert 接口仅用于编辑内容，用户主动下架有专用的 DELETE /talent-profiles/my 接口，
+	// 因此在此路径拦截"误传 0"是安全的：
+	//   · 当前已上架(1) + 传 0 → 转为待审核(2)，走正常审核流程
+	//   · 当前待审核(2) + 传 0 → 保持待审核(2)不变，不应因编辑而中断审核
+	if statusInt == models.TalentStatusPrivate && currentStatus != nil {
+		if *currentStatus == models.TalentStatusOnline {
+			resolved := models.TalentStatusReviewing
+			return &resolved, nil
+		}
+		if *currentStatus == models.TalentStatusReviewing {
+			return currentStatus, nil
+		}
 	}
 
 	return &statusInt, nil
@@ -42,7 +75,18 @@ func (s *TalentProfileService) resolveUpsertStatus(status *api.TalentStatus) (*i
 
 // UpsertTalentProfile creates or updates the current user's talent profile.
 func (s *TalentProfileService) UpsertTalentProfile(ctx context.Context, userID int, req api.UpsertTalentProfileDTO) (*models.TalentProfile, error) {
-	status, err := s.resolveUpsertStatus(req.Status)
+	// 先查询现有档案，以便 resolveUpsertStatus 根据当前状态做正确的状态转换
+	existing, err := s.repo.TalentProfile.GetByUserID(ctx, userID)
+	if err != nil {
+		log.Printf("[TalentProfileService.UpsertTalentProfile] repository error getting existing profile: %v", err)
+		return nil, ErrInternal("获取人才档案失败")
+	}
+	var currentStatus *int
+	if existing != nil {
+		currentStatus = existing.Status
+	}
+
+	status, err := s.resolveUpsertStatus(req.Status, currentStatus)
 	if err != nil {
 		return nil, err
 	}
