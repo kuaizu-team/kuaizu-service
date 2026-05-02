@@ -28,6 +28,13 @@ type accessTokenResponse struct {
 	ErrMsg      string `json:"errmsg,omitempty"`
 }
 
+type stableTokenRequest struct {
+	GrantType    string `json:"grant_type"`
+	AppID        string `json:"appid"`
+	Secret       string `json:"secret"`
+	ForceRefresh bool   `json:"force_refresh,omitempty"`
+}
+
 type PhoneInfo struct {
 	PhoneNumber     string `json:"phoneNumber"`
 	PurePhoneNumber string `json:"purePhoneNumber"`
@@ -59,6 +66,16 @@ type msgSecCheckResponse struct {
 // ErrContentBlocked indicates WeChat rejected the submitted content.
 var ErrContentBlocked = errors.New("wechat content audit rejected")
 
+// APIError represents an error response from WeChat.
+type APIError struct {
+	ErrCode int
+	ErrMsg  string
+}
+
+func (e APIError) Error() string {
+	return fmt.Sprintf("wechat api error: %d - %s", e.ErrCode, e.ErrMsg)
+}
+
 // Client is a WeChat Mini Program API client
 type Client struct {
 	appID      string
@@ -67,6 +84,10 @@ type Client struct {
 	mu         sync.Mutex
 	token      string
 	tokenExp   time.Time
+}
+
+func isAccessTokenInvalidCode(code int) bool {
+	return code == 40001 || code == 42001
 }
 
 // NewClient creates a new WeChat client from environment variables
@@ -116,7 +137,7 @@ func (c *Client) Code2Session(code string) (*Code2SessionResponse, error) {
 
 	// Check for WeChat API errors
 	if result.ErrCode != 0 {
-		return nil, fmt.Errorf("wechat api error: %d - %s", result.ErrCode, result.ErrMsg)
+		return nil, APIError{ErrCode: result.ErrCode, ErrMsg: result.ErrMsg}
 	}
 
 	if result.OpenID == "" {
@@ -126,27 +147,45 @@ func (c *Client) Code2Session(code string) (*Code2SessionResponse, error) {
 	return &result, nil
 }
 
-// GetAccessToken retrieves (and caches) the WeChat access_token
-// https://developers.weixin.qq.com/miniprogram/dev/OpenApiDoc/mp-access-token/getAccessToken.html
+// GetAccessToken retrieves (and caches) the WeChat access_token.
+// It uses stable_token so token refreshes remain valid when multiple processes share the same app secret.
+// https://developers.weixin.qq.com/miniprogram/dev/OpenApiDoc/mp-access-token/getStableAccessToken.html
 func (c *Client) GetAccessToken() (string, error) {
+	return c.getAccessToken(false)
+}
+
+func (c *Client) refreshAccessToken() (string, error) {
+	return c.getAccessToken(true)
+}
+
+func (c *Client) getAccessToken(forceRefresh bool) (string, error) {
 	if c.appID == "" || c.appSecret == "" {
 		return "", fmt.Errorf("WECHAT_APPID or WECHAT_SECRET not configured")
 	}
 
 	c.mu.Lock()
-	if c.token != "" && time.Now().Before(c.tokenExp.Add(-5*time.Minute)) {
+	defer c.mu.Unlock()
+
+	if !forceRefresh && c.token != "" && time.Now().Before(c.tokenExp.Add(-5*time.Minute)) {
 		token := c.token
-		c.mu.Unlock()
 		return token, nil
 	}
-	c.mu.Unlock()
 
-	url := fmt.Sprintf(
-		"https://api.weixin.qq.com/cgi-bin/token?grant_type=client_credential&appid=%s&secret=%s",
-		c.appID, c.appSecret,
+	reqBody, err := json.Marshal(stableTokenRequest{
+		GrantType:    "client_credential",
+		AppID:        c.appID,
+		Secret:       c.appSecret,
+		ForceRefresh: forceRefresh,
+	})
+	if err != nil {
+		return "", fmt.Errorf("marshal stable token request: %w", err)
+	}
+
+	resp, err := c.httpClient.Post(
+		"https://api.weixin.qq.com/cgi-bin/stable_token",
+		"application/json",
+		bytes.NewBuffer(reqBody),
 	)
-
-	resp, err := c.httpClient.Get(url)
 	if err != nil {
 		return "", fmt.Errorf("request access token: %w", err)
 	}
@@ -157,17 +196,15 @@ func (c *Client) GetAccessToken() (string, error) {
 		return "", fmt.Errorf("decode access token response: %w", err)
 	}
 	if result.ErrCode != 0 {
-		return "", fmt.Errorf("wechat api error: %d - %s", result.ErrCode, result.ErrMsg)
+		return "", APIError{ErrCode: result.ErrCode, ErrMsg: result.ErrMsg}
 	}
 	if result.AccessToken == "" || result.ExpiresIn == 0 {
 		return "", fmt.Errorf("wechat api returned empty access token")
 	}
 
 	exp := time.Now().Add(time.Duration(result.ExpiresIn) * time.Second)
-	c.mu.Lock()
 	c.token = result.AccessToken
 	c.tokenExp = exp
-	c.mu.Unlock()
 
 	return result.AccessToken, nil
 }
@@ -179,38 +216,49 @@ func (c *Client) GetPhoneNumber(code string) (string, error) {
 		return "", fmt.Errorf("phone code is empty")
 	}
 
-	accessToken, err := c.GetAccessToken()
-	if err != nil {
-		return "", err
-	}
-
-	url := fmt.Sprintf(
-		"https://api.weixin.qq.com/wxa/business/getuserphonenumber?access_token=%s",
-		accessToken,
-	)
 	body, err := json.Marshal(map[string]string{"code": code})
 	if err != nil {
 		return "", fmt.Errorf("marshal phone code: %w", err)
 	}
 
-	req, err := http.NewRequest(http.MethodPost, url, bytes.NewBuffer(body))
-	if err != nil {
-		return "", fmt.Errorf("create phone request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("request phone number: %w", err)
-	}
-	defer resp.Body.Close()
-
 	var result getPhoneNumberResponse
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return "", fmt.Errorf("decode phone response: %w", err)
+	for attempt := 0; attempt < 2; attempt++ {
+		accessToken, err := c.GetAccessToken()
+		if err != nil {
+			return "", err
+		}
+
+		url := fmt.Sprintf(
+			"https://api.weixin.qq.com/wxa/business/getuserphonenumber?access_token=%s",
+			accessToken,
+		)
+
+		req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))
+		if err != nil {
+			return "", fmt.Errorf("create phone request: %w", err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := c.httpClient.Do(req)
+		if err != nil {
+			return "", fmt.Errorf("request phone number: %w", err)
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+			resp.Body.Close()
+			return "", fmt.Errorf("decode phone response: %w", err)
+		}
+		resp.Body.Close()
+
+		if isAccessTokenInvalidCode(result.ErrCode) && attempt == 0 {
+			if _, err := c.refreshAccessToken(); err != nil {
+				return "", fmt.Errorf("refresh access token: %w", err)
+			}
+			continue
+		}
+		break
 	}
 	if result.ErrCode != 0 {
-		return "", fmt.Errorf("wechat api error: %d - %s", result.ErrCode, result.ErrMsg)
+		return "", APIError{ErrCode: result.ErrCode, ErrMsg: result.ErrMsg}
 	}
 	if result.PhoneInfo == nil {
 		return "", fmt.Errorf("wechat api returned empty phone info")
@@ -237,12 +285,6 @@ func (c *Client) MsgSecCheck(ctx context.Context, openID, content string) error 
 		return fmt.Errorf("content is empty")
 	}
 
-	accessToken, err := c.GetAccessToken()
-	if err != nil {
-		return fmt.Errorf("get access token: %w", err)
-	}
-
-	url := fmt.Sprintf("https://api.weixin.qq.com/wxa/msg_sec_check?access_token=%s", accessToken)
 	body, err := json.Marshal(msgSecCheckRequest{
 		OpenID:  openID,
 		Content: content,
@@ -253,25 +295,41 @@ func (c *Client) MsgSecCheck(ctx context.Context, openID, content string) error 
 		return fmt.Errorf("marshal msgSecCheck request: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(body))
-	if err != nil {
-		return fmt.Errorf("create msgSecCheck request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("request msgSecCheck: %w", err)
-	}
-	defer resp.Body.Close()
-
 	var result msgSecCheckResponse
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return fmt.Errorf("decode msgSecCheck response: %w", err)
+	for attempt := 0; attempt < 2; attempt++ {
+		accessToken, err := c.GetAccessToken()
+		if err != nil {
+			return fmt.Errorf("get access token: %w", err)
+		}
+
+		url := fmt.Sprintf("https://api.weixin.qq.com/wxa/msg_sec_check?access_token=%s", accessToken)
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+		if err != nil {
+			return fmt.Errorf("create msgSecCheck request: %w", err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := c.httpClient.Do(req)
+		if err != nil {
+			return fmt.Errorf("request msgSecCheck: %w", err)
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+			resp.Body.Close()
+			return fmt.Errorf("decode msgSecCheck response: %w", err)
+		}
+		resp.Body.Close()
+
+		if isAccessTokenInvalidCode(result.ErrCode) && attempt == 0 {
+			if _, err := c.refreshAccessToken(); err != nil {
+				return fmt.Errorf("refresh access token: %w", err)
+			}
+			continue
+		}
+		break
 	}
 
 	if result.ErrCode != 0 {
-		return fmt.Errorf("wechat api error: %d - %s", result.ErrCode, result.ErrMsg)
+		return APIError{ErrCode: result.ErrCode, ErrMsg: result.ErrMsg}
 	}
 
 	// 检查命中标签枚举值，100 正常；10001 广告；20001 时政；...
