@@ -38,6 +38,9 @@ properties:
   createdAt:
     type: string
     format: date-time
+  wechat:
+    type: string
+    description: 微信号
   skills:
     type: array
     items:
