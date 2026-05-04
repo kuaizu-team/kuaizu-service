@@ -185,7 +185,7 @@ func (r *TalentProfileRepository) List(ctx context.Context, params TalentProfile
 			tp.project_experience, tp.mbti, tp.status,
 			tp.created_at, tp.updated_at,
 			u.nickname, u.phone, u.email, u.avatar_url,
-			u.school_id, u.major_id, u.auth_status
+			u.school_id, u.major_id, u.grade, u.auth_status
 		FROM talent_profile tp
 		LEFT JOIN `+"`user`"+` u ON tp.user_id = u.id
 		WHERE %s

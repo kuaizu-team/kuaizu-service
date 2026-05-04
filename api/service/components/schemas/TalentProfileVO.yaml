@@ -24,3 +24,6 @@ properties:
   avatarUrl:
     type: string
     description: 头像URL
+  grade:
+    type: integer
+    description: 入学年份（如 2022）
