@@ -10,6 +10,9 @@ allOf:
         type: string
       phone:
         type: string
+      wechat:
+        type: string
+        description: 微信号
       grade:
         type: integer
       authStatus:

@@ -17,3 +17,6 @@ properties:
     type: integer
   grade:
     type: integer
+  wechat:
+    type: string
+    description: 微信号

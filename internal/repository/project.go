@@ -114,6 +114,7 @@ type creatorRow struct {
 	UNickname            *string    `db:"u_nickname"`
 	UPhone               *string    `db:"u_phone"`
 	UEmail               *string    `db:"u_email"`
+	UWechatID            *string    `db:"u_wechat_id"`
 	UAuthStatus          *int       `db:"u_auth_status"`
 	UAvatarUrl           *string    `db:"u_avatar_url"`
 	UCreatedAt           *time.Time `db:"u_created_at"`
@@ -142,6 +143,7 @@ func (r *ProjectRepository) GetByID(ctx context.Context, id int) (*models.Projec
 			u.nickname    AS u_nickname,
 			u.phone       AS u_phone,
 			u.email       AS u_email,
+			u.wechat_id   AS u_wechat_id,
 			u.auth_status AS u_auth_status,
 			u.avatar_url  AS u_avatar_url,
 			u.created_at  AS u_created_at,
@@ -170,6 +172,7 @@ func (r *ProjectRepository) GetByID(ctx context.Context, id int) (*models.Projec
 		Nickname:   row.UNickname,
 		Phone:      row.UPhone,
 		Email:      row.UEmail,
+		WechatID:   row.UWechatID,
 		AuthStatus: row.UAuthStatus,
 		AvatarUrl:  row.UAvatarUrl,
 		CreatedAt:  row.UCreatedAt,

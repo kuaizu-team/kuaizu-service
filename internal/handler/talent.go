@@ -102,6 +102,7 @@ func (s *Server) GetTalentProfile(ctx echo.Context, id int, params api.GetTalent
 			SchoolName: user.SchoolName,
 			Email:      user.Email,
 			Phone:      user.Phone,
+			WechatID:   user.WechatID,
 			Grade:      user.Grade,
 			AuthStatus: user.AuthStatus,
 		}

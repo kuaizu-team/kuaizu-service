@@ -26,6 +26,7 @@ type User struct {
 	AvatarUrl           *string    `db:"avatar_url"`             // 头像
 	CoverImage          *string    `db:"cover_image"`            // 封面图
 	EmailOptOut         *bool      `db:"email_opt_out"`          // 是否退订邮件推广
+	WechatID            *string    `db:"wechat_id"`              // 微信号
 	CreatedAt           *time.Time `db:"created_at"`
 
 	// Joined fields (not always populated)
@@ -46,6 +47,7 @@ func (u *User) ToVO() *api.UserVO {
 		Grade:               u.Grade,
 		OliveBranchCount:    u.OliveBranchCount,
 		FreeBranchUsedToday: u.FreeBranchUsedToday,
+		Wechat:              u.WechatID,
 		AuthImgUrl:          ptrFullURL(u.AuthImgUrl),
 		AvatarUrl:           ptrFullURL(u.AvatarUrl),
 		CoverImage:          ptrFullURL(u.CoverImage),

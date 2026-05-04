@@ -63,6 +63,9 @@ func (s *Server) UpdateCurrentUser(ctx echo.Context) error {
 	if req.Grade != nil {
 		user.Grade = req.Grade
 	}
+	if req.Wechat != nil {
+		user.WechatID = req.Wechat
+	}
 
 	// Save changes
 	if err := s.repo.User.Update(ctx.Request().Context(), user); err != nil {

@@ -70,6 +70,7 @@ type TalentProfile struct {
 	Nickname   *string `db:"nickname"`
 	Phone      *string `db:"phone"`
 	Email      *string `db:"email"`
+	WechatID   *string `db:"wechat_id"`
 	AvatarUrl  *string `db:"avatar_url"`
 	Grade      *int    `db:"grade"`
 	AuthStatus *int    `db:"auth_status"`
@@ -122,6 +123,7 @@ func (t *TalentProfile) ToDetailVO() *api.TalentProfileDetailVO {
 		AvatarUrl:         ptrFullURL(t.AvatarUrl),
 		Email:             t.Email,
 		Phone:             t.Phone,
+		Wechat:            t.WechatID,
 		Grade:             t.Grade,
 		AuthStatus:        t.AuthStatus,
 	}
