@@ -248,7 +248,7 @@ func (r *TalentProfileRepository) GetByUserID(ctx context.Context, userID int) (
 			tp.id, tp.user_id, tp.self_evaluation, tp.skill_summary,
 			tp.project_experience, tp.mbti, tp.status,
 			tp.created_at, tp.updated_at,
-			u.nickname, u.phone, u.email,
+			u.nickname, u.phone, u.email, u.wechat_id, u.avatar_url,
 			u.school_id, u.major_id, u.grade, u.auth_status
 		FROM talent_profile tp
 		LEFT JOIN ` + "`user`" + ` u ON tp.user_id = u.id
