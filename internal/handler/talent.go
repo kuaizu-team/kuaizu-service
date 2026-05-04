@@ -126,7 +126,7 @@ func (s *Server) GetMyTalentProfile(ctx echo.Context) error {
 		return InternalError(ctx, "获取人才档案失败")
 	}
 	if profile == nil {
-		return NotFound(ctx, "人才档案不存在")
+		return NotFound(ctx, "用户暂无人才档案")
 	}
 
 	return Success(ctx, profile.ToDetailVO())

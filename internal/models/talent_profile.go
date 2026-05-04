@@ -108,18 +108,45 @@ func (t *TalentProfile) ToVO() *api.TalentProfileVO {
 	}
 }
 
-// ToDetailVO converts TalentProfile to API TalentProfileDetailVO (detail view)
+// ptrStr returns a pointer to s. Used to ensure optional string fields are
+// always present in the JSON response (as "" rather than absent).
+func ptrStr(s string) *string { return &s }
+
+// ToDetailVO converts TalentProfile to API TalentProfileDetailVO (detail view).
+// All required display fields are guaranteed to be non-nil so the frontend
+// always receives them (even as zero values) without relying on omitempty absence.
 func (t *TalentProfile) ToDetailVO() *api.TalentProfileDetailVO {
-	vo := &api.TalentProfileDetailVO{
+	// skills: always return an array, never omit the key
+	skills := t.skills()
+	if skills == nil {
+		empty := []string{}
+		skills = &empty
+	}
+
+	// string fields: return "" instead of absent when user hasn't filled them in
+	mbti := t.MBTI
+	if mbti == nil {
+		mbti = ptrStr("")
+	}
+	selfEval := t.SelfEvaluation
+	if selfEval == nil {
+		selfEval = ptrStr("")
+	}
+	projExp := t.ProjectExperience
+	if projExp == nil {
+		projExp = ptrStr("")
+	}
+
+	return &api.TalentProfileDetailVO{
 		Id:                &t.ID,
 		UserId:            &t.UserID,
 		Nickname:          t.Nickname,
 		SchoolName:        t.SchoolName,
 		MajorName:         t.MajorName,
-		Mbti:              t.MBTI,
-		Skills:            t.skills(),
-		SelfEvaluation:    t.SelfEvaluation,
-		ProjectExperience: t.ProjectExperience,
+		Mbti:              mbti,
+		Skills:            skills,
+		SelfEvaluation:    selfEval,
+		ProjectExperience: projExp,
 		Status:            (*api.TalentStatus)(t.Status),
 		AvatarUrl:         ptrFullURL(t.AvatarUrl),
 		Email:             t.Email,
@@ -128,6 +155,4 @@ func (t *TalentProfile) ToDetailVO() *api.TalentProfileDetailVO {
 		Grade:             t.Grade,
 		AuthStatus:        t.AuthStatus,
 	}
-
-	return vo
 }
