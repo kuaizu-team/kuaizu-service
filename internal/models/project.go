@@ -26,9 +26,10 @@ type Project struct {
 	SkillRequirement     *string    `db:"skill_requirement"`
 
 	// Joined fields
-	SchoolName                   *string `db:"school_name"`
-	Creator                      *User   `db:"-"`
-	CreatorTalentProfileStatus   *int    `db:"-"` // 创建者名片状态（仅详情接口填充）
+	SchoolName                 *string `db:"school_name"`
+	Creator                    *User   `db:"-"`
+	CreatorTalentProfileStatus *int    `db:"-"` // 创建者名片状态（仅详情接口填充）
+	PendingApplicationCount    int     `db:"pending_application_count"` // 待处理申请数（仅列表接口填充）
 }
 
 // ToVO converts Project to API ProjectVO
@@ -36,17 +37,18 @@ func (p *Project) ToVO() *api.ProjectVO {
 	status := api.ProjectStatus(p.Status)
 
 	return &api.ProjectVO{
-		Id:              &p.ID,
-		Name:            &p.Name,
-		Description:     p.Description,
-		Direction:       (*api.Direction)(p.Direction),
-		SchoolId:        p.SchoolID,
-		SchoolName:      p.SchoolName,
-		MemberCount:     p.MemberCount,
-		Status:          &status,
-		PromotionStatus: &p.PromotionStatus,
-		IsCrossSchool:   p.IsCrossSchool,
-		ViewCount:       &p.ViewCount,
+		Id:                      &p.ID,
+		Name:                    &p.Name,
+		Description:             p.Description,
+		Direction:               (*api.Direction)(p.Direction),
+		SchoolId:                p.SchoolID,
+		SchoolName:              p.SchoolName,
+		MemberCount:             p.MemberCount,
+		Status:                  &status,
+		PromotionStatus:         &p.PromotionStatus,
+		IsCrossSchool:           p.IsCrossSchool,
+		ViewCount:               &p.ViewCount,
+		PendingApplicationCount: &p.PendingApplicationCount,
 	}
 }
 
