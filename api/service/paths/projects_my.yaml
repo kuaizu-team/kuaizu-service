@@ -3,15 +3,11 @@ parameters:
   - $ref: ../components/parameters/SizeParam.yaml
   - name: status
     in: query
-    description: |
-      项目状态筛选，支持单值和多值。
-      多值时使用逗号分隔，例如 `status=0,1`，表示返回任一状态的项目。
-    style: form
-    explode: false
     schema:
-      type: array
-      items:
-        $ref: ../components/schemas/ProjectStatus.yaml
+      type: string
+    description: |
+      项目状态筛选。支持单值（如 `0`）或逗号分隔多值（如 `0,1`），
+      多值语义为"满足任一状态即可"。
     example: "0,1"
 get:
   tags:

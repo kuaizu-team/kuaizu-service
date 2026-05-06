@@ -1,6 +1,9 @@
 package handler
 
 import (
+	"strconv"
+	"strings"
+
 	"github.com/kuaizu-team/kuaizu-service/api"
 	"github.com/kuaizu-team/kuaizu-service/internal/repository"
 	"github.com/kuaizu-team/kuaizu-service/internal/service"
@@ -102,10 +105,13 @@ func (s *Server) ListMyProjects(ctx echo.Context, params api.ListMyProjectsParam
 	if params.Size != nil {
 		listParams.Size = *params.Size
 	}
-	if params.Status != nil {
-		statuses := make([]int, 0, len(*params.Status))
-		for _, status := range *params.Status {
-			statuses = append(statuses, int(status))
+	if params.Status != nil && *params.Status != "" {
+		parts := strings.Split(*params.Status, ",")
+		statuses := make([]int, 0, len(parts))
+		for _, p := range parts {
+			if v, err := strconv.Atoi(strings.TrimSpace(p)); err == nil {
+				statuses = append(statuses, v)
+			}
 		}
 		if len(statuses) == 1 {
 			listParams.Status = &statuses[0]
