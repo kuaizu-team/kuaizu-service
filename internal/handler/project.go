@@ -1,6 +1,9 @@
 package handler
 
 import (
+	"strconv"
+	"strings"
+
 	"github.com/kuaizu-team/kuaizu-service/api"
 	"github.com/kuaizu-team/kuaizu-service/internal/repository"
 	"github.com/kuaizu-team/kuaizu-service/internal/service"
@@ -102,10 +105,13 @@ func (s *Server) ListMyProjects(ctx echo.Context, params api.ListMyProjectsParam
 	if params.Size != nil {
 		listParams.Size = *params.Size
 	}
-	if params.Status != nil {
-		statuses := make([]int, 0, len(*params.Status))
-		for _, status := range *params.Status {
-			statuses = append(statuses, int(status))
+	if params.Status != nil && *params.Status != "" {
+		parts := strings.Split(*params.Status, ",")
+		statuses := make([]int, 0, len(parts))
+		for _, p := range parts {
+			if v, err := strconv.Atoi(strings.TrimSpace(p)); err == nil {
+				statuses = append(statuses, v)
+			}
 		}
 		if len(statuses) == 1 {
 			listParams.Status = &statuses[0]
@@ -285,6 +291,39 @@ func (s *Server) ApplyToProject(ctx echo.Context, id int) error {
 	}
 
 	return Success(ctx, application.ToVO())
+}
+
+// GetMyApplicationUnreadStatus handles GET /project-applications/my/unread-status
+// Returns how many of the current user's applications have changed status since the last time they viewed the page.
+func (s *Server) GetMyApplicationUnreadStatus(ctx echo.Context) error {
+	userID := GetUserID(ctx)
+
+	user, err := s.repo.User.GetByID(ctx.Request().Context(), userID)
+	if err != nil {
+		return InternalError(ctx, "获取用户信息失败")
+	}
+	if user == nil {
+		return NotFound(ctx, "用户不存在")
+	}
+
+	count, err := s.repo.Application.GetUnreadApplicationCount(ctx.Request().Context(), userID, user.ApplicationsLastViewedAt)
+	if err != nil {
+		return InternalError(ctx, "获取未读申请数失败")
+	}
+
+	return Success(ctx, map[string]int{"unreadCount": count})
+}
+
+// MarkMyApplicationsRead handles POST /project-applications/my/mark-read
+// Sets applications_last_viewed_at = NOW() so that unreadCount resets to 0.
+func (s *Server) MarkMyApplicationsRead(ctx echo.Context) error {
+	userID := GetUserID(ctx)
+
+	if err := s.repo.User.UpdateApplicationsLastViewedAt(ctx.Request().Context(), userID); err != nil {
+		return InternalError(ctx, "标记已读失败")
+	}
+
+	return Success(ctx, nil)
 }
 
 // ReviewApplication handles PATCH /project-applications/{id}

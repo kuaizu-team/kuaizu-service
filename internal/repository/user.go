@@ -28,7 +28,8 @@ func (r *UserRepository) GetByID(ctx context.Context, id int) (*models.User, err
 			u.school_id, u.major_id, u.grade, u.olive_branch_count,
 			u.free_branch_used_today, u.last_active_date,
 			u.auth_status, u.auth_img_url, u.avatar_url, u.cover_image,
-			u.wechat_id, u.created_at,
+			u.wechat_id, u.sent_olive_viewed_at, u.applications_last_viewed_at,
+			u.created_at,
 			s.school_name, s.school_code,
 			m.major_name, m.class_id
 		FROM ` + "`user`" + ` u
@@ -56,7 +57,8 @@ func (r *UserRepository) GetByOpenID(ctx context.Context, openid string) (*model
 			u.school_id, u.major_id, u.grade, u.olive_branch_count,
 			u.free_branch_used_today, u.last_active_date,
 			u.auth_status, u.auth_img_url, u.avatar_url, u.cover_image,
-			u.wechat_id, u.created_at,
+			u.wechat_id, u.sent_olive_viewed_at, u.applications_last_viewed_at,
+			u.created_at,
 			s.school_name, s.school_code,
 			m.major_name, m.class_id
 		FROM ` + "`user`" + ` u
@@ -381,6 +383,16 @@ func (r *UserRepository) UpdateAvatarUrl(ctx context.Context, userID int, avatar
 	_, err := r.db.ExecContext(ctx, query, avatarUrl, userID)
 	if err != nil {
 		return fmt.Errorf("update user avatar url: %w", err)
+	}
+	return nil
+}
+
+// UpdateApplicationsLastViewedAt sets applications_last_viewed_at to NOW() for the given user.
+func (r *UserRepository) UpdateApplicationsLastViewedAt(ctx context.Context, userID int) error {
+	query := `UPDATE ` + "`user`" + ` SET applications_last_viewed_at = NOW() WHERE id = ?`
+	_, err := r.db.ExecContext(ctx, query, userID)
+	if err != nil {
+		return fmt.Errorf("update applications_last_viewed_at: %w", err)
 	}
 	return nil
 }

@@ -67,6 +67,7 @@ type UserRepo interface {
 	UpdateCoverImage(ctx context.Context, userID int, coverImage string) error
 	GetEduCertInfoByID(ctx context.Context, userID int) (CertInfo, error)
 	UpdateSentOliveViewedAt(ctx context.Context, userID int) error
+	UpdateApplicationsLastViewedAt(ctx context.Context, userID int) error
 }
 
 // ApplicationRepo defines the interface for application repository operations.
@@ -76,6 +77,7 @@ type ApplicationRepo interface {
 	GetByID(ctx context.Context, id int) (*models.ProjectApplication, error)
 	CheckDuplicate(ctx context.Context, projectID, userID int) (bool, error)
 	UpdateStatus(ctx context.Context, id int, status int) error
+	GetUnreadApplicationCount(ctx context.Context, userID int, viewedAt *time.Time) (int, error)
 }
 
 // OliveBranchRepo defines the interface for olive branch repository operations.
