@@ -66,6 +66,7 @@ type UserRepo interface {
 	UpdateAvatarUrl(ctx context.Context, userID int, avatarUrl string) error
 	UpdateCoverImage(ctx context.Context, userID int, coverImage string) error
 	GetEduCertInfoByID(ctx context.Context, userID int) (CertInfo, error)
+	UpdateSentOliveViewedAt(ctx context.Context, userID int) error
 }
 
 // ApplicationRepo defines the interface for application repository operations.
@@ -85,6 +86,7 @@ type OliveBranchRepo interface {
 	UpdateStatus(ctx context.Context, id int, status int) error
 	ListBySenderID(ctx context.Context, params OliveBranchListParams) ([]models.OliveBranch, int64, error)
 	ExistsPending(ctx context.Context, senderID, receiverID, relatedProjectID int) (bool, error)
+	GetBadgeCounts(ctx context.Context, userID int) (OliveBranchBadgeCounts, error)
 }
 
 // SchoolRepo defines the interface for school repository operations.

@@ -141,6 +141,34 @@ func (s *Server) GetMyOliveBranchQuota(ctx echo.Context) error {
 	})
 }
 
+// GetOliveBranchBadge handles GET /olive-branches/badge
+// Returns receivedPendingCount (status=0 received) and sentUnreadCount (sent after last-viewed timestamp).
+func (s *Server) GetOliveBranchBadge(ctx echo.Context) error {
+	userID := GetUserID(ctx)
+
+	counts, err := s.repo.OliveBranch.GetBadgeCounts(ctx.Request().Context(), userID)
+	if err != nil {
+		return InternalError(ctx, "获取橄榄枝徽章数据失败")
+	}
+
+	return Success(ctx, map[string]int{
+		"receivedPendingCount": counts.ReceivedPendingCount,
+		"sentUnreadCount":      counts.SentUnreadCount,
+	})
+}
+
+// MarkSentOliveBranchRead handles POST /olive-branches/badge/mark-sent-read
+// Updates sent_olive_viewed_at to NOW() so that sentUnreadCount resets to 0.
+func (s *Server) MarkSentOliveBranchRead(ctx echo.Context) error {
+	userID := GetUserID(ctx)
+
+	if err := s.repo.User.UpdateSentOliveViewedAt(ctx.Request().Context(), userID); err != nil {
+		return InternalError(ctx, "标记已读失败")
+	}
+
+	return Success(ctx, nil)
+}
+
 // GetMySentOliveBranches handles GET /users/me/sent-olive-branches
 func (s *Server) GetMySentOliveBranches(ctx echo.Context, params api.GetMySentOliveBranchesParams) error {
 	userID := GetUserID(ctx)

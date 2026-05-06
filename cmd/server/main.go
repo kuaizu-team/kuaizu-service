@@ -107,6 +107,10 @@ func main() {
 
 	api.RegisterHandlers(apiGroup, server)
 
+	// Olive-branch badge endpoints (auth required, registered outside generated code)
+	apiGroup.GET("/olive-branches/badge", server.GetOliveBranchBadge)
+	apiGroup.POST("/olive-branches/badge/mark-sent-read", server.MarkSentOliveBranchRead)
+
 	// WeChat Pay callback (no auth required)
 	e.POST("/api/v2/payment/wechat/notify", server.WechatPayCallback)
 

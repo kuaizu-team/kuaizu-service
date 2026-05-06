@@ -385,6 +385,16 @@ func (r *UserRepository) UpdateAvatarUrl(ctx context.Context, userID int, avatar
 	return nil
 }
 
+// UpdateSentOliveViewedAt sets sent_olive_viewed_at to the current timestamp for the given user.
+func (r *UserRepository) UpdateSentOliveViewedAt(ctx context.Context, userID int) error {
+	query := `UPDATE ` + "`user`" + ` SET sent_olive_viewed_at = NOW() WHERE id = ?`
+	_, err := r.db.ExecContext(ctx, query, userID)
+	if err != nil {
+		return fmt.Errorf("update sent_olive_viewed_at: %w", err)
+	}
+	return nil
+}
+
 // UpdateCoverImage updates user's cover image URL
 func (r *UserRepository) UpdateCoverImage(ctx context.Context, userID int, coverImage string) error {
 	query := `UPDATE ` + "`user`" + ` SET cover_image = ? WHERE id = ?`

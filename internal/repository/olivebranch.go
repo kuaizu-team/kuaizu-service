@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"time"
 
 	"github.com/jmoiron/sqlx"
 	"github.com/kuaizu-team/kuaizu-service/internal/models"
@@ -308,6 +309,53 @@ func (r *OliveBranchRepository) ListBySenderID(ctx context.Context, params Olive
 	}
 
 	return records, total, nil
+}
+
+// OliveBranchBadgeCounts holds badge counts for the olive branch feature.
+type OliveBranchBadgeCounts struct {
+	ReceivedPendingCount int
+	SentUnreadCount      int
+}
+
+// GetBadgeCounts returns:
+//   - ReceivedPendingCount: number of olive branches received by userID with status=0 (pending)
+//   - SentUnreadCount:      number of olive branches sent by userID after the user's sent_olive_viewed_at
+//     (all sent branches if sent_olive_viewed_at is NULL)
+func (r *OliveBranchRepository) GetBadgeCounts(ctx context.Context, userID int) (OliveBranchBadgeCounts, error) {
+	var counts OliveBranchBadgeCounts
+
+	// 1. received pending count
+	if err := r.db.QueryRowxContext(ctx,
+		`SELECT COUNT(*) FROM olive_branch_record WHERE receiver_id = ? AND status = 0`,
+		userID,
+	).Scan(&counts.ReceivedPendingCount); err != nil {
+		return counts, fmt.Errorf("count received pending: %w", err)
+	}
+
+	// 2. fetch sent_olive_viewed_at for this user
+	var viewedAt *time.Time
+	if err := r.db.QueryRowxContext(ctx,
+		"SELECT sent_olive_viewed_at FROM `user` WHERE id = ?",
+		userID,
+	).Scan(&viewedAt); err != nil && err != sql.ErrNoRows {
+		return counts, fmt.Errorf("get sent_olive_viewed_at: %w", err)
+	}
+
+	// 3. sent unread count
+	var sentQuery string
+	var sentArgs []interface{}
+	if viewedAt == nil {
+		sentQuery = `SELECT COUNT(*) FROM olive_branch_record WHERE sender_id = ?`
+		sentArgs = []interface{}{userID}
+	} else {
+		sentQuery = `SELECT COUNT(*) FROM olive_branch_record WHERE sender_id = ? AND created_at > ?`
+		sentArgs = []interface{}{userID, *viewedAt}
+	}
+	if err := r.db.QueryRowxContext(ctx, sentQuery, sentArgs...).Scan(&counts.SentUnreadCount); err != nil {
+		return counts, fmt.Errorf("count sent unread: %w", err)
+	}
+
+	return counts, nil
 }
 
 // enrichSkills batch-queries talent_profile for the target users and sets User.Skills.
