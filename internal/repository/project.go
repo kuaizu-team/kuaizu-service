@@ -89,9 +89,16 @@ func (r *ProjectRepository) List(ctx context.Context, params ListParams) ([]mode
 			p.promotion_status, p.promotion_expire_time, p.view_count,
 			p.created_at, p.updated_at, p.is_cross_school,
 			p.education_requirement, p.skill_requirement,
-			s.school_name
+			s.school_name,
+			COALESCE(pa_counts.pending_count, 0) AS pending_application_count
 		FROM project p
 		LEFT JOIN school s ON p.school_id = s.id
+		LEFT JOIN (
+			SELECT project_id, COUNT(*) AS pending_count
+			FROM project_application
+			WHERE status = 0
+			GROUP BY project_id
+		) pa_counts ON pa_counts.project_id = p.id
 		WHERE %s
 		ORDER BY p.created_at DESC
 		LIMIT ? OFFSET ?
