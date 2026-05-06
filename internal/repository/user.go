@@ -385,6 +385,16 @@ func (r *UserRepository) UpdateAvatarUrl(ctx context.Context, userID int, avatar
 	return nil
 }
 
+// UpdateApplicationsLastViewedAt sets applications_last_viewed_at to NOW() for the given user.
+func (r *UserRepository) UpdateApplicationsLastViewedAt(ctx context.Context, userID int) error {
+	query := `UPDATE ` + "`user`" + ` SET applications_last_viewed_at = NOW() WHERE id = ?`
+	_, err := r.db.ExecContext(ctx, query, userID)
+	if err != nil {
+		return fmt.Errorf("update applications_last_viewed_at: %w", err)
+	}
+	return nil
+}
+
 // UpdateSentOliveViewedAt sets sent_olive_viewed_at to the current timestamp for the given user.
 func (r *UserRepository) UpdateSentOliveViewedAt(ctx context.Context, userID int) error {
 	query := `UPDATE ` + "`user`" + ` SET sent_olive_viewed_at = NOW() WHERE id = ?`

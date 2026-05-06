@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/jmoiron/sqlx"
 	"github.com/kuaizu-team/kuaizu-service/internal/models"
@@ -247,6 +248,35 @@ func (r *ApplicationRepository) CheckDuplicate(ctx context.Context, projectID, u
 		return false, fmt.Errorf("check duplicate application: %w", err)
 	}
 	return exists, nil
+}
+
+// GetUnreadApplicationCount returns the number of the user's applications whose
+// updated_at is strictly after viewedAt. When viewedAt is nil, all applications
+// with status != 0 (i.e. status has ever changed away from PENDING) are counted.
+// The result is capped at 99.
+func (r *ApplicationRepository) GetUnreadApplicationCount(ctx context.Context, userID int, viewedAt *time.Time) (int, error) {
+	var count int
+	if viewedAt == nil {
+		// Never viewed: count every application that is no longer in initial PENDING state
+		if err := r.db.QueryRowxContext(ctx,
+			`SELECT COUNT(*) FROM project_application WHERE user_id = ? AND status != 0`,
+			userID,
+		).Scan(&count); err != nil {
+			return 0, fmt.Errorf("count unread applications (never viewed): %w", err)
+		}
+	} else {
+		// Count applications updated after the last-viewed timestamp
+		if err := r.db.QueryRowxContext(ctx,
+			`SELECT COUNT(*) FROM project_application WHERE user_id = ? AND updated_at > ?`,
+			userID, *viewedAt,
+		).Scan(&count); err != nil {
+			return 0, fmt.Errorf("count unread applications: %w", err)
+		}
+	}
+	if count > 99 {
+		count = 99
+	}
+	return count, nil
 }
 
 // UpdateStatus updates the status and reply message of an application

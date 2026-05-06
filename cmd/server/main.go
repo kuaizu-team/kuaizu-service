@@ -111,6 +111,10 @@ func main() {
 	apiGroup.GET("/olive-branches/badge", server.GetOliveBranchBadge)
 	apiGroup.POST("/olive-branches/badge/mark-sent-read", server.MarkSentOliveBranchRead)
 
+	// Project-application unread badge endpoints
+	apiGroup.GET("/project-applications/my/unread-status", server.GetMyApplicationUnreadStatus)
+	apiGroup.POST("/project-applications/my/mark-read", server.MarkMyApplicationsRead)
+
 	// WeChat Pay callback (no auth required)
 	e.POST("/api/v2/payment/wechat/notify", server.WechatPayCallback)
 
