@@ -77,7 +77,7 @@ type ApplicationRepo interface {
 	GetByID(ctx context.Context, id int) (*models.ProjectApplication, error)
 	CheckDuplicate(ctx context.Context, projectID, userID int) (bool, error)
 	UpdateStatus(ctx context.Context, id int, status int) error
-	GetUnreadApplicationCount(ctx context.Context, userID int, viewedAt *time.Time) (int, error)
+	GetUnreadApplicationCount(ctx context.Context, userID int) (int, error)
 }
 
 // OliveBranchRepo defines the interface for olive branch repository operations.

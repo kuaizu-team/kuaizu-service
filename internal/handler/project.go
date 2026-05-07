@@ -298,15 +298,7 @@ func (s *Server) ApplyToProject(ctx echo.Context, id int) error {
 func (s *Server) GetMyApplicationUnreadStatus(ctx echo.Context) error {
 	userID := GetUserID(ctx)
 
-	user, err := s.repo.User.GetByID(ctx.Request().Context(), userID)
-	if err != nil {
-		return InternalError(ctx, "获取用户信息失败")
-	}
-	if user == nil {
-		return NotFound(ctx, "用户不存在")
-	}
-
-	count, err := s.repo.Application.GetUnreadApplicationCount(ctx.Request().Context(), userID, user.ApplicationsLastViewedAt)
+	count, err := s.repo.Application.GetUnreadApplicationCount(ctx.Request().Context(), userID)
 	if err != nil {
 		return InternalError(ctx, "获取未读申请数失败")
 	}

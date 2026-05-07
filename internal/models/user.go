@@ -27,9 +27,9 @@ type User struct {
 	CoverImage          *string    `db:"cover_image"`            // 封面图
 	EmailOptOut         *bool      `db:"email_opt_out"`          // 是否退订邮件推广
 	WechatID            *string    `db:"wechat_id"`              // 微信号
-	SentOliveViewedAt         *time.Time `db:"sent_olive_viewed_at"`         // 最后查看已发送橄榄枝的时间
-	ApplicationsLastViewedAt  *time.Time `db:"applications_last_viewed_at"`  // 最后查看投递管理页的时间
-	CreatedAt                 *time.Time `db:"created_at"`
+	SentOliveViewedAt        *time.Time `db:"sent_olive_viewed_at"`        // 最后查看已发送橄榄枝的时间
+	ApplicationsLastViewedAt *time.Time `db:"applications_last_viewed_at"` // 最后查看投递管理页的时间
+	CreatedAt                *time.Time `db:"created_at"`
 
 	// Joined fields (not always populated)
 	SchoolName *string  `db:"school_name"`

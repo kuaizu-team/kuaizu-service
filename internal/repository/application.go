@@ -251,10 +251,19 @@ func (r *ApplicationRepository) CheckDuplicate(ctx context.Context, projectID, u
 }
 
 // GetUnreadApplicationCount returns the number of the user's applications whose
-// updated_at is strictly after viewedAt. When viewedAt is nil, all applications
-// with status != 0 (i.e. status has ever changed away from PENDING) are counted.
+// updated_at is strictly after applications_last_viewed_at. When the timestamp is
+// nil (user never visited the page), all applications with status != 0 are counted.
 // The result is capped at 99.
-func (r *ApplicationRepository) GetUnreadApplicationCount(ctx context.Context, userID int, viewedAt *time.Time) (int, error) {
+func (r *ApplicationRepository) GetUnreadApplicationCount(ctx context.Context, userID int) (int, error) {
+	// Fetch last-viewed timestamp directly — avoids a heavy JOIN query in the handler.
+	var viewedAt *time.Time
+	if err := r.db.QueryRowxContext(ctx,
+		"SELECT applications_last_viewed_at FROM `user` WHERE id = ?",
+		userID,
+	).Scan(&viewedAt); err != nil && err != sql.ErrNoRows {
+		return 0, fmt.Errorf("get applications_last_viewed_at: %w", err)
+	}
+
 	var count int
 	if viewedAt == nil {
 		// Never viewed: count every application that is no longer in initial PENDING state
