@@ -21,6 +21,18 @@ get:
       description: 学校ID筛选
       schema:
         type: integer
+    - name: sortBy
+      in: query
+      description: |
+        排序模式。目前支持 `school_priority`：本校人才优先，同优先级内按
+        最后修改时间倒序。不传则默认按修改时间倒序。
+      schema:
+        type: string
+    - name: userSchoolId
+      in: query
+      description: 当前用户学校 ID，`sortBy=school_priority` 时用于判断本校人才。
+      schema:
+        type: integer
   security: []
   responses:
     '200':

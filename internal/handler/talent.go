@@ -21,12 +21,14 @@ func (s *Server) ListTalentProfiles(ctx echo.Context, params api.ListTalentProfi
 
 	status := models.TalentStatusOnline // 仅展示已发布的
 	listParams := repository.TalentProfileListParams{
-		Page:     page,
-		Size:     size,
-		SchoolID: params.SchoolId,
-		MajorID:  params.MajorId,
-		Keyword:  params.Keyword,
-		Status:   &status,
+		Page:         page,
+		Size:         size,
+		SchoolID:     params.SchoolId,
+		MajorID:      params.MajorId,
+		Keyword:      params.Keyword,
+		Status:       &status,
+		SortBy:       params.SortBy,
+		UserSchoolID: params.UserSchoolId,
 	}
 
 	profiles, total, err := s.repo.TalentProfile.List(ctx.Request().Context(), listParams)

@@ -23,12 +23,14 @@ func NewTalentProfileRepository(db *sqlx.DB) *TalentProfileRepository {
 
 // TalentProfileListParams contains parameters for listing talent profiles
 type TalentProfileListParams struct {
-	Page     int
-	Size     int
-	SchoolID *int
-	MajorID  *int
-	Keyword  *string
-	Status   *int
+	Page         int
+	Size         int
+	SchoolID     *int
+	MajorID      *int
+	Keyword      *string
+	Status       *int
+	SortBy       *string // "school_priority" enables priority ordering
+	UserSchoolID *int    // used when SortBy == "school_priority"
 }
 
 // enrichSchoolMajor 为单条 TalentProfile 分别查 school/major 并回填名称
@@ -177,6 +179,23 @@ func (r *TalentProfileRepository) List(ctx context.Context, params TalentProfile
 		return nil, 0, fmt.Errorf("count talent profiles: %w", err)
 	}
 
+	// Build ORDER BY — school_priority puts same-school talent first
+	orderClause := "tp.updated_at DESC"
+	if params.SortBy != nil && *params.SortBy == "school_priority" {
+		schoolID := 0
+		if params.UserSchoolID != nil {
+			schoolID = *params.UserSchoolID
+		}
+		if schoolID != 0 {
+			orderClause = fmt.Sprintf(`
+				CASE
+					WHEN u.school_id = %d THEN 1
+					ELSE 2
+				END ASC, tp.updated_at DESC`, schoolID)
+		}
+		// schoolID == 0: CASE always returns 2, equivalent to plain updated_at DESC
+	}
+
 	// Main query: talent_profile + user (2 tables), fetch school_id/major_id for follow-up
 	offset := (params.Page - 1) * params.Size
 	query := fmt.Sprintf(`
@@ -189,9 +208,9 @@ func (r *TalentProfileRepository) List(ctx context.Context, params TalentProfile
 		FROM talent_profile tp
 		LEFT JOIN `+"`user`"+` u ON tp.user_id = u.id
 		WHERE %s
-		ORDER BY tp.updated_at DESC
+		ORDER BY %s
 		LIMIT ? OFFSET ?
-	`, whereClause)
+	`, whereClause, orderClause)
 	args = append(args, params.Size, offset)
 
 	var profiles []models.TalentProfile
