@@ -32,6 +32,18 @@ get:
       description: '是否跨校: 1-可以,0-不可以'
       schema:
         type: integer
+    - name: sortBy
+      in: query
+      description: |
+        排序模式。目前支持 `school_priority`：按本校 > 跨校 > 其他优先级排序，
+        同优先级内按发布时间倒序。不传则默认按发布时间倒序。
+      schema:
+        type: string
+    - name: userSchoolId
+      in: query
+      description: 当前用户学校 ID，`sortBy=school_priority` 时用于判断本校项目。
+      schema:
+        type: integer
   responses:
     '200':
       description: 成功
