@@ -32,6 +32,8 @@ type ListParams struct {
 	Direction     *int
 	CreatorID     *int
 	IsCrossSchool *int
+	SortBy        *string // "school_priority" enables priority ordering
+	UserSchoolID  *int    // used when SortBy == "school_priority"
 }
 
 // List retrieves paginated projects with optional filters
@@ -80,6 +82,31 @@ func (r *ProjectRepository) List(ctx context.Context, params ListParams) ([]mode
 		return nil, 0, fmt.Errorf("count projects: %w", err)
 	}
 
+	// Build ORDER BY — school_priority mode injects a CASE WHEN priority column
+	orderClause := "p.created_at DESC"
+	if params.SortBy != nil && *params.SortBy == "school_priority" {
+		schoolID := 0
+		if params.UserSchoolID != nil {
+			schoolID = *params.UserSchoolID
+		}
+		if schoolID != 0 {
+			// Three tiers: same school → cross-school → others
+			orderClause = fmt.Sprintf(`
+				CASE
+					WHEN p.school_id = %d THEN 1
+					WHEN p.is_cross_school = 1 THEN 2
+					ELSE 3
+				END ASC, p.created_at DESC`, schoolID)
+		} else {
+			// No school context: cross-school → others
+			orderClause = `
+				CASE
+					WHEN p.is_cross_school = 1 THEN 1
+					ELSE 2
+				END ASC, p.created_at DESC`
+		}
+	}
+
 	// Query with pagination — column aliases match Project db tags
 	offset := (params.Page - 1) * params.Size
 	query := fmt.Sprintf(`
@@ -100,9 +127,9 @@ func (r *ProjectRepository) List(ctx context.Context, params ListParams) ([]mode
 			GROUP BY project_id
 		) pa_counts ON pa_counts.project_id = p.id
 		WHERE %s
-		ORDER BY p.created_at DESC
+		ORDER BY %s
 		LIMIT ? OFFSET ?
-	`, whereClause)
+	`, whereClause, orderClause)
 	args = append(args, params.Size, offset)
 
 	var projects []models.Project

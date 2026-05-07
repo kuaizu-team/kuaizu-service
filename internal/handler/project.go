@@ -37,6 +37,8 @@ func (s *Server) ListProjects(ctx echo.Context, params api.ListProjectsParams) e
 		isCrossSchool := int(*params.IsCrossSchool)
 		listParams.IsCrossSchool = &isCrossSchool
 	}
+	listParams.SortBy = params.SortBy
+	listParams.UserSchoolID = params.UserSchoolId
 
 	result, err := s.svc.Project.ListProjects(ctx.Request().Context(), listParams)
 	if err != nil {
