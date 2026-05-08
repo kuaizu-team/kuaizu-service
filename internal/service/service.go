@@ -34,7 +34,7 @@ func New(repo *repository.Repository, deps *Dependencies) *Services {
 		OliveBranch:      NewOliveBranchService(repo),
 		Commons:          NewCommonsService(deps.OSSClient, repo.User),
 		ContentAudit:     contentAudit,
-		TalentProfile:    NewTalentProfileService(repo, contentAudit),
+		TalentProfile:    NewTalentProfileService(repo, contentAudit, message),
 		Project:          NewProjectService(repo, contentAudit, message),
 		Message:          message,
 		User:             NewUserService(repo, message),

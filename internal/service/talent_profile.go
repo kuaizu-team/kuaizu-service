@@ -13,11 +13,12 @@ import (
 type TalentProfileService struct {
 	repo         *repository.Repository
 	contentAudit *ContentAuditService
+	message      *MessageService
 }
 
 // NewTalentProfileService creates a new TalentProfileService.
-func NewTalentProfileService(repo *repository.Repository, contentAudit *ContentAuditService) *TalentProfileService {
-	return &TalentProfileService{repo: repo, contentAudit: contentAudit}
+func NewTalentProfileService(repo *repository.Repository, contentAudit *ContentAuditService, message *MessageService) *TalentProfileService {
+	return &TalentProfileService{repo: repo, contentAudit: contentAudit, message: message}
 }
 
 // resolveUpsertStatus determines the actual status to save based on the requested status and the current status.
@@ -203,6 +204,37 @@ func (s *TalentProfileService) ReviewTalentProfile(ctx context.Context, id, stat
 		log.Printf("[TalentProfileService.ReviewTalentProfile] repository error updating status: %v", err)
 		return ErrInternal("审核失败")
 	}
+
+	// 异步发送审核结果通知
+	go func(asyncCtx context.Context, userID int) {
+		user, err := s.repo.User.GetByID(asyncCtx, userID)
+		if err != nil || user == nil {
+			log.Printf("[TalentProfileService.ReviewTalentProfile] get user for notification error: %v", err)
+			return
+		}
+
+		resultStr := "审核通过"
+		remark := "恭喜！您的名片已成功发布至人才库，现在可以被其他用户查看了。"
+		if status == models.TalentStatusPrivate {
+			resultStr = "审核拒绝"
+			remark = "很遗憾，您的名片暂未通过审核，请修改后重新提交。"
+		}
+
+		userName := "同学"
+		if user.Nickname != nil && *user.Nickname != "" {
+			userName = *user.Nickname
+		}
+
+		data := map[string]string{
+			"user_name": userName,
+			"result":    resultStr,
+			"remark":    remark,
+		}
+
+		if err := s.message.SendSubscribeMsgByBizKey(asyncCtx, userID, models.MsgBizKeyAuditResultUser, data); err != nil {
+			log.Printf("[TalentProfileService.ReviewTalentProfile] notification error: %v", err)
+		}
+	}(context.WithoutCancel(ctx), profile.UserID)
 
 	return nil
 }
