@@ -79,16 +79,24 @@ func (s *UserService) ReviewUserAuth(ctx context.Context, id, status int) error 
 
 	// 向用户发送认证结果通知
 	go func(asyncCtx context.Context) {
-		statusStr := "已通过"
+		resultStr := "认证通过"
 		remark := "恭喜！您的身份认证已通过。"
 		if status == models.UserAuthStatusFailed {
-			statusStr = "未通过"
-			remark = "很抱歉，您的身份认证未通过，请检查上传的信息是否清晰合规。"
+			resultStr = "认证失败"
+			remark = "请检查上传信息与学业信息是否匹配，确认清晰合规后重新上传。"
+		}
+
+		// user_name：优先使用昵称，未设置时用默认值
+		userName := "快组儿"
+		if user.Nickname != nil && *user.Nickname != "" {
+			userName = *user.Nickname
 		}
 
 		data := map[string]string{
-			"status": statusStr,
-			"remark": remark,
+			"user_name": userName,
+			"identity":  "在校学生",
+			"result":    resultStr,
+			"remark":    remark,
 		}
 
 		err = s.message.SendSubscribeMsgByBizKey(asyncCtx, id, models.MsgBizKeyIdentityAuth, data)
