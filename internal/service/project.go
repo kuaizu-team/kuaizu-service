@@ -482,10 +482,10 @@ func (s *ProjectService) ReviewApplication(ctx context.Context, applicationID, u
 
 		// 2. 准备通知数据
 		resultStr := "已通过"
-		remark := "恭喜！您已成功加入项目，请主动联系队长。"
+		remark := "请在名片-投递名片管理及时处理哦"
 		if status == models.ApplicationStatusRejected {
-			resultStr = "已拒绝"
-			remark = "很抱歉，您的申请未通过。您可以尝试申请其他感兴趣的项目。"
+			resultStr = "被拒绝"
+			remark = "别灰心，更多优质校园项目待您探索。"
 		}
 
 		data := map[string]string{
