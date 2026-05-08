@@ -52,8 +52,12 @@ func (s *MessageService) SendSubscribeMsgByBizKey(ctx context.Context, userID in
 		return nil
 	}
 
-	// 4. Send using client helper
-	err = s.wxClient.SendByConfig(user.OpenID, config.TemplateID, config.ContentJSON, businessData)
+	// 4. Send using client helper — use page_path from config if set
+	page := ""
+	if config.PagePath != nil {
+		page = *config.PagePath
+	}
+	err = s.wxClient.SendByConfig(user.OpenID, config.TemplateID, config.ContentJSON, businessData, page)
 	if err != nil {
 		// 5. Sync state if user rejected on WeChat side
 		var wxErr wechat.SubscribeMessageResponse

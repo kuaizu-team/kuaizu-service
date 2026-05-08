@@ -95,8 +95,10 @@ func (c *Client) SendSubscribeMessage(req *SubscribeMessageRequest) error {
 }
 
 // SendByConfig sends a subscription message using a JSON mapping for fields.
-// contentJSON is a map of business_key -> template_key (e.g. {"sender": "thing1"})
-func (c *Client) SendByConfig(toUser string, templateID string, contentJSON string, businessData map[string]string) error {
+// contentJSON is a map of business_key -> template_key (e.g. {"sender": "thing1"}).
+// page is the miniprogram page path to navigate to when the user taps the notification card;
+// an empty string means no navigation.
+func (c *Client) SendByConfig(toUser string, templateID string, contentJSON string, businessData map[string]string, page string) error {
 	var fieldMap map[string]string
 	if err := json.Unmarshal([]byte(contentJSON), &fieldMap); err != nil {
 		return fmt.Errorf("unmarshal field map: %w", err)
@@ -112,6 +114,7 @@ func (c *Client) SendByConfig(toUser string, templateID string, contentJSON stri
 	return c.SendSubscribeMessage(&SubscribeMessageRequest{
 		ToUser:     toUser,
 		TemplateID: templateID,
+		Page:       page,
 		Data:       data,
 	})
 }
