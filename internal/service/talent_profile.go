@@ -214,10 +214,10 @@ func (s *TalentProfileService) ReviewTalentProfile(ctx context.Context, id, stat
 		}
 
 		resultStr := "审核通过"
-		remark := "恭喜！您的名片已成功发布至人才库，现在可以被其他用户查看了。"
+		remark := "名片已上架人才库，快去看看吧！"
 		if status == models.TalentStatusPrivate {
 			resultStr = "审核拒绝"
-			remark = "很遗憾，您的名片暂未通过审核，请修改后重新提交。"
+			remark = "请完善名片资料后重新提交。"
 		}
 
 		userName := "同学"
