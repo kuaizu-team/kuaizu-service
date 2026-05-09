@@ -429,7 +429,7 @@ func (s *ProjectService) ApplyToProject(ctx context.Context, input ApplyToProjec
 		// 2. 发送订阅消息，跳转页面由数据库 page_path 字段决定
 		data := map[string]string{
 			"sender": senderName,
-			"remark": "恭喜，又收到一张名片！",
+			"remark": "恭喜，请在我的项目中及时处理哦。",
 		}
 		if err := s.message.SendSubscribeMsgByBizKey(asyncCtx, project.CreatorID, models.MsgBizKeyCardReceived, data); err != nil {
 			log.Printf("[ProjectService.ApplyToProject] notification error: %v", err)
