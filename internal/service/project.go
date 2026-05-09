@@ -412,7 +412,7 @@ func (s *ProjectService) ApplyToProject(ctx context.Context, input ApplyToProjec
 		return nil, ErrInternal("提交申请失败")
 	}
 
-	// 向项目所有者发送收到名片订阅消息
+	// 向项目所有者发送「收到名片通知」
 	go func(asyncCtx context.Context) {
 		// 1. 获取申请人信息
 		applicant, err := s.repo.User.GetByID(asyncCtx, input.UserID)
@@ -422,19 +422,16 @@ func (s *ProjectService) ApplyToProject(ctx context.Context, input ApplyToProjec
 		}
 
 		senderName := "匿名用户"
-		if applicant.Nickname != nil {
+		if applicant.Nickname != nil && *applicant.Nickname != "" {
 			senderName = *applicant.Nickname
 		}
 
-		// 2. 发送订阅消息
+		// 2. 发送订阅消息，跳转页面由数据库 page_path 字段决定
 		data := map[string]string{
-			"sender":       senderName,
-			"project_name": project.Name,
-			"remark":       "您收到了新的名片投递，请及时处理。",
+			"sender": senderName,
+			"remark": "恭喜，请在我的项目中及时处理哦。",
 		}
-
-		err = s.message.SendSubscribeMsgByBizKey(asyncCtx, project.CreatorID, models.MsgBizKeyCardReceived, data)
-		if err != nil {
+		if err := s.message.SendSubscribeMsgByBizKey(asyncCtx, project.CreatorID, models.MsgBizKeyCardReceived, data); err != nil {
 			log.Printf("[ProjectService.ApplyToProject] notification error: %v", err)
 		}
 	}(context.WithoutCancel(ctx))
