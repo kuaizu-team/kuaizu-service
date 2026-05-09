@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"fmt"
 	"log"
 
 	"github.com/kuaizu-team/kuaizu-service/api"
@@ -414,7 +413,7 @@ func (s *ProjectService) ApplyToProject(ctx context.Context, input ApplyToProjec
 	}
 
 	// 向项目所有者发送「收到名片通知」
-	go func(asyncCtx context.Context, projectID, creatorID int) {
+	go func(asyncCtx context.Context) {
 		// 1. 获取申请人信息
 		applicant, err := s.repo.User.GetByID(asyncCtx, input.UserID)
 		if err != nil {
@@ -427,17 +426,15 @@ func (s *ProjectService) ApplyToProject(ctx context.Context, input ApplyToProjec
 			senderName = *applicant.Nickname
 		}
 
-		// 2. 发送订阅消息，跳转路径携带项目 ID，方便项目方直接查看投递列表
+		// 2. 发送订阅消息，跳转页面由数据库 page_path 字段决定
 		data := map[string]string{
 			"sender": senderName,
 			"remark": "恭喜，又收到一张名片！",
 		}
-		page := fmt.Sprintf("pages/project-detail/project-detail?id=%d", projectID)
-
-		if err := s.message.SendSubscribeMsgByBizKeyWithPage(asyncCtx, creatorID, models.MsgBizKeyCardReceived, data, page); err != nil {
+		if err := s.message.SendSubscribeMsgByBizKey(asyncCtx, project.CreatorID, models.MsgBizKeyCardReceived, data); err != nil {
 			log.Printf("[ProjectService.ApplyToProject] notification error: %v", err)
 		}
-	}(context.WithoutCancel(ctx), input.ProjectID, project.CreatorID)
+	}(context.WithoutCancel(ctx))
 
 	return application, nil
 }
