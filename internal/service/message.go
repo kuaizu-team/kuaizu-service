@@ -24,8 +24,22 @@ func NewMessageService(repo *repository.Repository, wxClient *wechat.Client) *Me
 	}
 }
 
-// SendSubscribeMsgByBizKey sends a WeChat subscription message using a business key
+// SendSubscribeMsgByBizKey sends a WeChat subscription message using a business key.
+// The page path is taken from the template config in the database.
 func (s *MessageService) SendSubscribeMsgByBizKey(ctx context.Context, userID int, bizKey string, businessData map[string]string) error {
+	return s.sendSubscribeMsg(ctx, userID, bizKey, businessData, "")
+}
+
+// SendSubscribeMsgByBizKeyWithPage is like SendSubscribeMsgByBizKey but uses the
+// provided page string instead of the database-stored page_path. Use this when the
+// page path must carry dynamic query parameters (e.g. ?id=123).
+func (s *MessageService) SendSubscribeMsgByBizKeyWithPage(ctx context.Context, userID int, bizKey string, businessData map[string]string, page string) error {
+	return s.sendSubscribeMsg(ctx, userID, bizKey, businessData, page)
+}
+
+// sendSubscribeMsg is the shared implementation. When pageOverride is non-empty it
+// takes precedence over the page_path stored in msg_template_config.
+func (s *MessageService) sendSubscribeMsg(ctx context.Context, userID int, bizKey string, businessData map[string]string, pageOverride string) error {
 	// 1. Get user openid
 	user, err := s.repo.User.GetByID(ctx, userID)
 	if err != nil {
@@ -38,32 +52,33 @@ func (s *MessageService) SendSubscribeMsgByBizKey(ctx context.Context, userID in
 	// 2. Get template config
 	config, err := s.repo.MsgTemplate.GetByBizKey(ctx, bizKey)
 	if err != nil {
-		log.Printf("[MessageService.SendSubscribeMsgByBizKey] error getting config for %s: %v", bizKey, err)
+		log.Printf("[MessageService.sendSubscribeMsg] error getting config for %s: %v", bizKey, err)
 		return fmt.Errorf("get template config: %w", err)
 	}
 
 	// 3. Check local subscription status (Mirror)
 	localSub, err := s.repo.SubscribeConfig.GetByUserIDAndBizKey(ctx, userID, bizKey)
 	if err != nil {
-		log.Printf("[MessageService.SendSubscribeMsgByBizKey] check local sub error: %v", err)
+		log.Printf("[MessageService.sendSubscribeMsg] check local sub error: %v", err)
 	}
 	if localSub != nil && localSub.Status == models.SubscribeStatusReject {
-		log.Printf("[MessageService.SendSubscribeMsgByBizKey] user %d rejected %s, skipping", userID, bizKey)
+		log.Printf("[MessageService.sendSubscribeMsg] user %d rejected %s, skipping", userID, bizKey)
 		return nil
 	}
 
-	// 4. Send using client helper — use page_path from config if set
-	page := ""
-	if config.PagePath != nil {
+	// 4. Determine page path: caller override takes precedence over DB value
+	page := pageOverride
+	if page == "" && config.PagePath != nil {
 		page = *config.PagePath
 	}
+
 	err = s.wxClient.SendByConfig(user.OpenID, config.TemplateID, config.ContentJSON, businessData, page)
 	if err != nil {
 		// 5. Sync state if user rejected on WeChat side
 		var wxErr wechat.SubscribeMessageResponse
 		if errors.As(err, &wxErr) {
 			if wxErr.ErrCode == 43101 { // User refuse to accept
-				log.Printf("[MessageService.SendSubscribeMsgByBizKey] user %d rejected on WeChat, syncing local state", userID)
+				log.Printf("[MessageService.sendSubscribeMsg] user %d rejected on WeChat, syncing local state", userID)
 				_ = s.repo.SubscribeConfig.Upsert(ctx, &models.SubscribeConfig{
 					UserID: userID,
 					BizKey: bizKey,
@@ -72,7 +87,7 @@ func (s *MessageService) SendSubscribeMsgByBizKey(ctx context.Context, userID in
 			}
 		}
 
-		log.Printf("[MessageService.SendSubscribeMsgByBizKey] error sending message: %v", err)
+		log.Printf("[MessageService.sendSubscribeMsg] error sending message: %v", err)
 		return fmt.Errorf("send message: %w", err)
 	}
 

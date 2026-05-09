@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"log"
 
 	"github.com/kuaizu-team/kuaizu-service/api"
@@ -412,8 +413,8 @@ func (s *ProjectService) ApplyToProject(ctx context.Context, input ApplyToProjec
 		return nil, ErrInternal("提交申请失败")
 	}
 
-	// 向项目所有者发送收到名片订阅消息
-	go func(asyncCtx context.Context) {
+	// 向项目所有者发送「收到名片通知」
+	go func(asyncCtx context.Context, projectID, creatorID int) {
 		// 1. 获取申请人信息
 		applicant, err := s.repo.User.GetByID(asyncCtx, input.UserID)
 		if err != nil {
@@ -422,22 +423,21 @@ func (s *ProjectService) ApplyToProject(ctx context.Context, input ApplyToProjec
 		}
 
 		senderName := "匿名用户"
-		if applicant.Nickname != nil {
+		if applicant.Nickname != nil && *applicant.Nickname != "" {
 			senderName = *applicant.Nickname
 		}
 
-		// 2. 发送订阅消息
+		// 2. 发送订阅消息，跳转路径携带项目 ID，方便项目方直接查看投递列表
 		data := map[string]string{
-			"sender":       senderName,
-			"project_name": project.Name,
-			"remark":       "您收到了新的名片投递，请及时处理。",
+			"sender": senderName,
+			"remark": "恭喜，又收到一张名片！",
 		}
+		page := fmt.Sprintf("pages/project-detail/project-detail?id=%d", projectID)
 
-		err = s.message.SendSubscribeMsgByBizKey(asyncCtx, project.CreatorID, models.MsgBizKeyCardReceived, data)
-		if err != nil {
+		if err := s.message.SendSubscribeMsgByBizKeyWithPage(asyncCtx, creatorID, models.MsgBizKeyCardReceived, data, page); err != nil {
 			log.Printf("[ProjectService.ApplyToProject] notification error: %v", err)
 		}
-	}(context.WithoutCancel(ctx))
+	}(context.WithoutCancel(ctx), input.ProjectID, project.CreatorID)
 
 	return application, nil
 }

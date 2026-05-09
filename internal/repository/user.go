@@ -208,6 +208,22 @@ func (r *UserRepository) AddOliveBranchCountTx(ctx context.Context, tx *sqlx.Tx,
 	return nil
 }
 
+// ResubmitCertification atomically updates auth_img_url and resets auth_status to 0
+// only when the current status is 2 (failed). Status 0 and 1 are left unchanged.
+func (r *UserRepository) ResubmitCertification(ctx context.Context, userID int, imgKey string) error {
+	query := `
+		UPDATE ` + "`user`" + ` SET
+			auth_img_url = ?,
+			auth_status  = CASE WHEN auth_status = 2 THEN 0 ELSE auth_status END
+		WHERE id = ?
+	`
+	_, err := r.db.ExecContext(ctx, query, imgKey, userID)
+	if err != nil {
+		return fmt.Errorf("resubmit certification: %w", err)
+	}
+	return nil
+}
+
 // UpdateAuthStatus updates user's certification auth status
 func (r *UserRepository) UpdateAuthStatus(ctx context.Context, userID int, authStatus int) error {
 	query := `UPDATE ` + "`user`" + ` SET auth_status = ? WHERE id = ?`
