@@ -86,16 +86,10 @@ func (s *UserService) ReviewUserAuth(ctx context.Context, id, status int) error 
 			remark = "请修改后重新上传认证资料。"
 		}
 
-		userName := "同学"
-		if user.Nickname != nil && *user.Nickname != "" {
-			userName = *user.Nickname
-		}
-
 		data := map[string]string{
-			"user_name": userName,
-			"identity":  "在校学生",
-			"result":    resultStr,
-			"remark":    remark,
+			"identity": "在校学生",
+			"result":   resultStr,
+			"remark":   remark,
 		}
 
 		err = s.message.SendSubscribeMsgByBizKey(asyncCtx, id, models.MsgBizKeyIdentityAuth, data)
