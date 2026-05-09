@@ -86,17 +86,10 @@ func (s *UserService) ReviewUserAuth(ctx context.Context, id, status int) error 
 			remark = "请检查上传信息是否匹配，确认后重新上传。"
 		}
 
-		// user_name：优先使用昵称，未设置时用默认值
-		userName := "快组儿"
-		if user.Nickname != nil && *user.Nickname != "" {
-			userName = *user.Nickname
-		}
-
 		data := map[string]string{
-			"user_name": userName,
-			"identity":  "在校学生",
-			"result":    resultStr,
-			"remark":    remark,
+			"identity": "在校学生",
+			"result":   resultStr,
+			"remark":   remark,
 		}
 
 		err = s.message.SendSubscribeMsgByBizKey(asyncCtx, id, models.MsgBizKeyIdentityAuth, data)
