@@ -30,13 +30,6 @@ func (s *MessageService) SendSubscribeMsgByBizKey(ctx context.Context, userID in
 	return s.sendSubscribeMsg(ctx, userID, bizKey, businessData, "")
 }
 
-// SendSubscribeMsgByBizKeyWithPage is like SendSubscribeMsgByBizKey but uses the
-// provided page string instead of the database-stored page_path. Use this when the
-// page path must carry dynamic query parameters (e.g. ?id=123).
-func (s *MessageService) SendSubscribeMsgByBizKeyWithPage(ctx context.Context, userID int, bizKey string, businessData map[string]string, page string) error {
-	return s.sendSubscribeMsg(ctx, userID, bizKey, businessData, page)
-}
-
 // sendSubscribeMsg is the shared implementation. When pageOverride is non-empty it
 // takes precedence over the page_path stored in msg_template_config.
 func (s *MessageService) sendSubscribeMsg(ctx context.Context, userID int, bizKey string, businessData map[string]string, pageOverride string) error {
