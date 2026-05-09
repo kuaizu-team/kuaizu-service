@@ -63,6 +63,7 @@ type UserRepo interface {
 	FindEmailRecipients(ctx context.Context, excludeUserID int, limit int) ([]*EmailRecipient, error)
 	SetEmailOptOut(ctx context.Context, userID int, optOut bool) error
 	UpdateAuthImgUrl(ctx context.Context, userID int, authImgUrl string) error
+	ResubmitCertification(ctx context.Context, userID int, imgKey string) error
 	UpdateAvatarUrl(ctx context.Context, userID int, avatarUrl string) error
 	UpdateCoverImage(ctx context.Context, userID int, coverImage string) error
 	GetEduCertInfoByID(ctx context.Context, userID int) (CertInfo, error)

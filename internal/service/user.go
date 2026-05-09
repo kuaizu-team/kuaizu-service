@@ -83,13 +83,19 @@ func (s *UserService) ReviewUserAuth(ctx context.Context, id, status int) error 
 		remark := "恭喜！您的身份认证已通过。"
 		if status == models.UserAuthStatusFailed {
 			resultStr = "认证失败"
-			remark = "请检查上传信息是否匹配，确认后重新上传。"
+			remark = "请修改后重新上传认证资料。"
+		}
+
+		userName := "同学"
+		if user.Nickname != nil && *user.Nickname != "" {
+			userName = *user.Nickname
 		}
 
 		data := map[string]string{
-			"identity": "在校学生",
-			"result":   resultStr,
-			"remark":   remark,
+			"user_name": userName,
+			"identity":  "在校学生",
+			"result":    resultStr,
+			"remark":    remark,
 		}
 
 		err = s.message.SendSubscribeMsgByBizKey(asyncCtx, id, models.MsgBizKeyIdentityAuth, data)

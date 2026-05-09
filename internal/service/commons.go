@@ -83,9 +83,9 @@ func (s *CommonsService) SubmitCertification(ctx context.Context, userID int, fi
 		_ = s.DeleteFile(oldKey)
 	}
 
-	// 4. 更新数据库
-	if err := s.userRepo.UpdateAuthImgUrl(ctx, userID, result.Key); err != nil {
-		log.Printf("[CommonsService.SubmitCertification] repository error updating auth img: %v", err)
+	// 4. 原子更新图片 URL，并在认证失败（status=2）时将状态重置为待审核（status=0）
+	if err := s.userRepo.ResubmitCertification(ctx, userID, result.Key); err != nil {
+		log.Printf("[CommonsService.SubmitCertification] repository error resubmitting certification: %v", err)
 		return nil, ErrInternal("更新认证图片失败")
 	}
 
