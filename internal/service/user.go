@@ -83,7 +83,7 @@ func (s *UserService) ReviewUserAuth(ctx context.Context, id, status int) error 
 		remark := "恭喜！您的身份认证已通过。"
 		if status == models.UserAuthStatusFailed {
 			resultStr = "认证失败"
-			remark = "请检查上传信息与学业信息是否匹配，确认清晰合规后重新上传。"
+			remark = "请检查上传信息是否匹配，确认后重新上传。"
 		}
 
 		// user_name：优先使用昵称，未设置时用默认值
