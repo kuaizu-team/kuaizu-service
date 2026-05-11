@@ -319,8 +319,10 @@ type OliveBranchBadgeCounts struct {
 
 // GetBadgeCounts returns:
 //   - ReceivedPendingCount: number of olive branches received by userID with status=0 (pending)
-//   - SentUnreadCount:      number of olive branches sent by userID after the user's sent_olive_viewed_at
-//     (all sent branches if sent_olive_viewed_at is NULL)
+//   - SentUnreadCount:      number of olive branches sent by userID whose updated_at is after the
+//     user's sent_olive_viewed_at (all sent branches if sent_olive_viewed_at is NULL).
+//     Using updated_at ensures the count increments both when A first sends (updated_at = created_at)
+//     and when B accepts/rejects (UpdateStatus sets updated_at = CURRENT_TIMESTAMP).
 func (r *OliveBranchRepository) GetBadgeCounts(ctx context.Context, userID int) (OliveBranchBadgeCounts, error) {
 	var counts OliveBranchBadgeCounts
 
@@ -341,14 +343,16 @@ func (r *OliveBranchRepository) GetBadgeCounts(ctx context.Context, userID int) 
 		return counts, fmt.Errorf("get sent_olive_viewed_at: %w", err)
 	}
 
-	// 3. sent unread count
+	// 3. sent unread count — use updated_at so that a receiver's accept/reject
+	//    (which sets updated_at = CURRENT_TIMESTAMP) causes the badge to reappear
+	//    for the sender even after they previously called mark-sent-read.
 	var sentQuery string
 	var sentArgs []interface{}
 	if viewedAt == nil {
 		sentQuery = `SELECT COUNT(*) FROM olive_branch_record WHERE sender_id = ?`
 		sentArgs = []interface{}{userID}
 	} else {
-		sentQuery = `SELECT COUNT(*) FROM olive_branch_record WHERE sender_id = ? AND created_at > ?`
+		sentQuery = `SELECT COUNT(*) FROM olive_branch_record WHERE sender_id = ? AND updated_at > ?`
 		sentArgs = []interface{}{userID, *viewedAt}
 	}
 	if err := r.db.QueryRowxContext(ctx, sentQuery, sentArgs...).Scan(&counts.SentUnreadCount); err != nil {
