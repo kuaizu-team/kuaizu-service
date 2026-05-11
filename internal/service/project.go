@@ -545,7 +545,7 @@ func (s *ProjectService) ReviewProject(ctx context.Context, id, status int) erro
 		remark := "项目已上线，快去查看吧！" // 12 字 ≤ thing7 上限 20 字
 		if status == models.ProjectStatusRejected {
 			statusStr = "审核拒绝"
-			remark = "请修改后重新提交项目。" // 10 字 ≤ thing7 上限 20 字
+			remark = "请按照审核意见重新提交项目。" // 14 字 ≤ thing7 上限 20 字
 		}
 
 		// thing15 上限 20 字，超长则截断，避免微信 47003 错误
