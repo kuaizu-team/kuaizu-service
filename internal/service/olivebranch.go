@@ -9,15 +9,6 @@ import (
 	"github.com/kuaizu-team/kuaizu-service/internal/repository"
 )
 
-// truncate20 ensures s does not exceed the WeChat thing-type 20-character limit.
-func truncate20(s string) string {
-	r := []rune(s)
-	if len(r) > 20 {
-		return string(r[:20])
-	}
-	return s
-}
-
 const dailyFreeQuota = 5
 
 // OliveBranchService handles olive branch business logic.

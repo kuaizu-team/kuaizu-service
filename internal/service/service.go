@@ -42,6 +42,15 @@ func New(repo *repository.Repository, deps *Dependencies) *Services {
 	}
 }
 
+// truncate20 ensures s does not exceed the WeChat thing-type 20-character limit.
+func truncate20(s string) string {
+	r := []rune(s)
+	if len(r) > 20 {
+		return string(r[:20])
+	}
+	return s
+}
+
 // normalizePageParams enforces sane defaults for page/size.
 func normalizePageParams(page, size int) (int, int) {
 	if page < 1 {
