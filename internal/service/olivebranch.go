@@ -13,12 +13,13 @@ const dailyFreeQuota = 5
 
 // OliveBranchService handles olive branch business logic.
 type OliveBranchService struct {
-	repo *repository.Repository
+	repo    *repository.Repository
+	message *MessageService
 }
 
 // NewOliveBranchService creates a new OliveBranchService.
-func NewOliveBranchService(repo *repository.Repository) *OliveBranchService {
-	return &OliveBranchService{repo: repo}
+func NewOliveBranchService(repo *repository.Repository, message *MessageService) *OliveBranchService {
+	return &OliveBranchService{repo: repo, message: message}
 }
 
 // SendRequest holds the input for sending an olive branch.
@@ -132,6 +133,25 @@ func (s *OliveBranchService) SendOliveBranch(ctx context.Context, userID int, re
 	ob.ProjectName = projectName
 	ob.Sender = sender
 	ob.Receiver = receiver
+
+	// 向接收方推送「收到橄榄枝通知」（MSG_INVITE_JOIN）
+	// sender、project 均已在本函数内查询，直接捕获，无额外 DB 开销
+	go func(asyncCtx context.Context) {
+		inviterName := "匿名用户"
+		if sender.Nickname != nil && *sender.Nickname != "" {
+			inviterName = *sender.Nickname
+		}
+
+		data := map[string]string{
+			"project_name": truncate20(project.Name),         // thing1 ≤ 20 字
+			"inviter":      truncate20(inviterName),           // thing2 ≤ 20 字
+			"remark":       "您收到一条橄榄枝邀请",             // thing4，10 字 ≤ 20
+		}
+
+		if err := s.message.SendSubscribeMsgByBizKey(asyncCtx, req.ReceiverID, models.MsgBizKeyInviteJoin, data); err != nil {
+			log.Printf("[OliveBranchService.SendOliveBranch] notification error: %v", err)
+		}
+	}(context.WithoutCancel(ctx))
 
 	return ob, nil
 }

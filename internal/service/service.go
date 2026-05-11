@@ -31,7 +31,7 @@ func New(repo *repository.Repository, deps *Dependencies) *Services {
 		Payment:          NewPaymentService(repo, deps.PayClient, deps.PayInitError),
 		EmailUnsubscribe: NewEmailUnsubscribeService(repo),
 		Order:            NewOrderService(repo, deps.PayClient, deps.PayInitError),
-		OliveBranch:      NewOliveBranchService(repo),
+		OliveBranch:      NewOliveBranchService(repo, message),
 		Commons:          NewCommonsService(deps.OSSClient, repo.User),
 		ContentAudit:     contentAudit,
 		TalentProfile:    NewTalentProfileService(repo, contentAudit, message),
@@ -40,6 +40,15 @@ func New(repo *repository.Repository, deps *Dependencies) *Services {
 		User:             NewUserService(repo, message),
 		Feedback:         NewFeedbackService(repo, message),
 	}
+}
+
+// truncate20 ensures s does not exceed the WeChat thing-type 20-character limit.
+func truncate20(s string) string {
+	r := []rune(s)
+	if len(r) > 20 {
+		return string(r[:20])
+	}
+	return s
 }
 
 // normalizePageParams enforces sane defaults for page/size.
