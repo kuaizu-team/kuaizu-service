@@ -175,5 +175,39 @@ func (s *OliveBranchService) HandleOliveBranch(ctx context.Context, userID, bran
 	}
 
 	ob.Status = newStatus
+
+	// 向橄榄枝发送方推送「橄榄枝邀请结果通知」（MSG_USER_REPLY）
+	// userID 为响应者（接收方），ob.SenderID 为原发送方
+	go func(asyncCtx context.Context, senderID, responderID, status int) {
+		// 获取响应者昵称（nickname 字段）
+		responder, err := s.repo.User.GetByID(asyncCtx, responderID)
+		if err != nil || responder == nil {
+			log.Printf("[OliveBranchService.HandleOliveBranch] notification: failed to get responder: %v", err)
+			return
+		}
+
+		responderName := "匿名用户"
+		if responder.Nickname != nil && *responder.Nickname != "" {
+			responderName = *responder.Nickname
+		}
+
+		resultStr := "同意"                           // phrase3 ≤ 5 字
+		remark := "恭喜！对方已同意您的邀请。"          // thing5，13 字 ≤ 20
+		if status == models.OliveBranchStatusRejected {
+			resultStr = "拒绝"
+			remark = "很遗憾，对方拒绝了您的邀请。"   // thing5，14 字 ≤ 20
+		}
+
+		data := map[string]string{
+			"nickname": truncate20(responderName), // thing2 ≤ 20 字
+			"result":   resultStr,
+			"remark":   remark,
+		}
+
+		if err := s.message.SendSubscribeMsgByBizKey(asyncCtx, senderID, models.MsgBizKeyUserReply, data); err != nil {
+			log.Printf("[OliveBranchService.HandleOliveBranch] notification error: %v", err)
+		}
+	}(context.WithoutCancel(ctx), ob.SenderID, userID, newStatus)
+
 	return ob, nil
 }
