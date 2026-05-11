@@ -31,7 +31,7 @@ func New(repo *repository.Repository, deps *Dependencies) *Services {
 		Payment:          NewPaymentService(repo, deps.PayClient, deps.PayInitError),
 		EmailUnsubscribe: NewEmailUnsubscribeService(repo),
 		Order:            NewOrderService(repo, deps.PayClient, deps.PayInitError),
-		OliveBranch:      NewOliveBranchService(repo),
+		OliveBranch:      NewOliveBranchService(repo, message),
 		Commons:          NewCommonsService(deps.OSSClient, repo.User),
 		ContentAudit:     contentAudit,
 		TalentProfile:    NewTalentProfileService(repo, contentAudit, message),
