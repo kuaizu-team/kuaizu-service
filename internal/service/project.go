@@ -541,17 +541,22 @@ func (s *ProjectService) ReviewProject(ctx context.Context, id, status int) erro
 
 	// 向项目负责人发送审核结果通知
 	go func(asyncCtx context.Context) {
-		statusStr := "已通过"
-		remark := "恭喜！您的项目已通过审核，现在对其他用户可见。"
+		statusStr := "审核通过"
+		remark := "项目已上线，快去查看吧！" // 12 字 ≤ thing7 上限 20 字
 		if status == models.ProjectStatusRejected {
-			statusStr = "已驳回"
-			remark = "很抱歉，您的项目未通过审核，请检查内容是否合规。"
+			statusStr = "审核拒绝"
+			remark = "请修改后重新提交项目。" // 10 字 ≤ thing7 上限 20 字
+		}
+
+		// thing15 上限 20 字，超长则截断，避免微信 47003 错误
+		projectName := project.Name
+		if len([]rune(projectName)) > 20 {
+			projectName = string([]rune(projectName)[:20])
 		}
 
 		data := map[string]string{
-			"project_name": project.Name,
+			"project_name": projectName,
 			"status":       statusStr,
-			"apply_time":   project.UpdatedAt.Format("2006-01-02 15:04:05"),
 			"remark":       remark,
 		}
 
