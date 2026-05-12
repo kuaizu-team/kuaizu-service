@@ -171,6 +171,7 @@ func (s *Server) UpdateProject(ctx echo.Context, id int) error {
 		IsCrossSchool:        req.IsCrossSchool,
 		EducationRequirement: req.EducationRequirement,
 		SkillRequirement:     req.SkillRequirement,
+		NeedReview:           req.NeedReview,
 	}
 
 	project, err := s.svc.Project.UpdateProject(ctx.Request().Context(), id, userID, input)

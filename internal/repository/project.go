@@ -82,9 +82,14 @@ func (r *ProjectRepository) List(ctx context.Context, params ListParams) ([]mode
 		return nil, 0, fmt.Errorf("count projects: %w", err)
 	}
 
-	// Build ORDER BY — school_priority mode injects a CASE WHEN priority column
+	// Build ORDER BY
+	// - "updated_at"      → p.updated_at DESC  (used by ListMyProjects)
+	// - "school_priority" → CASE WHEN tier ordering with created_at tiebreak
+	// - default           → p.created_at DESC
 	orderClause := "p.created_at DESC"
-	if params.SortBy != nil && *params.SortBy == "school_priority" {
+	if params.SortBy != nil && *params.SortBy == "updated_at" {
+		orderClause = "p.updated_at DESC"
+	} else if params.SortBy != nil && *params.SortBy == "school_priority" {
 		schoolID := 0
 		if params.UserSchoolID != nil {
 			schoolID = *params.UserSchoolID
