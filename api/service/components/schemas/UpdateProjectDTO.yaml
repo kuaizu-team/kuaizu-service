@@ -20,3 +20,8 @@ properties:
   skillRequirement:
     type: string
     description: 技能要求
+  needReview:
+    type: boolean
+    description: |
+      是否将项目状态重置为"待审核（0）"。
+      前端在用户实际修改了内容时传 true，未做任何修改直接保存时不传或传 false。

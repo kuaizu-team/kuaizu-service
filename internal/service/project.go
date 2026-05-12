@@ -54,10 +54,13 @@ func (s *ProjectService) ListProjects(ctx context.Context, params repository.Lis
 	}, nil
 }
 
-// ListMyProjects returns a paginated list of projects created by the given user.
+// ListMyProjects returns a paginated list of projects created by the given user,
+// sorted by updated_at descending so recently-modified projects appear first.
 func (s *ProjectService) ListMyProjects(ctx context.Context, userID int, params repository.ListParams) (*ProjectListResult, error) {
 	params.Page, params.Size = normalizePageParams(params.Page, params.Size)
 	params.CreatorID = &userID
+	sortBy := "updated_at"
+	params.SortBy = &sortBy
 
 	if err := validateProjectListStatuses(params); err != nil {
 		return nil, err
@@ -198,6 +201,10 @@ type UpdateProjectInput struct {
 	IsCrossSchool        *int
 	EducationRequirement *int
 	SkillRequirement     *string
+	// NeedReview when true resets the project status to pending (0) so it goes
+	// back into the admin review queue. Set by the frontend whenever the user
+	// actually modifies content.
+	NeedReview *bool
 }
 
 // UpdateProject checks ownership, audits content, applies updates, and returns the updated project.
@@ -274,6 +281,15 @@ func (s *ProjectService) UpdateProject(ctx context.Context, id, userID int, inpu
 	if err := s.repo.Project.Update(ctx, project); err != nil {
 		log.Printf("[ProjectService.UpdateProject] repository error updating: %v", err)
 		return nil, ErrInternal("更新项目失败")
+	}
+
+	// If the caller signals that content changed, reset status to pending so the
+	// project re-enters the admin review queue.
+	if input.NeedReview != nil && *input.NeedReview {
+		if err := s.repo.Project.UpdateStatus(ctx, id, models.ProjectStatusPending); err != nil {
+			log.Printf("[ProjectService.UpdateProject] repository error resetting status: %v", err)
+			return nil, ErrInternal("重置审核状态失败")
+		}
 	}
 
 	// Reload to return fresh data
