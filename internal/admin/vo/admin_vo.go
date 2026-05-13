@@ -44,6 +44,8 @@ type AdminUserVO struct {
 	LastActiveDate      *time.Time `json:"lastActiveDate"`
 	AuthStatus          *int       `json:"authStatus"`
 	AuthImgUrl          *string    `json:"authImgUrl"`
+	AvatarUrl           *string    `json:"avatarUrl"`
+	Wechat              *string    `json:"wechat"`
 	EmailOptOut         *bool      `json:"emailOptOut"`
 	CreatedAt           *time.Time `json:"createdAt"`
 	SchoolName          *string    `json:"schoolName"`
@@ -131,6 +133,8 @@ func NewAdminUserVO(u *models.User, talentProfileStatus *int) *AdminUserVO {
 		Grade:               u.Grade,
 		LastActiveDate:      u.LastActiveDate,
 		AuthImgUrl:          ossFullURLPtr(u.AuthImgUrl),
+		AvatarUrl:           ossFullURLPtr(u.AvatarUrl),
+		Wechat:              u.WechatID,
 		EmailOptOut:         u.EmailOptOut,
 		CreatedAt:           u.CreatedAt,
 		SchoolName:          u.SchoolName,

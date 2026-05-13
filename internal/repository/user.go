@@ -312,7 +312,8 @@ func (r *UserRepository) ListUsers(ctx context.Context, params UserListParams) (
 			u.id, u.openid, u.nickname, u.phone, u.email,
 			u.school_id, u.major_id, u.grade, u.olive_branch_count,
 			u.free_branch_used_today, u.last_active_date,
-			u.auth_status, u.auth_img_url, u.avatar_url, u.cover_image, u.created_at,
+			u.auth_status, u.auth_img_url, u.avatar_url, u.cover_image,
+			u.wechat_id, u.created_at,
 			s.school_name, s.school_code,
 			m.major_name, m.class_id
 		FROM `+"`user`"+` u
