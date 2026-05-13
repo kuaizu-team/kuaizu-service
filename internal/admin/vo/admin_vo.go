@@ -196,6 +196,65 @@ func NewAdminUserDetailVO(u *models.User, p *models.TalentProfile) *AdminUserDet
 	}
 }
 
+// AdminApplicationVO is the admin-facing project application response model.
+type AdminApplicationVO struct {
+	ID          int       `json:"id"`
+	ProjectID   int       `json:"projectId"`
+	ProjectName *string   `json:"projectName"`
+	Status      int       `json:"status"`
+	AppliedAt   time.Time `json:"appliedAt"`
+}
+
+// NewAdminApplicationVO converts a ProjectApplication model to AdminApplicationVO.
+func NewAdminApplicationVO(a *models.ProjectApplication) *AdminApplicationVO {
+	if a == nil {
+		return nil
+	}
+	return &AdminApplicationVO{
+		ID:          a.ID,
+		ProjectID:   a.ProjectID,
+		ProjectName: a.ProjectName,
+		Status:      a.Status,
+		AppliedAt:   a.AppliedAt,
+	}
+}
+
+// AdminOliveBranchVO is the admin-facing olive branch response model.
+type AdminOliveBranchVO struct {
+	ID               int       `json:"id"`
+	RelatedProjectID *int      `json:"relatedProjectId"`
+	ProjectName      *string   `json:"projectName"`
+	Type             int       `json:"type"`
+	SenderNickname   *string   `json:"senderNickname"`
+	Status           int       `json:"status"`
+	CreatedAt        time.Time `json:"createdAt"`
+}
+
+// NewAdminOliveBranchVO converts an OliveBranch model to AdminOliveBranchVO.
+func NewAdminOliveBranchVO(ob *models.OliveBranch) *AdminOliveBranchVO {
+	if ob == nil {
+		return nil
+	}
+	var relatedProjectID *int
+	if ob.RelatedProjectID != 0 {
+		id := ob.RelatedProjectID
+		relatedProjectID = &id
+	}
+	var senderNickname *string
+	if ob.Sender != nil {
+		senderNickname = ob.Sender.Nickname
+	}
+	return &AdminOliveBranchVO{
+		ID:               ob.ID,
+		RelatedProjectID: relatedProjectID,
+		ProjectName:      ob.ProjectName,
+		Type:             ob.Type,
+		SenderNickname:   senderNickname,
+		Status:           ob.Status,
+		CreatedAt:        ob.CreatedAt,
+	}
+}
+
 // ossFullURLPtr resolves a nullable relative OSS path to a full URL pointer.
 func ossFullURLPtr(rel *string) *string {
 	if rel == nil {

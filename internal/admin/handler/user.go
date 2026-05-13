@@ -129,6 +129,82 @@ func (s *AdminServer) GetUser(ctx echo.Context) error {
 	return response.Success(ctx, adminvo.NewAdminUserDetailVO(user, profile))
 }
 
+// ListUserApplications handles GET /admin/users/:id/applications
+func (s *AdminServer) ListUserApplications(ctx echo.Context) error {
+	id, err := strconv.Atoi(ctx.Param("id"))
+	if err != nil {
+		return response.BadRequest(ctx, "invalid user id")
+	}
+
+	page, _ := strconv.Atoi(ctx.QueryParam("page"))
+	size, _ := strconv.Atoi(ctx.QueryParam("size"))
+	if page < 1 {
+		page = 1
+	}
+	if size < 1 || size > 100 {
+		size = 10
+	}
+
+	params := repository.ApplicationListParams{
+		UserID: &id,
+		Page:   page,
+		Size:   size,
+	}
+
+	applications, total, err := s.repo.Application.List(ctx.Request().Context(), params)
+	if err != nil {
+		return response.InternalError(ctx, "获取投递记录失败")
+	}
+
+	list := make([]adminvo.AdminApplicationVO, len(applications))
+	for i := range applications {
+		list[i] = *adminvo.NewAdminApplicationVO(&applications[i])
+	}
+
+	return response.Success(ctx, map[string]interface{}{
+		"list":  list,
+		"total": total,
+	})
+}
+
+// ListUserOliveBranches handles GET /admin/users/:id/olive-branches
+func (s *AdminServer) ListUserOliveBranches(ctx echo.Context) error {
+	id, err := strconv.Atoi(ctx.Param("id"))
+	if err != nil {
+		return response.BadRequest(ctx, "invalid user id")
+	}
+
+	page, _ := strconv.Atoi(ctx.QueryParam("page"))
+	size, _ := strconv.Atoi(ctx.QueryParam("size"))
+	if page < 1 {
+		page = 1
+	}
+	if size < 1 || size > 100 {
+		size = 10
+	}
+
+	params := repository.OliveBranchListParams{
+		ReceiverID: id,
+		Page:       page,
+		Size:       size,
+	}
+
+	branches, total, err := s.repo.OliveBranch.ListByReceiverID(ctx.Request().Context(), params)
+	if err != nil {
+		return response.InternalError(ctx, "获取橄榄枝记录失败")
+	}
+
+	list := make([]adminvo.AdminOliveBranchVO, len(branches))
+	for i := range branches {
+		list[i] = *adminvo.NewAdminOliveBranchVO(&branches[i])
+	}
+
+	return response.Success(ctx, map[string]interface{}{
+		"list":  list,
+		"total": total,
+	})
+}
+
 type reviewAuthRequest struct {
 	AuthStatus int `json:"authStatus"`
 }

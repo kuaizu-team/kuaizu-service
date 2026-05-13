@@ -33,6 +33,14 @@ func (s *AdminServer) ListProjects(ctx echo.Context) error {
 		params.Keyword = &v
 	}
 
+	if v := ctx.QueryParam("creatorId"); v != "" {
+		creatorID, err := strconv.Atoi(v)
+		if err != nil {
+			return response.BadRequest(ctx, "invalid creatorId")
+		}
+		params.CreatorID = &creatorID
+	}
+
 	result, err := s.svc.Project.ListProjects(ctx.Request().Context(), params)
 	if err != nil {
 		return mapServiceError(ctx, err)
