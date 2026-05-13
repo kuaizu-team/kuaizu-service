@@ -90,6 +90,7 @@ type OliveBranchRepo interface {
 	ListBySenderID(ctx context.Context, params OliveBranchListParams) ([]models.OliveBranch, int64, error)
 	ExistsPending(ctx context.Context, senderID, receiverID, relatedProjectID int) (bool, error)
 	GetBadgeCounts(ctx context.Context, userID int) (OliveBranchBadgeCounts, error)
+	ListByRelatedProjectID(ctx context.Context, params OliveBranchByProjectParams) ([]models.OliveBranch, int64, error)
 }
 
 // SchoolRepo defines the interface for school repository operations.

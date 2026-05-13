@@ -311,6 +311,88 @@ func (r *OliveBranchRepository) ListBySenderID(ctx context.Context, params Olive
 	return records, total, nil
 }
 
+// OliveBranchByProjectParams contains parameters for listing olive branches by project
+type OliveBranchByProjectParams struct {
+	ProjectID int
+	Page      int
+	Size      int
+}
+
+// ListByRelatedProjectID retrieves paginated olive branches sent for a project (receiver-focused)
+func (r *OliveBranchRepository) ListByRelatedProjectID(ctx context.Context, params OliveBranchByProjectParams) ([]models.OliveBranch, int64, error) {
+	// Count total
+	var total int64
+	if err := r.db.QueryRowxContext(ctx,
+		`SELECT COUNT(*) FROM olive_branch_record WHERE related_project_id = ?`,
+		params.ProjectID,
+	).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("count olive branches by project: %w", err)
+	}
+
+	offset := (params.Page - 1) * params.Size
+	query := `
+		SELECT
+			ob.id, ob.sender_id, ob.receiver_id, ob.related_project_id,
+			ob.type, ob.cost_type, ob.status,
+			ob.created_at, ob.updated_at,
+			p.name AS project_name,
+			recv.id          AS u_id,
+			recv.nickname    AS u_nickname,
+			recv.phone       AS u_phone,
+			recv.email       AS u_email,
+			recv.grade       AS u_grade,
+			recv.auth_status AS u_auth_status,
+			recv.avatar_url  AS u_avatar_url,
+			recv.school_id   AS u_school_id,
+			recv.major_id    AS u_major_id,
+			sch.school_name  AS u_school_name,
+			sch.school_code  AS u_school_code,
+			m.major_name     AS u_major_name,
+			m.class_id       AS u_class_id
+		FROM olive_branch_record ob
+		LEFT JOIN project p ON ob.related_project_id = p.id
+		LEFT JOIN ` + "`user`" + ` recv ON ob.receiver_id = recv.id
+		LEFT JOIN school sch ON recv.school_id = sch.id
+		LEFT JOIN major m ON recv.major_id = m.id
+		WHERE ob.related_project_id = ?
+		ORDER BY ob.created_at DESC LIMIT ? OFFSET ?
+	`
+
+	rows, err := r.db.QueryxContext(ctx, query, params.ProjectID, params.Size, offset)
+	if err != nil {
+		return nil, 0, fmt.Errorf("query olive branches by project: %w", err)
+	}
+	defer rows.Close()
+
+	var records []models.OliveBranch
+	for rows.Next() {
+		var row obRow
+		if err := rows.StructScan(&row); err != nil {
+			return nil, 0, fmt.Errorf("scan olive branch: %w", err)
+		}
+		ob := row.OliveBranch
+		ob.Receiver = &models.User{
+			ID:         row.UID,
+			Nickname:   row.UNickname,
+			Phone:      row.UPhone,
+			Email:      row.UEmail,
+			Grade:      row.UGrade,
+			AuthStatus: row.UAuthStatus,
+			AvatarUrl:  row.UAvatarUrl,
+			SchoolID:   row.USchoolID,
+			MajorID:    row.UMajorID,
+			SchoolName: row.USchoolName,
+			SchoolCode: row.USchoolCode,
+			MajorName:  row.UMajorName,
+			ClassID:    row.UClassID,
+		}
+		records = append(records, ob)
+	}
+	rows.Close()
+
+	return records, total, nil
+}
+
 // OliveBranchBadgeCounts holds badge counts for the olive branch feature.
 type OliveBranchBadgeCounts struct {
 	ReceivedPendingCount int
