@@ -259,6 +259,62 @@ func NewAdminOliveBranchVO(ob *models.OliveBranch) *AdminOliveBranchVO {
 	}
 }
 
+// AdminProjectApplicantVO is the admin-facing project application with full applicant info,
+// used by GET /admin/projects/:id/applications.
+type AdminProjectApplicantVO struct {
+	ID        int          `json:"id"`
+	UserID    int          `json:"userId"`
+	Status    int          `json:"status"`
+	AppliedAt time.Time    `json:"appliedAt"`
+	Applicant *AdminUserVO `json:"applicant"`
+}
+
+// NewAdminProjectApplicantVO converts a ProjectApplication model to AdminProjectApplicantVO.
+// talentProfileStatus is the applicant's talent profile status (nil if unknown).
+func NewAdminProjectApplicantVO(a *models.ProjectApplication, talentProfileStatus *int) *AdminProjectApplicantVO {
+	if a == nil {
+		return nil
+	}
+	vo := &AdminProjectApplicantVO{
+		ID:        a.ID,
+		UserID:    a.UserID,
+		Status:    a.Status,
+		AppliedAt: a.AppliedAt,
+	}
+	if a.Applicant != nil {
+		vo.Applicant = NewAdminUserVO(a.Applicant, talentProfileStatus)
+	}
+	return vo
+}
+
+// AdminProjectOliveBranchVO is the admin-facing olive branch record with full receiver info,
+// used by GET /admin/projects/:id/olive-branches.
+type AdminProjectOliveBranchVO struct {
+	ID        int          `json:"id"`
+	Type      int          `json:"type"`
+	Status    int          `json:"status"`
+	CreatedAt time.Time    `json:"createdAt"`
+	Receiver  *AdminUserVO `json:"receiver"`
+}
+
+// NewAdminProjectOliveBranchVO converts an OliveBranch model to AdminProjectOliveBranchVO.
+// talentProfileStatus is the receiver's talent profile status (nil if unknown).
+func NewAdminProjectOliveBranchVO(ob *models.OliveBranch, talentProfileStatus *int) *AdminProjectOliveBranchVO {
+	if ob == nil {
+		return nil
+	}
+	vo := &AdminProjectOliveBranchVO{
+		ID:        ob.ID,
+		Type:      ob.Type,
+		Status:    ob.Status,
+		CreatedAt: ob.CreatedAt,
+	}
+	if ob.Receiver != nil {
+		vo.Receiver = NewAdminUserVO(ob.Receiver, talentProfileStatus)
+	}
+	return vo
+}
+
 // ossFullURLPtr resolves a nullable relative OSS path to a full URL pointer.
 func ossFullURLPtr(rel *string) *string {
 	if rel == nil {
