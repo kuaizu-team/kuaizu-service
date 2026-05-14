@@ -30,7 +30,12 @@ get:
         type: string
     - name: userSchoolId
       in: query
-      description: 当前用户学校 ID，`sortBy=school_priority` 时用于判断本校人才。
+      description: 当前用户学校 ID，`sortBy=school_priority` 时用于判断本校人才及地域优先级。
+      schema:
+        type: integer
+    - name: userMajorId
+      in: query
+      description: 当前用户专业 ID，`sortBy=school_priority` 时用于判断同专业大类人才。
       schema:
         type: integer
   security: []

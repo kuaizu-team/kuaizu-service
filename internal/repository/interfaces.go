@@ -104,6 +104,7 @@ type SchoolRepo interface {
 
 // MajorRepo defines the interface for major repository operations.
 type MajorRepo interface {
+	GetByID(ctx context.Context, id int) (*models.Major, error)
 	List(ctx context.Context, params *api.ListMajorsParams) ([]models.Major, error)
 	ListWithMajors(ctx context.Context, params api.ListMajorsParams) ([]models.MajorClass, error)
 }

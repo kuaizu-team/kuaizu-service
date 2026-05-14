@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"strings"
 
@@ -18,6 +19,19 @@ type MajorRepository struct {
 // NewMajorRepository creates a new MajorRepository
 func NewMajorRepository(db *sqlx.DB) *MajorRepository {
 	return &MajorRepository{db: db}
+}
+
+// GetByID retrieves a single major by its primary key.
+func (r *MajorRepository) GetByID(ctx context.Context, id int) (*models.Major, error) {
+	var major models.Major
+	query := `SELECT id, class_id, major_name FROM major WHERE id = ?`
+	if err := r.db.GetContext(ctx, &major, query, id); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get major by id: %w", err)
+	}
+	return &major, nil
 }
 
 func (r *MajorRepository) List(ctx context.Context, params *api.ListMajorsParams) ([]models.Major, error) {

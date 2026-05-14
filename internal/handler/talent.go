@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"log"
+
 	"github.com/kuaizu-team/kuaizu-service/api"
 	"github.com/kuaizu-team/kuaizu-service/internal/models"
 	"github.com/kuaizu-team/kuaizu-service/internal/repository"
@@ -29,6 +31,35 @@ func (s *Server) ListTalentProfiles(ctx echo.Context, params api.ListTalentProfi
 		Status:       &status,
 		SortBy:       params.SortBy,
 		UserSchoolID: params.UserSchoolId,
+		UserMajorID:  params.UserMajorId,
+	}
+
+	// When school_priority sort is requested, pre-fetch the user's school geo info
+	// and major class_id so the repository can build the full tier ORDER BY.
+	// Lookup failures are non-fatal — the sort gracefully degrades to fewer tiers.
+	if params.SortBy != nil && *params.SortBy == "school_priority" {
+		reqCtx := ctx.Request().Context()
+
+		if params.UserSchoolId != nil {
+			school, err := s.repo.School.GetByID(reqCtx, *params.UserSchoolId)
+			if err != nil {
+				log.Printf("[ListTalentProfiles] school lookup error (non-fatal): %v", err)
+			} else if school != nil {
+				listParams.UserSchoolProvince = school.Province
+				listParams.UserSchoolCity = school.City
+				listParams.UserSchoolDistrict = school.District
+			}
+		}
+
+		if params.UserMajorId != nil {
+			major, err := s.repo.Major.GetByID(reqCtx, *params.UserMajorId)
+			if err != nil {
+				log.Printf("[ListTalentProfiles] major lookup error (non-fatal): %v", err)
+			} else if major != nil {
+				classID := major.ClassId
+				listParams.UserMajorClassID = &classID
+			}
+		}
 	}
 
 	profiles, total, err := s.repo.TalentProfile.List(ctx.Request().Context(), listParams)
