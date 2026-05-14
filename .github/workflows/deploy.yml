@@ -23,8 +23,10 @@ jobs:
 
       - name: Set image version
         run: |
-          VERSION="${{ github.ref_name }}"
-          echo "VERSION=${VERSION//\//-}" >> $GITHUB_ENV
+          # Replace any character that is not [a-zA-Z0-9._-] with '-'
+          # This handles branch names with slashes, parentheses, etc.
+          VERSION=$(echo "${{ github.ref_name }}" | sed 's/[^a-zA-Z0-9._-]/-/g')
+          echo "VERSION=${VERSION}" >> $GITHUB_ENV
 
       - name: Build Docker image
         run: |
