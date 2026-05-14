@@ -23,14 +23,20 @@ func NewTalentProfileRepository(db *sqlx.DB) *TalentProfileRepository {
 
 // TalentProfileListParams contains parameters for listing talent profiles
 type TalentProfileListParams struct {
-	Page         int
-	Size         int
-	SchoolID     *int
-	MajorID      *int
-	Keyword      *string
-	Status       *int
-	SortBy       *string // "school_priority" enables priority ordering
-	UserSchoolID *int    // used when SortBy == "school_priority"
+	Page     int
+	Size     int
+	SchoolID *int
+	MajorID  *int
+	Keyword  *string
+	Status   *int
+	SortBy       *string // "school_priority" enables multi-tier priority ordering
+	UserSchoolID *int    // raw school ID from caller
+
+	// Pre-fetched by handler before calling List — used to build ORDER BY tiers.
+	UserSchoolProvince *string
+	UserSchoolCity     *string
+	UserSchoolDistrict *string
+	UserMajorClassID   *int // class_id of the user's major
 }
 
 // enrichSchoolMajor 为单条 TalentProfile 分别查 school/major 并回填名称
@@ -138,65 +144,192 @@ func (r *TalentProfileRepository) enrichSchoolMajorBatch(ctx context.Context, pr
 	return nil
 }
 
-// List retrieves paginated talent profiles with optional filters
+// List retrieves paginated talent profiles with optional filters and multi-tier smart sorting.
+//
+// Sorting scenarios (activated by SortBy == "school_priority"):
+//
+//	Scenario A — UserSchoolID + UserMajorClassID both set:
+//	  10 tiers: [same school + same class] → [same school] → [same district + same class] →
+//	            [same district] → [same city + same class] → [same city] →
+//	            [same province + same class] → [same province] → [same class] → [other]
+//	Scenario B — UserSchoolID only:
+//	  5 tiers: [same school] → [same district] → [same city] → [same province] → [other]
+//	Scenario C — UserMajorClassID only:
+//	  2 tiers: [same class] → [other]
+//	Scenario D — neither set (or SortBy != "school_priority"):
+//	  plain tp.updated_at DESC
+//
+// Within every tier the tiebreak is tp.updated_at DESC.
+// Geo comparisons use the talent's school columns (ts.*) from a conditional LEFT JOIN.
+// Major class comparisons use the talent's major columns (tm.*) from a conditional LEFT JOIN.
 func (r *TalentProfileRepository) List(ctx context.Context, params TalentProfileListParams) ([]models.TalentProfile, int64, error) {
-	// Build WHERE clause - only show active profiles
+	// ── WHERE clause ────────────────────────────────────────────────────────────
 	conditions := []string{"tp.status = 1"}
-	args := []interface{}{}
+	whereArgs := []interface{}{}
 
 	if params.SchoolID != nil {
 		conditions = append(conditions, "u.school_id = ?")
-		args = append(args, *params.SchoolID)
+		whereArgs = append(whereArgs, *params.SchoolID)
 	}
-
 	if params.MajorID != nil {
 		conditions = append(conditions, "u.major_id = ?")
-		args = append(args, *params.MajorID)
+		whereArgs = append(whereArgs, *params.MajorID)
 	}
-
 	if params.Keyword != nil && *params.Keyword != "" {
 		conditions = append(conditions, "(u.nickname LIKE ? OR tp.self_evaluation LIKE ? OR tp.skill_summary LIKE ?)")
 		pattern := "%" + *params.Keyword + "%"
-		args = append(args, pattern, pattern, pattern)
+		whereArgs = append(whereArgs, pattern, pattern, pattern)
 	}
-
 	if params.Status != nil {
 		conditions = append(conditions, "tp.status = ?")
-		args = append(args, *params.Status)
+		whereArgs = append(whereArgs, *params.Status)
 	}
 
 	whereClause := strings.Join(conditions, " AND ")
 
-	// Count total — talent_profile + user (2 tables)
+	// ── COUNT (WHERE args only; no ORDER BY args needed) ────────────────────────
 	countQuery := fmt.Sprintf(`
-		SELECT COUNT(*) 
+		SELECT COUNT(*)
 		FROM talent_profile tp
 		LEFT JOIN `+"`user`"+` u ON tp.user_id = u.id
 		WHERE %s
 	`, whereClause)
 	var total int64
-	if err := r.db.QueryRowxContext(ctx, countQuery, args...).Scan(&total); err != nil {
+	if err := r.db.QueryRowxContext(ctx, countQuery, whereArgs...).Scan(&total); err != nil {
 		return nil, 0, fmt.Errorf("count talent profiles: %w", err)
 	}
 
-	// Build ORDER BY — school_priority puts same-school talent first
+	// ── ORDER BY (multi-tier CASE WHEN) ─────────────────────────────────────────
 	orderClause := "tp.updated_at DESC"
-	if params.SortBy != nil && *params.SortBy == "school_priority" {
-		schoolID := 0
-		if params.UserSchoolID != nil {
-			schoolID = *params.UserSchoolID
+	var orderArgs []interface{}
+
+	// Determine available geo / major data
+	schoolID := 0
+	if params.UserSchoolID != nil {
+		schoolID = *params.UserSchoolID
+	}
+	classID := 0
+	if params.UserMajorClassID != nil {
+		classID = *params.UserMajorClassID
+	}
+	hasSchool := schoolID != 0
+	hasMajor := classID != 0
+
+	district, city, province := "", "", ""
+	if params.UserSchoolDistrict != nil {
+		district = *params.UserSchoolDistrict
+	}
+	if params.UserSchoolCity != nil {
+		city = *params.UserSchoolCity
+	}
+	if params.UserSchoolProvince != nil {
+		province = *params.UserSchoolProvince
+	}
+	hasDistrict := hasSchool && district != "" && city != ""
+	hasCity := hasSchool && city != ""
+	hasProvince := hasSchool && province != ""
+
+	needsSchoolJoin := false // LEFT JOIN school ts ON u.school_id = ts.id
+	needsMajorJoin := false  // LEFT JOIN major  tm ON u.major_id  = tm.id
+
+	if params.SortBy != nil && *params.SortBy == "school_priority" && (hasSchool || hasMajor) {
+		var whenClauses []string
+
+		switch {
+		// ── Scenario A: school + major (10-tier) ────────────────────────────
+		case hasSchool && hasMajor:
+			needsSchoolJoin = hasDistrict || hasCity || hasProvince // ts.* only referenced when geo tiers exist
+			needsMajorJoin = true
+
+			whenClauses = append(whenClauses, "WHEN u.school_id = ? AND tm.class_id = ? THEN 1")
+			orderArgs = append(orderArgs, schoolID, classID)
+
+			whenClauses = append(whenClauses, "WHEN u.school_id = ? THEN 2")
+			orderArgs = append(orderArgs, schoolID)
+
+			if hasDistrict {
+				whenClauses = append(whenClauses, "WHEN ts.district = ? AND ts.city = ? AND tm.class_id = ? THEN 3")
+				orderArgs = append(orderArgs, district, city, classID)
+
+				whenClauses = append(whenClauses, "WHEN ts.district = ? AND ts.city = ? THEN 4")
+				orderArgs = append(orderArgs, district, city)
+			}
+			if hasCity {
+				whenClauses = append(whenClauses, "WHEN ts.city = ? AND tm.class_id = ? THEN 5")
+				orderArgs = append(orderArgs, city, classID)
+
+				whenClauses = append(whenClauses, "WHEN ts.city = ? THEN 6")
+				orderArgs = append(orderArgs, city)
+			}
+			if hasProvince {
+				whenClauses = append(whenClauses, "WHEN ts.province = ? AND tm.class_id = ? THEN 7")
+				orderArgs = append(orderArgs, province, classID)
+
+				whenClauses = append(whenClauses, "WHEN ts.province = ? THEN 8")
+				orderArgs = append(orderArgs, province)
+			}
+
+			whenClauses = append(whenClauses, "WHEN tm.class_id = ? THEN 9")
+			orderArgs = append(orderArgs, classID)
+
+			tierExpr := "CASE\n" + strings.Join(whenClauses, "\n") + "\nELSE 10\nEND"
+			orderClause = tierExpr + " ASC, tp.updated_at DESC"
+
+		// ── Scenario B: school only (5-tier) ────────────────────────────────
+		case hasSchool:
+			needsSchoolJoin = hasDistrict || hasCity || hasProvince // ts.* only referenced when geo tiers exist
+
+			whenClauses = append(whenClauses, "WHEN u.school_id = ? THEN 1")
+			orderArgs = append(orderArgs, schoolID)
+
+			if hasDistrict {
+				whenClauses = append(whenClauses, "WHEN ts.district = ? AND ts.city = ? THEN 2")
+				orderArgs = append(orderArgs, district, city)
+			}
+			if hasCity {
+				whenClauses = append(whenClauses, "WHEN ts.city = ? THEN 3")
+				orderArgs = append(orderArgs, city)
+			}
+			if hasProvince {
+				whenClauses = append(whenClauses, "WHEN ts.province = ? THEN 4")
+				orderArgs = append(orderArgs, province)
+			}
+
+			tierExpr := "CASE\n" + strings.Join(whenClauses, "\n") + "\nELSE 5\nEND"
+			orderClause = tierExpr + " ASC, tp.updated_at DESC"
+
+		// ── Scenario C: major only (2-tier) ─────────────────────────────────
+		case hasMajor:
+			needsMajorJoin = true
+
+			whenClauses = append(whenClauses, "WHEN tm.class_id = ? THEN 1")
+			orderArgs = append(orderArgs, classID)
+
+			tierExpr := "CASE\n" + strings.Join(whenClauses, "\n") + "\nELSE 2\nEND"
+			orderClause = tierExpr + " ASC, tp.updated_at DESC"
 		}
-		if schoolID != 0 {
-			orderClause = fmt.Sprintf(`
-				CASE
-					WHEN u.school_id = %d THEN 1
-					ELSE 2
-				END ASC, tp.updated_at DESC`, schoolID)
-		}
-		// schoolID == 0: CASE always returns 2, equivalent to plain updated_at DESC
+		// Scenario D: neither hasSchool nor hasMajor → keep default "tp.updated_at DESC"
 	}
 
-	// Main query: talent_profile + user (2 tables), fetch school_id/major_id for follow-up
+	// ── Prepend auth_status sort key for all school_priority requests ────────────
+	// Certified users (auth_status = 1) surface before uncertified ones;
+	// within each auth group the existing tier / updated_at order is preserved.
+	// This runs after the switch so it wraps all four scenarios uniformly.
+	if params.SortBy != nil && *params.SortBy == "school_priority" {
+		const authExpr = "CASE WHEN u.auth_status = 1 THEN 0 ELSE 1 END"
+		orderClause = authExpr + " ASC, " + orderClause
+	}
+
+	// ── Build optional extra JOINs ───────────────────────────────────────────────
+	extraJoins := ""
+	if needsSchoolJoin {
+		extraJoins += "\n\t\tLEFT JOIN school ts ON u.school_id = ts.id"
+	}
+	if needsMajorJoin {
+		extraJoins += "\n\t\tLEFT JOIN major tm ON u.major_id = tm.id"
+	}
+
+	// ── Main data query ─────────────────────────────────────────────────────────
 	offset := (params.Page - 1) * params.Size
 	query := fmt.Sprintf(`
 		SELECT
@@ -206,20 +339,25 @@ func (r *TalentProfileRepository) List(ctx context.Context, params TalentProfile
 			u.nickname, u.phone, u.email, u.avatar_url,
 			u.school_id, u.major_id, u.grade, u.auth_status
 		FROM talent_profile tp
-		LEFT JOIN `+"`user`"+` u ON tp.user_id = u.id
+		LEFT JOIN `+"`user`"+` u ON tp.user_id = u.id%s
 		WHERE %s
 		ORDER BY %s
 		LIMIT ? OFFSET ?
-	`, whereClause, orderClause)
-	args = append(args, params.Size, offset)
+	`, extraJoins, whereClause, orderClause)
+
+	// Combine: WHERE args → ORDER BY args → LIMIT/OFFSET
+	dataArgs := make([]interface{}, 0, len(whereArgs)+len(orderArgs)+2)
+	dataArgs = append(dataArgs, whereArgs...)
+	dataArgs = append(dataArgs, orderArgs...)
+	dataArgs = append(dataArgs, params.Size, offset)
 
 	var profiles []models.TalentProfile
-	if err := r.db.SelectContext(ctx, &profiles, query, args...); err != nil {
+	if err := r.db.SelectContext(ctx, &profiles, query, dataArgs...); err != nil {
 		log.Printf("query talent profiles: %v", err)
 		return nil, 0, fmt.Errorf("query talent profiles: %w", err)
 	}
 
-	// Enrich school_name / major_name via batch follow-up queries (single-table each)
+	// Enrich school_name / major_name via batch follow-up queries (single IN query each)
 	if err := r.enrichSchoolMajorBatch(ctx, profiles); err != nil {
 		log.Printf("enrich school major batch: %v", err)
 		return nil, 0, err
