@@ -29,9 +29,8 @@ type TalentProfileListParams struct {
 	MajorID  *int
 	Keyword  *string
 	Status   *int
-	SortBy   *string // "school_priority" enables multi-tier priority ordering
-	UserSchoolID *int // raw school ID from caller
-	UserMajorID  *int // raw major ID from caller (unused by repo; resolved to class_id by handler)
+	SortBy       *string // "school_priority" enables multi-tier priority ordering
+	UserSchoolID *int    // raw school ID from caller
 
 	// Pre-fetched by handler before calling List — used to build ORDER BY tiers.
 	UserSchoolProvince *string
@@ -239,7 +238,7 @@ func (r *TalentProfileRepository) List(ctx context.Context, params TalentProfile
 		switch {
 		// ── Scenario A: school + major (10-tier) ────────────────────────────
 		case hasSchool && hasMajor:
-			needsSchoolJoin = true
+			needsSchoolJoin = hasDistrict || hasCity || hasProvince // ts.* only referenced when geo tiers exist
 			needsMajorJoin = true
 
 			whenClauses = append(whenClauses, "WHEN u.school_id = ? AND tm.class_id = ? THEN 1")
@@ -278,7 +277,7 @@ func (r *TalentProfileRepository) List(ctx context.Context, params TalentProfile
 
 		// ── Scenario B: school only (5-tier) ────────────────────────────────
 		case hasSchool:
-			needsSchoolJoin = true
+			needsSchoolJoin = hasDistrict || hasCity || hasProvince // ts.* only referenced when geo tiers exist
 
 			whenClauses = append(whenClauses, "WHEN u.school_id = ? THEN 1")
 			orderArgs = append(orderArgs, schoolID)

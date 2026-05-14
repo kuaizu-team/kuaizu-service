@@ -31,7 +31,6 @@ func (s *Server) ListTalentProfiles(ctx echo.Context, params api.ListTalentProfi
 		Status:       &status,
 		SortBy:       params.SortBy,
 		UserSchoolID: params.UserSchoolId,
-		UserMajorID:  params.UserMajorId,
 	}
 
 	// When school_priority sort is requested, pre-fetch the user's school geo info
