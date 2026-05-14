@@ -95,7 +95,10 @@ type OliveBranchRepo interface {
 
 // SchoolRepo defines the interface for school repository operations.
 type SchoolRepo interface {
-	List(ctx context.Context, keyword *string) ([]*models.School, error)
+	List(ctx context.Context, params SchoolListParams) ([]*models.School, error)
+	ListProvinces(ctx context.Context) ([]string, error)
+	ListCities(ctx context.Context, province string) ([]string, error)
+	ListDistricts(ctx context.Context, province, city string) ([]string, error)
 }
 
 // MajorRepo defines the interface for major repository operations.

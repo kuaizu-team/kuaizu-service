@@ -75,11 +75,14 @@ func main() {
 
 		// Public endpoints that don't require authentication
 		publicEndpoints := []string{
-			"/api/v2/auth/login/wechat",    // WeChat login
-			"/api/v2/auth/register/phone",  // WeChat phone registration
-			"/api/v2/dictionaries/schools", // School list
-			"/api/v2/dictionaries/majors",  // Major list
-			"/api/v2/email/unsubscribe",    // Email unsubscribe
+			"/api/v2/auth/login/wechat",                    // WeChat login
+			"/api/v2/auth/register/phone",                  // WeChat phone registration
+			"/api/v2/dictionaries/schools",                  // School list
+			"/api/v2/dictionaries/schools/provinces",        // Province list
+			"/api/v2/dictionaries/schools/cities",           // City list
+			"/api/v2/dictionaries/schools/districts",        // District list
+			"/api/v2/dictionaries/majors",                   // Major list
+			"/api/v2/email/unsubscribe",                     // Email unsubscribe
 		}
 
 		// Check exact matches
@@ -104,6 +107,12 @@ func main() {
 		return false
 	}
 	apiGroup.Use(middleware.JWTAuth(jwtConfig))
+
+	// Register school sub-resource routes BEFORE api.RegisterHandlers to prevent
+	// any dynamic-path route from shadowing these concrete named paths.
+	apiGroup.GET("/dictionaries/schools/provinces", server.GetSchoolProvinces)
+	apiGroup.GET("/dictionaries/schools/cities", server.GetSchoolCities)
+	apiGroup.GET("/dictionaries/schools/districts", server.GetSchoolDistricts)
 
 	api.RegisterHandlers(apiGroup, server)
 
