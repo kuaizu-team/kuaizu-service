@@ -312,6 +312,15 @@ func (r *TalentProfileRepository) List(ctx context.Context, params TalentProfile
 		// Scenario D: neither hasSchool nor hasMajor → keep default "tp.updated_at DESC"
 	}
 
+	// ── Prepend auth_status sort key for all school_priority requests ────────────
+	// Certified users (auth_status = 1) surface before uncertified ones;
+	// within each auth group the existing tier / updated_at order is preserved.
+	// This runs after the switch so it wraps all four scenarios uniformly.
+	if params.SortBy != nil && *params.SortBy == "school_priority" {
+		const authExpr = "CASE WHEN u.auth_status = 1 THEN 0 ELSE 1 END"
+		orderClause = authExpr + " ASC, " + orderClause
+	}
+
 	// ── Build optional extra JOINs ───────────────────────────────────────────────
 	extraJoins := ""
 	if needsSchoolJoin {
