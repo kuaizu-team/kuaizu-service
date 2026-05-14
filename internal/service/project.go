@@ -38,6 +38,22 @@ func (s *ProjectService) ListProjects(ctx context.Context, params repository.Lis
 		return nil, err
 	}
 
+	// When school_priority sort is requested and a user school ID is provided,
+	// look up the school's geo info (province/city/district) so the repository
+	// can build the full P1→P5 geo-priority ORDER BY.
+	// If the school lookup fails or returns nothing we simply leave the geo fields
+	// nil — the repository degrades gracefully to fewer tiers.
+	if params.SortBy != nil && *params.SortBy == "school_priority" && params.UserSchoolID != nil {
+		school, err := s.repo.School.GetByID(ctx, *params.UserSchoolID)
+		if err != nil {
+			log.Printf("[ProjectService.ListProjects] school lookup error (non-fatal): %v", err)
+		} else if school != nil {
+			params.UserSchoolProvince = school.Province
+			params.UserSchoolCity = school.City
+			params.UserSchoolDistrict = school.District
+		}
+	}
+
 	projects, total, err := s.repo.Project.List(ctx, params)
 	if err != nil {
 		log.Printf("[ProjectService.ListProjects] repository error: %v", err)

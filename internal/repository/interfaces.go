@@ -95,6 +95,7 @@ type OliveBranchRepo interface {
 
 // SchoolRepo defines the interface for school repository operations.
 type SchoolRepo interface {
+	GetByID(ctx context.Context, id int) (*models.School, error)
 	List(ctx context.Context, params SchoolListParams) ([]*models.School, error)
 	ListProvinces(ctx context.Context) ([]string, error)
 	ListCities(ctx context.Context, province string) ([]string, error)
