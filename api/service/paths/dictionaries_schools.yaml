@@ -9,6 +9,21 @@ get:
       description: 关键词搜索
       schema:
         type: string
+    - name: province
+      in: query
+      description: 省份（与city+district组合使用做位置查询）
+      schema:
+        type: string
+    - name: city
+      in: query
+      description: 城市
+      schema:
+        type: string
+    - name: district
+      in: query
+      description: 区县
+      schema:
+        type: string
   responses:
     '200':
       description: 成功
