@@ -6,3 +6,9 @@ properties:
     type: string
   schoolCode:
     type: string
+  province:
+    type: string
+  city:
+    type: string
+  district:
+    type: string
