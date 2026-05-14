@@ -34,59 +34,70 @@ type ListParams struct {
 	IsCrossSchool *int
 	SortBy        *string // "school_priority" enables priority ordering
 	UserSchoolID  *int    // used when SortBy == "school_priority"
+
+	// Geo info of the user's school — pre-fetched by the service layer.
+	// Used to build P2/P3/P4 tiers in school_priority ordering.
+	UserSchoolProvince *string
+	UserSchoolCity     *string
+	UserSchoolDistrict *string
 }
 
 // List retrieves paginated projects with optional filters
 func (r *ProjectRepository) List(ctx context.Context, params ListParams) ([]models.Project, int64, error) {
 	conditions := []string{"1=1"}
-	args := []interface{}{}
+	whereArgs := []interface{}{}
 
 	if params.Keyword != nil && *params.Keyword != "" {
 		conditions = append(conditions, "(p.name LIKE ? OR p.description LIKE ?)")
-		args = append(args, "%"+*params.Keyword+"%", "%"+*params.Keyword+"%")
+		whereArgs = append(whereArgs, "%"+*params.Keyword+"%", "%"+*params.Keyword+"%")
 	}
 	if params.SchoolID != nil {
 		conditions = append(conditions, "p.school_id = ?")
-		args = append(args, *params.SchoolID)
+		whereArgs = append(whereArgs, *params.SchoolID)
 	}
 	if len(params.Statuses) > 0 {
 		placeholders := make([]string, len(params.Statuses))
 		for i, status := range params.Statuses {
 			placeholders[i] = "?"
-			args = append(args, status)
+			whereArgs = append(whereArgs, status)
 		}
 		conditions = append(conditions, fmt.Sprintf("p.status IN (%s)", strings.Join(placeholders, ",")))
 	} else if params.Status != nil {
 		conditions = append(conditions, "p.status = ?")
-		args = append(args, *params.Status)
+		whereArgs = append(whereArgs, *params.Status)
 	}
 	if params.Direction != nil {
 		conditions = append(conditions, "p.direction = ?")
-		args = append(args, *params.Direction)
+		whereArgs = append(whereArgs, *params.Direction)
 	}
 	if params.CreatorID != nil {
 		conditions = append(conditions, "p.creator_id = ?")
-		args = append(args, *params.CreatorID)
+		whereArgs = append(whereArgs, *params.CreatorID)
 	}
 	if params.IsCrossSchool != nil {
 		conditions = append(conditions, "p.is_cross_school = ?")
-		args = append(args, *params.IsCrossSchool)
+		whereArgs = append(whereArgs, *params.IsCrossSchool)
 	}
 
 	whereClause := strings.Join(conditions, " AND ")
 
-	// Count total
+	// Count total (WHERE args only — no ORDER BY or pagination args needed here)
 	var total int64
 	countQuery := fmt.Sprintf(`SELECT COUNT(*) FROM project p WHERE %s`, whereClause)
-	if err := r.db.QueryRowxContext(ctx, countQuery, args...).Scan(&total); err != nil {
+	if err := r.db.QueryRowxContext(ctx, countQuery, whereArgs...).Scan(&total); err != nil {
 		return nil, 0, fmt.Errorf("count projects: %w", err)
 	}
 
-	// Build ORDER BY
-	// - "updated_at"      → p.updated_at DESC  (used by ListMyProjects)
-	// - "school_priority" → CASE WHEN tier ordering with created_at tiebreak
-	// - default           → p.created_at DESC
+	// Build ORDER BY clause and its own placeholder args (separate from whereArgs so
+	// they can be placed after the WHERE args but before LIMIT/OFFSET).
+	//
+	// Modes:
+	//   "updated_at"      → p.updated_at DESC  (used by ListMyProjects)
+	//   "school_priority" → 5-tier geo priority + cross-school sub-sort + created_at tiebreak
+	//   default           → p.created_at DESC
 	orderClause := "p.created_at DESC"
+	var orderArgs []interface{}
+
 	if params.SortBy != nil && *params.SortBy == "updated_at" {
 		orderClause = "p.updated_at DESC"
 	} else if params.SortBy != nil && *params.SortBy == "school_priority" {
@@ -95,21 +106,52 @@ func (r *ProjectRepository) List(ctx context.Context, params ListParams) ([]mode
 			schoolID = *params.UserSchoolID
 		}
 		if schoolID != 0 {
-			// Three tiers: same school → cross-school → others
-			orderClause = fmt.Sprintf(`
-				CASE
-					WHEN p.school_id = %d THEN 1
-					WHEN p.is_cross_school = 1 THEN 2
-					ELSE 3
-				END ASC, p.created_at DESC`, schoolID)
-		} else {
-			// No school context: cross-school → others
-			orderClause = `
-				CASE
-					WHEN p.is_cross_school = 1 THEN 1
-					ELSE 2
-				END ASC, p.created_at DESC`
+			// --- Build 5-tier priority CASE WHEN ---
+			// P1: same school
+			// P2: same district + city (skipped if user school has no district)
+			// P3: same city
+			// P4: same province
+			// P5: everything else
+			//
+			// Geo comparison is against the PROJECT's school columns (s.*) from the
+			// existing LEFT JOIN school s ON p.school_id = s.id.
+			var tierWHENs []string
+
+			// P1 — same school (no geo join needed)
+			tierWHENs = append(tierWHENs, "WHEN p.school_id = ? THEN 1")
+			orderArgs = append(orderArgs, schoolID)
+
+			// P2 — same district (only when user school has a valid district)
+			if params.UserSchoolDistrict != nil && *params.UserSchoolDistrict != "" &&
+				params.UserSchoolCity != nil && *params.UserSchoolCity != "" {
+				tierWHENs = append(tierWHENs, "WHEN s.district = ? AND s.city = ? THEN 2")
+				orderArgs = append(orderArgs, *params.UserSchoolDistrict, *params.UserSchoolCity)
+			}
+
+			// P3 — same city
+			if params.UserSchoolCity != nil && *params.UserSchoolCity != "" {
+				tierWHENs = append(tierWHENs, "WHEN s.city = ? THEN 3")
+				orderArgs = append(orderArgs, *params.UserSchoolCity)
+			}
+
+			// P4 — same province
+			if params.UserSchoolProvince != nil && *params.UserSchoolProvince != "" {
+				tierWHENs = append(tierWHENs, "WHEN s.province = ? THEN 4")
+				orderArgs = append(orderArgs, *params.UserSchoolProvince)
+			}
+
+			tierExpr := "CASE\n" + strings.Join(tierWHENs, "\n") + "\nELSE 5\nEND"
+
+			// Cross-school sub-sort within each tier:
+			//   P1 rows → sub-sort 0 (no distinction; every P1 project is already "same school")
+			//   Other tiers → is_cross_school=1 sorts before is_cross_school=0
+			//     (1 - COALESCE(is_cross_school,0)): cross=1→0, cross=0→1
+			const crossExpr = "CASE WHEN p.school_id = ? THEN 0 ELSE (1 - COALESCE(p.is_cross_school, 0)) END"
+			orderArgs = append(orderArgs, schoolID)
+
+			orderClause = fmt.Sprintf("%s ASC, %s ASC, p.created_at DESC", tierExpr, crossExpr)
 		}
+		// If schoolID == 0 (no user school context), fall through to default created_at DESC
 	}
 
 	// Query with pagination — column aliases match Project db tags
@@ -135,10 +177,15 @@ func (r *ProjectRepository) List(ctx context.Context, params ListParams) ([]mode
 		ORDER BY %s
 		LIMIT ? OFFSET ?
 	`, whereClause, orderClause)
-	args = append(args, params.Size, offset)
+
+	// Combine: WHERE args → ORDER BY args → LIMIT/OFFSET args
+	dataArgs := make([]interface{}, 0, len(whereArgs)+len(orderArgs)+2)
+	dataArgs = append(dataArgs, whereArgs...)
+	dataArgs = append(dataArgs, orderArgs...)
+	dataArgs = append(dataArgs, params.Size, offset)
 
 	var projects []models.Project
-	if err := r.db.SelectContext(ctx, &projects, query, args...); err != nil {
+	if err := r.db.SelectContext(ctx, &projects, query, dataArgs...); err != nil {
 		return nil, 0, fmt.Errorf("query projects: %w", err)
 	}
 

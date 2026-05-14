@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 
 	"github.com/jmoiron/sqlx"
@@ -24,6 +25,23 @@ type SchoolListParams struct {
 	Province *string // 省份
 	City     *string // 城市
 	District *string // 区县
+}
+
+// GetByID retrieves a single school by its primary key.
+func (r *SchoolRepository) GetByID(ctx context.Context, id int) (*models.School, error) {
+	query := `
+		SELECT id, school_name, school_code, province, city, district, created_at, updated_at
+		FROM school
+		WHERE id = ?
+	`
+	var school models.School
+	if err := r.db.GetContext(ctx, &school, query, id); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get school by id: %w", err)
+	}
+	return &school, nil
 }
 
 // List retrieves schools by keyword (up to 30) or by exact province+city+district (all).
