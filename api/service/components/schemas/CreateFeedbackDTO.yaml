@@ -1,0 +1,12 @@
+type: object
+required:
+  - content
+properties:
+  content:
+    type: string
+    minLength: 1
+    maxLength: 1000
+    description: 反馈内容（1~1000字符）
+  email:
+    type: string
+    description: 用户联系邮箱（选填）

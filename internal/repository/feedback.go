@@ -98,6 +98,21 @@ func (r *FeedbackRepository) GetByID(ctx context.Context, id int) (*models.Feedb
 	return &f, nil
 }
 
+// Create inserts a new feedback record submitted by a user.
+func (r *FeedbackRepository) Create(ctx context.Context, f *models.Feedback) error {
+	query := `
+		INSERT INTO feedback (user_id, content, email, status)
+		VALUES (:user_id, :content, :email, :status)
+	`
+	result, err := r.db.NamedExecContext(ctx, query, f)
+	if err != nil {
+		return fmt.Errorf("create feedback: %w", err)
+	}
+	id, _ := result.LastInsertId()
+	f.ID = int(id)
+	return nil
+}
+
 // Reply sets admin reply and marks feedback as handled
 func (r *FeedbackRepository) Reply(ctx context.Context, id int, reply string) error {
 	query := `UPDATE feedback SET admin_reply = ?, status = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?`
