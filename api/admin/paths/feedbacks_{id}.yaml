@@ -33,7 +33,7 @@ get:
 patch:
   tags:
     - Feedbacks
-  summary: 回复反馈
+  summary: 回复反馈并可选修改处理状态
   parameters:
     - in: path
       name: id
@@ -46,14 +46,17 @@ patch:
       application/json:
         schema:
           type: object
-          required:
-            - adminReply
           properties:
             adminReply:
               type: string
+              description: 管理员备注内容，可为空字符串
+            status:
+              type: integer
+              enum: [0, 1]
+              description: 处理状态（0=待处理，1=已处理）；不传则保持原值不变
   responses:
     '200':
-      description: 回复成功
+      description: 操作成功
       content:
         application/json:
           schema:

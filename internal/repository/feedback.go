@@ -113,11 +113,22 @@ func (r *FeedbackRepository) Create(ctx context.Context, f *models.Feedback) err
 	return nil
 }
 
-// Reply sets admin reply and marks feedback as handled
-func (r *FeedbackRepository) Reply(ctx context.Context, id int, reply string) error {
-	query := `UPDATE feedback SET admin_reply = ?, status = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?`
+// Reply updates admin_reply and optionally status.
+// When status is nil only admin_reply and updated_at are touched.
+func (r *FeedbackRepository) Reply(ctx context.Context, id int, reply string, status *int) error {
+	var (
+		query string
+		args  []interface{}
+	)
+	if status != nil {
+		query = `UPDATE feedback SET admin_reply = ?, status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`
+		args = []interface{}{reply, *status, id}
+	} else {
+		query = `UPDATE feedback SET admin_reply = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`
+		args = []interface{}{reply, id}
+	}
 
-	result, err := r.db.ExecContext(ctx, query, reply, id)
+	result, err := r.db.ExecContext(ctx, query, args...)
 	if err != nil {
 		return fmt.Errorf("reply feedback: %w", err)
 	}

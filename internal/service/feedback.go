@@ -61,8 +61,9 @@ func (s *FeedbackService) GetFeedback(ctx context.Context, id int) (*models.Feed
 	return fb, nil
 }
 
-// ReplyFeedback (admin only) replies to a feedback and notifies user.
-func (s *FeedbackService) ReplyFeedback(ctx context.Context, id int, reply string) error {
+// ReplyFeedback (admin only) saves an admin reply and optionally updates the status.
+// When status is nil the status column is left unchanged.
+func (s *FeedbackService) ReplyFeedback(ctx context.Context, id int, reply string, status *int) error {
 	fb, err := s.repo.Feedback.GetByID(ctx, id)
 	if err != nil {
 		log.Printf("[FeedbackService.ReplyFeedback] repository error: %v", err)
@@ -72,7 +73,7 @@ func (s *FeedbackService) ReplyFeedback(ctx context.Context, id int, reply strin
 		return ErrNotFound("反馈不存在")
 	}
 
-	if err := s.repo.Feedback.Reply(ctx, id, reply); err != nil {
+	if err := s.repo.Feedback.Reply(ctx, id, reply, status); err != nil {
 		log.Printf("[FeedbackService.ReplyFeedback] repository error: %v", err)
 		return ErrInternal("回复反馈失败")
 	}

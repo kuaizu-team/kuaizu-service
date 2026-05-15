@@ -62,6 +62,9 @@ func (s *AdminServer) GetFeedback(ctx echo.Context) error {
 
 type replyFeedbackRequest struct {
 	AdminReply string `json:"adminReply"`
+	// Status is optional. When present (0=待处理, 1=已处理) the DB row is updated accordingly.
+	// When omitted the existing status is preserved.
+	Status *int `json:"status"`
 }
 
 // ReplyFeedback handles PATCH /admin/feedbacks/:id
@@ -76,11 +79,12 @@ func (s *AdminServer) ReplyFeedback(ctx echo.Context) error {
 		return response.BadRequest(ctx, "invalid request body")
 	}
 
-	if req.AdminReply == "" {
-		return response.BadRequest(ctx, "adminReply is required")
+	// status 合法性校验（若传了则必须是 0 或 1）
+	if req.Status != nil && *req.Status != 0 && *req.Status != 1 {
+		return response.BadRequest(ctx, "status 只能为 0（待处理）或 1（已处理）")
 	}
 
-	if err := s.svc.Feedback.ReplyFeedback(ctx.Request().Context(), id, req.AdminReply); err != nil {
+	if err := s.svc.Feedback.ReplyFeedback(ctx.Request().Context(), id, req.AdminReply, req.Status); err != nil {
 		return mapServiceError(ctx, err)
 	}
 
