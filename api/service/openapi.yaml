@@ -43,6 +43,8 @@ tags:
     description: 通用接口
   - name: EmailPromotions
     description: 邮件推广服务接口
+  - name: Feedbacks
+    description: 用户反馈接口
 paths:
   /auth/login/wechat:
     $ref: paths/auth_login_wechat.yaml
@@ -106,6 +108,8 @@ paths:
     $ref: paths/dictionaries_schools.yaml
   /dictionaries/majors:
     $ref: paths/dictionaries_majors.yaml
+  /feedbacks:
+    $ref: paths/feedbacks.yaml
   /commons/uploads:
     $ref: paths/commons_uploads.yaml
 components:

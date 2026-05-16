@@ -56,8 +56,8 @@ func (r *FeedbackRepository) List(ctx context.Context, params FeedbackListParams
 	offset := (params.Page - 1) * params.Size
 	query := fmt.Sprintf(`
 		SELECT
-			f.id, f.user_id, f.content, f.contact_image,
-			f.status, f.admin_reply, f.created_at, f.updated_at,
+			f.id, f.user_id, f.content,
+			f.email, f.status, f.admin_reply, f.created_at, f.updated_at,
 			u.nickname
 		FROM feedback f
 		LEFT JOIN `+"`user`"+` u ON f.user_id = u.id
@@ -79,8 +79,8 @@ func (r *FeedbackRepository) List(ctx context.Context, params FeedbackListParams
 func (r *FeedbackRepository) GetByID(ctx context.Context, id int) (*models.Feedback, error) {
 	query := `
 		SELECT
-			f.id, f.user_id, f.content, f.contact_image,
-			f.status, f.admin_reply, f.created_at, f.updated_at,
+			f.id, f.user_id, f.content,
+			f.email, f.status, f.admin_reply, f.created_at, f.updated_at,
 			u.nickname
 		FROM feedback f
 		LEFT JOIN ` + "`user`" + ` u ON f.user_id = u.id
@@ -98,11 +98,37 @@ func (r *FeedbackRepository) GetByID(ctx context.Context, id int) (*models.Feedb
 	return &f, nil
 }
 
-// Reply sets admin reply and marks feedback as handled
-func (r *FeedbackRepository) Reply(ctx context.Context, id int, reply string) error {
-	query := `UPDATE feedback SET admin_reply = ?, status = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?`
+// Create inserts a new feedback record submitted by a user.
+func (r *FeedbackRepository) Create(ctx context.Context, f *models.Feedback) error {
+	query := `
+		INSERT INTO feedback (user_id, content, email, status)
+		VALUES (:user_id, :content, :email, :status)
+	`
+	result, err := r.db.NamedExecContext(ctx, query, f)
+	if err != nil {
+		return fmt.Errorf("create feedback: %w", err)
+	}
+	id, _ := result.LastInsertId()
+	f.ID = int(id)
+	return nil
+}
 
-	result, err := r.db.ExecContext(ctx, query, reply, id)
+// Reply updates admin_reply and optionally status.
+// When status is nil only admin_reply and updated_at are touched.
+func (r *FeedbackRepository) Reply(ctx context.Context, id int, reply string, status *int) error {
+	var (
+		query string
+		args  []interface{}
+	)
+	if status != nil {
+		query = `UPDATE feedback SET admin_reply = ?, status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`
+		args = []interface{}{reply, *status, id}
+	} else {
+		query = `UPDATE feedback SET admin_reply = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`
+		args = []interface{}{reply, id}
+	}
+
+	result, err := r.db.ExecContext(ctx, query, args...)
 	if err != nil {
 		return fmt.Errorf("reply feedback: %w", err)
 	}

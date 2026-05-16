@@ -127,9 +127,12 @@ type AdminUserRepo interface {
 
 // FeedbackRepo defines the interface for feedback repository operations.
 type FeedbackRepo interface {
+	Create(ctx context.Context, f *models.Feedback) error
 	List(ctx context.Context, params FeedbackListParams) ([]models.Feedback, int64, error)
 	GetByID(ctx context.Context, id int) (*models.Feedback, error)
-	Reply(ctx context.Context, id int, reply string) error
+	// Reply updates admin_reply and optionally status.
+	// When status is nil the status column is left unchanged.
+	Reply(ctx context.Context, id int, reply string, status *int) error
 }
 
 // SubscribeConfigRepo defines the interface for subscribe config repository operations.

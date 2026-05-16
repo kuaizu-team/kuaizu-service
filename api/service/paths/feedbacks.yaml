@@ -1,0 +1,18 @@
+post:
+  tags:
+    - Feedbacks
+  summary: 提交用户反馈
+  operationId: createFeedback
+  requestBody:
+    required: true
+    content:
+      application/json:
+        schema:
+          $ref: ../components/schemas/CreateFeedbackDTO.yaml
+  responses:
+    '200':
+      description: 提交成功
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/BaseResponse.yaml
