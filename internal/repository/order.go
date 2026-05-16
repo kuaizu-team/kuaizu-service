@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jmoiron/sqlx"
@@ -26,6 +27,16 @@ type OrderListParams struct {
 	Page   int
 	Size   int
 	Status *int
+}
+
+// AdminOrderListParams contains parameters for admin order list
+type AdminOrderListParams struct {
+	Page       int
+	Size       int
+	OrderNo    *string // 订单号模糊搜索（匹配 CAST(o.id AS CHAR)，因 out_trade_no 列未写入 DB）
+	WxPayNo    *string // wx_pay_no 模糊搜索
+	Nickname   *string // 用户昵称模糊搜索（JOIN user 表）
+	SchoolName *string // 学校名称模糊搜索（JOIN school 表）
 }
 
 // ListByUserID retrieves paginated orders for a user
@@ -187,4 +198,97 @@ func (r *OrderRepository) UpdateStatus(ctx context.Context, id int, status int) 
 	}
 
 	return nil
+}
+
+// AdminList retrieves paginated orders for admin with multi-condition fuzzy search.
+// JOINs user and school to support nickname/schoolName filters.
+func (r *OrderRepository) AdminList(ctx context.Context, params AdminOrderListParams) ([]*models.Order, int64, error) {
+	conditions := []string{"1=1"}
+	args := []interface{}{}
+
+	if params.OrderNo != nil && *params.OrderNo != "" {
+		// out_trade_no 列从未写入 DB；以订单 ID 字符串作为订单号匹配
+		conditions = append(conditions, "CAST(o.id AS CHAR) LIKE ?")
+		args = append(args, "%"+*params.OrderNo+"%")
+	}
+	if params.WxPayNo != nil && *params.WxPayNo != "" {
+		conditions = append(conditions, "o.wx_pay_no LIKE ?")
+		args = append(args, "%"+*params.WxPayNo+"%")
+	}
+	if params.Nickname != nil && *params.Nickname != "" {
+		conditions = append(conditions, "u.nickname LIKE ?")
+		args = append(args, "%"+*params.Nickname+"%")
+	}
+	if params.SchoolName != nil && *params.SchoolName != "" {
+		conditions = append(conditions, "s.school_name LIKE ?")
+		args = append(args, "%"+*params.SchoolName+"%")
+	}
+
+	whereClause := strings.Join(conditions, " AND ")
+
+	// Base FROM + JOIN (same for count and data queries)
+	fromJoin := "`order` o " +
+		"LEFT JOIN `user` u ON o.user_id = u.id " +
+		"LEFT JOIN school s ON u.school_id = s.id " +
+		"LEFT JOIN product p ON o.product_id = p.id"
+
+	// Count total
+	countQuery := fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE %s", fromJoin, whereClause)
+	var total int64
+	if err := r.db.QueryRowxContext(ctx, countQuery, args...).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("count admin orders: %w", err)
+	}
+
+	offset := (params.Page - 1) * params.Size
+	query := fmt.Sprintf(`
+		SELECT
+			o.id, o.user_id, o.product_id, o.price, o.quantity, o.actual_paid, o.status,
+			o.wx_pay_no, o.pay_time, o.created_at, o.updated_at,
+			p.name  AS product_name,
+			u.nickname AS user_nickname,
+			s.school_name
+		FROM %s
+		WHERE %s
+		ORDER BY o.created_at DESC
+		LIMIT ? OFFSET ?
+	`, fromJoin, whereClause)
+
+	dataArgs := make([]interface{}, 0, len(args)+2)
+	dataArgs = append(dataArgs, args...)
+	dataArgs = append(dataArgs, params.Size, offset)
+
+	var orders []*models.Order
+	if err := r.db.SelectContext(ctx, &orders, query, dataArgs...); err != nil {
+		return nil, 0, fmt.Errorf("query admin orders: %w", err)
+	}
+
+	return orders, total, nil
+}
+
+// AdminGetByID retrieves a single order with full user, school, and product info for admin.
+func (r *OrderRepository) AdminGetByID(ctx context.Context, id int) (*models.Order, error) {
+	query := `
+		SELECT
+			o.id, o.user_id, o.product_id, o.price, o.quantity, o.actual_paid, o.status,
+			o.wx_pay_no, o.pay_time, o.created_at, o.updated_at,
+			p.name        AS product_name,
+			p.description AS product_description,
+			u.nickname    AS user_nickname,
+			s.school_name
+		FROM ` + "`order`" + ` o
+		LEFT JOIN ` + "`user`" + ` u ON o.user_id = u.id
+		LEFT JOIN school s ON u.school_id = s.id
+		LEFT JOIN product p ON o.product_id = p.id
+		WHERE o.id = ?
+	`
+
+	var o models.Order
+	if err := r.db.QueryRowxContext(ctx, query, id).StructScan(&o); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("admin get order by id: %w", err)
+	}
+
+	return &o, nil
 }
