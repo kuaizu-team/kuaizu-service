@@ -258,7 +258,8 @@ type UserListParams struct {
 	// Order: "asc" | "desc" (case-insensitive). Defaults to DESC.
 	Order *string
 	// IncludePendingCount — when true, adds correlated subqueries that compute
-	// pending_count = (talent_profile WHERE status=2) + (olive_branch_record received WHERE status=0).
+	// pending_count = (project_application WHERE user_id=u.id AND status=0)   -- 用户投出的待审核投递
+	//               + (olive_branch_record WHERE receiver_id=u.id AND status=0) -- 用户收到的待处理橄榄枝
 	IncludePendingCount bool
 }
 
@@ -334,12 +335,14 @@ func (r *UserRepository) ListUsers(ctx context.Context, params UserListParams) (
 	}
 
 	// When IncludePendingCount=true, add correlated subqueries that compute:
-	//   pending_count = (talent_profile rows WHERE user_id=u.id AND status=2)
-	//                 + (olive_branch_record rows WHERE receiver_id=u.id AND status=0)
+	//   pending_count = COUNT(project_application WHERE user_id=u.id AND status=0)   -- 待审核投递
+	//                 + COUNT(olive_branch_record WHERE receiver_id=u.id AND status=0) -- 待处理橄榄枝
+	// COUNT(*) naturally returns 0 when no rows match, so COALESCE is not strictly needed
+	// but kept for defensive consistency.
 	pendingCountSelect := ""
 	if params.IncludePendingCount {
 		pendingCountSelect = `,
-			COALESCE((SELECT COUNT(*) FROM talent_profile WHERE user_id = u.id AND status = 2), 0)
+			COALESCE((SELECT COUNT(*) FROM project_application WHERE user_id = u.id AND status = 0), 0)
 			+ COALESCE((SELECT COUNT(*) FROM olive_branch_record WHERE receiver_id = u.id AND status = 0), 0)
 			AS pending_count`
 	}

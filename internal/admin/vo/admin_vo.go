@@ -54,7 +54,7 @@ type AdminUserVO struct {
 	MajorName           *string    `json:"majorName"`
 	ClassID             *int       `json:"classId"`
 	TalentProfileStatus *int       `json:"talentProfileStatus"`
-	PendingCount        *int       `json:"pendingCount"` // 待审名片+待处理橄榄枝总数
+	PendingCount        *int       `json:"pendingCount"` // 待审核投递数+待处理橄榄枝数
 }
 
 // AdminTalentProfileVO is the admin-facing talent profile (business card) response model.
