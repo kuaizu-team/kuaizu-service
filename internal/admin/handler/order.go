@@ -12,7 +12,10 @@ import (
 // ListOrders handles GET /admin/orders
 func (s *AdminServer) ListOrders(ctx echo.Context) error {
 	page, _ := strconv.Atoi(ctx.QueryParam("page"))
-	size, _ := strconv.Atoi(ctx.QueryParam("pageSize"))
+	size, _ := strconv.Atoi(ctx.QueryParam("size"))
+	if size == 0 {
+		size, _ = strconv.Atoi(ctx.QueryParam("pageSize"))
+	}
 	if page < 1 {
 		page = 1
 	}

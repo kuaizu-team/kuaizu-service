@@ -33,7 +33,7 @@ type OrderListParams struct {
 type AdminOrderListParams struct {
 	Page       int
 	Size       int
-	OrderNo    *string // out_trade_no 模糊搜索
+	OrderNo    *string // 订单号模糊搜索（匹配 CAST(o.id AS CHAR)，因 out_trade_no 列未写入 DB）
 	WxPayNo    *string // wx_pay_no 模糊搜索
 	Nickname   *string // 用户昵称模糊搜索（JOIN user 表）
 	SchoolName *string // 学校名称模糊搜索（JOIN school 表）
@@ -207,7 +207,8 @@ func (r *OrderRepository) AdminList(ctx context.Context, params AdminOrderListPa
 	args := []interface{}{}
 
 	if params.OrderNo != nil && *params.OrderNo != "" {
-		conditions = append(conditions, "o.out_trade_no LIKE ?")
+		// out_trade_no 列从未写入 DB；以订单 ID 字符串作为订单号匹配
+		conditions = append(conditions, "CAST(o.id AS CHAR) LIKE ?")
 		args = append(args, "%"+*params.OrderNo+"%")
 	}
 	if params.WxPayNo != nil && *params.WxPayNo != "" {
@@ -252,7 +253,9 @@ func (r *OrderRepository) AdminList(ctx context.Context, params AdminOrderListPa
 		LIMIT ? OFFSET ?
 	`, fromJoin, whereClause)
 
-	dataArgs := append(args, params.Size, offset)
+	dataArgs := make([]interface{}, 0, len(args)+2)
+	dataArgs = append(dataArgs, args...)
+	dataArgs = append(dataArgs, params.Size, offset)
 
 	var orders []*models.Order
 	if err := r.db.SelectContext(ctx, &orders, query, dataArgs...); err != nil {

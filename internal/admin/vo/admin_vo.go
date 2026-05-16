@@ -1,6 +1,7 @@
 package vo
 
 import (
+	"math"
 	"strconv"
 	"time"
 
@@ -361,8 +362,8 @@ func NewAdminOrderVO(o *models.Order) *AdminOrderVO {
 		ProductID:    o.ProductID,
 		ProductName:  o.ProductName,
 		Quantity:     o.Quantity,
-		UnitPrice:    int(o.Price),
-		ActualPaid:   int(o.ActualPaid),
+		UnitPrice:    int(math.Round(o.Price * 100)),
+		ActualPaid:   int(math.Round(o.ActualPaid * 100)),
 		Status:       o.Status,
 		CreatedAt:    o.CreatedAt,
 		PaidAt:       o.PayTime,
