@@ -6,9 +6,10 @@ properties:
     type: integer
   content:
     type: string
-  contactImage:
+  email:
     type: string
     nullable: true
+    description: 用户联系邮箱
   status:
     type: integer
     description: 0=待处理,1=已处理

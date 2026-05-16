@@ -56,7 +56,7 @@ func (r *FeedbackRepository) List(ctx context.Context, params FeedbackListParams
 	offset := (params.Page - 1) * params.Size
 	query := fmt.Sprintf(`
 		SELECT
-			f.id, f.user_id, f.content, f.contact_image,
+			f.id, f.user_id, f.content,
 			f.email, f.status, f.admin_reply, f.created_at, f.updated_at,
 			u.nickname
 		FROM feedback f
@@ -79,7 +79,7 @@ func (r *FeedbackRepository) List(ctx context.Context, params FeedbackListParams
 func (r *FeedbackRepository) GetByID(ctx context.Context, id int) (*models.Feedback, error) {
 	query := `
 		SELECT
-			f.id, f.user_id, f.content, f.contact_image,
+			f.id, f.user_id, f.content,
 			f.email, f.status, f.admin_reply, f.created_at, f.updated_at,
 			u.nickname
 		FROM feedback f

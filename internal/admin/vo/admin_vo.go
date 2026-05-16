@@ -76,7 +76,6 @@ type AdminFeedbackVO struct {
 	ID           int       `json:"id"`
 	UserID       int       `json:"userId"`
 	Content      string    `json:"content"`
-	ContactImage *string   `json:"contactImage"`
 	Email        *string   `json:"email"`
 	Status       int       `json:"status"`
 	AdminReply   *string   `json:"adminReply"`
@@ -162,7 +161,6 @@ func NewAdminFeedbackVO(f *models.Feedback) *AdminFeedbackVO {
 		ID:           f.ID,
 		UserID:       f.UserID,
 		Content:      f.Content,
-		ContactImage: ossFullURLPtr(f.ContactImage),
 		Email:        f.Email,
 		Status:       f.Status,
 		AdminReply:   f.AdminReply,
