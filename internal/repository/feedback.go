@@ -57,7 +57,7 @@ func (r *FeedbackRepository) List(ctx context.Context, params FeedbackListParams
 	query := fmt.Sprintf(`
 		SELECT
 			f.id, f.user_id, f.content, f.contact_image,
-			f.status, f.admin_reply, f.created_at, f.updated_at,
+			f.email, f.status, f.admin_reply, f.created_at, f.updated_at,
 			u.nickname
 		FROM feedback f
 		LEFT JOIN `+"`user`"+` u ON f.user_id = u.id
@@ -80,7 +80,7 @@ func (r *FeedbackRepository) GetByID(ctx context.Context, id int) (*models.Feedb
 	query := `
 		SELECT
 			f.id, f.user_id, f.content, f.contact_image,
-			f.status, f.admin_reply, f.created_at, f.updated_at,
+			f.email, f.status, f.admin_reply, f.created_at, f.updated_at,
 			u.nickname
 		FROM feedback f
 		LEFT JOIN ` + "`user`" + ` u ON f.user_id = u.id
