@@ -32,14 +32,25 @@ type ListParams struct {
 	Direction     *int
 	CreatorID     *int
 	IsCrossSchool *int
-	SortBy        *string // "school_priority" enables priority ordering
-	UserSchoolID  *int    // used when SortBy == "school_priority"
+	// SortBy controls the primary sort key.
+	// Public values: "school_priority" (geo-priority), "updated_at"
+	// Admin values:  "pendingCount" (combined admin pending count), "createdAt"
+	SortBy *string
+	// Order controls asc/desc direction for "pendingCount" and "createdAt" sortBy.
+	// Values: "asc" | "desc" (case-insensitive). Defaults to DESC.
+	Order        *string
+	UserSchoolID *int // used when SortBy == "school_priority"
 
 	// Geo info of the user's school — pre-fetched by the service layer.
 	// Used to build P2/P3/P4 tiers in school_priority ordering.
 	UserSchoolProvince *string
 	UserSchoolCity     *string
 	UserSchoolDistrict *string
+
+	// IncludePendingCount — admin-only flag.
+	// When true, adds a pending_count column to SELECT (sum of pending applications
+	// and pending olive branches for each project). Required for SortBy="pendingCount".
+	IncludePendingCount bool
 }
 
 // List retrieves paginated projects with optional filters
@@ -100,6 +111,20 @@ func (r *ProjectRepository) List(ctx context.Context, params ListParams) ([]mode
 
 	if params.SortBy != nil && *params.SortBy == "updated_at" {
 		orderClause = "p.updated_at DESC"
+	} else if params.SortBy != nil && *params.SortBy == "pendingCount" {
+		// Admin sort by combined pending count.
+		// IncludePendingCount must be true for pending_count to exist in SELECT.
+		dir := "DESC"
+		if params.Order != nil && strings.EqualFold(*params.Order, "asc") {
+			dir = "ASC"
+		}
+		orderClause = fmt.Sprintf("pending_count %s, p.created_at DESC", dir)
+	} else if params.SortBy != nil && *params.SortBy == "createdAt" {
+		dir := "DESC"
+		if params.Order != nil && strings.EqualFold(*params.Order, "asc") {
+			dir = "ASC"
+		}
+		orderClause = fmt.Sprintf("p.created_at %s", dir)
 	} else if params.SortBy != nil && *params.SortBy == "school_priority" {
 		schoolID := 0
 		if params.UserSchoolID != nil {
@@ -154,8 +179,25 @@ func (r *ProjectRepository) List(ctx context.Context, params ListParams) ([]mode
 		// If schoolID == 0 (no user school context), fall through to default created_at DESC
 	}
 
-	// Query with pagination — column aliases match Project db tags
+	// Query with pagination — column aliases match Project db tags.
+	// When IncludePendingCount=true, include olive-branch JOIN and compute
+	// the combined pending_count = pending applications + pending olive branches.
 	offset := (params.Page - 1) * params.Size
+
+	pendingCountSelect := ""
+	pendingCountJoin := ""
+	if params.IncludePendingCount {
+		pendingCountSelect = `,
+			COALESCE(pa_counts.pending_count, 0) + COALESCE(ob_counts.pending_count, 0) AS pending_count`
+		pendingCountJoin = `
+		LEFT JOIN (
+			SELECT related_project_id, COUNT(*) AS pending_count
+			FROM olive_branch_record
+			WHERE status = 0
+			GROUP BY related_project_id
+		) ob_counts ON ob_counts.related_project_id = p.id`
+	}
+
 	query := fmt.Sprintf(`
 		SELECT
 			p.id, p.creator_id, p.name, p.description, p.school_id,
@@ -164,7 +206,7 @@ func (r *ProjectRepository) List(ctx context.Context, params ListParams) ([]mode
 			p.created_at, p.updated_at, p.is_cross_school,
 			p.education_requirement, p.skill_requirement,
 			s.school_name,
-			COALESCE(pa_counts.pending_count, 0) AS pending_application_count
+			COALESCE(pa_counts.pending_count, 0) AS pending_application_count%s
 		FROM project p
 		LEFT JOIN school s ON p.school_id = s.id
 		LEFT JOIN (
@@ -172,11 +214,11 @@ func (r *ProjectRepository) List(ctx context.Context, params ListParams) ([]mode
 			FROM project_application
 			WHERE status = 0
 			GROUP BY project_id
-		) pa_counts ON pa_counts.project_id = p.id
+		) pa_counts ON pa_counts.project_id = p.id%s
 		WHERE %s
 		ORDER BY %s
 		LIMIT ? OFFSET ?
-	`, whereClause, orderClause)
+	`, pendingCountSelect, pendingCountJoin, whereClause, orderClause)
 
 	// Combine: WHERE args → ORDER BY args → LIMIT/OFFSET args
 	dataArgs := make([]interface{}, 0, len(whereArgs)+len(orderArgs)+2)

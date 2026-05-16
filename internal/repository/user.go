@@ -251,6 +251,15 @@ type UserListParams struct {
 	AuthImgUploaded     *bool
 	TalentProfileStatus *int // 按名片状态过滤（0=已驳回/下架, 1=已上架, 2=审核中）
 	UserID              *int // 按用户 ID 精确查询
+
+	// Admin sort control
+	// SortBy: "pendingCount" | "lastActiveDate" — unknown values fall back to created_at DESC
+	SortBy *string
+	// Order: "asc" | "desc" (case-insensitive). Defaults to DESC.
+	Order *string
+	// IncludePendingCount — when true, adds correlated subqueries that compute
+	// pending_count = (talent_profile WHERE status=2) + (olive_branch_record received WHERE status=0).
+	IncludePendingCount bool
 }
 
 // ListUsers retrieves paginated users with optional filters
@@ -298,11 +307,41 @@ func (r *UserRepository) ListUsers(ctx context.Context, params UserListParams) (
 
 	whereClause := strings.Join(conditions, " AND ")
 
-	// Count total
+	// Count total — WHERE args only, no ORDER BY subqueries involved
 	countQuery := fmt.Sprintf("SELECT COUNT(*) FROM `user` u WHERE %s", whereClause)
 	var total int64
 	if err := r.db.QueryRowxContext(ctx, countQuery, args...).Scan(&total); err != nil {
 		return nil, 0, fmt.Errorf("count users: %w", err)
+	}
+
+	// Build ORDER BY
+	// - "pendingCount"    → pending_count [dir], u.created_at DESC
+	// - "lastActiveDate"  → u.last_active_date [dir], u.created_at DESC
+	// - default           → u.created_at DESC
+	orderClause := "u.created_at DESC"
+	if params.SortBy != nil {
+		dir := "DESC"
+		if params.Order != nil && strings.EqualFold(*params.Order, "asc") {
+			dir = "ASC"
+		}
+		switch *params.SortBy {
+		case "pendingCount":
+			orderClause = fmt.Sprintf("pending_count %s, u.created_at DESC", dir)
+		case "lastActiveDate":
+			orderClause = fmt.Sprintf("u.last_active_date %s, u.created_at DESC", dir)
+		}
+		// unknown sortBy values fall through to default (no error)
+	}
+
+	// When IncludePendingCount=true, add correlated subqueries that compute:
+	//   pending_count = (talent_profile rows WHERE user_id=u.id AND status=2)
+	//                 + (olive_branch_record rows WHERE receiver_id=u.id AND status=0)
+	pendingCountSelect := ""
+	if params.IncludePendingCount {
+		pendingCountSelect = `,
+			COALESCE((SELECT COUNT(*) FROM talent_profile WHERE user_id = u.id AND status = 2), 0)
+			+ COALESCE((SELECT COUNT(*) FROM olive_branch_record WHERE receiver_id = u.id AND status = 0), 0)
+			AS pending_count`
 	}
 
 	// Query with pagination
@@ -315,14 +354,14 @@ func (r *UserRepository) ListUsers(ctx context.Context, params UserListParams) (
 			u.auth_status, u.auth_img_url, u.avatar_url, u.cover_image,
 			u.wechat_id, u.created_at,
 			s.school_name, s.school_code,
-			m.major_name, m.class_id
+			m.major_name, m.class_id%s
 		FROM `+"`user`"+` u
 		LEFT JOIN school s ON u.school_id = s.id
 		LEFT JOIN major m ON u.major_id = m.id
 		WHERE %s
-		ORDER BY u.created_at DESC
+		ORDER BY %s
 		LIMIT ? OFFSET ?
-	`, whereClause)
+	`, pendingCountSelect, whereClause, orderClause)
 	args = append(args, params.Size, offset)
 
 	var users []models.User

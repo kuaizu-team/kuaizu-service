@@ -30,6 +30,7 @@ type Project struct {
 	Creator                    *User   `db:"-"`
 	CreatorTalentProfileStatus *int    `db:"-"` // 创建者名片状态（仅详情接口填充）
 	PendingApplicationCount    int     `db:"pending_application_count"` // 待处理申请数（仅列表接口填充）
+	PendingCount               int     `db:"pending_count"`             // 管理后台用：投递+橄榄枝待处理总数（仅管理后台列表填充）
 }
 
 // ToVO converts Project to API ProjectVO

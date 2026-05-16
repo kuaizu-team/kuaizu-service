@@ -14,11 +14,25 @@ import (
 // ListUsers handles GET /admin/users
 func (s *AdminServer) ListUsers(ctx echo.Context) error {
 	page, _ := strconv.Atoi(ctx.QueryParam("page"))
+
+	// Accept both "size" and "pageSize" — frontend sends pageSize
 	size, _ := strconv.Atoi(ctx.QueryParam("size"))
+	if size == 0 {
+		size, _ = strconv.Atoi(ctx.QueryParam("pageSize"))
+	}
 
 	params := repository.UserListParams{
-		Page: page,
-		Size: size,
+		Page:                page,
+		Size:                size,
+		IncludePendingCount: true, // admin list always needs pending count column
+	}
+
+	// sortBy / order — unknown values are silently ignored (degraded to default)
+	if v := ctx.QueryParam("sortBy"); v != "" {
+		params.SortBy = &v
+	}
+	if v := ctx.QueryParam("order"); v != "" {
+		params.Order = &v
 	}
 
 	if v := ctx.QueryParam("authStatus"); v != "" {
