@@ -320,6 +320,66 @@ func NewAdminProjectOliveBranchVO(ob *models.OliveBranch, talentProfileStatus *i
 	return vo
 }
 
+// AdminOrderVO is the admin-facing order response model (list item).
+type AdminOrderVO struct {
+	ID           int        `json:"id"`
+	OutTradeNo   *string    `json:"outTradeNo"`
+	WxPayNo      *string    `json:"wxPayNo"`
+	UserID       int        `json:"userId"`
+	UserNickname *string    `json:"userNickname"`
+	SchoolName   *string    `json:"schoolName"`
+	ProductID    int        `json:"productId"`
+	ProductName  *string    `json:"productName"`
+	Quantity     int        `json:"quantity"`
+	UnitPrice    int        `json:"unitPrice"`  // 单价，单位：分
+	ActualPaid   int        `json:"actualPaid"` // 实付，单位：分
+	Status       int        `json:"status"`     // 0=待支付 1=支付成功 2=支付失败 3=已退款
+	CreatedAt    time.Time  `json:"createdAt"`
+	PaidAt       *time.Time `json:"paidAt"`
+}
+
+// AdminOrderDetailVO extends AdminOrderVO with detail-only fields.
+type AdminOrderDetailVO struct {
+	AdminOrderVO
+	Description *string   `json:"description"` // 商品描述，允许为 null
+	UpdatedAt   time.Time `json:"updatedAt"`
+}
+
+// NewAdminOrderVO converts an Order model to AdminOrderVO.
+func NewAdminOrderVO(o *models.Order) *AdminOrderVO {
+	if o == nil {
+		return nil
+	}
+	return &AdminOrderVO{
+		ID:           o.ID,
+		OutTradeNo:   o.OutTradeNo,
+		WxPayNo:      o.WxPayNo,
+		UserID:       o.UserID,
+		UserNickname: o.UserNickname,
+		SchoolName:   o.SchoolName,
+		ProductID:    o.ProductID,
+		ProductName:  o.ProductName,
+		Quantity:     o.Quantity,
+		UnitPrice:    int(o.Price),
+		ActualPaid:   int(o.ActualPaid),
+		Status:       o.Status,
+		CreatedAt:    o.CreatedAt,
+		PaidAt:       o.PayTime,
+	}
+}
+
+// NewAdminOrderDetailVO converts an Order model to AdminOrderDetailVO.
+func NewAdminOrderDetailVO(o *models.Order) *AdminOrderDetailVO {
+	if o == nil {
+		return nil
+	}
+	return &AdminOrderDetailVO{
+		AdminOrderVO: *NewAdminOrderVO(o),
+		Description:  o.ProductDescription,
+		UpdatedAt:    o.UpdatedAt,
+	}
+}
+
 // ossFullURLPtr resolves a nullable relative OSS path to a full URL pointer.
 func ossFullURLPtr(rel *string) *string {
 	if rel == nil {

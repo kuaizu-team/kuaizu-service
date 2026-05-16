@@ -87,6 +87,9 @@ func main() {
 	adminGroup.GET("/feedbacks/:id", server.GetFeedback)
 	adminGroup.PATCH("/feedbacks/:id", server.ReplyFeedback)
 
+	adminGroup.GET("/orders", server.ListOrders)
+	adminGroup.GET("/orders/:id", server.GetOrder)
+
 	port := os.Getenv("ADMIN_PORT")
 	if port == "" {
 		port = "8081"

@@ -22,7 +22,12 @@ type Order struct {
 	UpdatedAt  time.Time  `db:"updated_at"`   // 更新时间
 
 	// Joined fields from product table
-	ProductName *string `db:"product_name"` // 商品名称（查询时连接获取）
+	ProductName        *string `db:"product_name"`        // 商品名称（查询时连接获取）
+	ProductDescription *string `db:"product_description"` // 商品描述（admin详情时连接获取）
+
+	// Joined fields populated only in admin queries
+	UserNickname *string `db:"user_nickname"` // 用户昵称（admin查询时JOIN获取）
+	SchoolName   *string `db:"school_name"`   // 学校名称（admin查询时JOIN获取）
 }
 
 // ToVO converts Order to API OrderVO

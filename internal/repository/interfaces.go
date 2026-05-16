@@ -17,6 +17,9 @@ type OrderRepo interface {
 	UpdatePaymentStatus(ctx context.Context, id int, status int, wxPayNo string, payTime time.Time) error
 	UpdatePaymentStatusTx(ctx context.Context, tx *sqlx.Tx, id int, status int, wxPayNo string, payTime time.Time) error
 	UpdateStatus(ctx context.Context, id int, status int) error
+	// Admin-only queries
+	AdminList(ctx context.Context, params AdminOrderListParams) ([]*models.Order, int64, error)
+	AdminGetByID(ctx context.Context, id int) (*models.Order, error)
 }
 
 // ProjectRepo defines the interface for project repository operations used by services.
