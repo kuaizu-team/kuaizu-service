@@ -37,7 +37,7 @@ type User struct {
 	MajorName    *string  `db:"major_name"`
 	ClassID      *int     `db:"class_id"`
 	Skills       []string `db:"-"`
-	PendingCount int      `db:"pending_count"` // 管理后台用：待审名片数+待处理橄榄枝数（仅管理后台列表填充）
+	PendingCount int      `db:"pending_count"` // 管理后台用：待审核投递数+待处理橄榄枝数（仅管理后台列表填充）
 }
 
 // ToVO converts User to API UserVO
