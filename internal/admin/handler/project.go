@@ -18,8 +18,9 @@ func (s *AdminServer) ListProjects(ctx echo.Context) error {
 	size, _ := strconv.Atoi(ctx.QueryParam("size"))
 
 	params := repository.ListParams{
-		Page: page,
-		Size: size,
+		Page:                page,
+		Size:                size,
+		IncludePendingCount: true, // admin list always needs pending count column
 	}
 
 	if v := ctx.QueryParam("status"); v != "" {
@@ -40,6 +41,14 @@ func (s *AdminServer) ListProjects(ctx echo.Context) error {
 			return response.BadRequest(ctx, "invalid creatorId")
 		}
 		params.CreatorID = &creatorID
+	}
+
+	// sortBy / order — unknown values are silently ignored (degraded to default)
+	if v := ctx.QueryParam("sortBy"); v != "" {
+		params.SortBy = &v
+	}
+	if v := ctx.QueryParam("order"); v != "" {
+		params.Order = &v
 	}
 
 	result, err := s.svc.Project.ListProjects(ctx.Request().Context(), params)

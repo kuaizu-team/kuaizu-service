@@ -32,11 +32,12 @@ type User struct {
 	CreatedAt                *time.Time `db:"created_at"`
 
 	// Joined fields (not always populated)
-	SchoolName *string  `db:"school_name"`
-	SchoolCode *string  `db:"school_code"`
-	MajorName  *string  `db:"major_name"`
-	ClassID    *int     `db:"class_id"`
-	Skills     []string `db:"-"`
+	SchoolName   *string  `db:"school_name"`
+	SchoolCode   *string  `db:"school_code"`
+	MajorName    *string  `db:"major_name"`
+	ClassID      *int     `db:"class_id"`
+	Skills       []string `db:"-"`
+	PendingCount int      `db:"pending_count"` // 管理后台用：待审核投递数+待处理橄榄枝数（仅管理后台列表填充）
 }
 
 // ToVO converts User to API UserVO

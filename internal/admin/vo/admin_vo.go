@@ -29,6 +29,7 @@ type AdminProjectVO struct {
 	EducationRequirement *int         `json:"educationRequirement"`
 	SkillRequirement     *string      `json:"skillRequirement"`
 	Creator              *AdminUserVO `json:"creator,omitempty"`
+	PendingCount         int          `json:"pendingCount"` // 投递+橄榄枝待处理总数
 }
 
 // AdminUserVO is the admin-facing user response model.
@@ -53,6 +54,7 @@ type AdminUserVO struct {
 	MajorName           *string    `json:"majorName"`
 	ClassID             *int       `json:"classId"`
 	TalentProfileStatus *int       `json:"talentProfileStatus"`
+	PendingCount        *int       `json:"pendingCount"` // 待审核投递数+待处理橄榄枝数
 }
 
 // AdminTalentProfileVO is the admin-facing talent profile (business card) response model.
@@ -108,6 +110,7 @@ func NewAdminProjectVO(p *models.Project) *AdminProjectVO {
 		IsCrossSchool:        p.IsCrossSchool,
 		EducationRequirement: p.EducationRequirement,
 		SkillRequirement:     p.SkillRequirement,
+		PendingCount:         p.PendingCount, // 0 when not computed (IncludePendingCount=false)
 	}
 	if p.Creator != nil {
 		adminProjectVo.Creator = NewAdminUserVO(p.Creator, p.CreatorTalentProfileStatus)
@@ -122,6 +125,7 @@ func NewAdminUserVO(u *models.User, talentProfileStatus *int) *AdminUserVO {
 		return nil
 	}
 
+	pendingCount := u.PendingCount // 0 when not computed (IncludePendingCount=false)
 	vo := AdminUserVO{
 		ID:                  u.ID,
 		OpenID:              u.OpenID,
@@ -142,6 +146,7 @@ func NewAdminUserVO(u *models.User, talentProfileStatus *int) *AdminUserVO {
 		MajorName:           u.MajorName,
 		ClassID:             u.ClassID,
 		TalentProfileStatus: talentProfileStatus,
+		PendingCount:        &pendingCount,
 	}
 	if u.AuthImgUrl != nil && u.AuthStatus != nil && *u.AuthStatus == 0 {
 		vo.AuthStatus = intPtr(3) //  提交了审核材料且未认证，将状态映射为 3-审核中，方便管理员优先处理
