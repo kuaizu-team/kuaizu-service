@@ -1,6 +1,7 @@
 package vo
 
 import (
+	"strconv"
 	"time"
 
 	"github.com/kuaizu-team/kuaizu-service/internal/models"
@@ -323,7 +324,7 @@ func NewAdminProjectOliveBranchVO(ob *models.OliveBranch, talentProfileStatus *i
 // AdminOrderVO is the admin-facing order response model (list item).
 type AdminOrderVO struct {
 	ID           int        `json:"id"`
-	OutTradeNo   *string    `json:"outTradeNo"`
+	OutTradeNo   string     `json:"outTradeNo"` // 使用订单 ID 的字符串形式（out_trade_no 列未使用）
 	WxPayNo      *string    `json:"wxPayNo"`
 	UserID       int        `json:"userId"`
 	UserNickname *string    `json:"userNickname"`
@@ -352,7 +353,7 @@ func NewAdminOrderVO(o *models.Order) *AdminOrderVO {
 	}
 	return &AdminOrderVO{
 		ID:           o.ID,
-		OutTradeNo:   o.OutTradeNo,
+		OutTradeNo:   strconv.Itoa(o.ID), // out_trade_no 列未使用，以 ID 字符串作为订单号
 		WxPayNo:      o.WxPayNo,
 		UserID:       o.UserID,
 		UserNickname: o.UserNickname,

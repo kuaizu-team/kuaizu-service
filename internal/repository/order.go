@@ -242,7 +242,7 @@ func (r *OrderRepository) AdminList(ctx context.Context, params AdminOrderListPa
 	query := fmt.Sprintf(`
 		SELECT
 			o.id, o.user_id, o.product_id, o.price, o.quantity, o.actual_paid, o.status,
-			o.wx_pay_no, o.out_trade_no, o.pay_time, o.created_at, o.updated_at,
+			o.wx_pay_no, o.pay_time, o.created_at, o.updated_at,
 			p.name  AS product_name,
 			u.nickname AS user_nickname,
 			s.school_name
@@ -267,7 +267,7 @@ func (r *OrderRepository) AdminGetByID(ctx context.Context, id int) (*models.Ord
 	query := `
 		SELECT
 			o.id, o.user_id, o.product_id, o.price, o.quantity, o.actual_paid, o.status,
-			o.wx_pay_no, o.out_trade_no, o.pay_time, o.created_at, o.updated_at,
+			o.wx_pay_no, o.pay_time, o.created_at, o.updated_at,
 			p.name        AS product_name,
 			p.description AS product_description,
 			u.nickname    AS user_nickname,
