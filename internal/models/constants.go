@@ -41,6 +41,9 @@ const (
 	OliveBranchCostPaid = 2 // 付费额度
 )
 
+// OliveBranchDailyFreeQuota 每自然日免费橄榄枝发送上限（全局唯一定义）
+const OliveBranchDailyFreeQuota = 5
+
 // Olive Branch Type
 const (
 	OliveBranchTypeTalent = 1 // 人才互联

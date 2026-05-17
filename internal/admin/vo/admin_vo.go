@@ -71,9 +71,6 @@ type AdminTalentProfileVO struct {
 	MBTI              *string  `json:"mbti"`
 }
 
-// adminDailyFreeQuota 与用户端橄榄枝配额接口保持一致。
-const adminDailyFreeQuota = 5
-
 // AdminUserDetailVO extends AdminUserVO with the user's talent profile and olive branch quota.
 type AdminUserDetailVO struct {
 	AdminUserVO
@@ -219,7 +216,7 @@ func NewAdminUserDetailVO(u *models.User, p *models.TalentProfile) *AdminUserDet
 			freeBranchUsedToday = *u.FreeBranchUsedToday
 		}
 	}
-	freeRemaining := adminDailyFreeQuota - freeBranchUsedToday
+	freeRemaining := models.OliveBranchDailyFreeQuota - freeBranchUsedToday
 	if freeRemaining < 0 {
 		freeRemaining = 0
 	}

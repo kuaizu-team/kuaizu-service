@@ -9,8 +9,6 @@ import (
 	"github.com/kuaizu-team/kuaizu-service/internal/repository"
 )
 
-const dailyFreeQuota = 5
-
 // OliveBranchService handles olive branch business logic.
 type OliveBranchService struct {
 	repo    *repository.Repository
@@ -98,7 +96,7 @@ func (s *OliveBranchService) SendOliveBranch(ctx context.Context, userID int, re
 		oliveBranchCount = *sender.OliveBranchCount
 	}
 
-	if freeBranchUsedToday < dailyFreeQuota {
+	if freeBranchUsedToday < models.OliveBranchDailyFreeQuota {
 		costType = models.OliveBranchCostFree // Free quota
 		freeBranchUsedToday++
 		sender.FreeBranchUsedToday = &freeBranchUsedToday
