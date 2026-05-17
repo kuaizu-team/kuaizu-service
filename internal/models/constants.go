@@ -6,6 +6,13 @@ const (
 	AdminUserStatusEnabled  = 1 // 启用
 )
 
+// Admin Role
+const (
+	AdminRoleSuperAdmin       = 1 // 超级管理员（全量权限）
+	AdminRoleSchoolSuperAdmin = 2 // 校区超级管理员（本校全量）
+	AdminRoleSchoolAdmin      = 3 // 校区管理员（本校受限，不可访问订单）
+)
+
 // Email Promotion Status
 const (
 	EmailPromotionStatusPending   EmailPromotionStatus = 0 // 待发送

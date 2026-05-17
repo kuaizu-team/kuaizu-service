@@ -19,6 +19,11 @@ func (s *AdminServer) ListFeedbacks(ctx echo.Context) error {
 		Size: size,
 	}
 
+	// 校区管理员自动按学校过滤
+	if sid := adminSchoolID(ctx); sid != nil {
+		params.SchoolID = sid
+	}
+
 	if v := ctx.QueryParam("status"); v != "" {
 		status, err := strconv.Atoi(v)
 		if err != nil {
@@ -55,6 +60,13 @@ func (s *AdminServer) GetFeedback(ctx echo.Context) error {
 	feedback, err := s.svc.Feedback.GetFeedback(ctx.Request().Context(), id)
 	if err != nil {
 		return mapServiceError(ctx, err)
+	}
+
+	// 校区管理员只能查看本校用户的反馈
+	if sid := adminSchoolID(ctx); sid != nil {
+		if feedback == nil || feedback.UserSchoolID == nil || *feedback.UserSchoolID != *sid {
+			return response.Forbidden(ctx, "权限不足")
+		}
 	}
 
 	return response.Success(ctx, adminvo.NewAdminFeedbackVO(feedback))

@@ -15,4 +15,5 @@ type Feedback struct {
 
 	// Joined fields
 	UserNickname *string `db:"nickname"`
+	UserSchoolID *int    `db:"user_school_id"` // 发起人学校ID（admin权限校验用）
 }

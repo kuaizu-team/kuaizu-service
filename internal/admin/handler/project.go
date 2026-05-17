@@ -51,6 +51,11 @@ func (s *AdminServer) ListProjects(ctx echo.Context) error {
 		params.Order = &v
 	}
 
+	// 校区管理员自动按学校过滤
+	if sid := adminSchoolID(ctx); sid != nil {
+		params.SchoolID = sid
+	}
+
 	result, err := s.svc.Project.ListProjects(ctx.Request().Context(), params)
 	if err != nil {
 		return mapServiceError(ctx, err)
@@ -79,6 +84,13 @@ func (s *AdminServer) GetProject(ctx echo.Context) error {
 	project, err := s.svc.Project.GetProject(ctx.Request().Context(), id)
 	if err != nil {
 		return mapServiceError(ctx, err)
+	}
+
+	// 校区管理员只能查看本校项目
+	if sid := adminSchoolID(ctx); sid != nil {
+		if project == nil || project.SchoolID == nil || *project.SchoolID != *sid {
+			return response.Forbidden(ctx, "权限不足")
+		}
 	}
 
 	return response.Success(ctx, adminvo.NewAdminProjectVO(project))

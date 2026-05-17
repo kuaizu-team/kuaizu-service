@@ -13,6 +13,8 @@ import (
 type AdminClaims struct {
 	AdminID  int    `json:"adminId"`
 	Username string `json:"username"`
+	Role     int    `json:"role"`     // 1=超级管理员 2=校区超级管理员 3=校区管理员
+	SchoolID int    `json:"schoolId"` // 0 表示无绑定学校（超级管理员）
 	jwt.RegisteredClaims
 }
 
@@ -38,14 +40,17 @@ func DefaultAdminConfig() *AdminConfig {
 	}
 }
 
-// GenerateAdminToken generates a JWT token for an admin user
-func GenerateAdminToken(config *AdminConfig, adminID int, username string) (string, int, error) {
+// GenerateAdminToken generates a JWT token for an admin user.
+// schoolID should be 0 for super admins (no school binding).
+func GenerateAdminToken(config *AdminConfig, adminID int, username string, role int, schoolID int) (string, int, error) {
 	expiresAt := time.Now().Add(time.Duration(config.ExpireHour) * time.Hour)
 	expiresIn := config.ExpireHour * 3600
 
 	claims := AdminClaims{
 		AdminID:  adminID,
 		Username: username,
+		Role:     role,
+		SchoolID: schoolID,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Issuer:    config.Issuer,
 			ExpiresAt: jwt.NewNumericDate(expiresAt),

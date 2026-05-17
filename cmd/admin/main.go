@@ -90,6 +90,14 @@ func main() {
 	adminGroup.GET("/orders", server.ListOrders)
 	adminGroup.GET("/orders/:id", server.GetOrder)
 
+	adminGroup.GET("/admins", server.ListAdmins)
+	adminGroup.POST("/admins", server.CreateAdmin)
+	adminGroup.PUT("/admins/:id", server.UpdateAdmin)
+	adminGroup.PATCH("/admins/:id/status", server.UpdateAdminStatus)
+	adminGroup.DELETE("/admins/:id", server.DeleteAdmin)
+
+	adminGroup.GET("/schools", server.ListSchools)
+
 	port := os.Getenv("ADMIN_PORT")
 	if port == "" {
 		port = "8081"

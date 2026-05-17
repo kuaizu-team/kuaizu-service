@@ -37,6 +37,7 @@ type AdminOrderListParams struct {
 	WxPayNo    *string // wx_pay_no 模糊搜索
 	Nickname   *string // 用户昵称模糊搜索（JOIN user 表）
 	SchoolName *string // 学校名称模糊搜索（JOIN school 表）
+	SchoolID   *int    // admin 权限过滤：只返回该学校用户的订单
 }
 
 // ListByUserID retrieves paginated orders for a user
@@ -223,6 +224,10 @@ func (r *OrderRepository) AdminList(ctx context.Context, params AdminOrderListPa
 		conditions = append(conditions, "s.school_name LIKE ?")
 		args = append(args, "%"+*params.SchoolName+"%")
 	}
+	if params.SchoolID != nil {
+		conditions = append(conditions, "u.school_id = ?")
+		args = append(args, *params.SchoolID)
+	}
 
 	whereClause := strings.Join(conditions, " AND ")
 
@@ -274,6 +279,7 @@ func (r *OrderRepository) AdminGetByID(ctx context.Context, id int) (*models.Ord
 			p.name        AS product_name,
 			p.description AS product_description,
 			u.nickname    AS user_nickname,
+			u.school_id   AS user_school_id,
 			s.school_name
 		FROM ` + "`order`" + ` o
 		LEFT JOIN ` + "`user`" + ` u ON o.user_id = u.id

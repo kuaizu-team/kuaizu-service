@@ -22,10 +22,11 @@ func NewFeedbackRepository(db *sqlx.DB) *FeedbackRepository {
 
 // FeedbackListParams contains parameters for listing feedbacks
 type FeedbackListParams struct {
-	Page   int
-	Size   int
-	Status *int
-	UserID *int
+	Page     int
+	Size     int
+	Status   *int
+	UserID   *int
+	SchoolID *int // admin 权限过滤：只返回该学校用户的反馈
 }
 
 // List retrieves paginated feedbacks with optional filters
@@ -41,6 +42,10 @@ func (r *FeedbackRepository) List(ctx context.Context, params FeedbackListParams
 	if params.UserID != nil {
 		conditions = append(conditions, "f.user_id = ?")
 		args = append(args, *params.UserID)
+	}
+	if params.SchoolID != nil {
+		conditions = append(conditions, "u.school_id = ?")
+		args = append(args, *params.SchoolID)
 	}
 
 	whereClause := strings.Join(conditions, " AND ")
@@ -58,7 +63,7 @@ func (r *FeedbackRepository) List(ctx context.Context, params FeedbackListParams
 		SELECT
 			f.id, f.user_id, f.content,
 			f.email, f.status, f.admin_reply, f.created_at, f.updated_at,
-			u.nickname
+			u.nickname, u.school_id AS user_school_id
 		FROM feedback f
 		LEFT JOIN `+"`user`"+` u ON f.user_id = u.id
 		WHERE %s
@@ -81,7 +86,7 @@ func (r *FeedbackRepository) GetByID(ctx context.Context, id int) (*models.Feedb
 		SELECT
 			f.id, f.user_id, f.content,
 			f.email, f.status, f.admin_reply, f.created_at, f.updated_at,
-			u.nickname
+			u.nickname, u.school_id AS user_school_id
 		FROM feedback f
 		LEFT JOIN ` + "`user`" + ` u ON f.user_id = u.id
 		WHERE f.id = ?
