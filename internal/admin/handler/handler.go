@@ -75,3 +75,34 @@ func adminSchoolID(ctx echo.Context) *int {
 	return &schoolID
 }
 
+// canEditAdmin reports whether the caller may edit/delete the target admin.
+//
+// Permission matrix:
+//   role=1 (super admin)         → can edit self and any role=2/3; cannot edit other role=1.
+//   role=2 (school super admin)  → can edit self and same-school role=3; cannot edit role=1/2 (non-self).
+//   role=3 (school admin)        → can only edit self; cannot edit anyone else.
+func canEditAdmin(callerRole, callerID, targetRole, targetID int, callerSchoolID, targetSchoolID *int) bool {
+	switch callerRole {
+	case models.AdminRoleSuperAdmin: // role=1
+		if targetID == callerID {
+			return true // always allowed to edit self
+		}
+		// may edit role=2 or role=3, but NOT another role=1
+		return targetRole > models.AdminRoleSuperAdmin
+	case models.AdminRoleSchoolSuperAdmin: // role=2
+		if targetID == callerID {
+			return true // always allowed to edit self
+		}
+		// may edit role=3 in the same school
+		return targetRole == models.AdminRoleSchoolAdmin && schoolIDsMatch(callerSchoolID, targetSchoolID)
+	case models.AdminRoleSchoolAdmin: // role=3
+		return targetID == callerID // only self
+	}
+	return false
+}
+
+// schoolIDsMatch returns true when both pointers are non-nil and point to the same value.
+func schoolIDsMatch(a, b *int) bool {
+	return a != nil && b != nil && *a == *b
+}
+
