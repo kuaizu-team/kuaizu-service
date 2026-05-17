@@ -106,7 +106,9 @@ func (r *AdminUserRepository) List(ctx context.Context, params AdminUserListPara
 		ORDER BY au.created_at DESC
 		LIMIT ? OFFSET ?`, whereClause)
 
-	dataArgs := append(args, params.Size, offset)
+	dataArgs := make([]interface{}, 0, len(args)+2)
+	dataArgs = append(dataArgs, args...)
+	dataArgs = append(dataArgs, params.Size, offset)
 	var admins []*models.AdminUser
 	if err := r.db.SelectContext(ctx, &admins, query, dataArgs...); err != nil {
 		return nil, 0, fmt.Errorf("query admins: %w", err)
@@ -192,14 +194,3 @@ func (r *AdminUserRepository) Delete(ctx context.Context, id int) error {
 	return nil
 }
 
-// ExistsByUsername checks if a username is taken; excludeID=0 skips the exclusion
-func (r *AdminUserRepository) ExistsByUsername(ctx context.Context, username string, excludeID int) (bool, error) {
-	var exists bool
-	err := r.db.QueryRowxContext(ctx,
-		`SELECT EXISTS(SELECT 1 FROM admin_user WHERE username = ? AND id != ?)`,
-		username, excludeID).Scan(&exists)
-	if err != nil {
-		return false, fmt.Errorf("check username exists: %w", err)
-	}
-	return exists, nil
-}

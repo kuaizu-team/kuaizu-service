@@ -75,16 +75,3 @@ func adminSchoolID(ctx echo.Context) *int {
 	return &schoolID
 }
 
-// isSuperAdmin returns true when the current admin has full global access.
-func isSuperAdmin(ctx echo.Context) bool {
-	return adminRole(ctx) == models.AdminRoleSuperAdmin
-}
-
-// requireSchoolAccess returns 403 if role is SchoolAdmin (role=3),
-// used to block endpoints that school admins are not allowed to see.
-func requireSchoolAccess(ctx echo.Context) error {
-	if adminRole(ctx) == models.AdminRoleSchoolAdmin {
-		return response.Forbidden(ctx, "权限不足")
-	}
-	return nil
-}

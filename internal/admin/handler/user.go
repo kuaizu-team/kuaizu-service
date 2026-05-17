@@ -242,6 +242,17 @@ func (s *AdminServer) ReviewUserAuth(ctx echo.Context) error {
 		return response.BadRequest(ctx, "invalid user id")
 	}
 
+	// 校区管理员只能操作本校用户
+	if sid := adminSchoolID(ctx); sid != nil {
+		user, err := s.svc.User.GetUser(ctx.Request().Context(), id)
+		if err != nil {
+			return mapServiceError(ctx, err)
+		}
+		if user == nil || user.SchoolID == nil || *user.SchoolID != *sid {
+			return response.Forbidden(ctx, "权限不足")
+		}
+	}
+
 	var req reviewAuthRequest
 	if err := ctx.Bind(&req); err != nil {
 		return response.BadRequest(ctx, "invalid request body")

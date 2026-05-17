@@ -103,6 +103,17 @@ func (s *AdminServer) TakedownProject(ctx echo.Context) error {
 		return response.BadRequest(ctx, "invalid project id")
 	}
 
+	// 校区管理员只能操作本校项目
+	if sid := adminSchoolID(ctx); sid != nil {
+		project, err := s.svc.Project.GetProject(ctx.Request().Context(), id)
+		if err != nil {
+			return mapServiceError(ctx, err)
+		}
+		if project == nil || project.SchoolID == nil || *project.SchoolID != *sid {
+			return response.Forbidden(ctx, "权限不足")
+		}
+	}
+
 	if err := s.svc.Project.TakedownProject(ctx.Request().Context(), id); err != nil {
 		return mapServiceError(ctx, err)
 	}
@@ -259,6 +270,17 @@ func (s *AdminServer) ReviewProject(ctx echo.Context) error {
 	id, err := strconv.Atoi(ctx.Param("id"))
 	if err != nil {
 		return response.BadRequest(ctx, "invalid project id")
+	}
+
+	// 校区管理员只能操作本校项目
+	if sid := adminSchoolID(ctx); sid != nil {
+		project, err := s.svc.Project.GetProject(ctx.Request().Context(), id)
+		if err != nil {
+			return mapServiceError(ctx, err)
+		}
+		if project == nil || project.SchoolID == nil || *project.SchoolID != *sid {
+			return response.Forbidden(ctx, "权限不足")
+		}
 	}
 
 	var req reviewProjectRequest
