@@ -36,11 +36,6 @@ func (s *AdminServer) ListUsers(ctx echo.Context) error {
 		params.Order = &v
 	}
 
-	// 校区管理员自动按学校过滤
-	if sid := adminSchoolID(ctx); sid != nil {
-		params.SchoolID = sid
-	}
-
 	if v := ctx.QueryParam("authStatus"); v != "" {
 		status, err := strconv.Atoi(v)
 		if err != nil {
@@ -54,12 +49,19 @@ func (s *AdminServer) ListUsers(ctx echo.Context) error {
 		}
 	}
 
+	// 仅超级管理员（无学校绑定）可自由指定 schoolId；
+	// 校区管理员的 schoolId 参数在下方被强制覆盖，此处仍解析以便做格式校验。
 	if v := ctx.QueryParam("schoolId"); v != "" {
 		schoolID, err := strconv.Atoi(v)
 		if err != nil {
 			return response.BadRequest(ctx, "invalid schoolId")
 		}
 		params.SchoolID = &schoolID
+	}
+
+	// 校区管理员强制按本校过滤，放在所有 query param 解析之后，确保不被覆盖。
+	if sid := adminSchoolID(ctx); sid != nil {
+		params.SchoolID = sid
 	}
 
 	if v := ctx.QueryParam("keyword"); v != "" {
