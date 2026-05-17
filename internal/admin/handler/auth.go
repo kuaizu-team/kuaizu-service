@@ -40,14 +40,29 @@ func (s *AdminServer) Login(ctx echo.Context) error {
 		return response.Unauthorized(ctx, "invalid username or password")
 	}
 
+	// Resolve school info for campus admins
+	var schoolName *string
+	schoolIDInt := 0
+	if admin.SchoolID != nil {
+		schoolIDInt = *admin.SchoolID
+		// SchoolName is already joined in GetByUsername
+		schoolName = admin.SchoolName
+	}
+
 	config := adminauth.DefaultAdminConfig()
-	token, expiresIn, err := adminauth.GenerateAdminToken(config, admin.ID, admin.Username)
+	token, expiresIn, err := adminauth.GenerateAdminToken(config, admin.ID, admin.Username, admin.Role, schoolIDInt)
 	if err != nil {
 		return response.InternalError(ctx, "failed to generate token")
 	}
 
 	return response.Success(ctx, map[string]interface{}{
-		"token":     token,
-		"expiresIn": expiresIn,
+		"token":      token,
+		"expiresIn":  expiresIn,
+		"id":         admin.ID,
+		"username":   admin.Username,
+		"nickname":   admin.Nickname,
+		"role":       admin.Role,
+		"schoolId":   admin.SchoolID,
+		"schoolName": schoolName,
 	})
 }

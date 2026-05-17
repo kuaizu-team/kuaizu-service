@@ -50,6 +50,8 @@ func AdminJWTAuth(config *AdminJWTConfig) echo.MiddlewareFunc {
 
 			c.Set("adminID", claims.AdminID)
 			c.Set("adminUsername", claims.Username)
+			c.Set("adminRole", claims.Role)
+			c.Set("adminSchoolID", claims.SchoolID) // 0 表示超级管理员（无学校绑定）
 
 			return next(c)
 		}

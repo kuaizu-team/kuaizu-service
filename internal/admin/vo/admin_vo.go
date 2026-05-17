@@ -322,6 +322,37 @@ func NewAdminProjectOliveBranchVO(ob *models.OliveBranch, talentProfileStatus *i
 	return vo
 }
 
+// AdminUserAccountVO is the admin-facing admin-user response model (管理员账号).
+type AdminUserAccountVO struct {
+	ID         int        `json:"id"`
+	Username   string     `json:"username"`
+	Nickname   *string    `json:"nickname"`
+	Role       int        `json:"role"`
+	SchoolID   *int       `json:"schoolId"`
+	SchoolName *string    `json:"schoolName"`
+	Status     int        `json:"status"`
+	CreatedAt  time.Time  `json:"createdAt"`
+	UpdatedAt  time.Time  `json:"updatedAt"`
+}
+
+// NewAdminUserAccountVO converts an AdminUser model to AdminUserAccountVO (no password).
+func NewAdminUserAccountVO(a *models.AdminUser) *AdminUserAccountVO {
+	if a == nil {
+		return nil
+	}
+	return &AdminUserAccountVO{
+		ID:         a.ID,
+		Username:   a.Username,
+		Nickname:   a.Nickname,
+		Role:       a.Role,
+		SchoolID:   a.SchoolID,
+		SchoolName: a.SchoolName,
+		Status:     a.Status,
+		CreatedAt:  a.CreatedAt,
+		UpdatedAt:  a.UpdatedAt,
+	}
+}
+
 // AdminOrderVO is the admin-facing order response model (list item).
 type AdminOrderVO struct {
 	ID           int        `json:"id"`

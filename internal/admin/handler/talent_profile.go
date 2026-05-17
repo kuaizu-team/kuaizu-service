@@ -12,10 +12,32 @@ type reviewTalentProfileRequest struct {
 	Status int `json:"status"`
 }
 
+// checkTalentProfileSchool returns 403 if the talent profile does not belong to the admin's school.
+// GetByID already JOINs the user table and exposes SchoolID, so no extra query is needed.
+func (s *AdminServer) checkTalentProfileSchool(ctx echo.Context, id int) error {
+	sid := adminSchoolID(ctx)
+	if sid == nil {
+		return nil // super admin — no restriction
+	}
+	tp, err := s.repo.TalentProfile.GetByID(ctx.Request().Context(), id)
+	if err != nil {
+		return response.InternalError(ctx, "查询名片失败")
+	}
+	if tp == nil || tp.SchoolID == nil || *tp.SchoolID != *sid {
+		return response.Forbidden(ctx, "权限不足")
+	}
+	return nil
+}
+
 // TakedownTalentProfile handles PATCH /admin/talent-profiles/:id/takedown
 func (s *AdminServer) TakedownTalentProfile(ctx echo.Context) error {
 	id, err := parseIDParam(ctx, "id", "talent profile")
 	if err != nil {
+		return err
+	}
+
+	// 校区管理员只能操作本校用户的名片
+	if err := s.checkTalentProfileSchool(ctx, id); err != nil {
 		return err
 	}
 
@@ -30,6 +52,11 @@ func (s *AdminServer) TakedownTalentProfile(ctx echo.Context) error {
 func (s *AdminServer) ReviewTalentProfile(ctx echo.Context) error {
 	id, err := parseIDParam(ctx, "id", "talent profile")
 	if err != nil {
+		return err
+	}
+
+	// 校区管理员只能操作本校用户的名片
+	if err := s.checkTalentProfileSchool(ctx, id); err != nil {
 		return err
 	}
 

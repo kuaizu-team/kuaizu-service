@@ -28,6 +28,7 @@ type Order struct {
 	// Joined fields populated only in admin queries
 	UserNickname *string `db:"user_nickname"` // 用户昵称（admin查询时JOIN获取）
 	SchoolName   *string `db:"school_name"`   // 学校名称（admin查询时JOIN获取）
+	UserSchoolID *int    `db:"user_school_id"` // 用户学校ID（admin权限校验用）
 }
 
 // ToVO converts Order to API OrderVO

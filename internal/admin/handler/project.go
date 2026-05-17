@@ -51,6 +51,11 @@ func (s *AdminServer) ListProjects(ctx echo.Context) error {
 		params.Order = &v
 	}
 
+	// 校区管理员自动按学校过滤
+	if sid := adminSchoolID(ctx); sid != nil {
+		params.SchoolID = sid
+	}
+
 	result, err := s.svc.Project.ListProjects(ctx.Request().Context(), params)
 	if err != nil {
 		return mapServiceError(ctx, err)
@@ -81,6 +86,13 @@ func (s *AdminServer) GetProject(ctx echo.Context) error {
 		return mapServiceError(ctx, err)
 	}
 
+	// 校区管理员只能查看本校项目
+	if sid := adminSchoolID(ctx); sid != nil {
+		if project == nil || project.SchoolID == nil || *project.SchoolID != *sid {
+			return response.Forbidden(ctx, "权限不足")
+		}
+	}
+
 	return response.Success(ctx, adminvo.NewAdminProjectVO(project))
 }
 
@@ -89,6 +101,17 @@ func (s *AdminServer) TakedownProject(ctx echo.Context) error {
 	id, err := strconv.Atoi(ctx.Param("id"))
 	if err != nil {
 		return response.BadRequest(ctx, "invalid project id")
+	}
+
+	// 校区管理员只能操作本校项目
+	if sid := adminSchoolID(ctx); sid != nil {
+		project, err := s.svc.Project.GetProject(ctx.Request().Context(), id)
+		if err != nil {
+			return mapServiceError(ctx, err)
+		}
+		if project == nil || project.SchoolID == nil || *project.SchoolID != *sid {
+			return response.Forbidden(ctx, "权限不足")
+		}
 	}
 
 	if err := s.svc.Project.TakedownProject(ctx.Request().Context(), id); err != nil {
@@ -247,6 +270,17 @@ func (s *AdminServer) ReviewProject(ctx echo.Context) error {
 	id, err := strconv.Atoi(ctx.Param("id"))
 	if err != nil {
 		return response.BadRequest(ctx, "invalid project id")
+	}
+
+	// 校区管理员只能操作本校项目
+	if sid := adminSchoolID(ctx); sid != nil {
+		project, err := s.svc.Project.GetProject(ctx.Request().Context(), id)
+		if err != nil {
+			return mapServiceError(ctx, err)
+		}
+		if project == nil || project.SchoolID == nil || *project.SchoolID != *sid {
+			return response.Forbidden(ctx, "权限不足")
+		}
 	}
 
 	var req reviewProjectRequest

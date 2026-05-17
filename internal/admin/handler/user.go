@@ -35,6 +35,11 @@ func (s *AdminServer) ListUsers(ctx echo.Context) error {
 		params.Order = &v
 	}
 
+	// 校区管理员自动按学校过滤
+	if sid := adminSchoolID(ctx); sid != nil {
+		params.SchoolID = sid
+	}
+
 	if v := ctx.QueryParam("authStatus"); v != "" {
 		status, err := strconv.Atoi(v)
 		if err != nil {
@@ -135,6 +140,13 @@ func (s *AdminServer) GetUser(ctx echo.Context) error {
 		return mapServiceError(ctx, err)
 	}
 
+	// 校区管理员只能查看本校用户
+	if sid := adminSchoolID(ctx); sid != nil {
+		if user == nil || user.SchoolID == nil || *user.SchoolID != *sid {
+			return response.Forbidden(ctx, "权限不足")
+		}
+	}
+
 	profile, err := s.repo.TalentProfile.GetByUserID(ctx.Request().Context(), id)
 	if err != nil {
 		return response.InternalError(ctx, "获取名片信息失败")
@@ -228,6 +240,17 @@ func (s *AdminServer) ReviewUserAuth(ctx echo.Context) error {
 	id, err := strconv.Atoi(ctx.Param("id"))
 	if err != nil {
 		return response.BadRequest(ctx, "invalid user id")
+	}
+
+	// 校区管理员只能操作本校用户
+	if sid := adminSchoolID(ctx); sid != nil {
+		user, err := s.svc.User.GetUser(ctx.Request().Context(), id)
+		if err != nil {
+			return mapServiceError(ctx, err)
+		}
+		if user == nil || user.SchoolID == nil || *user.SchoolID != *sid {
+			return response.Forbidden(ctx, "权限不足")
+		}
 	}
 
 	var req reviewAuthRequest
