@@ -126,6 +126,12 @@ type TalentProfileRepo interface {
 type AdminUserRepo interface {
 	GetByUsername(ctx context.Context, username string) (*models.AdminUser, error)
 	GetByID(ctx context.Context, id int) (*models.AdminUser, error)
+	List(ctx context.Context, params AdminUserListParams) ([]*models.AdminUser, int64, error)
+	Create(ctx context.Context, admin *models.AdminUser) error
+	Update(ctx context.Context, admin *models.AdminUser) error
+	UpdateStatus(ctx context.Context, id int, status int) error
+	Delete(ctx context.Context, id int) error
+	ExistsByUsername(ctx context.Context, username string, excludeID int) (bool, error)
 }
 
 // FeedbackRepo defines the interface for feedback repository operations.
