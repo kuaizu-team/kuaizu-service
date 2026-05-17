@@ -50,8 +50,12 @@ func (r *FeedbackRepository) List(ctx context.Context, params FeedbackListParams
 
 	whereClause := strings.Join(conditions, " AND ")
 
-	// Count total
-	countQuery := fmt.Sprintf(`SELECT COUNT(*) FROM feedback f WHERE %s`, whereClause)
+	// Both count and data queries share the same JOIN so that u.school_id
+	// in the WHERE clause is always valid regardless of which filters are set.
+	const fromJoin = "FROM feedback f LEFT JOIN `user` u ON f.user_id = u.id"
+
+	// Count total (must use the same JOIN as the data query)
+	countQuery := fmt.Sprintf("SELECT COUNT(*) %s WHERE %s", fromJoin, whereClause)
 	var total int64
 	if err := r.db.QueryRowxContext(ctx, countQuery, args...).Scan(&total); err != nil {
 		return nil, 0, fmt.Errorf("count feedbacks: %w", err)
@@ -64,12 +68,11 @@ func (r *FeedbackRepository) List(ctx context.Context, params FeedbackListParams
 			f.id, f.user_id, f.content,
 			f.email, f.status, f.admin_reply, f.created_at, f.updated_at,
 			u.nickname, u.school_id AS user_school_id
-		FROM feedback f
-		LEFT JOIN `+"`user`"+` u ON f.user_id = u.id
+		%s
 		WHERE %s
 		ORDER BY f.created_at DESC
 		LIMIT ? OFFSET ?
-	`, whereClause)
+	`, fromJoin, whereClause)
 	args = append(args, params.Size, offset)
 
 	var feedbacks []models.Feedback

@@ -86,6 +86,17 @@ func (s *AdminServer) ReplyFeedback(ctx echo.Context) error {
 		return response.BadRequest(ctx, "invalid feedback id")
 	}
 
+	// 校区管理员需校验该反馈归属本校（与 GetFeedback 逻辑一致）
+	if sid := adminSchoolID(ctx); sid != nil {
+		feedback, err := s.svc.Feedback.GetFeedback(ctx.Request().Context(), id)
+		if err != nil {
+			return mapServiceError(ctx, err)
+		}
+		if feedback == nil || feedback.UserSchoolID == nil || *feedback.UserSchoolID != *sid {
+			return response.Forbidden(ctx, "无权操作该反馈")
+		}
+	}
+
 	var req replyFeedbackRequest
 	if err := ctx.Bind(&req); err != nil {
 		return response.BadRequest(ctx, "invalid request body")
