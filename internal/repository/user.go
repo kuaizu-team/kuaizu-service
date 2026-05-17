@@ -29,7 +29,7 @@ func (r *UserRepository) GetByID(ctx context.Context, id int) (*models.User, err
 			u.free_branch_used_today, u.last_active_date,
 			u.auth_status, u.auth_img_url, u.avatar_url, u.cover_image,
 			u.wechat_id, u.sent_olive_viewed_at, u.applications_last_viewed_at,
-			u.created_at,
+			u.user_status, u.ban_reason, u.created_at,
 			s.school_name, s.school_code,
 			m.major_name, m.class_id
 		FROM ` + "`user`" + ` u
@@ -58,7 +58,7 @@ func (r *UserRepository) GetByOpenID(ctx context.Context, openid string) (*model
 			u.free_branch_used_today, u.last_active_date,
 			u.auth_status, u.auth_img_url, u.avatar_url, u.cover_image,
 			u.wechat_id, u.sent_olive_viewed_at, u.applications_last_viewed_at,
-			u.created_at,
+			u.user_status, u.ban_reason, u.created_at,
 			s.school_name, s.school_code,
 			m.major_name, m.class_id
 		FROM ` + "`user`" + ` u
@@ -252,6 +252,8 @@ type UserListParams struct {
 	TalentProfileStatus *int // 按名片状态过滤（0=已驳回/下架, 1=已上架, 2=审核中）
 	UserID              *int // 按用户 ID 精确查询
 
+	UserStatus *int // 按账号状态过滤（0=正常, 1=封禁, 2=已毕业）
+
 	// Admin sort control
 	// SortBy: "pendingCount" | "lastActiveDate" — unknown values fall back to created_at DESC
 	SortBy *string
@@ -306,6 +308,11 @@ func (r *UserRepository) ListUsers(ctx context.Context, params UserListParams) (
 		args = append(args, *params.UserID)
 	}
 
+	if params.UserStatus != nil {
+		conditions = append(conditions, "u.user_status = ?")
+		args = append(args, *params.UserStatus)
+	}
+
 	whereClause := strings.Join(conditions, " AND ")
 
 	// Count total — WHERE args only, no ORDER BY subqueries involved
@@ -355,7 +362,7 @@ func (r *UserRepository) ListUsers(ctx context.Context, params UserListParams) (
 			u.school_id, u.major_id, u.grade, u.olive_branch_count,
 			u.free_branch_used_today, u.last_active_date,
 			u.auth_status, u.auth_img_url, u.avatar_url, u.cover_image,
-			u.wechat_id, u.created_at,
+			u.wechat_id, u.user_status, u.ban_reason, u.created_at,
 			s.school_name, s.school_code,
 			m.major_name, m.class_id%s
 		FROM `+"`user`"+` u
@@ -473,6 +480,24 @@ func (r *UserRepository) UpdateCoverImage(ctx context.Context, userID int, cover
 	_, err := r.db.ExecContext(ctx, query, coverImage, userID)
 	if err != nil {
 		return fmt.Errorf("update user cover image: %w", err)
+	}
+	return nil
+}
+
+// UpdateUserStatus updates user_status and ban_reason for the given user.
+// banReason is set to NULL when status != 1.
+func (r *UserRepository) UpdateUserStatus(ctx context.Context, userID int, status int, banReason *string) error {
+	reason := banReason
+	if status != 1 {
+		reason = nil
+	}
+	query := `UPDATE ` + "`user`" + ` SET user_status = ?, ban_reason = ? WHERE id = ?`
+	result, err := r.db.ExecContext(ctx, query, status, reason, userID)
+	if err != nil {
+		return fmt.Errorf("update user status: %w", err)
+	}
+	if rows, _ := result.RowsAffected(); rows == 0 {
+		return sql.ErrNoRows
 	}
 	return nil
 }

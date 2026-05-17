@@ -107,6 +107,9 @@ func main() {
 		return false
 	}
 	apiGroup.Use(middleware.JWTAuth(jwtConfig))
+	// Block banned / graduated users from all business endpoints.
+	// Must run after JWTAuth so "userID" is already set in the Echo context.
+	apiGroup.Use(middleware.UserStatusCheck(repo))
 
 	// Register school sub-resource routes BEFORE api.RegisterHandlers to prevent
 	// any dynamic-path route from shadowing these concrete named paths.

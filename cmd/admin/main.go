@@ -80,6 +80,7 @@ func main() {
 	adminGroup.GET("/users", server.ListUsers)
 	adminGroup.GET("/users/:id", server.GetUser)
 	adminGroup.PATCH("/users/:id/auth", server.ReviewUserAuth)
+	adminGroup.PUT("/users/:id/status", server.UpdateUserStatus)
 	adminGroup.GET("/users/:id/applications", server.ListUserApplications)
 	adminGroup.GET("/users/:id/olive-branches", server.ListUserOliveBranches)
 

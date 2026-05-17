@@ -57,6 +57,8 @@ type AdminUserVO struct {
 	ClassID             *int       `json:"classId"`
 	TalentProfileStatus *int       `json:"talentProfileStatus"`
 	PendingCount        *int       `json:"pendingCount"` // 待审核投递数+待处理橄榄枝数
+	UserStatus          int        `json:"userStatus"`   // 0=正常, 1=封禁, 2=已毕业
+	BanReason           *string    `json:"banReason"`    // 封禁原因
 }
 
 // AdminTalentProfileVO is the admin-facing talent profile (business card) response model.
@@ -149,6 +151,8 @@ func NewAdminUserVO(u *models.User, talentProfileStatus *int) *AdminUserVO {
 		ClassID:             u.ClassID,
 		TalentProfileStatus: talentProfileStatus,
 		PendingCount:        &pendingCount,
+		UserStatus:          u.UserStatus,
+		BanReason:           u.BanReason,
 	}
 	if u.AuthImgUrl != nil && u.AuthStatus != nil && *u.AuthStatus == 0 {
 		vo.AuthStatus = intPtr(3) //  提交了审核材料且未认证，将状态映射为 3-审核中，方便管理员优先处理

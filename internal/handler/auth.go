@@ -44,15 +44,13 @@ func (s *Server) LoginWithWechat(ctx echo.Context) error {
 		})
 	}
 
-	// Return login response
-	response := api.LoginResponse{
+	// Return login response — use custom struct to carry userStatus/banReason
+	return Success(ctx, loginResponse{
 		Token:     result.Token,
 		ExpiresIn: result.ExpiresIn,
 		IsNewUser: result.IsNewUser,
-		User:      result.User,
-	}
-
-	return Success(ctx, response)
+		User:      toExtendedUserVO(result.User),
+	})
 }
 
 // RegisterWithPhone handles POST /auth/register/phone
@@ -77,12 +75,10 @@ func (s *Server) RegisterWithPhone(ctx echo.Context) error {
 		return Error(ctx, 4002, "手机号注册失败: "+err.Error())
 	}
 
-	response := api.LoginResponse{
+	return Success(ctx, loginResponse{
 		Token:     &result.Token,
 		ExpiresIn: &result.ExpiresIn,
 		IsNewUser: &result.IsNewUser,
-		User:      result.User,
-	}
-
-	return Success(ctx, response)
+		User:      toExtendedUserVO(result.User),
+	})
 }

@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/kuaizu-team/kuaizu-service/api"
 	"github.com/kuaizu-team/kuaizu-service/internal/auth"
+	"github.com/kuaizu-team/kuaizu-service/internal/models"
 	"github.com/kuaizu-team/kuaizu-service/internal/repository"
 	"github.com/kuaizu-team/kuaizu-service/internal/wechat"
 )
@@ -29,7 +29,7 @@ type LoginWithWechatResult struct {
 	ExpiresIn         *int
 	Token             *string
 	IsNewUser         *bool
-	User              *api.UserVO
+	User              *models.User // raw user; handler builds the VO to include userStatus/banReason
 }
 
 // LoginWithWechat handles WeChat login logic
@@ -78,7 +78,7 @@ func (s *AuthService) LoginWithWechat(ctx context.Context, code string) (*LoginW
 		Token:             &token,
 		ExpiresIn:         &expiresIn,
 		IsNewUser:         &isNewUser,
-		User:              user.ToVO(),
+		User:              user,
 	}, nil
 }
 
@@ -87,7 +87,7 @@ type RegisterWithPhoneResult struct {
 	Token     string
 	ExpiresIn int
 	IsNewUser bool
-	User      *api.UserVO
+	User      *models.User // raw user; handler builds the VO to include userStatus/banReason
 }
 
 // RegisterWithPhone handles phone registration logic
@@ -148,6 +148,6 @@ func (s *AuthService) RegisterWithPhone(ctx context.Context, registerToken, phon
 		Token:     token,
 		ExpiresIn: expiresIn,
 		IsNewUser: isNewUser,
-		User:      user.ToVO(),
+		User:      user,
 	}, nil
 }

@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"database/sql"
 	"strconv"
 
 	"github.com/jmoiron/sqlx"
@@ -35,11 +36,6 @@ func (s *AdminServer) ListUsers(ctx echo.Context) error {
 		params.Order = &v
 	}
 
-	// 校区管理员自动按学校过滤
-	if sid := adminSchoolID(ctx); sid != nil {
-		params.SchoolID = sid
-	}
-
 	if v := ctx.QueryParam("authStatus"); v != "" {
 		status, err := strconv.Atoi(v)
 		if err != nil {
@@ -53,12 +49,19 @@ func (s *AdminServer) ListUsers(ctx echo.Context) error {
 		}
 	}
 
+	// 仅超级管理员（无学校绑定）可自由指定 schoolId；
+	// 校区管理员的 schoolId 参数在下方被强制覆盖，此处仍解析以便做格式校验。
 	if v := ctx.QueryParam("schoolId"); v != "" {
 		schoolID, err := strconv.Atoi(v)
 		if err != nil {
 			return response.BadRequest(ctx, "invalid schoolId")
 		}
 		params.SchoolID = &schoolID
+	}
+
+	// 校区管理员强制按本校过滤，放在所有 query param 解析之后，确保不被覆盖。
+	if sid := adminSchoolID(ctx); sid != nil {
+		params.SchoolID = sid
 	}
 
 	if v := ctx.QueryParam("keyword"); v != "" {
@@ -80,6 +83,14 @@ func (s *AdminServer) ListUsers(ctx echo.Context) error {
 			return response.BadRequest(ctx, "invalid userId")
 		}
 		params.UserID = &uid
+	}
+
+	if v := ctx.QueryParam("userStatus"); v != "" {
+		us, err := strconv.Atoi(v)
+		if err != nil || us < 0 || us > 2 {
+			return response.BadRequest(ctx, "invalid userStatus, must be 0, 1 or 2")
+		}
+		params.UserStatus = &us
 	}
 
 	result, err := s.svc.User.ListUsers(ctx.Request().Context(), params)
@@ -229,6 +240,52 @@ func (s *AdminServer) ListUserOliveBranches(ctx echo.Context) error {
 		"list":  list,
 		"total": total,
 	})
+}
+
+type updateUserStatusRequest struct {
+	Status    int     `json:"status"`
+	BanReason *string `json:"banReason"`
+}
+
+// UpdateUserStatus handles PUT /admin/users/:id/status
+func (s *AdminServer) UpdateUserStatus(ctx echo.Context) error {
+	// role=3 (校区管理员) 无权操作
+	if adminRole(ctx) == models.AdminRoleSchoolAdmin {
+		return response.Forbidden(ctx, "权限不足")
+	}
+
+	id, err := strconv.Atoi(ctx.Param("id"))
+	if err != nil {
+		return response.BadRequest(ctx, "invalid user id")
+	}
+
+	var req updateUserStatusRequest
+	if err := ctx.Bind(&req); err != nil {
+		return response.BadRequest(ctx, "invalid request body")
+	}
+	if req.Status < 0 || req.Status > 2 {
+		return response.BadRequest(ctx, "invalid status, must be 0, 1 or 2")
+	}
+
+	// role=2 只能操作本校用户
+	if sid := adminSchoolID(ctx); sid != nil {
+		user, err := s.svc.User.GetUser(ctx.Request().Context(), id)
+		if err != nil {
+			return mapServiceError(ctx, err)
+		}
+		if user == nil || user.SchoolID == nil || *user.SchoolID != *sid {
+			return response.Forbidden(ctx, "权限不足")
+		}
+	}
+
+	if err := s.repo.User.UpdateUserStatus(ctx.Request().Context(), id, req.Status, req.BanReason); err != nil {
+		if err == sql.ErrNoRows {
+			return response.NotFound(ctx, "用户不存在")
+		}
+		return response.InternalError(ctx, "操作失败")
+	}
+
+	return response.SuccessMessage(ctx, "操作成功")
 }
 
 type reviewAuthRequest struct {

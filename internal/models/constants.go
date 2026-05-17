@@ -116,6 +116,13 @@ const (
 	UserAuthStatusFailed = 2 // 认证失败
 )
 
+// User Account Status (user_status 列)
+const (
+	UserStatusNormal    = 0 // 正常
+	UserStatusBanned    = 1 // 封禁
+	UserStatusGraduated = 2 // 已毕业
+)
+
 // Message Business Keys (Subscription Messages)
 const (
 	MsgBizKeyCardReceived       = "MSG_CARD_RECEIVED"        // 收到名片通知
