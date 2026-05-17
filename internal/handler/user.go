@@ -17,7 +17,7 @@ func (s *Server) GetCurrentUser(ctx echo.Context) error {
 		return NotFound(ctx, "用户不存在")
 	}
 
-	return Success(ctx, user.ToVO())
+	return Success(ctx, toExtendedUserVO(user))
 }
 
 // UpdateCurrentUser handles PUT /users/me
@@ -78,7 +78,7 @@ func (s *Server) UpdateCurrentUser(ctx echo.Context) error {
 		return InternalError(ctx, "获取用户信息失败")
 	}
 
-	return Success(ctx, user.ToVO())
+	return Success(ctx, toExtendedUserVO(user))
 }
 
 // SubmitCertification handles POST /users/me/certification
