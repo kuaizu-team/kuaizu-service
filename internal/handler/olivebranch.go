@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/kuaizu-team/kuaizu-service/api"
+	"github.com/kuaizu-team/kuaizu-service/internal/models"
 	"github.com/kuaizu-team/kuaizu-service/internal/repository"
 	"github.com/kuaizu-team/kuaizu-service/internal/service"
 	"github.com/labstack/echo/v4"
@@ -110,8 +111,6 @@ func (s *Server) GetMyOliveBranchQuota(ctx echo.Context) error {
 		return NotFound(ctx, "用户不存在")
 	}
 
-	const dailyFreeQuota = 5
-
 	freeBranchUsedToday := 0
 	if user.FreeBranchUsedToday != nil {
 		today := time.Now().Truncate(24 * time.Hour)
@@ -125,10 +124,10 @@ func (s *Server) GetMyOliveBranchQuota(ctx echo.Context) error {
 		paidBalance = *user.OliveBranchCount
 	}
 
-	freeRemaining := dailyFreeQuota - freeBranchUsedToday
+	freeRemaining := models.OliveBranchDailyFreeQuota - freeBranchUsedToday
 	totalRemaining := freeRemaining + paidBalance
 
-	dq := dailyFreeQuota
+	dq := models.OliveBranchDailyFreeQuota
 	fr := freeRemaining
 	tr := totalRemaining
 

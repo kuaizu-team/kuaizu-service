@@ -71,10 +71,12 @@ type AdminTalentProfileVO struct {
 	MBTI              *string  `json:"mbti"`
 }
 
-// AdminUserDetailVO extends AdminUserVO with the user's talent profile.
+// AdminUserDetailVO extends AdminUserVO with the user's talent profile and olive branch quota.
 type AdminUserDetailVO struct {
 	AdminUserVO
 	TalentProfile *AdminTalentProfileVO `json:"talentProfile"`
+	FreeRemaining int                   `json:"freeRemaining"` // 今日剩余免费橄榄枝额度（≥0）
+	PaidBalance   int                   `json:"paidBalance"`   // 付费橄榄枝余额（≥0）
 }
 
 // AdminFeedbackVO is the admin-facing feedback response model.
@@ -205,9 +207,33 @@ func NewAdminUserDetailVO(u *models.User, p *models.TalentProfile) *AdminUserDet
 	if u == nil {
 		return nil
 	}
+
+	// 计算今日剩余免费橄榄枝额度（与用户端 /olive-branch-quota 逻辑保持一致）
+	freeBranchUsedToday := 0
+	if u.FreeBranchUsedToday != nil {
+		today := time.Now().Truncate(24 * time.Hour)
+		if u.LastActiveDate != nil && !u.LastActiveDate.Truncate(24*time.Hour).Before(today) {
+			freeBranchUsedToday = *u.FreeBranchUsedToday
+		}
+	}
+	freeRemaining := models.OliveBranchDailyFreeQuota - freeBranchUsedToday
+	if freeRemaining < 0 {
+		freeRemaining = 0
+	}
+
+	paidBalance := 0
+	if u.OliveBranchCount != nil {
+		paidBalance = *u.OliveBranchCount
+	}
+	if paidBalance < 0 {
+		paidBalance = 0
+	}
+
 	return &AdminUserDetailVO{
 		AdminUserVO:   *NewAdminUserVO(u, nil),
 		TalentProfile: NewAdminTalentProfileVO(p),
+		FreeRemaining: freeRemaining,
+		PaidBalance:   paidBalance,
 	}
 }
 
