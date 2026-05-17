@@ -15,11 +15,25 @@ import (
 )
 
 // ListAdmins handles GET /admin/admins
+//
+// Visibility rules:
+//   role=1 → all admins (no filter)
+//   role=2 → admins at same school (role=2 and role=3), including self
+//   role=3 → only self (frontend hides this page; enforced here as well)
 func (s *AdminServer) ListAdmins(ctx echo.Context) error {
-	role := adminRole(ctx)
-	// 校区管理员（role=3）无权管理管理员账号
-	if role == models.AdminRoleSchoolAdmin {
-		return response.Forbidden(ctx, "权限不足")
+	callerRole := adminRole(ctx)
+	callerID := currentAdminID(ctx)
+
+	// role=3: return only the caller's own record as a single-item list
+	if callerRole == models.AdminRoleSchoolAdmin {
+		self, err := s.repo.AdminUser.GetByID(ctx.Request().Context(), callerID)
+		if err != nil || self == nil {
+			return response.InternalError(ctx, "获取管理员信息失败")
+		}
+		return response.Success(ctx, map[string]interface{}{
+			"list":  []adminvo.AdminUserAccountVO{*adminvo.NewAdminUserAccountVO(self)},
+			"total": 1,
+		})
 	}
 
 	page, _ := strconv.Atoi(ctx.QueryParam("page"))
@@ -39,13 +53,6 @@ func (s *AdminServer) ListAdmins(ctx echo.Context) error {
 	if v := ctx.QueryParam("keyword"); v != "" {
 		params.Keyword = &v
 	}
-	if v := ctx.QueryParam("role"); v != "" {
-		r, err := strconv.Atoi(v)
-		if err != nil {
-			return response.BadRequest(ctx, "invalid role")
-		}
-		params.Role = &r
-	}
 	if v := ctx.QueryParam("status"); v != "" {
 		st, err := strconv.Atoi(v)
 		if err != nil {
@@ -54,10 +61,19 @@ func (s *AdminServer) ListAdmins(ctx echo.Context) error {
 		params.Status = &st
 	}
 
-	// 校区超级管理员只能看本校 role=3 管理员
-	if role == models.AdminRoleSchoolSuperAdmin {
-		r3 := models.AdminRoleSchoolAdmin
-		params.Role = &r3 // 强制覆盖为 role=3
+	switch callerRole {
+	case models.AdminRoleSuperAdmin:
+		// role=1: full list; allow optional role filter from query param
+		if v := ctx.QueryParam("role"); v != "" {
+			r, err := strconv.Atoi(v)
+			if err != nil {
+				return response.BadRequest(ctx, "invalid role")
+			}
+			params.Role = &r
+		}
+	case models.AdminRoleSchoolSuperAdmin:
+		// role=2: same school only (includes role=2 and role=3 at that school).
+		// role filter is locked to school — no override from query param.
 		params.SchoolID = adminSchoolID(ctx)
 	}
 
@@ -88,8 +104,8 @@ type createAdminRequest struct {
 
 // CreateAdmin handles POST /admin/admins
 func (s *AdminServer) CreateAdmin(ctx echo.Context) error {
-	role := adminRole(ctx)
-	if role == models.AdminRoleSchoolAdmin {
+	callerRole := adminRole(ctx)
+	if callerRole == models.AdminRoleSchoolAdmin {
 		return response.Forbidden(ctx, "权限不足")
 	}
 
@@ -106,7 +122,7 @@ func (s *AdminServer) CreateAdmin(ctx echo.Context) error {
 	}
 
 	// 校区超级管理员只能创建 role=3，且 schoolId 只能是自己的学校
-	if role == models.AdminRoleSchoolSuperAdmin {
+	if callerRole == models.AdminRoleSchoolSuperAdmin {
 		if req.Role != models.AdminRoleSchoolAdmin {
 			return response.Forbidden(ctx, "只能创建校区管理员（role=3）")
 		}
@@ -139,7 +155,7 @@ func (s *AdminServer) CreateAdmin(ctx echo.Context) error {
 		return response.InternalError(ctx, "创建管理员失败")
 	}
 
-	// Reload with school_name
+	// Reload with joined school_name
 	created, _ := s.repo.AdminUser.GetByID(ctx.Request().Context(), admin.ID)
 	return response.Success(ctx, adminvo.NewAdminUserAccountVO(created))
 }
@@ -153,11 +169,14 @@ type updateAdminRequest struct {
 }
 
 // UpdateAdmin handles PUT /admin/admins/:id
+//
+// Permission matrix (enforced per canEditAdmin):
+//   role=1 → can edit self and any role=2/3; cannot edit other role=1.
+//   role=2 → can edit self and same-school role=3; cannot edit role=1/2 (non-self).
+//   role=3 → can only edit self.
 func (s *AdminServer) UpdateAdmin(ctx echo.Context) error {
 	callerRole := adminRole(ctx)
-	if callerRole == models.AdminRoleSchoolAdmin {
-		return response.Forbidden(ctx, "权限不足")
-	}
+	callerID := currentAdminID(ctx)
 
 	id, err := strconv.Atoi(ctx.Param("id"))
 	if err != nil {
@@ -172,8 +191,7 @@ func (s *AdminServer) UpdateAdmin(ctx echo.Context) error {
 		return response.NotFound(ctx, "管理员不存在")
 	}
 
-	// 校区超级管理员不能操作 role <= 2 的账号
-	if callerRole == models.AdminRoleSchoolSuperAdmin && target.Role <= models.AdminRoleSchoolSuperAdmin {
+	if !canEditAdmin(callerRole, callerID, target.Role, target.ID, adminSchoolID(ctx), target.SchoolID) {
 		return response.Forbidden(ctx, "权限不足")
 	}
 
@@ -182,14 +200,19 @@ func (s *AdminServer) UpdateAdmin(ctx echo.Context) error {
 		return response.BadRequest(ctx, "invalid request body")
 	}
 
-	// 应用变更（仅覆盖已传字段）
+	// Apply changes — only overwrite fields that were explicitly sent
 	if req.Nickname != nil {
 		target.Nickname = req.Nickname
 	}
 	if req.Role != nil {
-		// 校区超级管理员不能将角色提升到 role <= 2
+		// Callers may not assign a role they couldn't themselves edit.
+		// Specifically: role=2 cannot promote a target to role<=2.
 		if callerRole == models.AdminRoleSchoolSuperAdmin && *req.Role <= models.AdminRoleSchoolSuperAdmin {
-			return response.Forbidden(ctx, "不能设置为超级管理员或校区超级管理员")
+			return response.Forbidden(ctx, "不能将角色提升至校区超级管理员或以上")
+		}
+		// role=1 callers cannot demote/promote targets to role=1 (another super-admin).
+		if callerRole == models.AdminRoleSuperAdmin && *req.Role == models.AdminRoleSuperAdmin && id != callerID {
+			return response.Forbidden(ctx, "不能将他人设置为超级管理员")
 		}
 		target.Role = *req.Role
 	}
@@ -199,8 +222,8 @@ func (s *AdminServer) UpdateAdmin(ctx echo.Context) error {
 	if req.Status != nil {
 		target.Status = *req.Status
 	}
-	// 密码：非空才更新
-	target.PasswordHash = "" // 默认不更新
+	// Password: only update when non-empty
+	target.PasswordHash = "" // signal to repository: skip password update
 	if req.Password != "" {
 		hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
 		if err != nil {
@@ -225,11 +248,12 @@ type updateAdminStatusRequest struct {
 }
 
 // UpdateAdminStatus handles PATCH /admin/admins/:id/status
+//
+// Same permission matrix as UpdateAdmin, plus:
+//   Admins may NOT disable their own account (to prevent self-lockout) → 400.
 func (s *AdminServer) UpdateAdminStatus(ctx echo.Context) error {
 	callerRole := adminRole(ctx)
-	if callerRole == models.AdminRoleSchoolAdmin {
-		return response.Forbidden(ctx, "权限不足")
-	}
+	callerID := currentAdminID(ctx)
 
 	id, err := strconv.Atoi(ctx.Param("id"))
 	if err != nil {
@@ -244,7 +268,11 @@ func (s *AdminServer) UpdateAdminStatus(ctx echo.Context) error {
 		return response.BadRequest(ctx, "status 只能为 0（禁用）或 1（启用）")
 	}
 
-	// 校区超级管理员不能操作 role <= 2 的账号
+	// Prevent self-lockout: no one may disable their own account.
+	if id == callerID && req.Status == models.AdminUserStatusDisabled {
+		return response.BadRequest(ctx, "不能禁用自己的账号")
+	}
+
 	target, err := s.repo.AdminUser.GetByID(ctx.Request().Context(), id)
 	if err != nil {
 		return response.InternalError(ctx, "查询管理员失败")
@@ -252,7 +280,8 @@ func (s *AdminServer) UpdateAdminStatus(ctx echo.Context) error {
 	if target == nil {
 		return response.NotFound(ctx, "管理员不存在")
 	}
-	if callerRole == models.AdminRoleSchoolSuperAdmin && target.Role <= models.AdminRoleSchoolSuperAdmin {
+
+	if !canEditAdmin(callerRole, callerID, target.Role, target.ID, adminSchoolID(ctx), target.SchoolID) {
 		return response.Forbidden(ctx, "权限不足")
 	}
 
@@ -267,20 +296,16 @@ func (s *AdminServer) UpdateAdminStatus(ctx echo.Context) error {
 }
 
 // DeleteAdmin handles DELETE /admin/admins/:id
+//
+// Same permission matrix as UpdateAdmin.
+// Self-deletion is permitted (frontend guides the user to log out afterwards).
 func (s *AdminServer) DeleteAdmin(ctx echo.Context) error {
 	callerRole := adminRole(ctx)
-	if callerRole == models.AdminRoleSchoolAdmin {
-		return response.Forbidden(ctx, "权限不足")
-	}
+	callerID := currentAdminID(ctx)
 
 	id, err := strconv.Atoi(ctx.Param("id"))
 	if err != nil {
 		return response.BadRequest(ctx, "invalid admin id")
-	}
-
-	// 不能删除自己
-	if id == currentAdminID(ctx) {
-		return response.BadRequest(ctx, "不能删除自己的账号")
 	}
 
 	target, err := s.repo.AdminUser.GetByID(ctx.Request().Context(), id)
@@ -291,8 +316,7 @@ func (s *AdminServer) DeleteAdmin(ctx echo.Context) error {
 		return response.NotFound(ctx, "管理员不存在")
 	}
 
-	// 校区超级管理员不能删除 role <= 2 的账号
-	if callerRole == models.AdminRoleSchoolSuperAdmin && target.Role <= models.AdminRoleSchoolSuperAdmin {
+	if !canEditAdmin(callerRole, callerID, target.Role, target.ID, adminSchoolID(ctx), target.SchoolID) {
 		return response.Forbidden(ctx, "权限不足")
 	}
 
