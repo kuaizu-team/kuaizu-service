@@ -67,6 +67,8 @@ func main() {
 	adminGroup.Use(adminmw.AdminJWTAuth(adminmw.DefaultAdminJWTConfig()))
 
 	adminGroup.GET("/dashboard/stats", server.GetDashboardStats)
+	adminGroup.GET("/stats/registrations", server.GetRegistrationStats)
+	adminGroup.GET("/stats/activations", server.GetActivationStats)
 
 	adminGroup.GET("/projects", server.ListProjects)
 	adminGroup.GET("/projects/:id", server.GetProject)

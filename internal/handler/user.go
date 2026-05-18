@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"context"
+
 	"github.com/kuaizu-team/kuaizu-service/api"
 	"github.com/labstack/echo/v4"
 )
@@ -8,6 +10,15 @@ import (
 // GetCurrentUser handles GET /users/me
 func (s *Server) GetCurrentUser(ctx echo.Context) error {
 	userID := GetUserID(ctx)
+
+	// Fire-and-forget: update last_active_date once per calendar day.
+	// This endpoint is called on every mini-program launch, making it the
+	// most reliable hook for tracking daily active users without extra round-trips.
+	// TouchLastActiveDate only writes to DB when the date has actually changed,
+	// so repeated calls on the same day are no-ops.
+	go func() {
+		_ = s.repo.User.TouchLastActiveDate(context.Background(), userID)
+	}()
 
 	user, err := s.repo.User.GetByID(ctx.Request().Context(), userID)
 	if err != nil {
