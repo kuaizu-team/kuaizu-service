@@ -484,6 +484,22 @@ func (r *UserRepository) UpdateCoverImage(ctx context.Context, userID int, cover
 	return nil
 }
 
+// TouchLastActiveDate updates last_active_date to today only when the stored
+// value is NULL or earlier than today, avoiding redundant writes on the same day.
+// This is designed to be called on every user login / app launch.
+func (r *UserRepository) TouchLastActiveDate(ctx context.Context, userID int) error {
+	query := `
+		UPDATE ` + "`user`" + `
+		SET last_active_date = CURDATE()
+		WHERE id = ? AND (last_active_date IS NULL OR last_active_date < CURDATE())
+	`
+	_, err := r.db.ExecContext(ctx, query, userID)
+	if err != nil {
+		return fmt.Errorf("touch last_active_date: %w", err)
+	}
+	return nil
+}
+
 // UpdateUserStatus updates user_status and ban_reason for the given user.
 // banReason is set to NULL when status != 1.
 func (r *UserRepository) UpdateUserStatus(ctx context.Context, userID int, status int, banReason *string) error {

@@ -73,6 +73,7 @@ type UserRepo interface {
 	UpdateSentOliveViewedAt(ctx context.Context, userID int) error
 	UpdateApplicationsLastViewedAt(ctx context.Context, userID int) error
 	UpdateUserStatus(ctx context.Context, userID int, status int, banReason *string) error
+	TouchLastActiveDate(ctx context.Context, userID int) error
 }
 
 // ApplicationRepo defines the interface for application repository operations.
