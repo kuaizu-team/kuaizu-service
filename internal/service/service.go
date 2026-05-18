@@ -35,7 +35,7 @@ func New(repo *repository.Repository, deps *Dependencies) *Services {
 		Commons:          NewCommonsService(deps.OSSClient, repo.User),
 		ContentAudit:     contentAudit,
 		TalentProfile:    NewTalentProfileService(repo, contentAudit, message),
-		Project:          NewProjectService(repo, contentAudit, message),
+		Project:          NewProjectService(repo, contentAudit, message, deps.DeliveryLimiter),
 		Message:          message,
 		User:             NewUserService(repo, message),
 		Feedback:         NewFeedbackService(repo, message),

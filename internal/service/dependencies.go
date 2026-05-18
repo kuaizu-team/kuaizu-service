@@ -5,18 +5,20 @@ import (
 
 	"github.com/kuaizu-team/kuaizu-service/internal/email"
 	"github.com/kuaizu-team/kuaizu-service/internal/oss"
+	"github.com/kuaizu-team/kuaizu-service/internal/ratelimit"
 	"github.com/kuaizu-team/kuaizu-service/internal/repository"
 	"github.com/kuaizu-team/kuaizu-service/internal/wechat"
 )
 
 // Dependencies holds external clients and shared integrations for service wiring.
 type Dependencies struct {
-	OSSClient      *oss.Client
-	WechatClient   *wechat.Client
-	PayClient      *wechat.PayClient
-	PayInitError   error
-	EmailService   *email.Service
-	EmailInitError error
+	OSSClient       *oss.Client
+	WechatClient    *wechat.Client
+	PayClient       *wechat.PayClient
+	PayInitError    error
+	EmailService    *email.Service
+	EmailInitError  error
+	DeliveryLimiter *ratelimit.DeliveryLimiter // nil when Redis is unavailable
 }
 
 // NewDependencies builds shared service dependencies from environment-backed clients.

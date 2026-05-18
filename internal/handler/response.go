@@ -29,6 +29,9 @@ func InternalError(ctx echo.Context, message string) error {
 	return response.InternalError(ctx, message)
 }
 func NotImplemented(ctx echo.Context) error { return response.NotImplemented(ctx) }
+func TooManyRequests(ctx echo.Context, code int, message string) error {
+	return response.TooManyRequests(ctx, code, message)
+}
 
 // mapServiceError maps a service.ServiceError to the appropriate HTTP error response.
 // For non-ServiceError errors, it falls back to InternalError.
@@ -42,8 +45,11 @@ func mapServiceError(ctx echo.Context, err error) error {
 			return NotFound(ctx, svcErr.Message)
 		case service.ErrCodeForbidden:
 			return Forbidden(ctx, svcErr.Message)
+		case service.ErrCodeTooManyRequests:
+			// HTTP 429 with business code 42901 in the response body.
+			return TooManyRequests(ctx, int(svcErr.Code), svcErr.Message)
 		default:
-			// For custom business codes (like 4002), use Error()
+			// For custom business codes (like 4001, 4002), use Error().
 			return Error(ctx, int(svcErr.Code), svcErr.Message)
 		}
 	}

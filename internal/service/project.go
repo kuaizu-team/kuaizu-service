@@ -3,9 +3,11 @@ package service
 import (
 	"context"
 	"log"
+	"strconv"
 
 	"github.com/kuaizu-team/kuaizu-service/api"
 	"github.com/kuaizu-team/kuaizu-service/internal/models"
+	"github.com/kuaizu-team/kuaizu-service/internal/ratelimit"
 	"github.com/kuaizu-team/kuaizu-service/internal/repository"
 )
 
@@ -14,11 +16,12 @@ type ProjectService struct {
 	repo         *repository.Repository
 	contentAudit *ContentAuditService
 	message      *MessageService
+	limiter      *ratelimit.DeliveryLimiter // nil when Redis is unavailable
 }
 
 // NewProjectService creates a new ProjectService.
-func NewProjectService(repo *repository.Repository, contentAudit *ContentAuditService, message *MessageService) *ProjectService {
-	return &ProjectService{repo: repo, contentAudit: contentAudit, message: message}
+func NewProjectService(repo *repository.Repository, contentAudit *ContentAuditService, message *MessageService, limiter *ratelimit.DeliveryLimiter) *ProjectService {
+	return &ProjectService{repo: repo, contentAudit: contentAudit, message: message, limiter: limiter}
 }
 
 // ProjectListResult holds a page of projects with pagination info.
@@ -407,6 +410,15 @@ type ApplyToProjectInput struct {
 
 // ApplyToProject validates and creates a project application.
 func (s *ProjectService) ApplyToProject(ctx context.Context, input ApplyToProjectInput) (*models.ProjectApplication, error) {
+	// Rate-limit check: sliding window, at most DeliveryMaxCount per DeliveryWindow.
+	// Runs before any DB work to short-circuit early.
+	// Fails open when Redis is unavailable (limiter == nil or Allow returns true on error).
+	if s.limiter != nil {
+		if allowed, _ := s.limiter.Allow(ctx, input.UserID); !allowed {
+			return nil, ErrTooManyRequests("投递密集，请稍后重试")
+		}
+	}
+
 	project, err := s.repo.Project.GetByID(ctx, input.ProjectID)
 	if err != nil {
 		log.Printf("[ProjectService.ApplyToProject] repository error getting project: %v", err)
@@ -442,6 +454,15 @@ func (s *ProjectService) ApplyToProject(ctx context.Context, input ApplyToProjec
 	if err := s.repo.Application.Create(ctx, application); err != nil {
 		log.Printf("[ProjectService.ApplyToProject] repository error creating application: %v", err)
 		return nil, ErrInternal("提交申请失败")
+	}
+
+	// Record delivery in the sliding window after a successful DB insert.
+	// Fire-and-forget: a Redis failure only means the limiter may under-count,
+	// which is acceptable (fail-open).
+	if s.limiter != nil {
+		go func() {
+			s.limiter.Record(context.Background(), input.UserID, strconv.Itoa(application.ID))
+		}()
 	}
 
 	// 向项目所有者发送「收到名片通知」
@@ -531,6 +552,26 @@ func (s *ProjectService) ReviewApplication(ctx context.Context, applicationID, u
 	}(context.WithoutCancel(ctx))
 
 	return nil
+}
+
+// GetDeliveryQuota returns the current sliding-window quota info for userID.
+// When the limiter is not configured (Redis unavailable), it returns a zeroed
+// QuotaInfo with the configured limit so the frontend can still display the cap.
+func (s *ProjectService) GetDeliveryQuota(ctx context.Context, userID int) (used, limit int, resetUnix *int64, err error) {
+	if s.limiter == nil {
+		return 0, 5, nil, nil
+	}
+	info, qErr := s.limiter.GetQuota(ctx, userID)
+	if qErr != nil {
+		log.Printf("[ProjectService.GetDeliveryQuota] limiter error (fail-open): %v", qErr)
+		return 0, info.Limit, nil, nil
+	}
+	var reset *int64
+	if info.ResetTime != nil {
+		t := info.ResetTime.Unix()
+		reset = &t
+	}
+	return info.UsedCount, info.Limit, reset, nil
 }
 
 // TakedownProject (admin only) sets an approved project to closed/taken-down.

@@ -12,10 +12,12 @@ import (
 	"github.com/kuaizu-team/kuaizu-service/internal/db"
 	"github.com/kuaizu-team/kuaizu-service/internal/handler"
 	"github.com/kuaizu-team/kuaizu-service/internal/middleware"
+	"github.com/kuaizu-team/kuaizu-service/internal/ratelimit"
 	"github.com/kuaizu-team/kuaizu-service/internal/repository"
 	"github.com/kuaizu-team/kuaizu-service/internal/service"
 	"github.com/labstack/echo/v4"
 	echomiddleware "github.com/labstack/echo/v4/middleware"
+	"github.com/redis/go-redis/v9"
 )
 
 var (
@@ -59,6 +61,22 @@ func main() {
 	deps, err := service.NewDependencies(repo)
 	if err != nil {
 		log.Fatalf("Failed to initialize service dependencies: %v", err)
+	}
+
+	// Initialize Redis-backed delivery rate limiter.
+	// REDIS_ADDR defaults to localhost:6379 when not set.
+	// A connection failure is non-fatal; the limiter is simply omitted and the
+	// rate-limit feature fails open (no restriction applied).
+	redisAddr := os.Getenv("REDIS_ADDR")
+	if redisAddr == "" {
+		redisAddr = "localhost:6379"
+	}
+	rdb := redis.NewClient(&redis.Options{Addr: redisAddr})
+	if pingErr := rdb.Ping(context.Background()).Err(); pingErr != nil {
+		log.Printf("Warning: Redis unavailable (%v) — delivery rate limiting disabled", pingErr)
+	} else {
+		log.Printf("Connected to Redis at %s", redisAddr)
+		deps.DeliveryLimiter = ratelimit.NewDeliveryLimiter(rdb)
 	}
 
 	svc := service.New(repo, deps)
@@ -126,6 +144,9 @@ func main() {
 	// Project-application unread badge endpoints
 	apiGroup.GET("/project-applications/my/unread-status", server.GetMyApplicationUnreadStatus)
 	apiGroup.POST("/project-applications/my/mark-read", server.MarkMyApplicationsRead)
+
+	// Delivery quota endpoint
+	apiGroup.GET("/users/me/delivery/quota", server.GetDeliveryQuota)
 
 	// WeChat Pay callback (no auth required)
 	e.POST("/api/v2/payment/wechat/notify", server.WechatPayCallback)

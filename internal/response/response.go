@@ -97,3 +97,12 @@ func NotImplemented(ctx echo.Context) error {
 		Message: "接口尚未实现",
 	})
 }
+
+// TooManyRequests returns a 429 Too Many Requests response.
+// code is the business-level error code sent in the response body (e.g. 42901).
+func TooManyRequests(ctx echo.Context, code int, message string) error {
+	return ctx.JSON(http.StatusTooManyRequests, Response{
+		Code:    code,
+		Message: message,
+	})
+}
