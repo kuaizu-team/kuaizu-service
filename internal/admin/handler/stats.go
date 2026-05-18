@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"fmt"
 	"strconv"
 
 	"github.com/kuaizu-team/kuaizu-service/internal/response"
@@ -87,13 +86,12 @@ func (s *AdminServer) GetRegistrationStats(ctx echo.Context) error {
 		query += " GROUP BY date ORDER BY date ASC"
 	} else {
 		// Last N calendar days (inclusive of today), bucketed by day.
-		// days-1 is safe: value comes from the parseStatsRange whitelist.
-		start := fmt.Sprintf("CURDATE() - INTERVAL %d DAY", days-1)
 		query = `
 			SELECT DATE_FORMAT(created_at, '%Y-%m-%d') AS date,
 			       COUNT(*) AS count
 			FROM ` + "`user`" + `
-			WHERE DATE(created_at) >= ` + start
+			WHERE DATE(created_at) >= CURDATE() - INTERVAL ? DAY`
+		args = append(args, days-1)
 		if sid != nil {
 			query += " AND school_id = ?"
 			args = append(args, *sid)
@@ -151,12 +149,12 @@ func (s *AdminServer) GetActivationStats(ctx echo.Context) error {
 		query += " HAVING COUNT(*) > 0"
 	} else {
 		// Last N calendar days, bucketed by day.
-		start := fmt.Sprintf("CURDATE() - INTERVAL %d DAY", days-1)
 		query = `
 			SELECT DATE_FORMAT(last_active_date, '%Y-%m-%d') AS date,
 			       COUNT(*) AS count
 			FROM ` + "`user`" + `
-			WHERE last_active_date >= ` + start
+			WHERE last_active_date >= CURDATE() - INTERVAL ? DAY`
+		args = append(args, days-1)
 		if sid != nil {
 			query += " AND school_id = ?"
 			args = append(args, *sid)
