@@ -109,7 +109,7 @@ func (s *AdminServer) GetRegistrationStats(ctx echo.Context) error {
 		points = []StatPoint{}
 	}
 
-	return response.Success(ctx, map[string]interface{}{"data": points})
+	return response.Success(ctx, points)
 }
 
 // GetActivationStats handles GET /admin/stats/activations
@@ -172,5 +172,5 @@ func (s *AdminServer) GetActivationStats(ctx echo.Context) error {
 		points = []StatPoint{}
 	}
 
-	return response.Success(ctx, map[string]interface{}{"data": points})
+	return response.Success(ctx, points)
 }
