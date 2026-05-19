@@ -74,7 +74,7 @@ func (r *OliveBranchRepository) ListByReceiverID(ctx context.Context, params Oli
 	query := `
 		SELECT
 			ob.id, ob.sender_id, ob.receiver_id, ob.related_project_id,
-			ob.type, ob.cost_type, ob.status,
+			ob.type, ob.cost_type, ob.status, ob.is_read,
 			ob.created_at, ob.updated_at,
 			p.name AS project_name,
 			s.id          AS u_id,
@@ -242,7 +242,7 @@ func (r *OliveBranchRepository) ListBySenderID(ctx context.Context, params Olive
 	query := `
 		SELECT
 			ob.id, ob.sender_id, ob.receiver_id, ob.related_project_id,
-			ob.type, ob.cost_type, ob.status,
+			ob.type, ob.cost_type, ob.status, ob.is_read,
 			ob.created_at, ob.updated_at,
 			p.name AS project_name,
 			recv.id          AS u_id,
@@ -333,7 +333,7 @@ func (r *OliveBranchRepository) ListByRelatedProjectID(ctx context.Context, para
 	query := `
 		SELECT
 			ob.id, ob.sender_id, ob.receiver_id, ob.related_project_id,
-			ob.type, ob.cost_type, ob.status,
+			ob.type, ob.cost_type, ob.status, ob.is_read,
 			ob.created_at, ob.updated_at,
 			p.name AS project_name,
 			recv.id          AS u_id,
@@ -442,6 +442,32 @@ func (r *OliveBranchRepository) GetBadgeCounts(ctx context.Context, userID int) 
 	}
 
 	return counts, nil
+}
+
+// MarkReceiverRead sets is_read = TRUE for olive branches received by receiverID.
+// If ids is non-empty, only those specific records are updated; otherwise all unread records for the receiver are updated.
+func (r *OliveBranchRepository) MarkReceiverRead(ctx context.Context, receiverID int, ids []int) error {
+	if len(ids) > 0 {
+		query, args, err := sqlx.In(
+			`UPDATE olive_branch_record SET is_read = TRUE WHERE receiver_id = ? AND id IN (?) AND is_read = FALSE`,
+			receiverID, ids,
+		)
+		if err != nil {
+			return fmt.Errorf("build mark receiver read IN query: %w", err)
+		}
+		query = r.db.Rebind(query)
+		if _, err := r.db.ExecContext(ctx, query, args...); err != nil {
+			return fmt.Errorf("mark receiver read: %w", err)
+		}
+	} else {
+		if _, err := r.db.ExecContext(ctx,
+			`UPDATE olive_branch_record SET is_read = TRUE WHERE receiver_id = ? AND is_read = FALSE`,
+			receiverID,
+		); err != nil {
+			return fmt.Errorf("mark receiver read: %w", err)
+		}
+	}
+	return nil
 }
 
 // enrichSkills batch-queries talent_profile for the target users and sets User.Skills.

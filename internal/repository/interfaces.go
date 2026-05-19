@@ -84,6 +84,7 @@ type ApplicationRepo interface {
 	CheckDuplicate(ctx context.Context, projectID, userID int) (bool, error)
 	UpdateStatus(ctx context.Context, id int, status int) error
 	GetUnreadApplicationCount(ctx context.Context, userID int) (int, error)
+	MarkReviewerRead(ctx context.Context, projectID, ownerID int, ids []int) error
 }
 
 // OliveBranchRepo defines the interface for olive branch repository operations.
@@ -96,6 +97,7 @@ type OliveBranchRepo interface {
 	ExistsPending(ctx context.Context, senderID, receiverID, relatedProjectID int) (bool, error)
 	GetBadgeCounts(ctx context.Context, userID int) (OliveBranchBadgeCounts, error)
 	ListByRelatedProjectID(ctx context.Context, params OliveBranchByProjectParams) ([]models.OliveBranch, int64, error)
+	MarkReceiverRead(ctx context.Context, receiverID int, ids []int) error
 }
 
 // SchoolRepo defines the interface for school repository operations.

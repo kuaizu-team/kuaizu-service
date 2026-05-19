@@ -168,6 +168,25 @@ func (s *Server) MarkSentOliveBranchRead(ctx echo.Context) error {
 	return Success(ctx, nil)
 }
 
+// MarkReceiverOliveBranchRead handles POST /olive-branches/sent/mark-read
+// Called by the receiver to mark their received olive branches as read.
+func (s *Server) MarkReceiverOliveBranchRead(ctx echo.Context) error {
+	userID := GetUserID(ctx)
+
+	var req struct {
+		Ids []int `json:"ids"`
+	}
+	if err := ctx.Bind(&req); err != nil {
+		return BadRequest(ctx, "请求参数错误")
+	}
+
+	if err := s.repo.OliveBranch.MarkReceiverRead(ctx.Request().Context(), userID, req.Ids); err != nil {
+		return InternalError(ctx, "标记已读失败")
+	}
+
+	return Success(ctx, nil)
+}
+
 // GetMySentOliveBranches handles GET /users/me/sent-olive-branches
 func (s *Server) GetMySentOliveBranches(ctx echo.Context, params api.GetMySentOliveBranchesParams) error {
 	userID := GetUserID(ctx)

@@ -30,6 +30,9 @@ properties:
     description: 邀请留言(已弃用)
   status:
     $ref: ./OliveBranchStatus.yaml
+  isRead:
+    type: boolean
+    description: 接收方是否已读(仅发出列表有意义)
   createdAt:
     type: string
     format: date-time
