@@ -15,6 +15,7 @@ type OliveBranch struct {
 	Type             int       `db:"type"`      // 1-人才互联, 2-项目邀请
 	CostType         int       `db:"cost_type"` // 1-免费额度, 2-付费额度
 	Status           int       `db:"status"`    // 0-待处理, 1-已接受, 2-已拒绝, 3-已忽略
+	IsRead           bool      `db:"is_read"`   // 接收方是否已读
 	CreatedAt        time.Time `db:"created_at"`
 	UpdatedAt        time.Time `db:"updated_at"`
 
@@ -35,6 +36,7 @@ func (o *OliveBranch) ToVO() *api.OliveBranchVO {
 		RelatedProjectId: &o.RelatedProjectID,
 		CostType:         &o.CostType,
 		Status:           &status,
+		IsRead:           &o.IsRead,
 		CreatedAt:        &o.CreatedAt,
 		ProjectName:      o.ProjectName,
 	}

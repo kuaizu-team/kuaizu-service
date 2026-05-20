@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -10,6 +11,9 @@ import (
 	"github.com/jmoiron/sqlx"
 	"github.com/kuaizu-team/kuaizu-service/internal/models"
 )
+
+// ErrNotProjectOwner is returned when the caller is not the owner of the target project.
+var ErrNotProjectOwner = errors.New("not project owner")
 
 // ApplicationRepository handles project application database operations
 type ApplicationRepository struct {
@@ -90,7 +94,7 @@ func (r *ApplicationRepository) List(ctx context.Context, params ApplicationList
 	query := fmt.Sprintf(`
 		SELECT
 			pa.id, pa.project_id, pa.user_id,
-			pa.status, pa.applied_at, pa.updated_at,
+			pa.status, pa.is_read, pa.applied_at, pa.updated_at,
 			p.name AS project_name
 		FROM project_application pa
 		LEFT JOIN project p ON pa.project_id = p.id
@@ -286,6 +290,45 @@ func (r *ApplicationRepository) GetUnreadApplicationCount(ctx context.Context, u
 		count = 99
 	}
 	return count, nil
+}
+
+// MarkReviewerRead sets is_read = TRUE for applications belonging to projectID.
+// ownerID must be the project's creator; returns an error if the user is not the owner.
+// If ids is non-empty, only those specific records are updated; otherwise all unread records for the project are updated.
+func (r *ApplicationRepository) MarkReviewerRead(ctx context.Context, projectID, ownerID int, ids []int) error {
+	// Verify current user is the project owner
+	var isOwner bool
+	if err := r.db.QueryRowxContext(ctx,
+		`SELECT EXISTS(SELECT 1 FROM project WHERE id = ? AND creator_id = ?)`,
+		projectID, ownerID,
+	).Scan(&isOwner); err != nil {
+		return fmt.Errorf("check project owner: %w", err)
+	}
+	if !isOwner {
+		return ErrNotProjectOwner
+	}
+
+	if len(ids) > 0 {
+		query, args, err := sqlx.In(
+			`UPDATE project_application SET is_read = TRUE WHERE project_id = ? AND id IN (?) AND is_read = FALSE`,
+			projectID, ids,
+		)
+		if err != nil {
+			return fmt.Errorf("build mark reviewer read IN query: %w", err)
+		}
+		query = r.db.Rebind(query)
+		if _, err := r.db.ExecContext(ctx, query, args...); err != nil {
+			return fmt.Errorf("mark reviewer read: %w", err)
+		}
+	} else {
+		if _, err := r.db.ExecContext(ctx,
+			`UPDATE project_application SET is_read = TRUE WHERE project_id = ? AND is_read = FALSE`,
+			projectID,
+		); err != nil {
+			return fmt.Errorf("mark reviewer read: %w", err)
+		}
+	}
+	return nil
 }
 
 // UpdateStatus updates the status and reply message of an application

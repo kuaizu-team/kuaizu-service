@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"errors"
 	"strconv"
 	"strings"
 
@@ -315,6 +316,32 @@ func (s *Server) MarkMyApplicationsRead(ctx echo.Context) error {
 	userID := GetUserID(ctx)
 
 	if err := s.repo.User.UpdateApplicationsLastViewedAt(ctx.Request().Context(), userID); err != nil {
+		return InternalError(ctx, "标记已读失败")
+	}
+
+	return Success(ctx, nil)
+}
+
+// MarkReviewerApplicationRead handles POST /project-applications/mark-read
+// Called by the project owner when viewing a project's application list.
+func (s *Server) MarkReviewerApplicationRead(ctx echo.Context) error {
+	userID := GetUserID(ctx)
+
+	var req struct {
+		ProjectId int   `json:"projectId"`
+		Ids       []int `json:"ids"`
+	}
+	if err := ctx.Bind(&req); err != nil {
+		return BadRequest(ctx, "请求参数错误")
+	}
+	if req.ProjectId == 0 {
+		return BadRequest(ctx, "projectId 不能为空")
+	}
+
+	if err := s.repo.Application.MarkReviewerRead(ctx.Request().Context(), req.ProjectId, userID, req.Ids); err != nil {
+		if errors.Is(err, repository.ErrNotProjectOwner) {
+			return Forbidden(ctx, "无权操作")
+		}
 		return InternalError(ctx, "标记已读失败")
 	}
 
