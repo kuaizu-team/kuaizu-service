@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"errors"
 	"strconv"
 	"strings"
 
@@ -321,7 +322,7 @@ func (s *Server) MarkMyApplicationsRead(ctx echo.Context) error {
 	return Success(ctx, nil)
 }
 
-// MarkReviewerApplicationRead handles POST /applications/mark-read
+// MarkReviewerApplicationRead handles POST /project-applications/mark-read
 // Called by the project owner when viewing a project's application list.
 func (s *Server) MarkReviewerApplicationRead(ctx echo.Context) error {
 	userID := GetUserID(ctx)
@@ -338,7 +339,7 @@ func (s *Server) MarkReviewerApplicationRead(ctx echo.Context) error {
 	}
 
 	if err := s.repo.Application.MarkReviewerRead(ctx.Request().Context(), req.ProjectId, userID, req.Ids); err != nil {
-		if err.Error() == "forbidden: not project owner" {
+		if errors.Is(err, repository.ErrNotProjectOwner) {
 			return Forbidden(ctx, "无权操作")
 		}
 		return InternalError(ctx, "标记已读失败")

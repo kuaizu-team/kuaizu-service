@@ -168,7 +168,7 @@ func (s *Server) MarkSentOliveBranchRead(ctx echo.Context) error {
 	return Success(ctx, nil)
 }
 
-// MarkReceiverOliveBranchRead handles POST /olive-branches/sent/mark-read
+// MarkReceiverOliveBranchRead handles POST /olive-branches/received/mark-read
 // Called by the receiver to mark their received olive branches as read.
 func (s *Server) MarkReceiverOliveBranchRead(ctx echo.Context) error {
 	userID := GetUserID(ctx)

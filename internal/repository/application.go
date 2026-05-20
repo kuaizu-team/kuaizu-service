@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -10,6 +11,9 @@ import (
 	"github.com/jmoiron/sqlx"
 	"github.com/kuaizu-team/kuaizu-service/internal/models"
 )
+
+// ErrNotProjectOwner is returned when the caller is not the owner of the target project.
+var ErrNotProjectOwner = errors.New("not project owner")
 
 // ApplicationRepository handles project application database operations
 type ApplicationRepository struct {
@@ -301,7 +305,7 @@ func (r *ApplicationRepository) MarkReviewerRead(ctx context.Context, projectID,
 		return fmt.Errorf("check project owner: %w", err)
 	}
 	if !isOwner {
-		return fmt.Errorf("forbidden: not project owner")
+		return ErrNotProjectOwner
 	}
 
 	if len(ids) > 0 {
