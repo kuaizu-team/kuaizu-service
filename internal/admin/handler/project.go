@@ -81,7 +81,7 @@ func (s *AdminServer) GetProject(ctx echo.Context) error {
 		return response.BadRequest(ctx, "invalid project id")
 	}
 
-	project, err := s.svc.Project.GetProject(ctx.Request().Context(), id)
+	project, err := s.svc.Project.GetProject(ctx.Request().Context(), id, 0, 0)
 	if err != nil {
 		return mapServiceError(ctx, err)
 	}
@@ -105,7 +105,7 @@ func (s *AdminServer) TakedownProject(ctx echo.Context) error {
 
 	// 校区管理员只能操作本校项目
 	if sid := adminSchoolID(ctx); sid != nil {
-		project, err := s.svc.Project.GetProject(ctx.Request().Context(), id)
+		project, err := s.svc.Project.GetProject(ctx.Request().Context(), id, 0, 0)
 		if err != nil {
 			return mapServiceError(ctx, err)
 		}
@@ -274,7 +274,7 @@ func (s *AdminServer) ReviewProject(ctx echo.Context) error {
 
 	// 校区管理员只能操作本校项目
 	if sid := adminSchoolID(ctx); sid != nil {
-		project, err := s.svc.Project.GetProject(ctx.Request().Context(), id)
+		project, err := s.svc.Project.GetProject(ctx.Request().Context(), id, 0, 0)
 		if err != nil {
 			return mapServiceError(ctx, err)
 		}

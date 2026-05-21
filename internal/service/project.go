@@ -115,8 +115,10 @@ func validateProjectListStatuses(params repository.ListParams) error {
 	return nil
 }
 
-// GetProject retrieves a project by ID and asynchronously increments its view count.
-func (s *ProjectService) GetProject(ctx context.Context, id int) (*models.Project, error) {
+// GetProject retrieves a project by ID and asynchronously records a view log entry
+// and increments the denormalised view_count counter.
+// viewerUserID is the authenticated caller's ID; source is the tracking origin (0/1/2).
+func (s *ProjectService) GetProject(ctx context.Context, id, viewerUserID, source int) (*models.Project, error) {
 	project, err := s.repo.Project.GetByID(ctx, id)
 	if err != nil {
 		log.Printf("[ProjectService.GetProject] repository error: %v", err)
@@ -126,12 +128,68 @@ func (s *ProjectService) GetProject(ctx context.Context, id int) (*models.Projec
 		return nil, ErrNotFound("项目不存在")
 	}
 
-	// Increment view count (fire and forget)
 	go func(asyncCtx context.Context) {
 		_ = s.repo.Project.IncrementViewCount(asyncCtx, id)
+		uid := viewerUserID
+		var uidPtr *int
+		if uid > 0 {
+			uidPtr = &uid
+		}
+		entry := &models.ProjectViewLog{
+			ProjectID: id,
+			UserID:    uidPtr,
+			Source:    source,
+		}
+		if err := s.repo.ProjectViewLog.InsertViewLog(asyncCtx, entry); err != nil {
+			log.Printf("[ProjectService.GetProject] view log error (non-fatal): %v", err)
+		}
 	}(context.WithoutCancel(ctx))
 
 	return project, nil
+}
+
+// ProjectDashboardResult is the response payload for GET /projects/{id}/dashboard.
+type ProjectDashboardResult struct {
+	TotalViews      int     `json:"total_views"`
+	TodayViews      int     `json:"today_views"`
+	TotalApplicants int     `json:"total_applicants"`
+	ConversionRate  float64 `json:"conversion_rate"`
+	SourceStats     struct {
+		FromList  int `json:"from_list"`
+		FromShare int `json:"from_share"`
+		Unknown   int `json:"unknown"`
+	} `json:"source_stats"`
+}
+
+// GetProjectDashboard returns aggregated stats for the project dashboard.
+// Only the project creator (requesterUserID == project.creator_id) may access this.
+func (s *ProjectService) GetProjectDashboard(ctx context.Context, projectID, requesterUserID int) (*ProjectDashboardResult, error) {
+	isOwner, err := s.repo.Project.IsOwner(ctx, projectID, requesterUserID)
+	if err != nil {
+		log.Printf("[ProjectService.GetProjectDashboard] ownership check error: %v", err)
+		return nil, ErrInternal("检查权限失败")
+	}
+	if !isOwner {
+		return nil, ErrForbidden("只有项目队长可以查看数据看板")
+	}
+
+	raw, err := s.repo.ProjectViewLog.GetDashboardStats(ctx, projectID)
+	if err != nil {
+		log.Printf("[ProjectService.GetProjectDashboard] stats query error: %v", err)
+		return nil, ErrInternal("获取看板数据失败")
+	}
+
+	result := &ProjectDashboardResult{
+		TotalViews:      raw.TotalViews,
+		TodayViews:      raw.TodayViews,
+		TotalApplicants: raw.TotalApplicants,
+		ConversionRate:  raw.ConversionRate,
+	}
+	result.SourceStats.FromList = raw.FromList
+	result.SourceStats.FromShare = raw.FromShare
+	result.SourceStats.Unknown = raw.Unknown
+
+	return result, nil
 }
 
 // CreateProjectInput is the DTO for creating a project.

@@ -111,11 +111,12 @@ func main() {
 	// Must run after JWTAuth so "userID" is already set in the Echo context.
 	apiGroup.Use(middleware.UserStatusCheck(repo))
 
-	// Register school sub-resource routes BEFORE api.RegisterHandlers to prevent
-	// any dynamic-path route from shadowing these concrete named paths.
+	// Register sub-resource routes BEFORE api.RegisterHandlers so that concrete
+	// paths are not shadowed by dynamic :id param routes.
 	apiGroup.GET("/dictionaries/schools/provinces", server.GetSchoolProvinces)
 	apiGroup.GET("/dictionaries/schools/cities", server.GetSchoolCities)
 	apiGroup.GET("/dictionaries/schools/districts", server.GetSchoolDistricts)
+	apiGroup.GET("/projects/:id/dashboard", server.GetProjectDashboard)
 
 	api.RegisterHandlers(apiGroup, server)
 

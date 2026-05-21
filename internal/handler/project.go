@@ -146,13 +146,38 @@ func (s *Server) ListMyProjects(ctx echo.Context, params api.ListMyProjectsParam
 }
 
 // GetProject handles GET /projects/{id}
+// Optional query param: source (int, 0=unknown/default, 1=list, 2=share)
 func (s *Server) GetProject(ctx echo.Context, id int) error {
-	project, err := s.svc.Project.GetProject(ctx.Request().Context(), id)
+	userID := GetUserID(ctx)
+
+	source := 0
+	if v, err := strconv.Atoi(ctx.QueryParam("source")); err == nil {
+		source = v
+	}
+
+	project, err := s.svc.Project.GetProject(ctx.Request().Context(), id, userID, source)
 	if err != nil {
 		return mapServiceError(ctx, err)
 	}
 
 	return Success(ctx, project.ToDetailVO())
+}
+
+// GetProjectDashboard handles GET /projects/{id}/dashboard
+func (s *Server) GetProjectDashboard(ctx echo.Context) error {
+	userID := GetUserID(ctx)
+
+	id, err := strconv.Atoi(ctx.Param("id"))
+	if err != nil || id <= 0 {
+		return BadRequest(ctx, "无效的项目 ID")
+	}
+
+	result, err := s.svc.Project.GetProjectDashboard(ctx.Request().Context(), id, userID)
+	if err != nil {
+		return mapServiceError(ctx, err)
+	}
+
+	return Success(ctx, result)
 }
 
 // UpdateProject handles PUT /projects/{id}
