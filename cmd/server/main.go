@@ -117,6 +117,8 @@ func main() {
 	apiGroup.GET("/dictionaries/schools/cities", server.GetSchoolCities)
 	apiGroup.GET("/dictionaries/schools/districts", server.GetSchoolDistricts)
 	apiGroup.GET("/projects/:id/dashboard", server.GetProjectDashboard)
+	apiGroup.POST("/projects/:id/view-duration", server.RecordViewDuration)
+	apiGroup.GET("/projects/:id/viewers", server.GetProjectViewers)
 
 	api.RegisterHandlers(apiGroup, server)
 

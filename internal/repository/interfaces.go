@@ -167,6 +167,8 @@ type MsgTemplateConfigRepo interface {
 type ProjectViewLogRepo interface {
 	InsertViewLog(ctx context.Context, log *models.ProjectViewLog) error
 	GetDashboardStats(ctx context.Context, projectID int) (*ProjectDashboardStats, error)
+	InsertDurationLog(ctx context.Context, projectID int, userID *int, durationMs int) error
+	GetViewers(ctx context.Context, projectID int, limit int) ([]ProjectViewer, int, error)
 }
 
 // Compile-time interface satisfaction checks

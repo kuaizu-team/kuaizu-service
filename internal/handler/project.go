@@ -180,6 +180,59 @@ func (s *Server) GetProjectDashboard(ctx echo.Context) error {
 	return Success(ctx, result)
 }
 
+// RecordViewDuration handles POST /projects/:id/view-duration
+// Records a dwell-time entry for the project. Fire-and-forget from the frontend.
+func (s *Server) RecordViewDuration(ctx echo.Context) error {
+	userID := GetUserID(ctx)
+
+	id, err := strconv.Atoi(ctx.Param("id"))
+	if err != nil || id <= 0 {
+		return BadRequest(ctx, "无效的项目 ID")
+	}
+
+	var req struct {
+		DurationMs int `json:"duration_ms"`
+	}
+	if err := ctx.Bind(&req); err != nil {
+		return BadRequest(ctx, "请求参数错误")
+	}
+
+	if err := s.svc.Project.RecordViewDuration(ctx.Request().Context(), id, userID, req.DurationMs); err != nil {
+		return mapServiceError(ctx, err)
+	}
+
+	return Success(ctx, nil)
+}
+
+// GetProjectViewers handles GET /projects/:id/viewers
+// Returns authenticated users who viewed the project in the last 24 hours.
+func (s *Server) GetProjectViewers(ctx echo.Context) error {
+	userID := GetUserID(ctx)
+
+	id, err := strconv.Atoi(ctx.Param("id"))
+	if err != nil || id <= 0 {
+		return BadRequest(ctx, "无效的项目 ID")
+	}
+
+	limit := 20
+	if v, err := strconv.Atoi(ctx.QueryParam("limit")); err == nil && v > 0 {
+		if v > 50 {
+			v = 50
+		}
+		limit = v
+	}
+
+	result, err := s.svc.Project.GetProjectViewers(ctx.Request().Context(), id, userID, limit)
+	if err != nil {
+		return mapServiceError(ctx, err)
+	}
+
+	return Success(ctx, map[string]any{
+		"total": result.Total,
+		"list":  result.List,
+	})
+}
+
 // UpdateProject handles PUT /projects/{id}
 func (s *Server) UpdateProject(ctx echo.Context, id int) error {
 	userID := GetUserID(ctx)

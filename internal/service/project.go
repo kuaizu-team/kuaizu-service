@@ -150,11 +150,13 @@ func (s *ProjectService) GetProject(ctx context.Context, id, viewerUserID, sourc
 
 // ProjectDashboardResult is the response payload for GET /projects/{id}/dashboard.
 type ProjectDashboardResult struct {
-	TotalViews      int     `json:"total_views"`
-	TodayViews      int     `json:"today_views"`
-	TotalApplicants int     `json:"total_applicants"`
-	ConversionRate  float64 `json:"conversion_rate"`
-	SourceStats     struct {
+	TotalViews         int                          `json:"total_views"`
+	TodayViews         int                          `json:"today_views"`
+	TotalApplicants    int                          `json:"total_applicants"`
+	ConversionRate     float64                      `json:"conversion_rate"`
+	AvgDurationSeconds int                          `json:"avg_duration_seconds"`
+	HourlyViews        []repository.HourlyViewItem  `json:"hourly_views"`
+	SourceStats        struct {
 		FromList  int `json:"from_list"`
 		FromShare int `json:"from_share"`
 		Unknown   int `json:"unknown"`
@@ -180,16 +182,63 @@ func (s *ProjectService) GetProjectDashboard(ctx context.Context, projectID, req
 	}
 
 	result := &ProjectDashboardResult{
-		TotalViews:      raw.TotalViews,
-		TodayViews:      raw.TodayViews,
-		TotalApplicants: raw.TotalApplicants,
-		ConversionRate:  raw.ConversionRate,
+		TotalViews:         raw.TotalViews,
+		TodayViews:         raw.TodayViews,
+		TotalApplicants:    raw.TotalApplicants,
+		ConversionRate:     raw.ConversionRate,
+		AvgDurationSeconds: raw.AvgDurationSeconds,
+		HourlyViews:        raw.HourlyViews,
 	}
 	result.SourceStats.FromList = raw.FromList
 	result.SourceStats.FromShare = raw.FromShare
 	result.SourceStats.Unknown = raw.Unknown
 
 	return result, nil
+}
+
+// RecordViewDuration inserts a dwell-time entry for a project.
+// Invalid or extreme values are silently ignored to keep the endpoint fire-and-forget.
+func (s *ProjectService) RecordViewDuration(ctx context.Context, projectID, viewerUserID, durationMs int) error {
+	if durationMs <= 0 || durationMs > 3_600_000 {
+		return nil
+	}
+	var uidPtr *int
+	if viewerUserID > 0 {
+		uid := viewerUserID
+		uidPtr = &uid
+	}
+	if err := s.repo.ProjectViewLog.InsertDurationLog(ctx, projectID, uidPtr, durationMs); err != nil {
+		log.Printf("[ProjectService.RecordViewDuration] error: %v", err)
+		return ErrInternal("上报停留时长失败")
+	}
+	return nil
+}
+
+// ViewersResult is the payload for GET /projects/{id}/viewers.
+type ViewersResult struct {
+	Total int
+	List  []repository.ProjectViewer
+}
+
+// GetProjectViewers returns authenticated viewers of the project in the last 24 h.
+// Only the project creator may call this endpoint.
+func (s *ProjectService) GetProjectViewers(ctx context.Context, projectID, requesterUserID, limit int) (*ViewersResult, error) {
+	isOwner, err := s.repo.Project.IsOwner(ctx, projectID, requesterUserID)
+	if err != nil {
+		log.Printf("[ProjectService.GetProjectViewers] ownership check error: %v", err)
+		return nil, ErrInternal("检查权限失败")
+	}
+	if !isOwner {
+		return nil, ErrForbidden("只有项目队长可以查看访客记录")
+	}
+
+	viewers, total, err := s.repo.ProjectViewLog.GetViewers(ctx, projectID, limit)
+	if err != nil {
+		log.Printf("[ProjectService.GetProjectViewers] query error: %v", err)
+		return nil, ErrInternal("获取访客记录失败")
+	}
+
+	return &ViewersResult{Total: total, List: viewers}, nil
 }
 
 // CreateProjectInput is the DTO for creating a project.
