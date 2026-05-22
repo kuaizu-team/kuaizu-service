@@ -8,6 +8,7 @@ import (
 
 	"github.com/jmoiron/sqlx"
 	"github.com/kuaizu-team/kuaizu-service/internal/models"
+	"github.com/kuaizu-team/kuaizu-service/internal/oss"
 )
 
 // ProjectDashboardStats holds aggregated statistics for the project dashboard.
@@ -35,7 +36,7 @@ type ProjectViewer struct {
 	TalentProfileID *int      `db:"talent_profile_id" json:"talent_profile_id"`
 	Nickname        *string   `db:"nickname"          json:"nickname"`
 	AvatarUrl       *string   `db:"avatar_url"        json:"avatar_url"`
-	AuthStatus      *int      `db:"auth_status"       json:"auth_status"`
+	AuthStatus      int       `db:"auth_status"       json:"auth_status"`
 	LastViewedAt    time.Time `db:"last_viewed_at"    json:"last_viewed_at"`
 }
 
@@ -198,7 +199,7 @@ func (r *ProjectViewLogRepository) GetViewers(ctx context.Context, projectID, li
 
 	viewers := make([]ProjectViewer, 0)
 	if err := r.db.SelectContext(ctx, &viewers,
-		`SELECT vl.user_id, tp.id AS talent_profile_id, u.nickname, u.avatar_url, u.auth_status,
+		`SELECT vl.user_id, tp.id AS talent_profile_id, u.nickname, u.avatar_url, COALESCE(u.auth_status, 0) AS auth_status,
 		        MAX(vl.viewed_at) AS last_viewed_at
 		 FROM project_view_log vl
 		 JOIN `+"`user`"+` u ON u.id = vl.user_id
@@ -211,6 +212,12 @@ func (r *ProjectViewLogRepository) GetViewers(ctx context.Context, projectID, li
 		projectID, limit,
 	); err != nil {
 		return nil, 0, fmt.Errorf("get viewers: %w", err)
+	}
+	for i := range viewers {
+		if viewers[i].AvatarUrl != nil && *viewers[i].AvatarUrl != "" {
+			fullURL := oss.FullURL(*viewers[i].AvatarUrl)
+			viewers[i].AvatarUrl = &fullURL
+		}
 	}
 	return viewers, total, nil
 }
