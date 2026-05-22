@@ -31,10 +31,12 @@ type HourlyViewItem struct {
 
 // ProjectViewer is one row in the GET /projects/{id}/viewers response.
 type ProjectViewer struct {
-	UserID       int       `db:"user_id"        json:"user_id"`
-	Nickname     *string   `db:"nickname"       json:"nickname"`
-	AvatarUrl    *string   `db:"avatar_url"     json:"avatar_url"`
-	LastViewedAt time.Time `db:"last_viewed_at" json:"last_viewed_at"`
+	UserID          int       `db:"user_id"           json:"user_id"`
+	TalentProfileID *int      `db:"talent_profile_id" json:"talent_profile_id"`
+	Nickname        *string   `db:"nickname"          json:"nickname"`
+	AvatarUrl       *string   `db:"avatar_url"        json:"avatar_url"`
+	AuthStatus      *int      `db:"auth_status"       json:"auth_status"`
+	LastViewedAt    time.Time `db:"last_viewed_at"    json:"last_viewed_at"`
 }
 
 // ProjectViewLogRepository handles project_view_log database operations.
@@ -117,35 +119,39 @@ func (r *ProjectViewLogRepository) GetDashboardStats(ctx context.Context, projec
 		return nil, fmt.Errorf("get avg_duration: %w", err)
 	}
 
-	// 6. Hourly view counts for the last 24 hours. Generate 24 slots in Go and
-	//    merge with the DB results so missing hours are filled with 0.
-	now := time.Now().UTC()
-	currentHour := time.Date(now.Year(), now.Month(), now.Day(), now.Hour(), 0, 0, 0, time.UTC)
-	startHour := currentHour.Add(-23 * time.Hour)
+	// 6. Hourly view counts for the last 24 hours. Bucket by Unix epoch so the
+	//    generated UTC slots stay aligned with MySQL TIMESTAMP conversion.
+	var nowEpoch int64
+	if err := r.db.QueryRowxContext(ctx,
+		`SELECT CAST(FLOOR(UNIX_TIMESTAMP(NOW()) / 3600) * 3600 AS SIGNED)`,
+	).Scan(&nowEpoch); err != nil {
+		return nil, fmt.Errorf("get current hour: %w", err)
+	}
+	startEpoch := nowEpoch - int64(23*time.Hour/time.Second)
 
 	type hourlyRow struct {
-		HourStr string `db:"hour_str"`
-		Count   int    `db:"cnt"`
+		HourEpoch int64 `db:"hour_epoch"`
+		Count     int   `db:"cnt"`
 	}
 	var rawHourly []hourlyRow
 	if err := r.db.SelectContext(ctx, &rawHourly,
-		`SELECT DATE_FORMAT(viewed_at, '%Y-%m-%d %H:00:00') AS hour_str, COUNT(*) AS cnt
+		`SELECT CAST(FLOOR(UNIX_TIMESTAMP(viewed_at) / 3600) * 3600 AS SIGNED) AS hour_epoch, COUNT(*) AS cnt
 		 FROM project_view_log
-		 WHERE project_id = ? AND viewed_at >= ? AND duration_ms IS NULL
-		 GROUP BY hour_str ORDER BY hour_str ASC`,
-		projectID, startHour,
+		 WHERE project_id = ? AND viewed_at >= FROM_UNIXTIME(?) AND viewed_at < FROM_UNIXTIME(?) AND duration_ms IS NULL
+		 GROUP BY hour_epoch ORDER BY hour_epoch ASC`,
+		projectID, startEpoch, nowEpoch+3600,
 	); err != nil {
 		return nil, fmt.Errorf("get hourly_views: %w", err)
 	}
-	hourMap := make(map[string]int, len(rawHourly))
+	hourMap := make(map[int64]int, len(rawHourly))
 	for _, row := range rawHourly {
-		hourMap[row.HourStr] = row.Count
+		hourMap[row.HourEpoch] = row.Count
 	}
 	hourlyViews := make([]HourlyViewItem, 24)
 	for i := 0; i < 24; i++ {
-		slot := startHour.Add(time.Duration(i) * time.Hour)
-		key := slot.Format("2006-01-02 15:04:05")
-		hourlyViews[i] = HourlyViewItem{Hour: slot, Count: hourMap[key]}
+		slotEpoch := startEpoch + int64(i*3600)
+		slot := time.Unix(slotEpoch, 0).UTC()
+		hourlyViews[i] = HourlyViewItem{Hour: slot, Count: hourMap[slotEpoch]}
 	}
 
 	stats := &ProjectDashboardStats{
@@ -192,12 +198,14 @@ func (r *ProjectViewLogRepository) GetViewers(ctx context.Context, projectID, li
 
 	viewers := make([]ProjectViewer, 0)
 	if err := r.db.SelectContext(ctx, &viewers,
-		`SELECT vl.user_id, u.nickname, u.avatar_url, MAX(vl.viewed_at) AS last_viewed_at
+		`SELECT vl.user_id, tp.id AS talent_profile_id, u.nickname, u.avatar_url, u.auth_status,
+		        MAX(vl.viewed_at) AS last_viewed_at
 		 FROM project_view_log vl
 		 JOIN `+"`user`"+` u ON u.id = vl.user_id
+		 LEFT JOIN talent_profile tp ON tp.user_id = vl.user_id
 		 WHERE vl.project_id = ? AND vl.user_id IS NOT NULL
 		   AND vl.viewed_at >= NOW() - INTERVAL 24 HOUR AND vl.duration_ms IS NULL
-		 GROUP BY vl.user_id, u.nickname, u.avatar_url
+		 GROUP BY vl.user_id, tp.id, u.nickname, u.avatar_url, u.auth_status
 		 ORDER BY last_viewed_at DESC
 		 LIMIT ?`,
 		projectID, limit,
