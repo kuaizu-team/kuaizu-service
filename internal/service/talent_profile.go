@@ -204,9 +204,10 @@ func (s *TalentProfileService) GetTalentProfileWithView(ctx context.Context, id,
 
 // TalentDashboardResult is the response payload for GET /talent-profiles/{id}/dashboard.
 type TalentDashboardResult struct {
-	TotalViews         int `json:"total_views"`
-	TodayViews         int `json:"today_views"`
-	AvgDurationSeconds int `json:"avg_duration_seconds"`
+	TotalViews         int                         `json:"total_views"`
+	TodayViews         int                         `json:"today_views"`
+	AvgDurationSeconds int                         `json:"avg_duration_seconds"`
+	HourlyViews        []repository.HourlyViewItem `json:"hourly_views"`
 	SourceStats        struct {
 		FromList  int `json:"from_list"`
 		FromShare int `json:"from_share"`
@@ -235,6 +236,7 @@ func (s *TalentProfileService) GetTalentDashboard(ctx context.Context, talentID,
 		TotalViews:         raw.TotalViews,
 		TodayViews:         raw.TodayViews,
 		AvgDurationSeconds: raw.AvgDurationSeconds,
+		HourlyViews:        raw.HourlyViews,
 	}
 	result.SourceStats.FromList = raw.FromList
 	result.SourceStats.FromShare = raw.FromShare
@@ -283,6 +285,30 @@ func (s *TalentProfileService) GetTalentViewers(ctx context.Context, talentID, r
 	}
 
 	return &TalentViewersResult{Total: total, List: viewers}, nil
+}
+
+// TopTalentViewersResult is the payload for GET /talent-profiles/{id}/top-viewers.
+type TopTalentViewersResult struct {
+	List []repository.TopTalentViewer `json:"list"`
+}
+
+// GetTopTalentViewers returns today's most frequent authenticated viewers.
+func (s *TalentProfileService) GetTopTalentViewers(ctx context.Context, talentID, requesterUserID, limit int) (*TopTalentViewersResult, error) {
+	isOwner, err := s.repo.TalentProfile.IsOwner(ctx, talentID, requesterUserID)
+	if err != nil {
+		log.Printf("[TalentProfileService.GetTopTalentViewers] ownership check error: %v", err)
+		return nil, ErrInternal("检查权限失败")
+	}
+	if !isOwner {
+		return nil, ErrForbidden("仅名片主人可查看")
+	}
+
+	viewers, err := s.repo.TalentViewLog.GetTopViewersToday(ctx, talentID, limit)
+	if err != nil {
+		log.Printf("[TalentProfileService.GetTopTalentViewers] query error: %v", err)
+		return nil, ErrInternal("获取高频访客失败")
+	}
+	return &TopTalentViewersResult{List: viewers}, nil
 }
 
 // TakedownTalentProfile (admin only) forces an online profile offline (status: 1 → 0).

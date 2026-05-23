@@ -186,6 +186,29 @@ func (s *Server) GetTalentViewers(ctx echo.Context, id int, params api.GetTalent
 	})
 }
 
+// GetTopTalentViewers handles GET /talent-profiles/{id}/top-viewers
+func (s *Server) GetTopTalentViewers(ctx echo.Context, id int, params api.GetTopTalentViewersParams) error {
+	userID := GetUserID(ctx)
+	if id <= 0 {
+		return BadRequest(ctx, "无效的人才档案ID")
+	}
+
+	limit := 3
+	if params.Limit != nil && *params.Limit > 0 {
+		limit = *params.Limit
+		if limit > 10 {
+			limit = 10
+		}
+	}
+
+	result, err := s.svc.TalentProfile.GetTopTalentViewers(ctx.Request().Context(), id, userID, limit)
+	if err != nil {
+		return mapServiceError(ctx, err)
+	}
+
+	return Success(ctx, result)
+}
+
 func (s *Server) getTalentProfileByUserIDFallback(ctx echo.Context, userID int) error {
 	talent, err := s.repo.TalentProfile.GetByUserID(ctx.Request().Context(), userID)
 	if err != nil {

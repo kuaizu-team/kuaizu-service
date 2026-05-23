@@ -30,6 +30,16 @@ get:
                         type: integer
                       avg_duration_seconds:
                         type: integer
+                      hourly_views:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            hour:
+                              type: string
+                              format: date-time
+                            count:
+                              type: integer
                       source_stats:
                         type: object
                         properties:

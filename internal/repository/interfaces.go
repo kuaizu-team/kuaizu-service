@@ -179,6 +179,7 @@ type TalentViewLogRepo interface {
 	GetDashboardStats(ctx context.Context, talentID int) (*TalentDashboardStats, error)
 	InsertDurationLog(ctx context.Context, talentID int, userID *int, durationMs int) error
 	GetViewers(ctx context.Context, talentID int, limit int) ([]TalentViewer, int, error)
+	GetTopViewersToday(ctx context.Context, talentID int, limit int) ([]TopTalentViewer, error)
 }
 
 // Compile-time interface satisfaction checks

@@ -18,6 +18,7 @@ type TalentDashboardStats struct {
 	FromShare          int
 	Unknown            int
 	AvgDurationSeconds int
+	HourlyViews        []HourlyViewItem
 }
 
 // TalentViewer is one row in the GET /talent-profiles/{id}/viewers response.
@@ -26,6 +27,14 @@ type TalentViewer struct {
 	Nickname     *string   `db:"nickname"       json:"nickname"`
 	AvatarUrl    *string   `db:"avatar_url"     json:"avatar_url"`
 	LastViewedAt time.Time `db:"last_viewed_at" json:"last_viewed_at"`
+}
+
+// TopTalentViewer is one row in the GET /talent-profiles/{id}/top-viewers response.
+type TopTalentViewer struct {
+	UserID    int     `db:"user_id"    json:"user_id"`
+	Nickname  *string `db:"nickname"   json:"nickname"`
+	AvatarUrl *string `db:"avatar_url" json:"avatar_url"`
+	ViewCount int     `db:"view_count" json:"view_count"`
 }
 
 // TalentViewLogRepository handles talent_view_log database operations.
@@ -93,10 +102,44 @@ func (r *TalentViewLogRepository) GetDashboardStats(ctx context.Context, talentI
 		return nil, fmt.Errorf("get talent avg_duration: %w", err)
 	}
 
+	var nowEpoch int64
+	if err := r.db.QueryRowxContext(ctx,
+		`SELECT CAST(FLOOR(UNIX_TIMESTAMP(NOW()) / 3600) * 3600 AS SIGNED)`,
+	).Scan(&nowEpoch); err != nil {
+		return nil, fmt.Errorf("get talent current hour: %w", err)
+	}
+	startEpoch := nowEpoch - int64(23*time.Hour/time.Second)
+
+	type hourlyRow struct {
+		HourEpoch int64 `db:"hour_epoch"`
+		Count     int   `db:"cnt"`
+	}
+	var rawHourly []hourlyRow
+	if err := r.db.SelectContext(ctx, &rawHourly,
+		`SELECT CAST(FLOOR(UNIX_TIMESTAMP(viewed_at) / 3600) * 3600 AS SIGNED) AS hour_epoch, COUNT(*) AS cnt
+		 FROM talent_view_log
+		 WHERE talent_id = ? AND viewed_at >= FROM_UNIXTIME(?) AND viewed_at < FROM_UNIXTIME(?) AND duration_ms IS NULL
+		 GROUP BY hour_epoch ORDER BY hour_epoch ASC`,
+		talentID, startEpoch, nowEpoch+3600,
+	); err != nil {
+		return nil, fmt.Errorf("get talent hourly_views: %w", err)
+	}
+	hourMap := make(map[int64]int, len(rawHourly))
+	for _, row := range rawHourly {
+		hourMap[row.HourEpoch] = row.Count
+	}
+	hourlyViews := make([]HourlyViewItem, 24)
+	for i := 0; i < 24; i++ {
+		slotEpoch := startEpoch + int64(i*3600)
+		slot := time.Unix(slotEpoch, 0).UTC()
+		hourlyViews[i] = HourlyViewItem{Hour: slot, Count: hourMap[slotEpoch]}
+	}
+
 	stats := &TalentDashboardStats{
 		TotalViews:         totalViews,
 		TodayViews:         todayViews,
 		AvgDurationSeconds: int(avgDurationMs / 1000),
+		HourlyViews:        hourlyViews,
 	}
 
 	for _, row := range srcRows {
@@ -147,4 +190,29 @@ func (r *TalentViewLogRepository) GetViewers(ctx context.Context, talentID, limi
 		}
 	}
 	return viewers, total, nil
+}
+
+// GetTopViewersToday returns the users with the most view events today.
+func (r *TalentViewLogRepository) GetTopViewersToday(ctx context.Context, talentID, limit int) ([]TopTalentViewer, error) {
+	viewers := make([]TopTalentViewer, 0)
+	if err := r.db.SelectContext(ctx, &viewers,
+		`SELECT vl.user_id, u.nickname, u.avatar_url, COUNT(*) AS view_count
+		 FROM talent_view_log vl
+		 JOIN `+"`user`"+` u ON u.id = vl.user_id
+		 WHERE vl.talent_id = ? AND vl.user_id IS NOT NULL
+		   AND vl.viewed_at >= CURDATE() AND vl.duration_ms IS NULL
+		 GROUP BY vl.user_id, u.nickname, u.avatar_url
+		 ORDER BY view_count DESC, MAX(vl.viewed_at) DESC
+		 LIMIT ?`,
+		talentID, limit,
+	); err != nil {
+		return nil, fmt.Errorf("get talent top viewers today: %w", err)
+	}
+	for i := range viewers {
+		if viewers[i].AvatarUrl != nil && *viewers[i].AvatarUrl != "" {
+			fullURL := oss.FullURL(*viewers[i].AvatarUrl)
+			viewers[i].AvatarUrl = &fullURL
+		}
+	}
+	return viewers, nil
 }

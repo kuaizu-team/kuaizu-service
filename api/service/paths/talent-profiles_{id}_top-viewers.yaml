@@ -1,0 +1,50 @@
+parameters:
+  - name: id
+    in: path
+    required: true
+    schema:
+      type: integer
+    description: Talent profile ID
+get:
+  tags:
+    - TalentProfiles
+  summary: Get top talent viewers
+  description: Only the talent profile owner can view today's most frequent authenticated viewers.
+  operationId: getTopTalentViewers
+  parameters:
+    - name: limit
+      in: query
+      description: Max rows to return, capped at 10.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 10
+        default: 3
+  responses:
+    '200':
+      description: Success
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/BaseResponse.yaml
+              - type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      list:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            user_id:
+                              type: integer
+                            nickname:
+                              type: string
+                              nullable: true
+                            avatar_url:
+                              type: string
+                              nullable: true
+                            view_count:
+                              type: integer
