@@ -22,6 +22,7 @@ type Repository struct {
 	MsgTemplate     MsgTemplateConfigRepo
 	SubscribeConfig SubscribeConfigRepo
 	ProjectViewLog  ProjectViewLogRepo
+	TalentViewLog   TalentViewLogRepo
 }
 
 // DB returns the underlying database connection for transaction support
@@ -48,5 +49,6 @@ func New(db *sqlx.DB) *Repository {
 		MsgTemplate:     NewMsgTemplateConfigRepository(db),
 		SubscribeConfig: NewSubscribeConfigRepository(db),
 		ProjectViewLog:  NewProjectViewLogRepository(db),
+		TalentViewLog:   NewTalentViewLogRepository(db),
 	}
 }

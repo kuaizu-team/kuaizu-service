@@ -1,0 +1,41 @@
+parameters:
+  - name: id
+    in: path
+    required: true
+    schema:
+      type: integer
+    description: Talent profile ID
+get:
+  tags:
+    - TalentProfiles
+  summary: Get talent dashboard
+  description: Only the talent profile owner can view these metrics.
+  operationId: getTalentDashboard
+  responses:
+    '200':
+      description: Success
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/BaseResponse.yaml
+              - type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      total_views:
+                        type: integer
+                      today_views:
+                        type: integer
+                      avg_duration_seconds:
+                        type: integer
+                      source_stats:
+                        type: object
+                        properties:
+                          from_list:
+                            type: integer
+                          from_share:
+                            type: integer
+                          unknown:
+                            type: integer

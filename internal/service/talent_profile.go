@@ -160,6 +160,131 @@ func (s *TalentProfileService) SetTalentProfilePrivate(ctx context.Context, user
 	return nil
 }
 
+// GetTalentProfile returns a talent profile without recording a view.
+func (s *TalentProfileService) GetTalentProfile(ctx context.Context, id int) (*models.TalentProfile, error) {
+	profile, err := s.repo.TalentProfile.GetByID(ctx, id)
+	if err != nil {
+		log.Printf("[TalentProfileService.GetTalentProfile] repository error: %v", err)
+		return nil, ErrInternal("获取人才档案失败")
+	}
+	if profile == nil {
+		return nil, ErrNotFound("人才档案不存在")
+	}
+	return profile, nil
+}
+
+// GetTalentProfileWithView returns a talent profile and asynchronously records a real view.
+func (s *TalentProfileService) GetTalentProfileWithView(ctx context.Context, id, viewerUserID, source int) (*models.TalentProfile, error) {
+	profile, err := s.GetTalentProfile(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+
+	go func(asyncCtx context.Context) {
+		if err := s.repo.TalentProfile.IncrementViewCount(asyncCtx, id); err != nil {
+			log.Printf("[TalentProfileService.GetTalentProfileWithView] increment view error (non-fatal): %v", err)
+		}
+		var uidPtr *int
+		if viewerUserID > 0 {
+			uid := viewerUserID
+			uidPtr = &uid
+		}
+		entry := &models.TalentViewLog{
+			TalentID: id,
+			UserID:   uidPtr,
+			Source:   source,
+		}
+		if err := s.repo.TalentViewLog.InsertViewLog(asyncCtx, entry); err != nil {
+			log.Printf("[TalentProfileService.GetTalentProfileWithView] view log error (non-fatal): %v", err)
+		}
+	}(context.WithoutCancel(ctx))
+
+	return profile, nil
+}
+
+// TalentDashboardResult is the response payload for GET /talent-profiles/{id}/dashboard.
+type TalentDashboardResult struct {
+	TotalViews         int `json:"total_views"`
+	TodayViews         int `json:"today_views"`
+	AvgDurationSeconds int `json:"avg_duration_seconds"`
+	SourceStats        struct {
+		FromList  int `json:"from_list"`
+		FromShare int `json:"from_share"`
+		Unknown   int `json:"unknown"`
+	} `json:"source_stats"`
+}
+
+// GetTalentDashboard returns aggregated stats for the talent dashboard.
+func (s *TalentProfileService) GetTalentDashboard(ctx context.Context, talentID, requesterUserID int) (*TalentDashboardResult, error) {
+	isOwner, err := s.repo.TalentProfile.IsOwner(ctx, talentID, requesterUserID)
+	if err != nil {
+		log.Printf("[TalentProfileService.GetTalentDashboard] ownership check error: %v", err)
+		return nil, ErrInternal("检查权限失败")
+	}
+	if !isOwner {
+		return nil, ErrForbidden("仅名片主人可查看")
+	}
+
+	raw, err := s.repo.TalentViewLog.GetDashboardStats(ctx, talentID)
+	if err != nil {
+		log.Printf("[TalentProfileService.GetTalentDashboard] stats query error: %v", err)
+		return nil, ErrInternal("获取看板数据失败")
+	}
+
+	result := &TalentDashboardResult{
+		TotalViews:         raw.TotalViews,
+		TodayViews:         raw.TodayViews,
+		AvgDurationSeconds: raw.AvgDurationSeconds,
+	}
+	result.SourceStats.FromList = raw.FromList
+	result.SourceStats.FromShare = raw.FromShare
+	result.SourceStats.Unknown = raw.Unknown
+	return result, nil
+}
+
+// RecordTalentViewDuration inserts a dwell-time entry for a talent profile.
+func (s *TalentProfileService) RecordTalentViewDuration(ctx context.Context, talentID, viewerUserID, durationMs int) error {
+	if durationMs <= 0 || durationMs > 3_600_000 {
+		return nil
+	}
+	var uidPtr *int
+	if viewerUserID > 0 {
+		uid := viewerUserID
+		uidPtr = &uid
+	}
+	if err := s.repo.TalentViewLog.InsertDurationLog(ctx, talentID, uidPtr, durationMs); err != nil {
+		log.Printf("[TalentProfileService.RecordTalentViewDuration] error: %v", err)
+		return ErrInternal("上报停留时长失败")
+	}
+	return nil
+}
+
+// TalentViewersResult is the payload for GET /talent-profiles/{id}/viewers.
+type TalentViewersResult struct {
+	Total int
+	List  []repository.TalentViewer
+}
+
+// GetTalentViewers returns authenticated viewers of the talent profile in the last 24 h.
+func (s *TalentProfileService) GetTalentViewers(ctx context.Context, talentID, requesterUserID, limit int) (*TalentViewersResult, error) {
+	isOwner, err := s.repo.TalentProfile.IsOwner(ctx, talentID, requesterUserID)
+	if err != nil {
+		log.Printf("[TalentProfileService.GetTalentViewers] ownership check error: %v", err)
+		return nil, ErrInternal("检查权限失败")
+	}
+	if !isOwner {
+		return nil, ErrForbidden("仅名片主人可查看")
+	}
+
+	viewers, total, err := s.repo.TalentViewLog.GetViewers(ctx, talentID, limit)
+	if err != nil {
+		log.Printf("[TalentProfileService.GetTalentViewers] query error: %v", err)
+		return nil, ErrInternal("获取访客记录失败")
+	}
+
+	return &TalentViewersResult{Total: total, List: viewers}, nil
+}
+
 // TakedownTalentProfile (admin only) forces an online profile offline (status: 1 → 0).
 func (s *TalentProfileService) TakedownTalentProfile(ctx context.Context, id int) error {
 	profile, err := s.repo.TalentProfile.GetByID(ctx, id)
