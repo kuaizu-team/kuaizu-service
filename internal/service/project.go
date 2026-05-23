@@ -115,10 +115,8 @@ func validateProjectListStatuses(params repository.ListParams) error {
 	return nil
 }
 
-// GetProject retrieves a project by ID and asynchronously records a view log entry
-// and increments the denormalised view_count counter.
-// viewerUserID is the authenticated caller's ID; source is the tracking origin (0/1/2).
-func (s *ProjectService) GetProject(ctx context.Context, id, viewerUserID, source int) (*models.Project, error) {
+// GetProject retrieves a project by ID without recording a view.
+func (s *ProjectService) GetProject(ctx context.Context, id int) (*models.Project, error) {
 	project, err := s.repo.Project.GetByID(ctx, id)
 	if err != nil {
 		log.Printf("[ProjectService.GetProject] repository error: %v", err)
@@ -126,6 +124,16 @@ func (s *ProjectService) GetProject(ctx context.Context, id, viewerUserID, sourc
 	}
 	if project == nil {
 		return nil, ErrNotFound("项目不存在")
+	}
+
+	return project, nil
+}
+
+// GetProjectWithView retrieves a project and asynchronously records a real user view.
+func (s *ProjectService) GetProjectWithView(ctx context.Context, id, viewerUserID, source int) (*models.Project, error) {
+	project, err := s.GetProject(ctx, id)
+	if err != nil {
+		return nil, err
 	}
 
 	go func(asyncCtx context.Context) {
@@ -150,12 +158,12 @@ func (s *ProjectService) GetProject(ctx context.Context, id, viewerUserID, sourc
 
 // ProjectDashboardResult is the response payload for GET /projects/{id}/dashboard.
 type ProjectDashboardResult struct {
-	TotalViews         int                          `json:"total_views"`
-	TodayViews         int                          `json:"today_views"`
-	TotalApplicants    int                          `json:"total_applicants"`
-	ConversionRate     float64                      `json:"conversion_rate"`
-	AvgDurationSeconds int                          `json:"avg_duration_seconds"`
-	HourlyViews        []repository.HourlyViewItem  `json:"hourly_views"`
+	TotalViews         int                         `json:"total_views"`
+	TodayViews         int                         `json:"today_views"`
+	TotalApplicants    int                         `json:"total_applicants"`
+	ConversionRate     float64                     `json:"conversion_rate"`
+	AvgDurationSeconds int                         `json:"avg_duration_seconds"`
+	HourlyViews        []repository.HourlyViewItem `json:"hourly_views"`
 	SourceStats        struct {
 		FromList  int `json:"from_list"`
 		FromShare int `json:"from_share"`

@@ -146,16 +146,15 @@ func (s *Server) ListMyProjects(ctx echo.Context, params api.ListMyProjectsParam
 }
 
 // GetProject handles GET /projects/{id}
-// Optional query param: source (int, 0=unknown/default, 1=list, 2=share)
-func (s *Server) GetProject(ctx echo.Context, id int) error {
+func (s *Server) GetProject(ctx echo.Context, id int, params api.GetProjectParams) error {
 	userID := GetUserID(ctx)
 
 	source := 0
-	if v, err := strconv.Atoi(ctx.QueryParam("source")); err == nil {
-		source = v
+	if params.Source != nil {
+		source = *params.Source
 	}
 
-	project, err := s.svc.Project.GetProject(ctx.Request().Context(), id, userID, source)
+	project, err := s.svc.Project.GetProjectWithView(ctx.Request().Context(), id, userID, source)
 	if err != nil {
 		return mapServiceError(ctx, err)
 	}
@@ -164,11 +163,10 @@ func (s *Server) GetProject(ctx echo.Context, id int) error {
 }
 
 // GetProjectDashboard handles GET /projects/{id}/dashboard
-func (s *Server) GetProjectDashboard(ctx echo.Context) error {
+func (s *Server) GetProjectDashboard(ctx echo.Context, id int) error {
 	userID := GetUserID(ctx)
 
-	id, err := strconv.Atoi(ctx.Param("id"))
-	if err != nil || id <= 0 {
+	if id <= 0 {
 		return BadRequest(ctx, "无效的项目 ID")
 	}
 
@@ -180,13 +178,12 @@ func (s *Server) GetProjectDashboard(ctx echo.Context) error {
 	return Success(ctx, result)
 }
 
-// RecordViewDuration handles POST /projects/:id/view-duration
+// RecordViewDuration handles POST /projects/{id}/view-duration
 // Records a dwell-time entry for the project. Fire-and-forget from the frontend.
-func (s *Server) RecordViewDuration(ctx echo.Context) error {
+func (s *Server) RecordViewDuration(ctx echo.Context, id int) error {
 	userID := GetUserID(ctx)
 
-	id, err := strconv.Atoi(ctx.Param("id"))
-	if err != nil || id <= 0 {
+	if id <= 0 {
 		return BadRequest(ctx, "无效的项目 ID")
 	}
 
@@ -204,22 +201,21 @@ func (s *Server) RecordViewDuration(ctx echo.Context) error {
 	return Success(ctx, nil)
 }
 
-// GetProjectViewers handles GET /projects/:id/viewers
+// GetProjectViewers handles GET /projects/{id}/viewers
 // Returns authenticated users who viewed the project in the last 24 hours.
-func (s *Server) GetProjectViewers(ctx echo.Context) error {
+func (s *Server) GetProjectViewers(ctx echo.Context, id int, params api.GetProjectViewersParams) error {
 	userID := GetUserID(ctx)
 
-	id, err := strconv.Atoi(ctx.Param("id"))
-	if err != nil || id <= 0 {
+	if id <= 0 {
 		return BadRequest(ctx, "无效的项目 ID")
 	}
 
 	limit := 20
-	if v, err := strconv.Atoi(ctx.QueryParam("limit")); err == nil && v > 0 {
-		if v > 50 {
-			v = 50
+	if params.Limit != nil && *params.Limit > 0 {
+		limit = *params.Limit
+		if limit > 50 {
+			limit = 50
 		}
-		limit = v
 	}
 
 	result, err := s.svc.Project.GetProjectViewers(ctx.Request().Context(), id, userID, limit)

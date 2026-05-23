@@ -75,14 +75,14 @@ func main() {
 
 		// Public endpoints that don't require authentication
 		publicEndpoints := []string{
-			"/api/v2/auth/login/wechat",                    // WeChat login
-			"/api/v2/auth/register/phone",                  // WeChat phone registration
-			"/api/v2/dictionaries/schools",                  // School list
-			"/api/v2/dictionaries/schools/provinces",        // Province list
-			"/api/v2/dictionaries/schools/cities",           // City list
-			"/api/v2/dictionaries/schools/districts",        // District list
-			"/api/v2/dictionaries/majors",                   // Major list
-			"/api/v2/email/unsubscribe",                     // Email unsubscribe
+			"/api/v2/auth/login/wechat",              // WeChat login
+			"/api/v2/auth/register/phone",            // WeChat phone registration
+			"/api/v2/dictionaries/schools",           // School list
+			"/api/v2/dictionaries/schools/provinces", // Province list
+			"/api/v2/dictionaries/schools/cities",    // City list
+			"/api/v2/dictionaries/schools/districts", // District list
+			"/api/v2/dictionaries/majors",            // Major list
+			"/api/v2/email/unsubscribe",              // Email unsubscribe
 		}
 
 		// Check exact matches
@@ -116,9 +116,6 @@ func main() {
 	apiGroup.GET("/dictionaries/schools/provinces", server.GetSchoolProvinces)
 	apiGroup.GET("/dictionaries/schools/cities", server.GetSchoolCities)
 	apiGroup.GET("/dictionaries/schools/districts", server.GetSchoolDistricts)
-	apiGroup.GET("/projects/:id/dashboard", server.GetProjectDashboard)
-	apiGroup.POST("/projects/:id/view-duration", server.RecordViewDuration)
-	apiGroup.GET("/projects/:id/viewers", server.GetProjectViewers)
 
 	api.RegisterHandlers(apiGroup, server)
 

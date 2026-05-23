@@ -59,6 +59,22 @@ func (m *MockOrderRepo) UpdateStatus(ctx context.Context, id int, status int) er
 	return args.Error(0)
 }
 
+func (m *MockOrderRepo) AdminList(ctx context.Context, params repository.AdminOrderListParams) ([]*models.Order, int64, error) {
+	args := m.Called(ctx, params)
+	if args.Get(0) == nil {
+		return nil, args.Get(1).(int64), args.Error(2)
+	}
+	return args.Get(0).([]*models.Order), args.Get(1).(int64), args.Error(2)
+}
+
+func (m *MockOrderRepo) AdminGetByID(ctx context.Context, id int) (*models.Order, error) {
+	args := m.Called(ctx, id)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*models.Order), args.Error(1)
+}
+
 type MockProjectRepo struct {
 	mock.Mock
 }
