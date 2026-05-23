@@ -1,11 +1,13 @@
 package handler
 
 import (
+	"errors"
 	"log"
 
 	"github.com/kuaizu-team/kuaizu-service/api"
 	"github.com/kuaizu-team/kuaizu-service/internal/models"
 	"github.com/kuaizu-team/kuaizu-service/internal/repository"
+	"github.com/kuaizu-team/kuaizu-service/internal/service"
 	"github.com/labstack/echo/v4"
 )
 
@@ -115,7 +117,10 @@ func (s *Server) GetTalentProfile(ctx echo.Context, id int, params api.GetTalent
 
 	profile, err := s.svc.TalentProfile.GetTalentProfileWithView(ctx.Request().Context(), id, userID, source)
 	if err != nil && params.UserId != nil {
-		return s.getTalentProfileByUserIDFallback(ctx, *params.UserId)
+		var svcErr *service.ServiceError
+		if errors.As(err, &svcErr) && svcErr.Code == service.ErrCodeNotFound {
+			return s.getTalentProfileByUserIDFallback(ctx, *params.UserId)
+		}
 	}
 	if err != nil {
 		return mapServiceError(ctx, err)
