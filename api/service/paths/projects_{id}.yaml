@@ -11,6 +11,14 @@ get:
   summary: 获取项目详情
   description: 返回包含浏览量、队长信息的数据
   operationId: getProject
+  parameters:
+    - name: source
+      in: query
+      description: 'View source: 0 unknown, 1 list page, 2 share card.'
+      schema:
+        type: integer
+        minimum: 0
+        maximum: 2
   responses:
     '200':
       description: 成功

@@ -76,6 +76,9 @@ func (c *Client) FullURL(relativePath string) string {
 	if relativePath == "" {
 		return ""
 	}
+	if isAbsoluteURL(relativePath) {
+		return relativePath
+	}
 	return fmt.Sprintf("%s/%s/%s", strings.TrimRight(c.domain, "/"), strings.TrimRight(c.basePath, "/"), strings.TrimLeft(relativePath, "/"))
 }
 
@@ -86,6 +89,9 @@ func FullURL(relativePath string) string {
 	if relativePath == "" {
 		return ""
 	}
+	if isAbsoluteURL(relativePath) {
+		return relativePath
+	}
 	domain := strings.TrimRight(os.Getenv("OSS_DOMAIN"), "/")
 	basePath := strings.TrimRight(os.Getenv("OSS_BASE_PATH"), "/")
 	relativePath = strings.TrimLeft(relativePath, "/")
@@ -93,4 +99,9 @@ func FullURL(relativePath string) string {
 		return fmt.Sprintf("%s/%s", domain, relativePath)
 	}
 	return fmt.Sprintf("%s/%s/%s", domain, basePath, relativePath)
+}
+
+func isAbsoluteURL(value string) bool {
+	lower := strings.ToLower(value)
+	return strings.HasPrefix(lower, "http://") || strings.HasPrefix(lower, "https://")
 }

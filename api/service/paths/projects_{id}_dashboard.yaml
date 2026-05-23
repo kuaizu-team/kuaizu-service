@@ -1,0 +1,56 @@
+parameters:
+  - name: id
+    in: path
+    required: true
+    schema:
+      type: integer
+    description: Project ID
+get:
+  tags:
+    - Projects
+  summary: Get project dashboard
+  description: Only the project creator can view these metrics.
+  operationId: getProjectDashboard
+  responses:
+    '200':
+      description: Success
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/BaseResponse.yaml
+              - type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      total_views:
+                        type: integer
+                      today_views:
+                        type: integer
+                      total_applicants:
+                        type: integer
+                      conversion_rate:
+                        type: number
+                        format: double
+                      avg_duration_seconds:
+                        type: integer
+                      hourly_views:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            hour:
+                              type: string
+                              format: date-time
+                            count:
+                              type: integer
+                      source_stats:
+                        type: object
+                        properties:
+                          from_list:
+                            type: integer
+                          from_share:
+                            type: integer
+                          unknown:
+                            type: integer

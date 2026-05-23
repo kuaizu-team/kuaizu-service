@@ -163,6 +163,14 @@ type MsgTemplateConfigRepo interface {
 	GetByBizKeys(ctx context.Context, bizKeys []string) ([]models.MsgTemplateConfig, error)
 }
 
+// ProjectViewLogRepo defines the interface for project view log operations.
+type ProjectViewLogRepo interface {
+	InsertViewLog(ctx context.Context, log *models.ProjectViewLog) error
+	GetDashboardStats(ctx context.Context, projectID int) (*ProjectDashboardStats, error)
+	InsertDurationLog(ctx context.Context, projectID int, userID *int, durationMs int) error
+	GetViewers(ctx context.Context, projectID int, limit int) ([]ProjectViewer, int, error)
+}
+
 // Compile-time interface satisfaction checks
 var _ OrderRepo = (*OrderRepository)(nil)
 var _ ProjectRepo = (*ProjectRepository)(nil)
@@ -178,3 +186,4 @@ var _ AdminUserRepo = (*AdminUserRepository)(nil)
 var _ FeedbackRepo = (*FeedbackRepository)(nil)
 var _ SubscribeConfigRepo = (*SubscribeConfigRepository)(nil)
 var _ MsgTemplateConfigRepo = (*MsgTemplateConfigRepository)(nil)
+var _ ProjectViewLogRepo = (*ProjectViewLogRepository)(nil)

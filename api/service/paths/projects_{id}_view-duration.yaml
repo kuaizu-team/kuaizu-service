@@ -1,0 +1,33 @@
+parameters:
+  - name: id
+    in: path
+    required: true
+    schema:
+      type: integer
+    description: Project ID
+post:
+  tags:
+    - Projects
+  summary: Record project view duration
+  description: Records dwell time for the project detail page without counting it as a view.
+  operationId: recordViewDuration
+  requestBody:
+    required: true
+    content:
+      application/json:
+        schema:
+          type: object
+          required:
+            - duration_ms
+          properties:
+            duration_ms:
+              type: integer
+              minimum: 1
+              maximum: 3600000
+  responses:
+    '200':
+      description: Success
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/BaseResponse.yaml

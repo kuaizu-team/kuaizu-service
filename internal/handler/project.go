@@ -146,13 +146,87 @@ func (s *Server) ListMyProjects(ctx echo.Context, params api.ListMyProjectsParam
 }
 
 // GetProject handles GET /projects/{id}
-func (s *Server) GetProject(ctx echo.Context, id int) error {
-	project, err := s.svc.Project.GetProject(ctx.Request().Context(), id)
+func (s *Server) GetProject(ctx echo.Context, id int, params api.GetProjectParams) error {
+	userID := GetUserID(ctx)
+
+	source := 0
+	if params.Source != nil {
+		source = *params.Source
+	}
+
+	project, err := s.svc.Project.GetProjectWithView(ctx.Request().Context(), id, userID, source)
 	if err != nil {
 		return mapServiceError(ctx, err)
 	}
 
 	return Success(ctx, project.ToDetailVO())
+}
+
+// GetProjectDashboard handles GET /projects/{id}/dashboard
+func (s *Server) GetProjectDashboard(ctx echo.Context, id int) error {
+	userID := GetUserID(ctx)
+
+	if id <= 0 {
+		return BadRequest(ctx, "无效的项目 ID")
+	}
+
+	result, err := s.svc.Project.GetProjectDashboard(ctx.Request().Context(), id, userID)
+	if err != nil {
+		return mapServiceError(ctx, err)
+	}
+
+	return Success(ctx, result)
+}
+
+// RecordViewDuration handles POST /projects/{id}/view-duration
+// Records a dwell-time entry for the project. Fire-and-forget from the frontend.
+func (s *Server) RecordViewDuration(ctx echo.Context, id int) error {
+	userID := GetUserID(ctx)
+
+	if id <= 0 {
+		return BadRequest(ctx, "无效的项目 ID")
+	}
+
+	var req struct {
+		DurationMs int `json:"duration_ms"`
+	}
+	if err := ctx.Bind(&req); err != nil {
+		return BadRequest(ctx, "请求参数错误")
+	}
+
+	if err := s.svc.Project.RecordViewDuration(ctx.Request().Context(), id, userID, req.DurationMs); err != nil {
+		return mapServiceError(ctx, err)
+	}
+
+	return Success(ctx, nil)
+}
+
+// GetProjectViewers handles GET /projects/{id}/viewers
+// Returns authenticated users who viewed the project in the last 24 hours.
+func (s *Server) GetProjectViewers(ctx echo.Context, id int, params api.GetProjectViewersParams) error {
+	userID := GetUserID(ctx)
+
+	if id <= 0 {
+		return BadRequest(ctx, "无效的项目 ID")
+	}
+
+	limit := 20
+	if params.Limit != nil && *params.Limit > 0 {
+		limit = *params.Limit
+		if limit > 50 {
+			limit = 50
+		}
+	}
+
+	result, err := s.svc.Project.GetProjectViewers(ctx.Request().Context(), id, userID, limit)
+	if err != nil {
+		return mapServiceError(ctx, err)
+	}
+
+	return Success(ctx, map[string]any{
+		"total": result.Total,
+		"list":  result.List,
+	})
 }
 
 // UpdateProject handles PUT /projects/{id}
