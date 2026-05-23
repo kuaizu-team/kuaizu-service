@@ -64,6 +64,7 @@ type TalentProfile struct {
 	MBTI              *string         `db:"mbti"`
 	Status            *int            `db:"status"` // 0: 隐私/下架, 1: 上架, 2: 审核中
 	CreatedAt         *time.Time      `db:"created_at"`
+	ViewCount         int             `db:"view_count"`
 	UpdatedAt         *time.Time      `db:"updated_at"`
 
 	// Joined fields from user table

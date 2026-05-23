@@ -84,6 +84,14 @@ paths:
     $ref: paths/talent-profiles.yaml
   /talent-profiles/{id}:
     $ref: paths/talent-profiles_{id}.yaml
+  /talent-profiles/{id}/dashboard:
+    $ref: paths/talent-profiles_{id}_dashboard.yaml
+  /talent-profiles/{id}/view-duration:
+    $ref: paths/talent-profiles_{id}_view-duration.yaml
+  /talent-profiles/{id}/viewers:
+    $ref: paths/talent-profiles_{id}_viewers.yaml
+  /talent-profiles/{id}/top-viewers:
+    $ref: paths/talent-profiles_{id}_top-viewers.yaml
   /talent-profiles/my:
     $ref: paths/talent-profiles_my.yaml
   /olive-branches:

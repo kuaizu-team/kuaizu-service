@@ -23,12 +23,12 @@ func NewTalentProfileRepository(db *sqlx.DB) *TalentProfileRepository {
 
 // TalentProfileListParams contains parameters for listing talent profiles
 type TalentProfileListParams struct {
-	Page     int
-	Size     int
-	SchoolID *int
-	MajorID  *int
-	Keyword  *string
-	Status   *int
+	Page         int
+	Size         int
+	SchoolID     *int
+	MajorID      *int
+	Keyword      *string
+	Status       *int
 	SortBy       *string // "school_priority" enables multi-tier priority ordering
 	UserSchoolID *int    // raw school ID from caller
 
@@ -334,7 +334,7 @@ func (r *TalentProfileRepository) List(ctx context.Context, params TalentProfile
 	query := fmt.Sprintf(`
 		SELECT
 			tp.id, tp.user_id, tp.self_evaluation, tp.skill_summary,
-			tp.project_experience, tp.mbti, tp.status,
+			tp.project_experience, tp.mbti, tp.status, tp.view_count,
 			tp.created_at, tp.updated_at,
 			u.nickname, u.phone, u.email, u.avatar_url,
 			u.school_id, u.major_id, u.grade, u.auth_status
@@ -372,7 +372,7 @@ func (r *TalentProfileRepository) GetByID(ctx context.Context, id int) (*models.
 	query := `
 		SELECT 
 			tp.id, tp.user_id, tp.self_evaluation, tp.skill_summary,
-			tp.project_experience, tp.mbti, tp.status,
+			tp.project_experience, tp.mbti, tp.status, tp.view_count,
 			tp.created_at, tp.updated_at,
 			u.nickname, u.phone, u.email, u.wechat_id, u.avatar_url,
 			u.school_id, u.major_id, u.grade, u.auth_status
@@ -403,7 +403,7 @@ func (r *TalentProfileRepository) GetByUserID(ctx context.Context, userID int) (
 	query := `
 		SELECT 
 			tp.id, tp.user_id, tp.self_evaluation, tp.skill_summary,
-			tp.project_experience, tp.mbti, tp.status,
+			tp.project_experience, tp.mbti, tp.status, tp.view_count,
 			tp.created_at, tp.updated_at,
 			u.nickname, u.phone, u.email, u.wechat_id, u.avatar_url,
 			u.school_id, u.major_id, u.grade, u.auth_status
@@ -499,6 +499,25 @@ func (r *TalentProfileRepository) DeleteByUserID(ctx context.Context, userID int
 	_, err := r.db.ExecContext(ctx, query, userID)
 	if err != nil {
 		return fmt.Errorf("delete talent profile by user id: %w", err)
+	}
+	return nil
+}
+
+// IsOwner checks if a user owns a talent profile.
+func (r *TalentProfileRepository) IsOwner(ctx context.Context, talentID, userID int) (bool, error) {
+	var exists bool
+	query := `SELECT EXISTS(SELECT 1 FROM talent_profile WHERE id = ? AND user_id = ?)`
+	if err := r.db.QueryRowxContext(ctx, query, talentID, userID).Scan(&exists); err != nil {
+		return false, fmt.Errorf("check talent profile owner: %w", err)
+	}
+	return exists, nil
+}
+
+// IncrementViewCount increments the denormalized view count of a talent profile.
+func (r *TalentProfileRepository) IncrementViewCount(ctx context.Context, id int) error {
+	query := `UPDATE talent_profile SET view_count = view_count + 1 WHERE id = ?`
+	if _, err := r.db.ExecContext(ctx, query, id); err != nil {
+		return fmt.Errorf("increment talent profile view count: %w", err)
 	}
 	return nil
 }

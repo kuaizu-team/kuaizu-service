@@ -1,0 +1,33 @@
+parameters:
+  - name: id
+    in: path
+    required: true
+    schema:
+      type: integer
+    description: Talent profile ID
+post:
+  tags:
+    - TalentProfiles
+  summary: Record talent view duration
+  description: Records dwell time for the talent detail page without counting it as a view.
+  operationId: recordTalentViewDuration
+  requestBody:
+    required: true
+    content:
+      application/json:
+        schema:
+          type: object
+          required:
+            - duration_ms
+          properties:
+            duration_ms:
+              type: integer
+              minimum: 1
+              maximum: 3600000
+  responses:
+    '200':
+      description: Success
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/BaseResponse.yaml

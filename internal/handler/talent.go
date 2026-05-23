@@ -1,17 +1,18 @@
 package handler
 
 import (
+	"errors"
 	"log"
 
 	"github.com/kuaizu-team/kuaizu-service/api"
 	"github.com/kuaizu-team/kuaizu-service/internal/models"
 	"github.com/kuaizu-team/kuaizu-service/internal/repository"
+	"github.com/kuaizu-team/kuaizu-service/internal/service"
 	"github.com/labstack/echo/v4"
 )
 
 // ListTalentProfiles handles GET /talent-profiles
 func (s *Server) ListTalentProfiles(ctx echo.Context, params api.ListTalentProfilesParams) error {
-	// Set defaults
 	page := 1
 	size := 10
 	if params.Page != nil {
@@ -21,7 +22,7 @@ func (s *Server) ListTalentProfiles(ctx echo.Context, params api.ListTalentProfi
 		size = *params.Size
 	}
 
-	status := models.TalentStatusOnline // 仅展示已发布的
+	status := models.TalentStatusOnline
 	listParams := repository.TalentProfileListParams{
 		Page:         page,
 		Size:         size,
@@ -33,9 +34,6 @@ func (s *Server) ListTalentProfiles(ctx echo.Context, params api.ListTalentProfi
 		UserSchoolID: params.UserSchoolId,
 	}
 
-	// When school_priority sort is requested, pre-fetch the user's school geo info
-	// and major class_id so the repository can build the full tier ORDER BY.
-	// Lookup failures are non-fatal — the sort gracefully degrades to fewer tiers.
 	if params.SortBy != nil && *params.SortBy == "school_priority" {
 		reqCtx := ctx.Request().Context()
 
@@ -66,13 +64,11 @@ func (s *Server) ListTalentProfiles(ctx echo.Context, params api.ListTalentProfi
 		return InternalError(ctx, "获取人才列表失败")
 	}
 
-	// Convert to VOs
 	var profileVOs []api.TalentProfileVO
 	for _, p := range profiles {
 		profileVOs = append(profileVOs, *p.ToVO())
 	}
 
-	// Build pagination info
 	totalPages := int((total + int64(size) - 1) / int64(size))
 	response := api.TalentProfilePageResponse{
 		List: &profileVOs,
@@ -113,21 +109,109 @@ func (s *Server) GetTalentProfile(ctx echo.Context, id int, params api.GetTalent
 		return s.getTalentProfileByUserIDFallback(ctx, *params.UserId)
 	}
 
-	profile, err := s.repo.TalentProfile.GetByID(ctx.Request().Context(), id)
+	userID := GetUserID(ctx)
+	source := 0
+	if params.Source != nil {
+		source = *params.Source
+	}
+
+	profile, err := s.svc.TalentProfile.GetTalentProfileWithView(ctx.Request().Context(), id, userID, source)
+	if err != nil && params.UserId != nil {
+		var svcErr *service.ServiceError
+		if errors.As(err, &svcErr) && svcErr.Code == service.ErrCodeNotFound {
+			return s.getTalentProfileByUserIDFallback(ctx, *params.UserId)
+		}
+	}
 	if err != nil {
-		return InternalError(ctx, "获取人才档案失败")
-	}
-
-	// 如果人才档案不存在且提供了 userId，回退查找用户基本信息
-	if profile == nil && params.UserId != nil {
-		return s.getTalentProfileByUserIDFallback(ctx, *params.UserId)
-	}
-
-	if profile == nil {
-		return NotFound(ctx, "人才档案不存在")
+		return mapServiceError(ctx, err)
 	}
 
 	return Success(ctx, profile.ToDetailVO())
+}
+
+// GetTalentDashboard handles GET /talent-profiles/{id}/dashboard
+func (s *Server) GetTalentDashboard(ctx echo.Context, id int) error {
+	userID := GetUserID(ctx)
+	if id <= 0 {
+		return BadRequest(ctx, "无效的人才档案ID")
+	}
+
+	result, err := s.svc.TalentProfile.GetTalentDashboard(ctx.Request().Context(), id, userID)
+	if err != nil {
+		return mapServiceError(ctx, err)
+	}
+
+	return Success(ctx, result)
+}
+
+// RecordTalentViewDuration handles POST /talent-profiles/{id}/view-duration
+func (s *Server) RecordTalentViewDuration(ctx echo.Context, id int) error {
+	userID := GetUserID(ctx)
+	if id <= 0 {
+		return BadRequest(ctx, "无效的人才档案ID")
+	}
+
+	var req struct {
+		DurationMs int `json:"duration_ms"`
+	}
+	if err := ctx.Bind(&req); err != nil {
+		return BadRequest(ctx, "请求参数错误")
+	}
+
+	if err := s.svc.TalentProfile.RecordTalentViewDuration(ctx.Request().Context(), id, userID, req.DurationMs); err != nil {
+		return mapServiceError(ctx, err)
+	}
+
+	return Success(ctx, nil)
+}
+
+// GetTalentViewers handles GET /talent-profiles/{id}/viewers
+func (s *Server) GetTalentViewers(ctx echo.Context, id int, params api.GetTalentViewersParams) error {
+	userID := GetUserID(ctx)
+	if id <= 0 {
+		return BadRequest(ctx, "无效的人才档案ID")
+	}
+
+	limit := 20
+	if params.Limit != nil && *params.Limit > 0 {
+		limit = *params.Limit
+		if limit > 50 {
+			limit = 50
+		}
+	}
+
+	result, err := s.svc.TalentProfile.GetTalentViewers(ctx.Request().Context(), id, userID, limit)
+	if err != nil {
+		return mapServiceError(ctx, err)
+	}
+
+	return Success(ctx, map[string]any{
+		"total": result.Total,
+		"list":  result.List,
+	})
+}
+
+// GetTopTalentViewers handles GET /talent-profiles/{id}/top-viewers
+func (s *Server) GetTopTalentViewers(ctx echo.Context, id int, params api.GetTopTalentViewersParams) error {
+	userID := GetUserID(ctx)
+	if id <= 0 {
+		return BadRequest(ctx, "无效的人才档案ID")
+	}
+
+	limit := 3
+	if params.Limit != nil && *params.Limit > 0 {
+		limit = *params.Limit
+		if limit > 10 {
+			limit = 10
+		}
+	}
+
+	result, err := s.svc.TalentProfile.GetTopTalentViewers(ctx.Request().Context(), id, userID, limit)
+	if err != nil {
+		return mapServiceError(ctx, err)
+	}
+
+	return Success(ctx, result)
 }
 
 func (s *Server) getTalentProfileByUserIDFallback(ctx echo.Context, userID int) error {

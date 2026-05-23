@@ -124,6 +124,8 @@ type TalentProfileRepo interface {
 	Upsert(ctx context.Context, p *models.TalentProfile) error
 	UpdateStatus(ctx context.Context, id int, status int) error
 	DeleteByUserID(ctx context.Context, userID int) error
+	IsOwner(ctx context.Context, talentID, userID int) (bool, error)
+	IncrementViewCount(ctx context.Context, id int) error
 }
 
 // AdminUserRepo defines the interface for admin user repository operations.
@@ -171,6 +173,15 @@ type ProjectViewLogRepo interface {
 	GetViewers(ctx context.Context, projectID int, limit int) ([]ProjectViewer, int, error)
 }
 
+// TalentViewLogRepo defines the interface for talent view log operations.
+type TalentViewLogRepo interface {
+	InsertViewLog(ctx context.Context, log *models.TalentViewLog) error
+	GetDashboardStats(ctx context.Context, talentID int) (*TalentDashboardStats, error)
+	InsertDurationLog(ctx context.Context, talentID int, userID *int, durationMs int) error
+	GetViewers(ctx context.Context, talentID int, limit int) ([]TalentViewer, int, error)
+	GetTopViewersToday(ctx context.Context, talentID int, limit int) ([]TopTalentViewer, error)
+}
+
 // Compile-time interface satisfaction checks
 var _ OrderRepo = (*OrderRepository)(nil)
 var _ ProjectRepo = (*ProjectRepository)(nil)
@@ -187,3 +198,4 @@ var _ FeedbackRepo = (*FeedbackRepository)(nil)
 var _ SubscribeConfigRepo = (*SubscribeConfigRepository)(nil)
 var _ MsgTemplateConfigRepo = (*MsgTemplateConfigRepository)(nil)
 var _ ProjectViewLogRepo = (*ProjectViewLogRepository)(nil)
+var _ TalentViewLogRepo = (*TalentViewLogRepository)(nil)
