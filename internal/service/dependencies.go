@@ -3,7 +3,7 @@ package service
 import (
 	"fmt"
 
-	"github.com/kuaizu-team/kuaizu-service/internal/email"
+	"github.com/kuaizu-team/kuaizu-service/internal/messagecenter"
 	"github.com/kuaizu-team/kuaizu-service/internal/oss"
 	"github.com/kuaizu-team/kuaizu-service/internal/repository"
 	"github.com/kuaizu-team/kuaizu-service/internal/wechat"
@@ -11,12 +11,12 @@ import (
 
 // Dependencies holds external clients and shared integrations for service wiring.
 type Dependencies struct {
-	OSSClient      *oss.Client
-	WechatClient   *wechat.Client
-	PayClient      *wechat.PayClient
-	PayInitError   error
-	EmailService   *email.Service
-	EmailInitError error
+	OSSClient              *oss.Client
+	WechatClient           *wechat.Client
+	PayClient              *wechat.PayClient
+	PayInitError           error
+	MessageCenter          *messagecenter.Client
+	MessageCenterInitError error
 }
 
 // NewDependencies builds shared service dependencies from environment-backed clients.
@@ -37,18 +37,14 @@ func NewDependencies(repo *repository.Repository) (*Dependencies, error) {
 		payClient, payErr = wechat.NewPayClient(payConfig)
 	}
 
-	emailService, emailErr := email.NewServiceFromEnv(
-		repo.User,
-		repo.Project,
-		repo.EmailPromotion,
-	)
+	messageCenter, messageCenterErr := messagecenter.NewClientFromEnv()
 
 	return &Dependencies{
-		OSSClient:      ossClient,
-		WechatClient:   wxClient,
-		PayClient:      payClient,
-		PayInitError:   payErr,
-		EmailService:   emailService,
-		EmailInitError: emailErr,
+		OSSClient:              ossClient,
+		WechatClient:           wxClient,
+		PayClient:              payClient,
+		PayInitError:           payErr,
+		MessageCenter:          messageCenter,
+		MessageCenterInitError: messageCenterErr,
 	}, nil
 }

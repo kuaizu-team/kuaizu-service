@@ -3,21 +3,22 @@ package service
 import (
 	"context"
 	"log"
+	"time"
 
-	"github.com/kuaizu-team/kuaizu-service/internal/email"
+	"github.com/kuaizu-team/kuaizu-service/internal/messagecenter"
 	"github.com/kuaizu-team/kuaizu-service/internal/models"
 	"github.com/kuaizu-team/kuaizu-service/internal/repository"
 )
 
 // EmailPromotionService handles email promotion business logic.
 type EmailPromotionService struct {
-	repo         *repository.Repository
-	emailService promotionEmailSender
-	emailInitErr error
+	repo                 *repository.Repository
+	messageCenter        projectPromotionSubmitter
+	messageCenterInitErr error
 }
 
-type promotionEmailSender interface {
-	SendPromotionEmails(ctx context.Context, promotion *models.EmailPromotion)
+type projectPromotionSubmitter interface {
+	SubmitProjectPromotion(ctx context.Context, req messagecenter.ProjectPromotionRequest) (*messagecenter.ProjectPromotionResponse, error)
 }
 
 // NewEmailPromotionService creates a new EmailPromotionService.
@@ -25,24 +26,17 @@ func NewEmailPromotionService(repo *repository.Repository) *EmailPromotionServic
 	return &EmailPromotionService{repo: repo}
 }
 
-// NewEmailPromotionServiceWithEmail creates a new EmailPromotionService with an injected email sender.
-func NewEmailPromotionServiceWithEmail(repo *repository.Repository, emailService *email.Service, emailInitErr error) *EmailPromotionService {
+// NewEmailPromotionServiceWithMessageCenter creates a service with a message-center client.
+func NewEmailPromotionServiceWithMessageCenter(repo *repository.Repository, messageCenter *messagecenter.Client, messageCenterInitErr error) *EmailPromotionService {
 	return &EmailPromotionService{
-		repo:         repo,
-		emailService: emailService,
-		emailInitErr: emailInitErr,
+		repo:                 repo,
+		messageCenter:        messageCenter,
+		messageCenterInitErr: messageCenterInitErr,
 	}
 }
 
-// TriggerPromotionResult holds the result of triggering a promotion.
-type TriggerPromotionResult struct {
-	Promotion     *models.EmailPromotion
-	MaxRecipients int
-}
-
-// TriggerPromotion validates ownership and creates a promotion, then starts async sending.
+// TriggerPromotion validates ownership and creates a promotion, then submits it asynchronously.
 func (s *EmailPromotionService) TriggerPromotion(ctx context.Context, userID, orderID, projectID int) (*TriggerPromotionResult, error) {
-	// Validate order ownership
 	order, err := s.repo.Order.GetByID(ctx, orderID)
 	if err != nil {
 		return nil, ErrInternal("获取订单失败")
@@ -57,7 +51,6 @@ func (s *EmailPromotionService) TriggerPromotion(ctx context.Context, userID, or
 		return nil, ErrBadRequest("订单未支付或状态异常")
 	}
 
-	// Validate project ownership
 	project, err := s.repo.Project.GetByID(ctx, projectID)
 	if err != nil {
 		return nil, ErrInternal("获取项目失败")
@@ -69,7 +62,6 @@ func (s *EmailPromotionService) TriggerPromotion(ctx context.Context, userID, or
 		return nil, ErrForbidden("只能推广自己创建的项目")
 	}
 
-	// Check duplication
 	existingPromotion, err := s.repo.EmailPromotion.GetByOrderID(ctx, orderID)
 	if err != nil {
 		return nil, ErrInternal("检查推广记录失败")
@@ -78,13 +70,11 @@ func (s *EmailPromotionService) TriggerPromotion(ctx context.Context, userID, or
 		return nil, ErrBadRequest("此订单已触发过推广")
 	}
 
-	// Calculate max recipients from order items
 	maxRecipients, err := s.calculateMaxRecipients(ctx, order)
 	if err != nil {
 		return nil, err
 	}
 
-	// Create promotion record
 	promotion := &models.EmailPromotion{
 		OrderID:       orderID,
 		ProjectID:     projectID,
@@ -94,17 +84,30 @@ func (s *EmailPromotionService) TriggerPromotion(ctx context.Context, userID, or
 	}
 
 	if err := s.repo.EmailPromotion.Create(ctx, promotion); err != nil {
-		log.Printf("Failed to create email promotion: %v", err)
+		log.Printf("[EmailPromotionService] failed to create email promotion: %v", err)
 		return nil, ErrInternal("创建推广记录失败")
 	}
 
-	// Start async email sending
-	s.startAsyncEmailSending(promotion)
+	req := messagecenter.ProjectPromotionRequest{
+		ProjectID:          project.ID,
+		PromotionCount:     maxRecipients,
+		ProjectTitle:       project.Name,
+		ProjectDescription: truncateRunes(derefString(project.Description), 1000),
+		CreatorUserID:      project.CreatorID,
+		OrderID:            orderID,
+	}
+	s.startAsyncPromotionSubmission(promotion, req)
 
 	return &TriggerPromotionResult{
 		Promotion:     promotion,
 		MaxRecipients: maxRecipients,
 	}, nil
+}
+
+// TriggerPromotionResult holds the result of triggering a promotion.
+type TriggerPromotionResult struct {
+	Promotion     *models.EmailPromotion
+	MaxRecipients int
 }
 
 func (s *EmailPromotionService) calculateMaxRecipients(ctx context.Context, order *models.Order) (int, error) {
@@ -113,33 +116,69 @@ func (s *EmailPromotionService) calculateMaxRecipients(ctx context.Context, orde
 		return 0, ErrBadRequest("无法获取商品信息")
 	}
 
-	if product.Type == models.ProductTypeBenefit { // 服务权益 - 邮件推广
+	if product.Type == models.ProductTypeBenefit {
 		return order.Quantity, nil
 	}
 
 	return 0, ErrBadRequest("订单中没有邮件推广商品")
 }
 
-func (s *EmailPromotionService) startAsyncEmailSending(promotion *models.EmailPromotion) {
+func (s *EmailPromotionService) startAsyncPromotionSubmission(promotion *models.EmailPromotion, req messagecenter.ProjectPromotionRequest) {
 	go func() {
-		if s.emailInitErr != nil {
-			errMsg := "邮件服务未配置: " + s.emailInitErr.Error()
-			promotion.Status = models.EmailPromotionStatusFailed
-			promotion.ErrorMessage = &errMsg
-			s.repo.EmailPromotion.Update(context.Background(), promotion)
+		if s.messageCenterInitErr != nil {
+			s.markPromotionFailed(promotion, "message center is not configured: "+s.messageCenterInitErr.Error())
+			return
+		}
+		if s.messageCenter == nil {
+			s.markPromotionFailed(promotion, "message center client is nil")
 			return
 		}
 
-		if s.emailService == nil {
-			errMsg := "邮件服务未配置"
-			promotion.Status = models.EmailPromotionStatusFailed
-			promotion.ErrorMessage = &errMsg
-			s.repo.EmailPromotion.Update(context.Background(), promotion)
+		var (
+			resp *messagecenter.ProjectPromotionResponse
+			err  error
+		)
+		for attempt := 1; attempt <= 3; attempt++ {
+			callCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			resp, err = s.messageCenter.SubmitProjectPromotion(callCtx, req)
+			cancel()
+			if err == nil {
+				break
+			}
+			log.Printf("[EmailPromotionService] submit project promotion failed, order_id=%d project_id=%d attempt=%d: %v",
+				req.OrderID, req.ProjectID, attempt, err)
+			if attempt < 3 {
+				time.Sleep(time.Duration(attempt) * 200 * time.Millisecond)
+			}
+		}
+		if err != nil {
+			s.markPromotionFailed(promotion, "submit message center failed: "+err.Error())
 			return
 		}
 
-		s.emailService.SendPromotionEmails(context.Background(), promotion)
+		now := time.Now()
+		promotion.Status = models.EmailPromotionStatusSending
+		promotion.TotalSent = resp.ActualCount
+		promotion.StartedAt = &now
+		promotion.ErrorMessage = nil
+		if updateErr := s.repo.EmailPromotion.Update(context.Background(), promotion); updateErr != nil {
+			log.Printf("[EmailPromotionService] failed to update submitted promotion, promotion_id=%d order_id=%d task_id=%s: %v",
+				promotion.ID, promotion.OrderID, resp.TaskID, updateErr)
+		}
+		log.Printf("[EmailPromotionService] submitted project promotion, promotion_id=%d order_id=%d project_id=%d task_id=%s requested=%d actual=%d",
+			promotion.ID, promotion.OrderID, promotion.ProjectID, resp.TaskID, resp.RequestedCount, resp.ActualCount)
 	}()
+}
+
+func (s *EmailPromotionService) markPromotionFailed(promotion *models.EmailPromotion, message string) {
+	log.Printf("[EmailPromotionService] project promotion submission failed, promotion_id=%d order_id=%d project_id=%d: %s",
+		promotion.ID, promotion.OrderID, promotion.ProjectID, message)
+	promotion.Status = models.EmailPromotionStatusFailed
+	promotion.ErrorMessage = &message
+	if err := s.repo.EmailPromotion.Update(context.Background(), promotion); err != nil {
+		log.Printf("[EmailPromotionService] failed to update failed promotion, promotion_id=%d order_id=%d: %v",
+			promotion.ID, promotion.OrderID, err)
+	}
 }
 
 // GetStatus retrieves a promotion record with ownership check.
@@ -164,4 +203,22 @@ func (s *EmailPromotionService) ListByCreator(ctx context.Context, userID, page,
 		return nil, 0, ErrInternal("获取推广记录失败")
 	}
 	return promotions, total, nil
+}
+
+func derefString(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
+}
+
+func truncateRunes(s string, max int) string {
+	if max <= 0 {
+		return ""
+	}
+	runes := []rune(s)
+	if len(runes) <= max {
+		return s
+	}
+	return string(runes[:max])
 }
