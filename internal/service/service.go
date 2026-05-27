@@ -27,7 +27,7 @@ func New(repo *repository.Repository, deps *Dependencies) *Services {
 	message := NewMessageService(repo, deps.WechatClient)
 	return &Services{
 		Auth:             NewAuthService(repo, deps.WechatClient),
-		EmailPromotion:   NewEmailPromotionServiceWithEmail(repo, deps.EmailService, deps.EmailInitError),
+		EmailPromotion:   NewEmailPromotionServiceWithMessageCenter(repo, deps.MessageCenter, deps.MessageCenterInitError),
 		Payment:          NewPaymentService(repo, deps.PayClient, deps.PayInitError),
 		EmailUnsubscribe: NewEmailUnsubscribeService(repo),
 		Order:            NewOrderService(repo, deps.PayClient, deps.PayInitError),
