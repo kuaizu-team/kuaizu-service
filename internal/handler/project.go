@@ -229,6 +229,56 @@ func (s *Server) GetProjectViewers(ctx echo.Context, id int, params api.GetProje
 	})
 }
 
+// ListProjectPromotionBatches handles GET /projects/{id}/promotion-batches.
+func (s *Server) ListProjectPromotionBatches(ctx echo.Context, id int, params api.ListProjectPromotionBatchesParams) error {
+	userID := GetUserID(ctx)
+
+	if id <= 0 {
+		return BadRequest(ctx, "invalid project id")
+	}
+
+	days := 7
+	if params.Days != nil {
+		days = *params.Days
+	}
+	limit := 10
+	if params.Limit != nil {
+		limit = *params.Limit
+	}
+
+	result, err := s.svc.EmailPromotion.ListProjectBatches(ctx.Request().Context(), userID, id, days, limit)
+	if err != nil {
+		return mapServiceError(ctx, err)
+	}
+
+	return Success(ctx, result)
+}
+
+// ListProjectPromotionBatchUsers handles GET /projects/{id}/promotion-batches/{batchId}/users.
+func (s *Server) ListProjectPromotionBatchUsers(ctx echo.Context, id int, batchId int, params api.ListProjectPromotionBatchUsersParams) error {
+	userID := GetUserID(ctx)
+
+	if id <= 0 || batchId <= 0 {
+		return BadRequest(ctx, "invalid project or batch id")
+	}
+
+	page := 1
+	if params.Page != nil {
+		page = int(*params.Page)
+	}
+	size := 20
+	if params.Size != nil {
+		size = int(*params.Size)
+	}
+
+	result, err := s.svc.EmailPromotion.ListProjectBatchUsers(ctx.Request().Context(), userID, id, batchId, page, size)
+	if err != nil {
+		return mapServiceError(ctx, err)
+	}
+
+	return Success(ctx, result)
+}
+
 // UpdateProject handles PUT /projects/{id}
 func (s *Server) UpdateProject(ctx echo.Context, id int) error {
 	userID := GetUserID(ctx)

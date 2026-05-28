@@ -1,0 +1,40 @@
+parameters:
+  - name: id
+    in: path
+    required: true
+    schema:
+      type: integer
+    description: Project ID
+  - name: batchId
+    in: path
+    required: true
+    schema:
+      type: integer
+    description: Promotion batch ID
+get:
+  tags:
+    - Projects
+  summary: List project promotion batch users
+  description: Only the project creator can view safe display fields for users in a promotion batch.
+  operationId: listProjectPromotionBatchUsers
+  parameters:
+    - $ref: ../components/parameters/PageParam.yaml
+    - name: size
+      in: query
+      description: Page size, capped at 100. Defaults to 20.
+      schema:
+        type: integer
+        default: 20
+        maximum: 100
+  responses:
+    '200':
+      description: Success
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/BaseResponse.yaml
+              - type: object
+                properties:
+                  data:
+                    $ref: ../components/schemas/ProjectPromotionBatchUserListResponse.yaml

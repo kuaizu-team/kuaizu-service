@@ -1,0 +1,15 @@
+type: object
+properties:
+  userId:
+    type: integer
+  talentProfileId:
+    type: integer
+    nullable: true
+  nickname:
+    type: string
+    nullable: true
+  avatarUrl:
+    type: string
+    nullable: true
+  authStatus:
+    type: integer

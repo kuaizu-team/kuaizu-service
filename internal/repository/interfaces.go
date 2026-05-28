@@ -48,6 +48,8 @@ type EmailPromotionRepo interface {
 	Update(ctx context.Context, promotion *models.EmailPromotion) error
 	ListByCreatorID(ctx context.Context, creatorID int, page, size int) ([]models.EmailPromotion, int64, error)
 	ListByProjectID(ctx context.Context, projectID int) ([]models.EmailPromotion, error)
+	ListByProjectSince(ctx context.Context, projectID, days, limit int) ([]models.EmailPromotion, int64, error)
+	ListProjectPromotionUsers(ctx context.Context, batchID, page, size int) ([]ProjectPromotionUser, int64, error)
 }
 
 // UserRepo defines the interface for user repository operations used by services.

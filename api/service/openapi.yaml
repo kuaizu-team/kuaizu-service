@@ -72,6 +72,10 @@ paths:
     $ref: paths/projects_{id}_view-duration.yaml
   /projects/{id}/viewers:
     $ref: paths/projects_{id}_viewers.yaml
+  /projects/{id}/promotion-batches:
+    $ref: paths/projects_{id}_promotion-batches.yaml
+  /projects/{id}/promotion-batches/{batchId}/users:
+    $ref: paths/projects_{id}_promotion-batches_{batchId}_users.yaml
   /projects/my:
     $ref: paths/projects_my.yaml
   /projects/{id}/applications:

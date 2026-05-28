@@ -1,0 +1,40 @@
+parameters:
+  - name: id
+    in: path
+    required: true
+    schema:
+      type: integer
+    description: Project ID
+get:
+  tags:
+    - Projects
+  summary: List project promotion batches
+  description: Only the project creator can view recent email promotion batches.
+  operationId: listProjectPromotionBatches
+  parameters:
+    - name: days
+      in: query
+      description: Lookback days, capped at 30. Defaults to 7.
+      schema:
+        type: integer
+        default: 7
+        maximum: 30
+    - name: limit
+      in: query
+      description: Max rows to return, capped at 50. Defaults to 10.
+      schema:
+        type: integer
+        default: 10
+        maximum: 50
+  responses:
+    '200':
+      description: Success
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/BaseResponse.yaml
+              - type: object
+                properties:
+                  data:
+                    $ref: ../components/schemas/ProjectPromotionBatchListResponse.yaml
