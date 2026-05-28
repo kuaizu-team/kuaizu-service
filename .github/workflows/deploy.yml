@@ -23,8 +23,6 @@ jobs:
 
       - name: Set image version
         run: |
-          # Replace any character that is not [a-zA-Z0-9._-] with '-'
-          # This handles branch names with slashes, parentheses, etc.
           VERSION=$(echo "${{ github.ref_name }}" | sed 's/[^a-zA-Z0-9._-]/-/g')
           echo "VERSION=${VERSION}" >> $GITHUB_ENV
 
@@ -35,50 +33,106 @@ jobs:
             --build-arg VERSION=$VERSION \
             --build-arg COMMIT=$COMMIT \
             -t kuaizu-server:$VERSION .
-          # 同时标记为 latest 方便 compose 使用
           docker tag kuaizu-server:$VERSION kuaizu-server:latest
 
       - name: Save Docker image to tarball
         run: |
           docker save kuaizu-server:$VERSION | gzip > kuaizu-server.tar.gz
 
-      - name: Transfer image and config to server
+      - name: Transfer image and compose file to server
         run: |
-          # 创建目录
           ssh -p ${{ secrets.SSH_PORT || 22 }} ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} "mkdir -p ~/kuaizu-server"
-          
-          # 传输镜像打包文件 (使用 scp 不需要 rsync)
           scp -P ${{ secrets.SSH_PORT || 22 }} kuaizu-server.tar.gz ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:~/kuaizu-server/
-          
-          # 传输 docker-compose.yml
           scp -P ${{ secrets.SSH_PORT || 22 }} docker-compose.yml ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:~/kuaizu-server/
 
       - name: Create .env.docker on server
         run: |
           ssh -p ${{ secrets.SSH_PORT || 22 }} ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} << 'EOF'
+            set -e
             cd ~/kuaizu-server
             cat > .env.docker << 'ENVEOF'
           ${{ secrets.ENV_DOCKER }}
           ENVEOF
           EOF
 
-      - name: Load image and restart services
+      - name: Load image, restart services, and healthcheck
         run: |
           ssh -p ${{ secrets.SSH_PORT || 22 }} ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} << 'EOF'
+            set -e
             cd ~/kuaizu-server
-            
-            # 加载镜像 (从压缩包)
+
+            compose() {
+              if docker compose version >/dev/null 2>&1; then
+                docker compose "$@"
+              else
+                docker-compose "$@"
+              fi
+            }
+
+            fail_with_logs() {
+              echo "::error::$1"
+              echo "===== docker ps ====="
+              docker ps -a --filter "name=^/kuaizu-api$" --filter "name=^/kuaizu-console$"
+              echo "===== kuaizu-console logs ====="
+              docker logs --tail 200 kuaizu-console 2>&1 || true
+              exit 1
+            }
+
+            ensure_compose_owned_or_absent() {
+              name="$1"
+              existing="$(docker ps -aq --filter "name=^/${name}$")"
+              if [ -n "$existing" ]; then
+                project="$(docker inspect -f '{{ index .Config.Labels "com.docker.compose.project" }}' "$existing" 2>/dev/null || true)"
+                if [ -z "$project" ]; then
+                  fail_with_logs "Container ${name} exists but is not managed by Docker Compose. Stop/remove the old manual container, then rerun deploy."
+                fi
+              fi
+            }
+
+            wait_http() {
+              name="$1"
+              url="$2"
+              expected="$3"
+              method="${4:-GET}"
+              data="${5:-}"
+
+              for i in $(seq 1 30); do
+                if [ "$method" = "POST" ]; then
+                  code="$(curl -sS -o /tmp/kuaizu-health.out -w "%{http_code}" -X POST "$url" -H "Content-Type: application/json" -d "$data" || true)"
+                else
+                  code="$(curl -sS -o /tmp/kuaizu-health.out -w "%{http_code}" "$url" || true)"
+                fi
+
+                if [ "$code" = "$expected" ]; then
+                  echo "${name} healthcheck passed with HTTP ${code}"
+                  return 0
+                fi
+
+                if printf '%s' "$code" | grep -Eq '^5'; then
+                  cat /tmp/kuaizu-health.out || true
+                  fail_with_logs "${name} returned HTTP ${code}"
+                fi
+
+                sleep 2
+              done
+
+              cat /tmp/kuaizu-health.out || true
+              fail_with_logs "${name} healthcheck timed out; last HTTP code: ${code:-none}"
+            }
+
             gunzip -c kuaizu-server.tar.gz | docker load
-            
-            # 使用环境变量传递版本信息
             export VERSION=${{ env.VERSION }}
-            
-            # 重启服务
-            docker-compose down
-            docker-compose up -d
-            docker-compose ps
-            
-            # 清理临时文件
+
+            ensure_compose_owned_or_absent kuaizu-api
+            ensure_compose_owned_or_absent kuaizu-console
+
+            compose down --remove-orphans
+            compose up -d --no-build --remove-orphans kuaizu-api kuaizu-console
+            compose ps
+
+            wait_http "kuaizu-api" "http://127.0.0.1:8080/health" "200"
+            wait_http "kuaizu-console" "http://127.0.0.1:8081/admin/auth/login" "401" "POST" '{"username":"__healthcheck__","password":"__healthcheck__"}'
+
             rm kuaizu-server.tar.gz
           EOF
 

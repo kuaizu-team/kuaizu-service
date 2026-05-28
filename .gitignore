@@ -19,6 +19,8 @@ go.work
 
 # Environment variables
 .env
+.env.docker
+.env.docker.local
 
 # TF artifacts
 .terraform/

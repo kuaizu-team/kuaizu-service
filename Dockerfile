@@ -30,8 +30,9 @@ FROM alpine:latest
 
 WORKDIR /app
 
-# Install runtime dependencies (if any)
-RUN apk add --no-cache ca-certificates tzdata
+# Install runtime dependencies.
+# curl is used by Docker Compose healthchecks.
+RUN apk add --no-cache ca-certificates tzdata curl
 
 # Copy binaries from builder
 COPY --from=builder /app/bin/kuaizu-server /app/kuaizu-server
