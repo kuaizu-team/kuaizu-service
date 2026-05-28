@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"log"
+
 	"github.com/kuaizu-team/kuaizu-service/api"
 	"github.com/kuaizu-team/kuaizu-service/internal/models"
 	"github.com/labstack/echo/v4"
@@ -22,6 +24,9 @@ func (s *Server) TriggerEmailPromotion(ctx echo.Context) error {
 	if body.ProjectId <= 0 {
 		return BadRequest(ctx, "项目ID无效")
 	}
+
+	log.Printf("[EmailPromotionHandler] trigger email promotion, user_id=%d order_id=%d project_id=%d",
+		userID, body.OrderId, body.ProjectId)
 
 	result, err := s.svc.EmailPromotion.TriggerPromotion(ctx.Request().Context(), userID, body.OrderId, body.ProjectId)
 	if err != nil {

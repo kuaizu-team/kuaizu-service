@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/jmoiron/sqlx"
+	"github.com/kuaizu-team/kuaizu-service/internal/messagecenter"
 	"github.com/kuaizu-team/kuaizu-service/internal/models"
 	"github.com/kuaizu-team/kuaizu-service/internal/repository"
 	"github.com/stretchr/testify/assert"
@@ -477,6 +478,19 @@ func TestTriggerPromotion_CreateFails(t *testing.T) {
 	mockProject.AssertExpectations(t)
 	mockEmailPromotion.AssertExpectations(t)
 	mockProduct.AssertExpectations(t)
+}
+
+func TestResolveMessageCenter_ReloadsFromEnvAfterInitError(t *testing.T) {
+	svc := NewEmailPromotionServiceWithMessageCenter(nil, nil, errors.New("MESSAGE_CENTER_BASE_URL is required"))
+	svc.messageCenterFactory = func() (*messagecenter.Client, error) {
+		return messagecenter.NewClient("http://127.0.0.1:8082", "test-token", 0), nil
+	}
+
+	submitter, initErr, baseURL := svc.resolveMessageCenter()
+
+	require.NoError(t, initErr)
+	require.NotNil(t, submitter)
+	assert.Equal(t, "http://127.0.0.1:8082", baseURL)
 }
 
 // --- Tests for GetStatus ---

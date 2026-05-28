@@ -72,6 +72,14 @@ func NewClient(baseURL, apiToken string, timeout time.Duration) *Client {
 	}
 }
 
+// BaseURL returns the configured message-center base URL for diagnostics.
+func (c *Client) BaseURL() string {
+	if c == nil {
+		return ""
+	}
+	return c.baseURL
+}
+
 // SubmitProjectPromotion submits a project promotion task.
 func (c *Client) SubmitProjectPromotion(ctx context.Context, req ProjectPromotionRequest) (*ProjectPromotionResponse, error) {
 	if c == nil {

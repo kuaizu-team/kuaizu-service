@@ -2,6 +2,7 @@ package service
 
 import (
 	"fmt"
+	"log"
 
 	"github.com/kuaizu-team/kuaizu-service/internal/messagecenter"
 	"github.com/kuaizu-team/kuaizu-service/internal/oss"
@@ -38,6 +39,11 @@ func NewDependencies(repo *repository.Repository) (*Dependencies, error) {
 	}
 
 	messageCenter, messageCenterErr := messagecenter.NewClientFromEnv()
+	if messageCenterErr != nil {
+		log.Printf("[Dependencies] message center not configured: %v", messageCenterErr)
+	} else {
+		log.Printf("[Dependencies] message center configured, base_url=%s", messageCenter.BaseURL())
+	}
 
 	return &Dependencies{
 		OSSClient:              ossClient,

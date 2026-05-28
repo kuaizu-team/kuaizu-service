@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"log"
+	"sync"
 	"time"
 
 	"github.com/kuaizu-team/kuaizu-service/internal/messagecenter"
@@ -13,8 +14,10 @@ import (
 // EmailPromotionService handles email promotion business logic.
 type EmailPromotionService struct {
 	repo                 *repository.Repository
+	mu                   sync.RWMutex
 	messageCenter        projectPromotionSubmitter
 	messageCenterInitErr error
+	messageCenterFactory func() (*messagecenter.Client, error)
 }
 
 type projectPromotionSubmitter interface {
@@ -23,16 +26,23 @@ type projectPromotionSubmitter interface {
 
 // NewEmailPromotionService creates a new EmailPromotionService.
 func NewEmailPromotionService(repo *repository.Repository) *EmailPromotionService {
-	return &EmailPromotionService{repo: repo}
+	return &EmailPromotionService{
+		repo:                 repo,
+		messageCenterFactory: messagecenter.NewClientFromEnv,
+	}
 }
 
 // NewEmailPromotionServiceWithMessageCenter creates a service with a message-center client.
 func NewEmailPromotionServiceWithMessageCenter(repo *repository.Repository, messageCenter *messagecenter.Client, messageCenterInitErr error) *EmailPromotionService {
-	return &EmailPromotionService{
+	svc := &EmailPromotionService{
 		repo:                 repo,
-		messageCenter:        messageCenter,
 		messageCenterInitErr: messageCenterInitErr,
+		messageCenterFactory: messagecenter.NewClientFromEnv,
 	}
+	if messageCenter != nil {
+		svc.messageCenter = messageCenter
+	}
+	return svc
 }
 
 // TriggerPromotion validates ownership and creates a promotion, then submits it asynchronously.
@@ -123,14 +133,21 @@ func (s *EmailPromotionService) calculateMaxRecipients(ctx context.Context, orde
 
 func (s *EmailPromotionService) startAsyncPromotionSubmission(promotion *models.EmailPromotion, req messagecenter.ProjectPromotionRequest) {
 	go func() {
-		if s.messageCenterInitErr != nil {
-			s.markPromotionFailed(promotion, "message center is not configured: "+s.messageCenterInitErr.Error())
+		submitter, initErr, baseURL := s.resolveMessageCenter()
+		if initErr != nil {
+			log.Printf("[EmailPromotionService] message center unavailable for promotion, order_id=%d project_id=%d base_url_empty=%t: %v",
+				req.OrderID, req.ProjectID, baseURL == "", initErr)
+			s.markPromotionFailed(promotion, "message center is not configured: "+initErr.Error())
 			return
 		}
-		if s.messageCenter == nil {
+		if submitter == nil {
+			log.Printf("[EmailPromotionService] message center client nil for promotion, order_id=%d project_id=%d base_url_empty=%t",
+				req.OrderID, req.ProjectID, baseURL == "")
 			s.markPromotionFailed(promotion, "message center client is nil")
 			return
 		}
+		log.Printf("[EmailPromotionService] submitting project promotion, promotion_id=%d order_id=%d project_id=%d base_url=%s",
+			promotion.ID, promotion.OrderID, promotion.ProjectID, baseURL)
 
 		var (
 			resp *messagecenter.ProjectPromotionResponse
@@ -138,7 +155,7 @@ func (s *EmailPromotionService) startAsyncPromotionSubmission(promotion *models.
 		)
 		for attempt := 1; attempt <= 3; attempt++ {
 			callCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-			resp, err = s.messageCenter.SubmitProjectPromotion(callCtx, req)
+			resp, err = submitter.SubmitProjectPromotion(callCtx, req)
 			cancel()
 			if err == nil {
 				break
@@ -166,6 +183,41 @@ func (s *EmailPromotionService) startAsyncPromotionSubmission(promotion *models.
 		log.Printf("[EmailPromotionService] submitted project promotion, promotion_id=%d order_id=%d project_id=%d task_id=%s requested=%d actual=%d",
 			promotion.ID, promotion.OrderID, promotion.ProjectID, resp.TaskID, resp.RequestedCount, resp.ActualCount)
 	}()
+}
+
+func (s *EmailPromotionService) resolveMessageCenter() (projectPromotionSubmitter, error, string) {
+	s.mu.RLock()
+	submitter := s.messageCenter
+	initErr := s.messageCenterInitErr
+	baseURL := messageCenterBaseURL(submitter)
+	s.mu.RUnlock()
+
+	if initErr == nil || submitter != nil {
+		return submitter, initErr, baseURL
+	}
+
+	factory := s.messageCenterFactory
+	if factory == nil {
+		factory = messagecenter.NewClientFromEnv
+	}
+	client, err := factory()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err != nil {
+		s.messageCenterInitErr = err
+		return s.messageCenter, s.messageCenterInitErr, messageCenterBaseURL(s.messageCenter)
+	}
+	s.messageCenter = client
+	s.messageCenterInitErr = nil
+	log.Printf("[EmailPromotionService] message center configured after lazy reload, base_url=%s", client.BaseURL())
+	return s.messageCenter, nil, client.BaseURL()
+}
+
+func messageCenterBaseURL(submitter projectPromotionSubmitter) string {
+	if client, ok := submitter.(*messagecenter.Client); ok {
+		return client.BaseURL()
+	}
+	return ""
 }
 
 func (s *EmailPromotionService) markPromotionFailed(promotion *models.EmailPromotion, message string) {
