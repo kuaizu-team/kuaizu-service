@@ -14,6 +14,12 @@ services:
     ports:
       - "8080:8080"
     command: ["./kuaizu-server"]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8080/health >/dev/null"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
 
   kuaizu-console:
     image: kuaizu-server:${VERSION:-latest}
@@ -25,4 +31,15 @@ services:
       - "8081:8081"
     command: ["./kuaizu-admin"]
     depends_on:
-      - kuaizu-api
+      kuaizu-api:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "code=$$(curl -sS -o /tmp/admin-login-health.out -w '%{http_code}' -X POST http://127.0.0.1:8081/admin/auth/login -H 'Content-Type: application/json' -d '{\"username\":\"__healthcheck__\",\"password\":\"__healthcheck__\"}') && [ \"$$code\" = \"401\" ]",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
