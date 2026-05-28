@@ -89,12 +89,10 @@ func (s *EmailPromotionService) TriggerPromotion(ctx context.Context, userID, or
 	}
 
 	req := messagecenter.ProjectPromotionRequest{
-		ProjectID:          project.ID,
-		PromotionCount:     maxRecipients,
-		ProjectTitle:       project.Name,
-		ProjectDescription: truncateRunes(derefString(project.Description), 1000),
-		CreatorUserID:      project.CreatorID,
-		OrderID:            orderID,
+		ProjectID:      project.ID,
+		PromotionCount: maxRecipients,
+		CreatorUserID:  project.CreatorID,
+		OrderID:        orderID,
 	}
 	s.startAsyncPromotionSubmission(promotion, req)
 
@@ -203,22 +201,4 @@ func (s *EmailPromotionService) ListByCreator(ctx context.Context, userID, page,
 		return nil, 0, ErrInternal("获取推广记录失败")
 	}
 	return promotions, total, nil
-}
-
-func derefString(s *string) string {
-	if s == nil {
-		return ""
-	}
-	return *s
-}
-
-func truncateRunes(s string, max int) string {
-	if max <= 0 {
-		return ""
-	}
-	runes := []rune(s)
-	if len(runes) <= max {
-		return s
-	}
-	return string(runes[:max])
 }
