@@ -376,13 +376,6 @@ func (s *EmailPromotionService) ListProjectBatches(ctx context.Context, requeste
 
 	list := make([]ProjectPromotionBatchVO, len(promotions))
 	for i, p := range promotions {
-		promotedAt := p.CreatedAt
-		if p.CompletedAt != nil {
-			promotedAt = *p.CompletedAt
-		}
-		if p.StartedAt != nil {
-			promotedAt = *p.StartedAt
-		}
 		list[i] = ProjectPromotionBatchVO{
 			ID:            p.ID,
 			BatchID:       p.ID,
@@ -392,7 +385,7 @@ func (s *EmailPromotionService) ListProjectBatches(ctx context.Context, requeste
 			TotalSent:     p.TotalSent,
 			Status:        p.Status,
 			StatusText:    emailPromotionStatusText(p.Status),
-			PromotedAt:    promotedAt,
+			PromotedAt:    p.CreatedAt,
 			CreatedAt:     p.CreatedAt,
 			StartedAt:     p.StartedAt,
 			CompletedAt:   p.CompletedAt,
@@ -443,13 +436,6 @@ func (s *EmailPromotionService) ListProjectBatchesPaged(ctx context.Context, req
 
 	list := make([]ProjectPromotionBatchVO, len(promotions))
 	for i, p := range promotions {
-		promotedAt := p.CreatedAt
-		if p.CompletedAt != nil {
-			promotedAt = *p.CompletedAt
-		}
-		if p.StartedAt != nil {
-			promotedAt = *p.StartedAt
-		}
 		list[i] = ProjectPromotionBatchVO{
 			ID:            p.ID,
 			BatchID:       p.ID,
@@ -459,7 +445,7 @@ func (s *EmailPromotionService) ListProjectBatchesPaged(ctx context.Context, req
 			TotalSent:     p.TotalSent,
 			Status:        p.Status,
 			StatusText:    emailPromotionStatusText(p.Status),
-			PromotedAt:    promotedAt,
+			PromotedAt:    p.CreatedAt,
 			CreatedAt:     p.CreatedAt,
 			StartedAt:     p.StartedAt,
 			CompletedAt:   p.CompletedAt,

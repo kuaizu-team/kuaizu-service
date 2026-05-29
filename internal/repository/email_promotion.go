@@ -12,6 +12,7 @@ import (
 )
 
 const promotionRecipientRecentDays = 30
+const canonicalPromotionCondition = "(channel IS NULL OR business_tag IS NULL OR channel <> 'EMAIL' OR business_tag <> 'project_promotion')"
 
 // EmailPromotionRepository handles email promotion database operations
 type EmailPromotionRepository struct {
@@ -239,7 +240,7 @@ func (r *EmailPromotionRepository) selectPromotionTier(ctx context.Context, proj
 // ListByCreatorID retrieves email promotions by creator ID with pagination
 func (r *EmailPromotionRepository) ListByCreatorID(ctx context.Context, creatorID int, page, size int) ([]models.EmailPromotion, int64, error) {
 	// Count total
-	countQuery := `SELECT COUNT(*) FROM email_promotion WHERE creator_id = ?`
+	countQuery := `SELECT COUNT(*) FROM email_promotion WHERE creator_id = ? AND ` + canonicalPromotionCondition
 	var total int64
 	if err := r.db.QueryRowxContext(ctx, countQuery, creatorID).Scan(&total); err != nil {
 		return nil, 0, fmt.Errorf("count email promotions: %w", err)
@@ -255,7 +256,7 @@ func (r *EmailPromotionRepository) ListByCreatorID(ctx context.Context, creatorI
 			p.name AS project_name
 		FROM email_promotion ep
 		LEFT JOIN project p ON ep.project_id = p.id
-		WHERE ep.creator_id = ?
+		WHERE ep.creator_id = ? AND ` + canonicalPromotionCondition + `
 		ORDER BY ep.created_at DESC
 		LIMIT ? OFFSET ?
 	`
@@ -276,7 +277,7 @@ func (r *EmailPromotionRepository) ListByProjectID(ctx context.Context, projectI
 			strategy, max_recipients, total_sent, status,
 			error_message, started_at, completed_at, created_at
 		FROM email_promotion
-		WHERE project_id = ?
+		WHERE project_id = ? AND ` + canonicalPromotionCondition + `
 		ORDER BY created_at DESC
 	`
 
@@ -294,6 +295,7 @@ func (r *EmailPromotionRepository) ListByProjectSince(ctx context.Context, proje
 		SELECT COUNT(*)
 		FROM email_promotion
 		WHERE project_id = ? AND created_at >= NOW() - INTERVAL ? DAY
+		  AND ` + canonicalPromotionCondition + `
 	`
 	var total int64
 	if err := r.db.QueryRowxContext(ctx, countQuery, projectID, days).Scan(&total); err != nil {
@@ -307,6 +309,7 @@ func (r *EmailPromotionRepository) ListByProjectSince(ctx context.Context, proje
 			error_message, started_at, completed_at, created_at
 		FROM email_promotion
 		WHERE project_id = ? AND created_at >= NOW() - INTERVAL ? DAY
+		  AND ` + canonicalPromotionCondition + `
 		ORDER BY created_at DESC
 		LIMIT ?
 	`
@@ -320,7 +323,7 @@ func (r *EmailPromotionRepository) ListByProjectSince(ctx context.Context, proje
 
 // ListByProjectPaged retrieves promotion batches by project with page/size and optional legacy filters.
 func (r *EmailPromotionRepository) ListByProjectPaged(ctx context.Context, projectID, page, size, days, limit int) ([]models.EmailPromotion, int64, error) {
-	conditions := []string{"project_id = ?"}
+	conditions := []string{"project_id = ?", canonicalPromotionCondition}
 	args := []interface{}{projectID}
 	if days > 0 {
 		conditions = append(conditions, "created_at >= NOW() - INTERVAL ? DAY")

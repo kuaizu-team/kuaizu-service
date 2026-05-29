@@ -779,7 +779,7 @@ func TestListProjectBatches_Success(t *testing.T) {
 	assert.Equal(t, int64(1), result.Total)
 	assert.Equal(t, 42, result.List[0].BatchID)
 	assert.Equal(t, "\u5df2\u5b8c\u6210", result.List[0].StatusText)
-	assert.Equal(t, startedAt, result.List[0].PromotedAt)
+	assert.Equal(t, createdAt, result.List[0].PromotedAt)
 	mockProject.AssertExpectations(t)
 	mockEmailPromotion.AssertExpectations(t)
 }
