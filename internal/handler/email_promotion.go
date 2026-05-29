@@ -36,7 +36,7 @@ func (s *Server) TriggerEmailPromotion(ctx echo.Context) error {
 	result, err := s.svc.EmailPromotion.TriggerPromotionWithInput(ctx.Request().Context(), userID, service.TriggerPromotionInput{
 		OrderID:       body.OrderId,
 		ProjectID:     body.ProjectId,
-		Strategy:      body.Strategy,
+		Strategy:      string(body.Strategy),
 		MaxRecipients: body.MaxRecipients,
 	})
 	if err != nil {
