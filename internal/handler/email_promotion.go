@@ -26,17 +26,18 @@ func (s *Server) TriggerEmailPromotion(ctx echo.Context) error {
 		return BadRequest(ctx, "项目ID无效")
 	}
 
-	if body.Strategy != "region" && body.Strategy != "project" && body.Strategy != "major" {
+	strategy := string(body.Strategy)
+	if strategy != "" && strategy != "region" && strategy != "project" && strategy != "major" {
 		return BadRequest(ctx, "invalid promotion strategy")
 	}
 
 	log.Printf("[EmailPromotionHandler] trigger email promotion, user_id=%d order_id=%d project_id=%d strategy=%s",
-		userID, body.OrderId, body.ProjectId, body.Strategy)
+		userID, body.OrderId, body.ProjectId, strategy)
 
 	result, err := s.svc.EmailPromotion.TriggerPromotionWithInput(ctx.Request().Context(), userID, service.TriggerPromotionInput{
 		OrderID:       body.OrderId,
 		ProjectID:     body.ProjectId,
-		Strategy:      string(body.Strategy),
+		Strategy:      strategy,
 		MaxRecipients: body.MaxRecipients,
 	})
 	if err != nil {

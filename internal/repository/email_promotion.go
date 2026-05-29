@@ -11,6 +11,8 @@ import (
 	"github.com/kuaizu-team/kuaizu-service/internal/oss"
 )
 
+const promotionRecipientRecentDays = 30
+
 // EmailPromotionRepository handles email promotion database operations
 type EmailPromotionRepository struct {
 	db *sqlx.DB
@@ -146,10 +148,11 @@ func (r *EmailPromotionRepository) SelectPromotionRecipients(ctx context.Context
 		otherSchool := "(p.school_id IS NULL OR u.school_id IS NULL OR u.school_id <> p.school_id)"
 		tiers = []string{
 			"u.school_id = p.school_id AND COALESCE(u.auth_status, 0) = 1",
-			"(u.school_id = p.school_id AND COALESCE(u.auth_status, 0) <> 1) OR (" + otherSchool + " AND ps.district IS NOT NULL AND ps.district <> '' AND us.district = ps.district AND us.city = ps.city AND COALESCE(u.auth_status, 0) = 1)",
-			"(" + otherSchool + " AND ps.district IS NOT NULL AND ps.district <> '' AND us.district = ps.district AND us.city = ps.city AND COALESCE(u.auth_status, 0) = 1) OR (" + otherSchool + " AND ps.city IS NOT NULL AND ps.city <> '' AND us.city = ps.city AND COALESCE(u.auth_status, 0) = 1)",
-			"(" + otherSchool + " AND ps.city IS NOT NULL AND ps.city <> '' AND us.city = ps.city AND COALESCE(u.auth_status, 0) = 1) OR (" + otherSchool + " AND ps.province IS NOT NULL AND ps.province <> '' AND us.province = ps.province AND COALESCE(u.auth_status, 0) = 1)",
-			"(" + otherSchool + " AND ps.province IS NOT NULL AND ps.province <> '' AND us.province = ps.province AND COALESCE(u.auth_status, 0) = 1) OR (" + otherSchool + " AND COALESCE(u.auth_status, 0) = 1)",
+			"u.school_id = p.school_id AND COALESCE(u.auth_status, 0) <> 1",
+			otherSchool + " AND ps.district IS NOT NULL AND ps.district <> '' AND us.district = ps.district AND us.city = ps.city AND COALESCE(u.auth_status, 0) = 1",
+			otherSchool + " AND ps.city IS NOT NULL AND ps.city <> '' AND us.city = ps.city AND COALESCE(u.auth_status, 0) = 1",
+			otherSchool + " AND ps.province IS NOT NULL AND ps.province <> '' AND us.province = ps.province AND COALESCE(u.auth_status, 0) = 1",
+			otherSchool + " AND COALESCE(u.auth_status, 0) = 1",
 			otherSchool + " AND COALESCE(u.auth_status, 0) <> 1",
 		}
 	case "project":
@@ -203,9 +206,16 @@ func (r *EmailPromotionRepository) selectPromotionTier(ctx context.Context, proj
 		WHERE u.id <> ?
 		  AND u.email IS NOT NULL AND u.email <> ''
 		  AND COALESCE(u.email_opt_out, 0) = 0
+		  AND NOT EXISTS (
+			  SELECT 1
+			  FROM email_promotion_recipient recent
+			  WHERE recent.project_id = ?
+			    AND recent.user_id = u.id
+			    AND recent.created_at >= NOW() - INTERVAL ? DAY
+		  )
 		  AND (` + tier + `)`
 
-	args := []interface{}{projectID, creatorID}
+	args := []interface{}{projectID, creatorID, projectID, promotionRecipientRecentDays}
 	if len(excluded) > 0 {
 		query += " AND u.id NOT IN (?)"
 		args = append(args, excluded)
