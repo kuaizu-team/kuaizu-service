@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"strings"
 	"sync"
@@ -96,12 +97,37 @@ func (s *EmailPromotionService) TriggerPromotionWithInput(ctx context.Context, u
 		return nil, ErrForbidden("只能推广自己创建的项目")
 	}
 
+	channel := "EMAIL"
+	businessTag := "project_promotion"
+	traceID := fmt.Sprintf("PROJECT_PROMOTION:%d", orderID)
+
 	existingPromotion, err := s.repo.EmailPromotion.GetByOrderID(ctx, orderID)
 	if err != nil {
 		return nil, ErrInternal("检查推广记录失败")
 	}
 	if existingPromotion != nil {
-		return nil, ErrBadRequest("此订单已触发过推广")
+		if existingPromotion.ProjectID != 0 && existingPromotion.ProjectID != projectID {
+			return nil, ErrBadRequest("order already has promotion for another project")
+		}
+		if existingPromotion.Strategy == "" {
+			existingPromotion.Strategy = strategy
+		}
+		if existingPromotion.MaxRecipients == 0 {
+			existingPromotion.MaxRecipients = order.Quantity
+		}
+		existingPromotion.Channel = &channel
+		existingPromotion.BusinessTag = &businessTag
+		existingPromotion.TraceID = &traceID
+		existingPromotion.ProjectID = projectID
+		existingPromotion.CreatorID = userID
+		if updateErr := s.repo.EmailPromotion.Update(ctx, existingPromotion); updateErr != nil {
+			log.Printf("[EmailPromotionService] failed to normalize existing email promotion, order_id=%d project_id=%d: %v", orderID, projectID, updateErr)
+			return nil, ErrInternal("更新推广记录失败")
+		}
+		return &TriggerPromotionResult{
+			Promotion:     existingPromotion,
+			MaxRecipients: existingPromotion.MaxRecipients,
+		}, nil
 	}
 
 	maxRecipients, err := s.calculateMaxRecipients(ctx, order)
@@ -113,6 +139,9 @@ func (s *EmailPromotionService) TriggerPromotionWithInput(ctx context.Context, u
 	}
 
 	promotion := &models.EmailPromotion{
+		Channel:       &channel,
+		BusinessTag:   &businessTag,
+		TraceID:       &traceID,
 		OrderID:       orderID,
 		ProjectID:     projectID,
 		CreatorID:     userID,
@@ -229,9 +258,10 @@ func (s *EmailPromotionService) startAsyncPromotionSubmission(promotion *models.
 		}
 
 		now := time.Now()
-		promotion.Status = models.EmailPromotionStatusSending
+		promotion.Status = models.EmailPromotionStatusCompleted
 		promotion.TotalSent = resp.ActualCount
 		promotion.StartedAt = &now
+		promotion.CompletedAt = &now
 		promotion.ErrorMessage = nil
 		if updateErr := s.repo.EmailPromotion.Update(context.Background(), promotion); updateErr != nil {
 			log.Printf("[EmailPromotionService] failed to update submitted promotion, promotion_id=%d order_id=%d task_id=%s: %v",
@@ -320,16 +350,21 @@ func (s *EmailPromotionService) ListByCreator(ctx context.Context, userID, page,
 type ProjectPromotionBatchVO struct {
 	ID            int                         `json:"id"`
 	BatchID       int                         `json:"batchId"`
+	OrderID       int                         `json:"orderId"`
 	ProjectID     int                         `json:"projectId"`
 	Strategy      string                      `json:"strategy"`
 	MaxRecipients int                         `json:"maxRecipients"`
 	TotalSent     int                         `json:"totalSent"`
+	SuccessCount  int                         `json:"successCount"`
 	Status        models.EmailPromotionStatus `json:"status"`
 	StatusText    string                      `json:"statusText"`
 	PromotedAt    time.Time                   `json:"promotedAt"`
 	CreatedAt     time.Time                   `json:"createdAt"`
 	StartedAt     *time.Time                  `json:"startedAt,omitempty"`
 	CompletedAt   *time.Time                  `json:"completedAt,omitempty"`
+	Channel       string                      `json:"channel"`
+	BusinessTag   string                      `json:"businessTag"`
+	TraceID       string                      `json:"traceId"`
 }
 
 // ProjectPromotionBatchListResult holds recent project promotion batches.
@@ -379,16 +414,21 @@ func (s *EmailPromotionService) ListProjectBatches(ctx context.Context, requeste
 		list[i] = ProjectPromotionBatchVO{
 			ID:            p.ID,
 			BatchID:       p.ID,
+			OrderID:       p.OrderID,
 			ProjectID:     p.ProjectID,
 			Strategy:      p.Strategy,
 			MaxRecipients: p.MaxRecipients,
 			TotalSent:     p.TotalSent,
+			SuccessCount:  p.TotalSent,
 			Status:        p.Status,
 			StatusText:    emailPromotionStatusText(p.Status),
 			PromotedAt:    p.CreatedAt,
 			CreatedAt:     p.CreatedAt,
 			StartedAt:     p.StartedAt,
 			CompletedAt:   p.CompletedAt,
+			Channel:       stringValue(p.Channel),
+			BusinessTag:   stringValue(p.BusinessTag),
+			TraceID:       stringValue(p.TraceID),
 		}
 	}
 
@@ -439,16 +479,21 @@ func (s *EmailPromotionService) ListProjectBatchesPaged(ctx context.Context, req
 		list[i] = ProjectPromotionBatchVO{
 			ID:            p.ID,
 			BatchID:       p.ID,
+			OrderID:       p.OrderID,
 			ProjectID:     p.ProjectID,
 			Strategy:      p.Strategy,
 			MaxRecipients: p.MaxRecipients,
 			TotalSent:     p.TotalSent,
+			SuccessCount:  p.TotalSent,
 			Status:        p.Status,
 			StatusText:    emailPromotionStatusText(p.Status),
 			PromotedAt:    p.CreatedAt,
 			CreatedAt:     p.CreatedAt,
 			StartedAt:     p.StartedAt,
 			CompletedAt:   p.CompletedAt,
+			Channel:       stringValue(p.Channel),
+			BusinessTag:   stringValue(p.BusinessTag),
+			TraceID:       stringValue(p.TraceID),
 		}
 	}
 
@@ -507,4 +552,11 @@ func emailPromotionStatusText(status models.EmailPromotionStatus) string {
 	default:
 		return "\u672a\u77e5\u72b6\u6001"
 	}
+}
+
+func stringValue(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
 }

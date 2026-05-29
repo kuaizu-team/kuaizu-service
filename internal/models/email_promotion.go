@@ -8,6 +8,9 @@ type EmailPromotionStatus int
 // EmailPromotion 邮件推广记录
 type EmailPromotion struct {
 	ID            int                  `db:"id"`
+	Channel       *string              `db:"channel"`
+	BusinessTag   *string              `db:"business_tag"`
+	TraceID       *string              `db:"trace_id"`
 	OrderID       int                  `db:"order_id"`
 	ProjectID     int                  `db:"project_id"`
 	CreatorID     int                  `db:"creator_id"`

@@ -12,7 +12,13 @@ import (
 )
 
 const promotionRecipientRecentDays = 30
-const canonicalPromotionCondition = "(channel IS NULL OR business_tag IS NULL OR channel <> 'EMAIL' OR business_tag <> 'project_promotion')"
+
+const emailPromotionSelectColumns = `
+	ep.id, ep.channel, ep.business_tag, ep.trace_id,
+	ep.order_id, ep.project_id, ep.creator_id,
+	ep.strategy, ep.max_recipients, ep.total_sent, ep.status,
+	ep.error_message, ep.started_at, ep.completed_at, ep.created_at
+`
 
 // EmailPromotionRepository handles email promotion database operations
 type EmailPromotionRepository struct {
@@ -24,18 +30,49 @@ func NewEmailPromotionRepository(db *sqlx.DB) *EmailPromotionRepository {
 	return &EmailPromotionRepository{db: db}
 }
 
-// Create creates a new email promotion record
+// Create creates or updates the single promotion record for an order/project pair.
 func (r *EmailPromotionRepository) Create(ctx context.Context, promotion *models.EmailPromotion) error {
+	existing, err := r.getPreferredByOrderAndProject(ctx, promotion.OrderID, promotion.ProjectID)
+	if err != nil {
+		return err
+	}
+	if existing != nil {
+		promotion.ID = existing.ID
+		if promotion.StartedAt == nil {
+			promotion.StartedAt = existing.StartedAt
+		}
+		if promotion.CompletedAt == nil {
+			promotion.CompletedAt = existing.CompletedAt
+		}
+		if promotion.ErrorMessage == nil {
+			promotion.ErrorMessage = existing.ErrorMessage
+		}
+		if promotion.TotalSent == 0 {
+			promotion.TotalSent = existing.TotalSent
+		}
+		return r.Update(ctx, promotion)
+	}
+
 	query := `
 		INSERT INTO email_promotion (
+			channel, business_tag, trace_id,
 			order_id, project_id, creator_id, strategy, max_recipients, total_sent, status
 		) VALUES (
+			:channel, :business_tag, :trace_id,
 			:order_id, :project_id, :creator_id, :strategy, :max_recipients, :total_sent, :status
 		)
 	`
 
 	result, err := r.db.NamedExecContext(ctx, query, promotion)
 	if err != nil {
+		existing, getErr := r.getPreferredByOrderAndProject(ctx, promotion.OrderID, promotion.ProjectID)
+		if getErr != nil {
+			return getErr
+		}
+		if existing != nil {
+			promotion.ID = existing.ID
+			return r.Update(ctx, promotion)
+		}
 		return fmt.Errorf("create email promotion: %w", err)
 	}
 
@@ -48,13 +85,33 @@ func (r *EmailPromotionRepository) Create(ctx context.Context, promotion *models
 	return nil
 }
 
+func (r *EmailPromotionRepository) getPreferredByOrderAndProject(ctx context.Context, orderID, projectID int) (*models.EmailPromotion, error) {
+	query := `
+		SELECT ` + emailPromotionSelectColumns + `
+		FROM email_promotion ep
+		WHERE ep.order_id = ? AND ep.project_id = ?
+		ORDER BY ` + promotionRealRank("ep") + ` ASC,
+		         ` + promotionStatusRank("ep") + ` ASC,
+		         ep.created_at DESC,
+		         ep.id DESC
+		LIMIT 1
+	`
+
+	var promotion models.EmailPromotion
+	if err := r.db.QueryRowxContext(ctx, query, orderID, projectID).StructScan(&promotion); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get preferred email promotion: %w", err)
+	}
+	return &promotion, nil
+}
+
 // GetByID retrieves an email promotion by ID
 func (r *EmailPromotionRepository) GetByID(ctx context.Context, id int) (*models.EmailPromotion, error) {
 	query := `
 		SELECT 
-			ep.id, ep.order_id, ep.project_id, ep.creator_id,
-			ep.strategy, ep.max_recipients, ep.total_sent, ep.status,
-			ep.error_message, ep.started_at, ep.completed_at, ep.created_at,
+			` + emailPromotionSelectColumns + `,
 			p.name AS project_name
 		FROM email_promotion ep
 		LEFT JOIN project p ON ep.project_id = p.id
@@ -76,11 +133,14 @@ func (r *EmailPromotionRepository) GetByID(ctx context.Context, id int) (*models
 func (r *EmailPromotionRepository) GetByOrderID(ctx context.Context, orderID int) (*models.EmailPromotion, error) {
 	query := `
 		SELECT 
-			id, order_id, project_id, creator_id,
-			strategy, max_recipients, total_sent, status,
-			error_message, started_at, completed_at, created_at
-		FROM email_promotion
-		WHERE order_id = ?
+			` + emailPromotionSelectColumns + `
+		FROM email_promotion ep
+		WHERE ep.order_id = ?
+		ORDER BY ` + promotionRealRank("ep") + ` ASC,
+		         ` + promotionStatusRank("ep") + ` ASC,
+		         ep.created_at DESC,
+		         ep.id DESC
+		LIMIT 1
 	`
 
 	var promotion models.EmailPromotion
@@ -98,6 +158,13 @@ func (r *EmailPromotionRepository) GetByOrderID(ctx context.Context, orderID int
 func (r *EmailPromotionRepository) Update(ctx context.Context, promotion *models.EmailPromotion) error {
 	query := `
 		UPDATE email_promotion SET
+			channel = :channel,
+			business_tag = :business_tag,
+			trace_id = :trace_id,
+			project_id = :project_id,
+			creator_id = :creator_id,
+			strategy = :strategy,
+			max_recipients = :max_recipients,
 			total_sent = :total_sent,
 			status = :status,
 			error_message = :error_message,
@@ -240,7 +307,12 @@ func (r *EmailPromotionRepository) selectPromotionTier(ctx context.Context, proj
 // ListByCreatorID retrieves email promotions by creator ID with pagination
 func (r *EmailPromotionRepository) ListByCreatorID(ctx context.Context, creatorID int, page, size int) ([]models.EmailPromotion, int64, error) {
 	// Count total
-	countQuery := `SELECT COUNT(*) FROM email_promotion WHERE creator_id = ? AND ` + canonicalPromotionCondition
+	countQuery := `
+		SELECT COUNT(*)
+		FROM email_promotion ep
+		WHERE ep.creator_id = ?
+		  AND ` + bestPromotionPredicate("ep", "other") + `
+	`
 	var total int64
 	if err := r.db.QueryRowxContext(ctx, countQuery, creatorID).Scan(&total); err != nil {
 		return nil, 0, fmt.Errorf("count email promotions: %w", err)
@@ -250,13 +322,12 @@ func (r *EmailPromotionRepository) ListByCreatorID(ctx context.Context, creatorI
 	offset := (page - 1) * size
 	query := `
 		SELECT 
-			ep.id, ep.order_id, ep.project_id, ep.creator_id,
-			ep.strategy, ep.max_recipients, ep.total_sent, ep.status,
-			ep.error_message, ep.started_at, ep.completed_at, ep.created_at,
+			` + emailPromotionSelectColumns + `,
 			p.name AS project_name
 		FROM email_promotion ep
 		LEFT JOIN project p ON ep.project_id = p.id
-		WHERE ep.creator_id = ? AND ` + canonicalPromotionCondition + `
+		WHERE ep.creator_id = ?
+		  AND ` + bestPromotionPredicate("ep", "other") + `
 		ORDER BY ep.created_at DESC
 		LIMIT ? OFFSET ?
 	`
@@ -273,12 +344,11 @@ func (r *EmailPromotionRepository) ListByCreatorID(ctx context.Context, creatorI
 func (r *EmailPromotionRepository) ListByProjectID(ctx context.Context, projectID int) ([]models.EmailPromotion, error) {
 	query := `
 		SELECT 
-			id, order_id, project_id, creator_id,
-			strategy, max_recipients, total_sent, status,
-			error_message, started_at, completed_at, created_at
-		FROM email_promotion
-		WHERE project_id = ? AND ` + canonicalPromotionCondition + `
-		ORDER BY created_at DESC
+			` + emailPromotionSelectColumns + `
+		FROM email_promotion ep
+		WHERE ep.project_id = ?
+		  AND ` + bestPromotionPredicate("ep", "other") + `
+		ORDER BY ep.created_at DESC
 	`
 
 	var promotions []models.EmailPromotion
@@ -291,48 +361,25 @@ func (r *EmailPromotionRepository) ListByProjectID(ctx context.Context, projectI
 
 // ListByProjectSince retrieves recent email promotions for a project.
 func (r *EmailPromotionRepository) ListByProjectSince(ctx context.Context, projectID, days, limit int) ([]models.EmailPromotion, int64, error) {
-	countQuery := `
-		SELECT COUNT(*)
-		FROM email_promotion
-		WHERE project_id = ? AND created_at >= NOW() - INTERVAL ? DAY
-		  AND ` + canonicalPromotionCondition + `
-	`
-	var total int64
-	if err := r.db.QueryRowxContext(ctx, countQuery, projectID, days).Scan(&total); err != nil {
-		return nil, 0, fmt.Errorf("count project email promotions: %w", err)
+	if limit <= 0 {
+		limit = 10
 	}
-
-	query := `
-		SELECT
-			id, order_id, project_id, creator_id,
-			strategy, max_recipients, total_sent, status,
-			error_message, started_at, completed_at, created_at
-		FROM email_promotion
-		WHERE project_id = ? AND created_at >= NOW() - INTERVAL ? DAY
-		  AND ` + canonicalPromotionCondition + `
-		ORDER BY created_at DESC
-		LIMIT ?
-	`
-	var promotions []models.EmailPromotion
-	if err := r.db.SelectContext(ctx, &promotions, query, projectID, days, limit); err != nil {
-		return nil, 0, fmt.Errorf("query project email promotions: %w", err)
-	}
-
-	return promotions, total, nil
+	return r.ListByProjectPaged(ctx, projectID, 1, limit, days, limit)
 }
 
 // ListByProjectPaged retrieves promotion batches by project with page/size and optional legacy filters.
 func (r *EmailPromotionRepository) ListByProjectPaged(ctx context.Context, projectID, page, size, days, limit int) ([]models.EmailPromotion, int64, error) {
-	conditions := []string{"project_id = ?", canonicalPromotionCondition}
+	conditions := []string{"ep.project_id = ?"}
 	args := []interface{}{projectID}
 	if days > 0 {
-		conditions = append(conditions, "created_at >= NOW() - INTERVAL ? DAY")
+		conditions = append(conditions, "ep.created_at >= NOW() - INTERVAL ? DAY")
 		args = append(args, days)
 	}
+	conditions = append(conditions, bestPromotionPredicate("ep", "other"))
 	whereClause := strings.Join(conditions, " AND ")
 
 	var total int64
-	countQuery := `SELECT COUNT(*) FROM email_promotion WHERE ` + whereClause
+	countQuery := `SELECT COUNT(*) FROM email_promotion ep WHERE ` + whereClause
 	if err := r.db.QueryRowxContext(ctx, countQuery, args...).Scan(&total); err != nil {
 		return nil, 0, fmt.Errorf("count project email promotions: %w", err)
 	}
@@ -343,12 +390,10 @@ func (r *EmailPromotionRepository) ListByProjectPaged(ctx context.Context, proje
 	offset := (page - 1) * size
 	query := `
 		SELECT
-			id, order_id, project_id, creator_id,
-			strategy, max_recipients, total_sent, status,
-			error_message, started_at, completed_at, created_at
-		FROM email_promotion
+			` + emailPromotionSelectColumns + `
+		FROM email_promotion ep
 		WHERE ` + whereClause + `
-		ORDER BY created_at DESC
+		ORDER BY ep.created_at DESC
 		LIMIT ? OFFSET ?
 	`
 	dataArgs := append([]interface{}{}, args...)
@@ -359,6 +404,29 @@ func (r *EmailPromotionRepository) ListByProjectPaged(ctx context.Context, proje
 		return nil, 0, fmt.Errorf("query project email promotions: %w", err)
 	}
 	return promotions, total, nil
+}
+
+func promotionRealRank(alias string) string {
+	return "CASE WHEN " + alias + ".channel = 'EMAIL' AND " + alias + ".business_tag = 'project_promotion' AND " + alias + ".trace_id IS NOT NULL AND " + alias + ".trace_id <> '' THEN 0 ELSE 1 END"
+}
+
+func promotionStatusRank(alias string) string {
+	return "CASE " + alias + ".status WHEN 2 THEN 0 WHEN 1 THEN 1 WHEN 0 THEN 2 WHEN 3 THEN 3 ELSE 4 END"
+}
+
+func bestPromotionPredicate(alias, otherAlias string) string {
+	return `NOT EXISTS (
+		SELECT 1
+		FROM email_promotion ` + otherAlias + `
+		WHERE ` + otherAlias + `.project_id = ` + alias + `.project_id
+		  AND ` + otherAlias + `.order_id = ` + alias + `.order_id
+		  AND (
+		    ` + promotionRealRank(otherAlias) + ` < ` + promotionRealRank(alias) + `
+		    OR (` + promotionRealRank(otherAlias) + ` = ` + promotionRealRank(alias) + ` AND ` + promotionStatusRank(otherAlias) + ` < ` + promotionStatusRank(alias) + `)
+		    OR (` + promotionRealRank(otherAlias) + ` = ` + promotionRealRank(alias) + ` AND ` + promotionStatusRank(otherAlias) + ` = ` + promotionStatusRank(alias) + ` AND ` + otherAlias + `.created_at > ` + alias + `.created_at)
+		    OR (` + promotionRealRank(otherAlias) + ` = ` + promotionRealRank(alias) + ` AND ` + promotionStatusRank(otherAlias) + ` = ` + promotionStatusRank(alias) + ` AND ` + otherAlias + `.created_at = ` + alias + `.created_at AND ` + otherAlias + `.id > ` + alias + `.id)
+		  )
+	)`
 }
 
 // ProjectPromotionUser is a safe display row for a promotion recipient.
