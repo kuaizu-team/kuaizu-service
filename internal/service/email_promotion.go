@@ -117,12 +117,37 @@ func (s *EmailPromotionService) TriggerPromotionWithInput(ctx context.Context, u
 		}
 		existingPromotion.Channel = &channel
 		existingPromotion.BusinessTag = &businessTag
-		existingPromotion.TraceID = &traceID
 		existingPromotion.ProjectID = projectID
 		existingPromotion.CreatorID = userID
 		if updateErr := s.repo.EmailPromotion.Update(ctx, existingPromotion); updateErr != nil {
 			log.Printf("[EmailPromotionService] failed to normalize existing email promotion, order_id=%d project_id=%d: %v", orderID, projectID, updateErr)
 			return nil, ErrInternal("更新推广记录失败")
+		}
+		if existingPromotion.Status == models.EmailPromotionStatusPending || existingPromotion.Status == models.EmailPromotionStatusFailed {
+			maxRecipients := existingPromotion.MaxRecipients
+			if input.MaxRecipients != nil && *input.MaxRecipients != maxRecipients {
+				return nil, ErrBadRequest("maxRecipients must equal paid order quantity")
+			}
+			recipientUserIDs, selectErr := s.repo.EmailPromotion.SelectPromotionRecipients(ctx, projectID, userID, existingPromotion.Strategy, maxRecipients)
+			if selectErr != nil {
+				log.Printf("[EmailPromotionService] failed to select promotion recipients for existing promotion: %v", selectErr)
+				return nil, ErrInternal("select promotion recipients failed")
+			}
+			if createErr := s.repo.EmailPromotion.CreateRecipients(ctx, existingPromotion.ID, projectID, recipientUserIDs); createErr != nil {
+				log.Printf("[EmailPromotionService] failed to create recipients for existing promotion: %v", createErr)
+				return nil, ErrInternal("create promotion recipients failed")
+			}
+			req := messagecenter.ProjectPromotionRequest{
+				PromotionID:      existingPromotion.ID,
+				ProjectID:        project.ID,
+				PromotionCount:   maxRecipients,
+				CreatorUserID:    project.CreatorID,
+				OrderID:          orderID,
+				Strategy:         existingPromotion.Strategy,
+				TraceID:          traceID,
+				RecipientUserIDs: recipientUserIDs,
+			}
+			s.startAsyncPromotionSubmission(existingPromotion, req)
 		}
 		return &TriggerPromotionResult{
 			Promotion:     existingPromotion,
@@ -141,7 +166,6 @@ func (s *EmailPromotionService) TriggerPromotionWithInput(ctx context.Context, u
 	promotion := &models.EmailPromotion{
 		Channel:       &channel,
 		BusinessTag:   &businessTag,
-		TraceID:       &traceID,
 		OrderID:       orderID,
 		ProjectID:     projectID,
 		CreatorID:     userID,
@@ -166,11 +190,13 @@ func (s *EmailPromotionService) TriggerPromotionWithInput(ctx context.Context, u
 	}
 
 	req := messagecenter.ProjectPromotionRequest{
+		PromotionID:      promotion.ID,
 		ProjectID:        project.ID,
 		PromotionCount:   maxRecipients,
 		CreatorUserID:    project.CreatorID,
 		OrderID:          orderID,
 		Strategy:         strategy,
+		TraceID:          traceID,
 		RecipientUserIDs: recipientUserIDs,
 	}
 	s.startAsyncPromotionSubmission(promotion, req)
@@ -258,10 +284,9 @@ func (s *EmailPromotionService) startAsyncPromotionSubmission(promotion *models.
 		}
 
 		now := time.Now()
-		promotion.Status = models.EmailPromotionStatusCompleted
+		promotion.Status = models.EmailPromotionStatusSending
 		promotion.TotalSent = resp.ActualCount
 		promotion.StartedAt = &now
-		promotion.CompletedAt = &now
 		promotion.ErrorMessage = nil
 		if updateErr := s.repo.EmailPromotion.Update(context.Background(), promotion); updateErr != nil {
 			log.Printf("[EmailPromotionService] failed to update submitted promotion, promotion_id=%d order_id=%d task_id=%s: %v",

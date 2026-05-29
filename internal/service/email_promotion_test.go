@@ -391,12 +391,17 @@ func TestTriggerPromotion_AlreadyTriggeredReturnsExisting(t *testing.T) {
 
 	mockOrder.On("GetByID", mock.Anything, 100).Return(&models.Order{ID: 100, UserID: 1, Status: 1}, nil)
 	mockProject.On("GetByID", mock.Anything, 200).Return(&models.Project{ID: 200, CreatorID: 1}, nil)
-	mockEmailPromotion.On("GetByOrderID", mock.Anything, 100).Return(&models.EmailPromotion{ID: 1, OrderID: 100}, nil)
+	mockEmailPromotion.On("GetByOrderID", mock.Anything, 100).Return(&models.EmailPromotion{
+		ID:            1,
+		OrderID:       100,
+		Status:        models.EmailPromotionStatusCompleted,
+		MaxRecipients: 10,
+	}, nil)
 	mockEmailPromotion.On("Update", mock.Anything, mock.MatchedBy(func(p *models.EmailPromotion) bool {
 		return p.ID == 1 && p.OrderID == 100 && p.ProjectID == 200 && p.CreatorID == 1 &&
 			p.Channel != nil && *p.Channel == "EMAIL" &&
 			p.BusinessTag != nil && *p.BusinessTag == "project_promotion" &&
-			p.TraceID != nil && *p.TraceID == "PROJECT_PROMOTION:100"
+			p.TraceID == nil
 	})).Return(nil)
 
 	repo := &repository.Repository{
