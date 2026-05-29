@@ -12,19 +12,19 @@ get:
   description: Only the project creator can view recent email promotion batches.
   operationId: listProjectPromotionBatches
   parameters:
+    - $ref: ../components/parameters/PageParam.yaml
+    - $ref: ../components/parameters/SizeParam.yaml
     - name: days
       in: query
-      description: Lookback days, capped at 30. Defaults to 7.
+      description: Compatibility lookback days, capped at 30. Optional.
       schema:
         type: integer
-        default: 7
         maximum: 30
     - name: limit
       in: query
-      description: Max rows to return, capped at 50. Defaults to 10.
+      description: Compatibility max rows to return, capped at 50. Optional.
       schema:
         type: integer
-        default: 10
         maximum: 50
   responses:
     '200':

@@ -2,10 +2,18 @@ type: object
 required:
   - orderId
   - projectId
+  - strategy
 properties:
   orderId:
     type: integer
-    description: 购买邮件推广商品的订单ID
+    description: Paid email-promotion order ID
   projectId:
     type: integer
-    description: 要推广的项目ID
+    description: Project ID to promote
+  strategy:
+    type: string
+    enum: [region, project, major]
+    description: Recipient selection strategy
+  maxRecipients:
+    type: integer
+    description: Optional; when present it must equal the paid order quantity. The final count uses order quantity.

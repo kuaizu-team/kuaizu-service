@@ -177,6 +177,25 @@ func (m *MockEmailPromotionRepo) Update(ctx context.Context, promotion *models.E
 	return args.Error(0)
 }
 
+func (m *MockEmailPromotionRepo) CreateRecipients(ctx context.Context, promotionID, projectID int, userIDs []int) error {
+	if !m.hasExpectation("CreateRecipients") {
+		return nil
+	}
+	args := m.Called(ctx, promotionID, projectID, userIDs)
+	return args.Error(0)
+}
+
+func (m *MockEmailPromotionRepo) SelectPromotionRecipients(ctx context.Context, projectID, creatorID int, strategy string, limit int) ([]int, error) {
+	if !m.hasExpectation("SelectPromotionRecipients") {
+		return nil, nil
+	}
+	args := m.Called(ctx, projectID, creatorID, strategy, limit)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]int), args.Error(1)
+}
+
 func (m *MockEmailPromotionRepo) ListByCreatorID(ctx context.Context, creatorID int, page, size int) ([]models.EmailPromotion, int64, error) {
 	args := m.Called(ctx, creatorID, page, size)
 	if args.Get(0) == nil {
@@ -201,12 +220,29 @@ func (m *MockEmailPromotionRepo) ListByProjectSince(ctx context.Context, project
 	return args.Get(0).([]models.EmailPromotion), args.Get(1).(int64), args.Error(2)
 }
 
+func (m *MockEmailPromotionRepo) ListByProjectPaged(ctx context.Context, projectID, page, size, days, limit int) ([]models.EmailPromotion, int64, error) {
+	args := m.Called(ctx, projectID, page, size, days, limit)
+	if args.Get(0) == nil {
+		return nil, args.Get(1).(int64), args.Error(2)
+	}
+	return args.Get(0).([]models.EmailPromotion), args.Get(1).(int64), args.Error(2)
+}
+
 func (m *MockEmailPromotionRepo) ListProjectPromotionUsers(ctx context.Context, batchID, page, size int) ([]repository.ProjectPromotionUser, int64, error) {
 	args := m.Called(ctx, batchID, page, size)
 	if args.Get(0) == nil {
 		return nil, args.Get(1).(int64), args.Error(2)
 	}
 	return args.Get(0).([]repository.ProjectPromotionUser), args.Get(1).(int64), args.Error(2)
+}
+
+func (m *MockEmailPromotionRepo) hasExpectation(method string) bool {
+	for _, call := range m.ExpectedCalls {
+		if call.Method == method {
+			return true
+		}
+	}
+	return false
 }
 
 // --- Tests for TriggerPromotion ---

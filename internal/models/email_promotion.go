@@ -11,6 +11,7 @@ type EmailPromotion struct {
 	OrderID       int                  `db:"order_id"`
 	ProjectID     int                  `db:"project_id"`
 	CreatorID     int                  `db:"creator_id"`
+	Strategy      string               `db:"strategy"`
 	MaxRecipients int                  `db:"max_recipients"` // 购买的最大发送人数
 	TotalSent     int                  `db:"total_sent"`     // 实际发送数量
 	Status        EmailPromotionStatus `db:"status"`         // 推广状态

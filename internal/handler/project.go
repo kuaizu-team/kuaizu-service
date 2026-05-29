@@ -237,16 +237,24 @@ func (s *Server) ListProjectPromotionBatches(ctx echo.Context, id int, params ap
 		return BadRequest(ctx, "invalid project id")
 	}
 
-	days := 7
+	page := 1
+	if params.Page != nil {
+		page = int(*params.Page)
+	}
+	size := 10
+	if params.Size != nil {
+		size = int(*params.Size)
+	}
+	days := 0
 	if params.Days != nil {
 		days = *params.Days
 	}
-	limit := 10
+	limit := 0
 	if params.Limit != nil {
 		limit = *params.Limit
 	}
 
-	result, err := s.svc.EmailPromotion.ListProjectBatches(ctx.Request().Context(), userID, id, days, limit)
+	result, err := s.svc.EmailPromotion.ListProjectBatchesPaged(ctx.Request().Context(), userID, id, page, size, days, limit)
 	if err != nil {
 		return mapServiceError(ctx, err)
 	}

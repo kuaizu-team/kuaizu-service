@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"log"
+	"strings"
 	"sync"
 	"time"
 
@@ -47,6 +48,29 @@ func NewEmailPromotionServiceWithMessageCenter(repo *repository.Repository, mess
 
 // TriggerPromotion validates ownership and creates a promotion, then submits it asynchronously.
 func (s *EmailPromotionService) TriggerPromotion(ctx context.Context, userID, orderID, projectID int) (*TriggerPromotionResult, error) {
+	return s.TriggerPromotionWithInput(ctx, userID, TriggerPromotionInput{
+		OrderID:   orderID,
+		ProjectID: projectID,
+		Strategy:  "region",
+	})
+}
+
+type TriggerPromotionInput struct {
+	OrderID       int
+	ProjectID     int
+	Strategy      string
+	MaxRecipients *int
+}
+
+// TriggerPromotionWithInput validates ownership and creates a promotion, then submits it asynchronously.
+func (s *EmailPromotionService) TriggerPromotionWithInput(ctx context.Context, userID int, input TriggerPromotionInput) (*TriggerPromotionResult, error) {
+	orderID := input.OrderID
+	projectID := input.ProjectID
+	strategy := normalizePromotionStrategy(input.Strategy)
+	if !isValidPromotionStrategy(strategy) {
+		return nil, ErrBadRequest("invalid promotion strategy")
+	}
+
 	order, err := s.repo.Order.GetByID(ctx, orderID)
 	if err != nil {
 		return nil, ErrInternal("获取订单失败")
@@ -84,11 +108,15 @@ func (s *EmailPromotionService) TriggerPromotion(ctx context.Context, userID, or
 	if err != nil {
 		return nil, err
 	}
+	if input.MaxRecipients != nil && *input.MaxRecipients != maxRecipients {
+		return nil, ErrBadRequest("maxRecipients must equal paid order quantity")
+	}
 
 	promotion := &models.EmailPromotion{
 		OrderID:       orderID,
 		ProjectID:     projectID,
 		CreatorID:     userID,
+		Strategy:      strategy,
 		MaxRecipients: maxRecipients,
 		Status:        models.EmailPromotionStatusPending,
 	}
@@ -98,11 +126,23 @@ func (s *EmailPromotionService) TriggerPromotion(ctx context.Context, userID, or
 		return nil, ErrInternal("创建推广记录失败")
 	}
 
+	recipientUserIDs, err := s.repo.EmailPromotion.SelectPromotionRecipients(ctx, projectID, userID, strategy, maxRecipients)
+	if err != nil {
+		log.Printf("[EmailPromotionService] failed to select promotion recipients: %v", err)
+		return nil, ErrInternal("select promotion recipients failed")
+	}
+	if err := s.repo.EmailPromotion.CreateRecipients(ctx, promotion.ID, projectID, recipientUserIDs); err != nil {
+		log.Printf("[EmailPromotionService] failed to create promotion recipients: %v", err)
+		return nil, ErrInternal("create promotion recipients failed")
+	}
+
 	req := messagecenter.ProjectPromotionRequest{
-		ProjectID:      project.ID,
-		PromotionCount: maxRecipients,
-		CreatorUserID:  project.CreatorID,
-		OrderID:        orderID,
+		ProjectID:        project.ID,
+		PromotionCount:   maxRecipients,
+		CreatorUserID:    project.CreatorID,
+		OrderID:          orderID,
+		Strategy:         strategy,
+		RecipientUserIDs: recipientUserIDs,
 	}
 	s.startAsyncPromotionSubmission(promotion, req)
 
@@ -116,6 +156,23 @@ func (s *EmailPromotionService) TriggerPromotion(ctx context.Context, userID, or
 type TriggerPromotionResult struct {
 	Promotion     *models.EmailPromotion
 	MaxRecipients int
+}
+
+func normalizePromotionStrategy(strategy string) string {
+	strategy = strings.TrimSpace(strings.ToLower(strategy))
+	if strategy == "" {
+		return "region"
+	}
+	return strategy
+}
+
+func isValidPromotionStrategy(strategy string) bool {
+	switch strategy {
+	case "region", "project", "major":
+		return true
+	default:
+		return false
+	}
 }
 
 func (s *EmailPromotionService) calculateMaxRecipients(ctx context.Context, order *models.Order) (int, error) {
@@ -264,6 +321,7 @@ type ProjectPromotionBatchVO struct {
 	ID            int                         `json:"id"`
 	BatchID       int                         `json:"batchId"`
 	ProjectID     int                         `json:"projectId"`
+	Strategy      string                      `json:"strategy"`
 	MaxRecipients int                         `json:"maxRecipients"`
 	TotalSent     int                         `json:"totalSent"`
 	Status        models.EmailPromotionStatus `json:"status"`
@@ -329,6 +387,74 @@ func (s *EmailPromotionService) ListProjectBatches(ctx context.Context, requeste
 			ID:            p.ID,
 			BatchID:       p.ID,
 			ProjectID:     p.ProjectID,
+			Strategy:      p.Strategy,
+			MaxRecipients: p.MaxRecipients,
+			TotalSent:     p.TotalSent,
+			Status:        p.Status,
+			StatusText:    emailPromotionStatusText(p.Status),
+			PromotedAt:    promotedAt,
+			CreatedAt:     p.CreatedAt,
+			StartedAt:     p.StartedAt,
+			CompletedAt:   p.CompletedAt,
+		}
+	}
+
+	return &ProjectPromotionBatchListResult{Total: total, List: list}, nil
+}
+
+// ListProjectBatchesPaged returns paged promotion batches for a project owner.
+func (s *EmailPromotionService) ListProjectBatchesPaged(ctx context.Context, requesterUserID, projectID, page, size, days, limit int) (*ProjectPromotionBatchListResult, error) {
+	if page <= 0 {
+		page = 1
+	}
+	if size <= 0 {
+		size = 10
+	}
+	if size > 50 {
+		size = 50
+	}
+	if days < 0 {
+		days = 0
+	}
+	if days > 30 {
+		days = 30
+	}
+	if limit < 0 {
+		limit = 0
+	}
+	if limit > 50 {
+		limit = 50
+	}
+
+	isOwner, err := s.repo.Project.IsOwner(ctx, projectID, requesterUserID)
+	if err != nil {
+		log.Printf("[EmailPromotionService.ListProjectBatchesPaged] ownership check error: %v", err)
+		return nil, ErrInternal("check project permission failed")
+	}
+	if !isOwner {
+		return nil, ErrForbidden("no permission to view project promotion records")
+	}
+
+	promotions, total, err := s.repo.EmailPromotion.ListByProjectPaged(ctx, projectID, page, size, days, limit)
+	if err != nil {
+		log.Printf("[EmailPromotionService.ListProjectBatchesPaged] query error: %v", err)
+		return nil, ErrInternal("list project promotion batches failed")
+	}
+
+	list := make([]ProjectPromotionBatchVO, len(promotions))
+	for i, p := range promotions {
+		promotedAt := p.CreatedAt
+		if p.CompletedAt != nil {
+			promotedAt = *p.CompletedAt
+		}
+		if p.StartedAt != nil {
+			promotedAt = *p.StartedAt
+		}
+		list[i] = ProjectPromotionBatchVO{
+			ID:            p.ID,
+			BatchID:       p.ID,
+			ProjectID:     p.ProjectID,
+			Strategy:      p.Strategy,
 			MaxRecipients: p.MaxRecipients,
 			TotalSent:     p.TotalSent,
 			Status:        p.Status,

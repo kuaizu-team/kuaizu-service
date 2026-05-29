@@ -46,9 +46,12 @@ type EmailPromotionRepo interface {
 	GetByID(ctx context.Context, id int) (*models.EmailPromotion, error)
 	GetByOrderID(ctx context.Context, orderID int) (*models.EmailPromotion, error)
 	Update(ctx context.Context, promotion *models.EmailPromotion) error
+	CreateRecipients(ctx context.Context, promotionID, projectID int, userIDs []int) error
+	SelectPromotionRecipients(ctx context.Context, projectID, creatorID int, strategy string, limit int) ([]int, error)
 	ListByCreatorID(ctx context.Context, creatorID int, page, size int) ([]models.EmailPromotion, int64, error)
 	ListByProjectID(ctx context.Context, projectID int) ([]models.EmailPromotion, error)
 	ListByProjectSince(ctx context.Context, projectID, days, limit int) ([]models.EmailPromotion, int64, error)
+	ListByProjectPaged(ctx context.Context, projectID, page, size, days, limit int) ([]models.EmailPromotion, int64, error)
 	ListProjectPromotionUsers(ctx context.Context, batchID, page, size int) ([]ProjectPromotionUser, int64, error)
 }
 

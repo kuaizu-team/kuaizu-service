@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
 
 	"github.com/jmoiron/sqlx"
 	"github.com/kuaizu-team/kuaizu-service/internal/models"
@@ -24,9 +25,9 @@ func NewEmailPromotionRepository(db *sqlx.DB) *EmailPromotionRepository {
 func (r *EmailPromotionRepository) Create(ctx context.Context, promotion *models.EmailPromotion) error {
 	query := `
 		INSERT INTO email_promotion (
-			order_id, project_id, creator_id, max_recipients, total_sent, status
+			order_id, project_id, creator_id, strategy, max_recipients, total_sent, status
 		) VALUES (
-			:order_id, :project_id, :creator_id, :max_recipients, :total_sent, :status
+			:order_id, :project_id, :creator_id, :strategy, :max_recipients, :total_sent, :status
 		)
 	`
 
@@ -49,7 +50,7 @@ func (r *EmailPromotionRepository) GetByID(ctx context.Context, id int) (*models
 	query := `
 		SELECT 
 			ep.id, ep.order_id, ep.project_id, ep.creator_id,
-			ep.max_recipients, ep.total_sent, ep.status,
+			ep.strategy, ep.max_recipients, ep.total_sent, ep.status,
 			ep.error_message, ep.started_at, ep.completed_at, ep.created_at,
 			p.name AS project_name
 		FROM email_promotion ep
@@ -73,7 +74,7 @@ func (r *EmailPromotionRepository) GetByOrderID(ctx context.Context, orderID int
 	query := `
 		SELECT 
 			id, order_id, project_id, creator_id,
-			max_recipients, total_sent, status,
+			strategy, max_recipients, total_sent, status,
 			error_message, started_at, completed_at, created_at
 		FROM email_promotion
 		WHERE order_id = ?
@@ -110,6 +111,121 @@ func (r *EmailPromotionRepository) Update(ctx context.Context, promotion *models
 	return nil
 }
 
+// CreateRecipients stores the selected recipient users for a promotion batch.
+func (r *EmailPromotionRepository) CreateRecipients(ctx context.Context, promotionID, projectID int, userIDs []int) error {
+	if len(userIDs) == 0 {
+		return nil
+	}
+
+	rows := make([]string, 0, len(userIDs))
+	args := make([]interface{}, 0, len(userIDs)*3)
+	for _, userID := range userIDs {
+		rows = append(rows, "(?, ?, ?, 0)")
+		args = append(args, promotionID, projectID, userID)
+	}
+
+	query := `
+		INSERT IGNORE INTO email_promotion_recipient (
+			promotion_id, project_id, user_id, status
+		) VALUES ` + strings.Join(rows, ",")
+	if _, err := r.db.ExecContext(ctx, query, args...); err != nil {
+		return fmt.Errorf("create promotion recipients: %w", err)
+	}
+	return nil
+}
+
+// SelectPromotionRecipients chooses recipient users by strategy and priority tiers.
+func (r *EmailPromotionRepository) SelectPromotionRecipients(ctx context.Context, projectID, creatorID int, strategy string, limit int) ([]int, error) {
+	if limit <= 0 {
+		return nil, nil
+	}
+
+	var tiers []string
+	switch strategy {
+	case "region":
+		otherSchool := "(p.school_id IS NULL OR u.school_id IS NULL OR u.school_id <> p.school_id)"
+		tiers = []string{
+			"u.school_id = p.school_id AND COALESCE(u.auth_status, 0) = 1",
+			"(u.school_id = p.school_id AND COALESCE(u.auth_status, 0) <> 1) OR (" + otherSchool + " AND ps.district IS NOT NULL AND ps.district <> '' AND us.district = ps.district AND us.city = ps.city AND COALESCE(u.auth_status, 0) = 1)",
+			"(" + otherSchool + " AND ps.district IS NOT NULL AND ps.district <> '' AND us.district = ps.district AND us.city = ps.city AND COALESCE(u.auth_status, 0) = 1) OR (" + otherSchool + " AND ps.city IS NOT NULL AND ps.city <> '' AND us.city = ps.city AND COALESCE(u.auth_status, 0) = 1)",
+			"(" + otherSchool + " AND ps.city IS NOT NULL AND ps.city <> '' AND us.city = ps.city AND COALESCE(u.auth_status, 0) = 1) OR (" + otherSchool + " AND ps.province IS NOT NULL AND ps.province <> '' AND us.province = ps.province AND COALESCE(u.auth_status, 0) = 1)",
+			"(" + otherSchool + " AND ps.province IS NOT NULL AND ps.province <> '' AND us.province = ps.province AND COALESCE(u.auth_status, 0) = 1) OR (" + otherSchool + " AND COALESCE(u.auth_status, 0) = 1)",
+			otherSchool + " AND COALESCE(u.auth_status, 0) <> 1",
+		}
+	case "project":
+		tiers = []string{
+			"COALESCE(u.auth_status, 0) = 1",
+			"COALESCE(u.auth_status, 0) <> 1",
+		}
+	case "major":
+		tiers = []string{
+			"cm.class_id IS NOT NULL AND m.class_id = cm.class_id AND COALESCE(u.auth_status, 0) = 1",
+			"cm.class_id IS NOT NULL AND m.class_id = cm.class_id AND COALESCE(u.auth_status, 0) <> 1",
+			"(cm.class_id IS NULL OR m.class_id IS NULL OR m.class_id <> cm.class_id) AND COALESCE(u.auth_status, 0) = 1",
+			"(cm.class_id IS NULL OR m.class_id IS NULL OR m.class_id <> cm.class_id) AND COALESCE(u.auth_status, 0) <> 1",
+		}
+	default:
+		return nil, fmt.Errorf("unsupported promotion strategy: %s", strategy)
+	}
+
+	selected := make([]int, 0, limit)
+	seen := make(map[int]struct{}, limit)
+	for _, tier := range tiers {
+		if len(selected) >= limit {
+			break
+		}
+		remaining := limit - len(selected)
+		ids, err := r.selectPromotionTier(ctx, projectID, creatorID, tier, selected, remaining)
+		if err != nil {
+			return nil, err
+		}
+		for _, id := range ids {
+			if _, ok := seen[id]; ok {
+				continue
+			}
+			seen[id] = struct{}{}
+			selected = append(selected, id)
+		}
+	}
+	return selected, nil
+}
+
+func (r *EmailPromotionRepository) selectPromotionTier(ctx context.Context, projectID, creatorID int, tier string, excluded []int, limit int) ([]int, error) {
+	query := `
+		SELECT u.id
+		FROM ` + "`user`" + ` u
+		JOIN project p ON p.id = ?
+		LEFT JOIN school ps ON p.school_id = ps.id
+		LEFT JOIN school us ON u.school_id = us.id
+		LEFT JOIN ` + "`user`" + ` cu ON cu.id = p.creator_id
+		LEFT JOIN major cm ON cu.major_id = cm.id
+		LEFT JOIN major m ON u.major_id = m.id
+		WHERE u.id <> ?
+		  AND u.email IS NOT NULL AND u.email <> ''
+		  AND COALESCE(u.email_opt_out, 0) = 0
+		  AND (` + tier + `)`
+
+	args := []interface{}{projectID, creatorID}
+	if len(excluded) > 0 {
+		query += " AND u.id NOT IN (?)"
+		args = append(args, excluded)
+	}
+	query += " ORDER BY RAND() LIMIT ?"
+	args = append(args, limit)
+
+	query, args, err := sqlx.In(query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("build promotion tier query: %w", err)
+	}
+	query = r.db.Rebind(query)
+
+	var ids []int
+	if err := r.db.SelectContext(ctx, &ids, query, args...); err != nil {
+		return nil, fmt.Errorf("query promotion recipients: %w", err)
+	}
+	return ids, nil
+}
+
 // ListByCreatorID retrieves email promotions by creator ID with pagination
 func (r *EmailPromotionRepository) ListByCreatorID(ctx context.Context, creatorID int, page, size int) ([]models.EmailPromotion, int64, error) {
 	// Count total
@@ -124,7 +240,7 @@ func (r *EmailPromotionRepository) ListByCreatorID(ctx context.Context, creatorI
 	query := `
 		SELECT 
 			ep.id, ep.order_id, ep.project_id, ep.creator_id,
-			ep.max_recipients, ep.total_sent, ep.status,
+			ep.strategy, ep.max_recipients, ep.total_sent, ep.status,
 			ep.error_message, ep.started_at, ep.completed_at, ep.created_at,
 			p.name AS project_name
 		FROM email_promotion ep
@@ -147,7 +263,7 @@ func (r *EmailPromotionRepository) ListByProjectID(ctx context.Context, projectI
 	query := `
 		SELECT 
 			id, order_id, project_id, creator_id,
-			max_recipients, total_sent, status,
+			strategy, max_recipients, total_sent, status,
 			error_message, started_at, completed_at, created_at
 		FROM email_promotion
 		WHERE project_id = ?
@@ -177,7 +293,7 @@ func (r *EmailPromotionRepository) ListByProjectSince(ctx context.Context, proje
 	query := `
 		SELECT
 			id, order_id, project_id, creator_id,
-			max_recipients, total_sent, status,
+			strategy, max_recipients, total_sent, status,
 			error_message, started_at, completed_at, created_at
 		FROM email_promotion
 		WHERE project_id = ? AND created_at >= NOW() - INTERVAL ? DAY
@@ -189,6 +305,46 @@ func (r *EmailPromotionRepository) ListByProjectSince(ctx context.Context, proje
 		return nil, 0, fmt.Errorf("query project email promotions: %w", err)
 	}
 
+	return promotions, total, nil
+}
+
+// ListByProjectPaged retrieves promotion batches by project with page/size and optional legacy filters.
+func (r *EmailPromotionRepository) ListByProjectPaged(ctx context.Context, projectID, page, size, days, limit int) ([]models.EmailPromotion, int64, error) {
+	conditions := []string{"project_id = ?"}
+	args := []interface{}{projectID}
+	if days > 0 {
+		conditions = append(conditions, "created_at >= NOW() - INTERVAL ? DAY")
+		args = append(args, days)
+	}
+	whereClause := strings.Join(conditions, " AND ")
+
+	var total int64
+	countQuery := `SELECT COUNT(*) FROM email_promotion WHERE ` + whereClause
+	if err := r.db.QueryRowxContext(ctx, countQuery, args...).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("count project email promotions: %w", err)
+	}
+
+	if limit > 0 && limit < size {
+		size = limit
+	}
+	offset := (page - 1) * size
+	query := `
+		SELECT
+			id, order_id, project_id, creator_id,
+			strategy, max_recipients, total_sent, status,
+			error_message, started_at, completed_at, created_at
+		FROM email_promotion
+		WHERE ` + whereClause + `
+		ORDER BY created_at DESC
+		LIMIT ? OFFSET ?
+	`
+	dataArgs := append([]interface{}{}, args...)
+	dataArgs = append(dataArgs, size, offset)
+
+	var promotions []models.EmailPromotion
+	if err := r.db.SelectContext(ctx, &promotions, query, dataArgs...); err != nil {
+		return nil, 0, fmt.Errorf("query project email promotions: %w", err)
+	}
 	return promotions, total, nil
 }
 
