@@ -101,14 +101,11 @@ func (s *EmailPromotionService) TriggerPromotionWithInput(ctx context.Context, u
 	businessTag := "project_promotion"
 	traceID := fmt.Sprintf("PROJECT_PROMOTION:%d", orderID)
 
-	existingPromotion, err := s.repo.EmailPromotion.GetByOrderID(ctx, orderID)
+	existingPromotion, err := s.repo.EmailPromotion.GetByOrderAndProject(ctx, orderID, projectID)
 	if err != nil {
 		return nil, ErrInternal("检查推广记录失败")
 	}
 	if existingPromotion != nil {
-		if existingPromotion.ProjectID != 0 && existingPromotion.ProjectID != projectID {
-			return nil, ErrBadRequest("order already has promotion for another project")
-		}
 		if existingPromotion.Strategy == "" {
 			existingPromotion.Strategy = strategy
 		}
@@ -117,6 +114,7 @@ func (s *EmailPromotionService) TriggerPromotionWithInput(ctx context.Context, u
 		}
 		existingPromotion.Channel = &channel
 		existingPromotion.BusinessTag = &businessTag
+		existingPromotion.TraceID = &traceID
 		existingPromotion.ProjectID = projectID
 		existingPromotion.CreatorID = userID
 		if updateErr := s.repo.EmailPromotion.Update(ctx, existingPromotion); updateErr != nil {
@@ -166,6 +164,7 @@ func (s *EmailPromotionService) TriggerPromotionWithInput(ctx context.Context, u
 	promotion := &models.EmailPromotion{
 		Channel:       &channel,
 		BusinessTag:   &businessTag,
+		TraceID:       &traceID,
 		OrderID:       orderID,
 		ProjectID:     projectID,
 		CreatorID:     userID,
@@ -436,6 +435,10 @@ func (s *EmailPromotionService) ListProjectBatches(ctx context.Context, requeste
 
 	list := make([]ProjectPromotionBatchVO, len(promotions))
 	for i, p := range promotions {
+		promotedAt := p.CreatedAt
+		if p.StartedAt != nil {
+			promotedAt = *p.StartedAt
+		}
 		list[i] = ProjectPromotionBatchVO{
 			ID:            p.ID,
 			BatchID:       p.ID,
@@ -447,7 +450,7 @@ func (s *EmailPromotionService) ListProjectBatches(ctx context.Context, requeste
 			SuccessCount:  p.TotalSent,
 			Status:        p.Status,
 			StatusText:    emailPromotionStatusText(p.Status),
-			PromotedAt:    p.CreatedAt,
+			PromotedAt:    promotedAt,
 			CreatedAt:     p.CreatedAt,
 			StartedAt:     p.StartedAt,
 			CompletedAt:   p.CompletedAt,
@@ -501,6 +504,10 @@ func (s *EmailPromotionService) ListProjectBatchesPaged(ctx context.Context, req
 
 	list := make([]ProjectPromotionBatchVO, len(promotions))
 	for i, p := range promotions {
+		promotedAt := p.CreatedAt
+		if p.StartedAt != nil {
+			promotedAt = *p.StartedAt
+		}
 		list[i] = ProjectPromotionBatchVO{
 			ID:            p.ID,
 			BatchID:       p.ID,
@@ -512,7 +519,7 @@ func (s *EmailPromotionService) ListProjectBatchesPaged(ctx context.Context, req
 			SuccessCount:  p.TotalSent,
 			Status:        p.Status,
 			StatusText:    emailPromotionStatusText(p.Status),
-			PromotedAt:    p.CreatedAt,
+			PromotedAt:    promotedAt,
 			CreatedAt:     p.CreatedAt,
 			StartedAt:     p.StartedAt,
 			CompletedAt:   p.CompletedAt,

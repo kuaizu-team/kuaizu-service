@@ -172,6 +172,14 @@ func (m *MockEmailPromotionRepo) GetByOrderID(ctx context.Context, orderID int) 
 	return args.Get(0).(*models.EmailPromotion), args.Error(1)
 }
 
+func (m *MockEmailPromotionRepo) GetByOrderAndProject(ctx context.Context, orderID, projectID int) (*models.EmailPromotion, error) {
+	args := m.Called(ctx, orderID, projectID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*models.EmailPromotion), args.Error(1)
+}
+
 func (m *MockEmailPromotionRepo) Update(ctx context.Context, promotion *models.EmailPromotion) error {
 	args := m.Called(ctx, promotion)
 	return args.Error(0)
@@ -391,7 +399,7 @@ func TestTriggerPromotion_AlreadyTriggeredReturnsExisting(t *testing.T) {
 
 	mockOrder.On("GetByID", mock.Anything, 100).Return(&models.Order{ID: 100, UserID: 1, Status: 1}, nil)
 	mockProject.On("GetByID", mock.Anything, 200).Return(&models.Project{ID: 200, CreatorID: 1}, nil)
-	mockEmailPromotion.On("GetByOrderID", mock.Anything, 100).Return(&models.EmailPromotion{
+	mockEmailPromotion.On("GetByOrderAndProject", mock.Anything, 100, 200).Return(&models.EmailPromotion{
 		ID:            1,
 		OrderID:       100,
 		Status:        models.EmailPromotionStatusCompleted,
@@ -401,7 +409,7 @@ func TestTriggerPromotion_AlreadyTriggeredReturnsExisting(t *testing.T) {
 		return p.ID == 1 && p.OrderID == 100 && p.ProjectID == 200 && p.CreatorID == 1 &&
 			p.Channel != nil && *p.Channel == "EMAIL" &&
 			p.BusinessTag != nil && *p.BusinessTag == "project_promotion" &&
-			p.TraceID == nil
+			p.TraceID != nil && *p.TraceID == "PROJECT_PROMOTION:100"
 	})).Return(nil)
 
 	repo := &repository.Repository{
@@ -437,7 +445,7 @@ func TestTriggerPromotion_NoEmailPromotionProduct(t *testing.T) {
 
 	mockOrder.On("GetByID", mock.Anything, 100).Return(order, nil)
 	mockProject.On("GetByID", mock.Anything, 200).Return(&models.Project{ID: 200, CreatorID: 1}, nil)
-	mockEmailPromotion.On("GetByOrderID", mock.Anything, 100).Return(nil, nil)
+	mockEmailPromotion.On("GetByOrderAndProject", mock.Anything, 100, 200).Return(nil, nil)
 	mockProduct.On("GetByID", mock.Anything, 10).Return(&models.Product{ID: 10, Type: 1}, nil)
 
 	repo := &repository.Repository{
@@ -473,10 +481,13 @@ func TestTriggerPromotion_Success(t *testing.T) {
 
 	mockOrder.On("GetByID", mock.Anything, 100).Return(order, nil)
 	mockProject.On("GetByID", mock.Anything, 200).Return(&models.Project{ID: 200, CreatorID: 1}, nil)
-	mockEmailPromotion.On("GetByOrderID", mock.Anything, 100).Return(nil, nil)
+	mockEmailPromotion.On("GetByOrderAndProject", mock.Anything, 100, 200).Return(nil, nil)
 	mockProduct.On("GetByID", mock.Anything, 10).Return(&models.Product{ID: 10, Type: 2}, nil)
 	mockEmailPromotion.On("Create", mock.Anything, mock.MatchedBy(func(p *models.EmailPromotion) bool {
-		return p.OrderID == 100 && p.ProjectID == 200 && p.CreatorID == 1 && p.MaxRecipients == 50
+		return p.OrderID == 100 && p.ProjectID == 200 && p.CreatorID == 1 && p.MaxRecipients == 50 &&
+			p.Channel != nil && *p.Channel == "EMAIL" &&
+			p.BusinessTag != nil && *p.BusinessTag == "project_promotion" &&
+			p.TraceID != nil && *p.TraceID == "PROJECT_PROMOTION:100"
 	})).Run(func(args mock.Arguments) {
 		promotion := args.Get(1).(*models.EmailPromotion)
 		promotion.ID = 1
@@ -524,7 +535,7 @@ func TestTriggerPromotion_CreateFails(t *testing.T) {
 
 	mockOrder.On("GetByID", mock.Anything, 100).Return(order, nil)
 	mockProject.On("GetByID", mock.Anything, 200).Return(&models.Project{ID: 200, CreatorID: 1}, nil)
-	mockEmailPromotion.On("GetByOrderID", mock.Anything, 100).Return(nil, nil)
+	mockEmailPromotion.On("GetByOrderAndProject", mock.Anything, 100, 200).Return(nil, nil)
 	mockProduct.On("GetByID", mock.Anything, 10).Return(&models.Product{ID: 10, Type: 2}, nil)
 	mockEmailPromotion.On("Create", mock.Anything, mock.Anything).Return(errors.New("db write error"))
 
@@ -791,7 +802,7 @@ func TestListProjectBatches_Success(t *testing.T) {
 	assert.Equal(t, int64(1), result.Total)
 	assert.Equal(t, 42, result.List[0].BatchID)
 	assert.Equal(t, "\u5df2\u5b8c\u6210", result.List[0].StatusText)
-	assert.Equal(t, createdAt, result.List[0].PromotedAt)
+	assert.Equal(t, startedAt, result.List[0].PromotedAt)
 	mockProject.AssertExpectations(t)
 	mockEmailPromotion.AssertExpectations(t)
 }

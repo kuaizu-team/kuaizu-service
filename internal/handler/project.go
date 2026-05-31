@@ -252,9 +252,12 @@ func (s *Server) ListProjectPromotionBatches(ctx echo.Context, id int, params ap
 	limit := 0
 	if params.Limit != nil {
 		limit = *params.Limit
+		if params.Size == nil && limit > 0 {
+			size = limit
+		}
 	}
 
-	result, err := s.svc.EmailPromotion.ListProjectBatchesPaged(ctx.Request().Context(), userID, id, page, size, days, limit)
+	result, err := s.svc.EmailPromotion.ListProjectBatchesPaged(ctx.Request().Context(), userID, id, page, size, days, 0)
 	if err != nil {
 		return mapServiceError(ctx, err)
 	}

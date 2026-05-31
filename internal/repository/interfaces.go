@@ -45,6 +45,7 @@ type EmailPromotionRepo interface {
 	Create(ctx context.Context, promotion *models.EmailPromotion) error
 	GetByID(ctx context.Context, id int) (*models.EmailPromotion, error)
 	GetByOrderID(ctx context.Context, orderID int) (*models.EmailPromotion, error)
+	GetByOrderAndProject(ctx context.Context, orderID, projectID int) (*models.EmailPromotion, error)
 	Update(ctx context.Context, promotion *models.EmailPromotion) error
 	CreateRecipients(ctx context.Context, promotionID, projectID int, userIDs []int) error
 	SelectPromotionRecipients(ctx context.Context, projectID, creatorID int, strategy string, limit int) ([]int, error)

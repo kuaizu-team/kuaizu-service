@@ -91,6 +91,7 @@ func (r *EmailPromotionRepository) getPreferredByOrderAndProject(ctx context.Con
 		FROM email_promotion ep
 		WHERE ep.order_id = ? AND ep.project_id = ?
 		ORDER BY ` + promotionRealRank("ep") + ` ASC,
+		         ` + promotionPromotedAtExpr("ep") + ` DESC,
 		         ` + promotionStatusRank("ep") + ` ASC,
 		         ep.created_at DESC,
 		         ep.id DESC
@@ -137,6 +138,7 @@ func (r *EmailPromotionRepository) GetByOrderID(ctx context.Context, orderID int
 		FROM email_promotion ep
 		WHERE ep.order_id = ?
 		ORDER BY ` + promotionRealRank("ep") + ` ASC,
+		         ` + promotionPromotedAtExpr("ep") + ` DESC,
 		         ` + promotionStatusRank("ep") + ` ASC,
 		         ep.created_at DESC,
 		         ep.id DESC
@@ -152,6 +154,11 @@ func (r *EmailPromotionRepository) GetByOrderID(ctx context.Context, orderID int
 	}
 
 	return &promotion, nil
+}
+
+// GetByOrderAndProject retrieves the preferred promotion record for an order/project pair.
+func (r *EmailPromotionRepository) GetByOrderAndProject(ctx context.Context, orderID, projectID int) (*models.EmailPromotion, error) {
+	return r.getPreferredByOrderAndProject(ctx, orderID, projectID)
 }
 
 // Update updates an email promotion record
@@ -379,21 +386,18 @@ func (r *EmailPromotionRepository) ListByProjectPaged(ctx context.Context, proje
 	whereClause := strings.Join(conditions, " AND ")
 
 	var total int64
-	countQuery := `SELECT COUNT(*) FROM email_promotion ep WHERE ` + whereClause
+	countQuery := `SELECT COUNT(DISTINCT ep.order_id) FROM email_promotion ep WHERE ` + whereClause
 	if err := r.db.QueryRowxContext(ctx, countQuery, args...).Scan(&total); err != nil {
 		return nil, 0, fmt.Errorf("count project email promotions: %w", err)
 	}
 
-	if limit > 0 && limit < size {
-		size = limit
-	}
 	offset := (page - 1) * size
 	query := `
 		SELECT
 			` + emailPromotionSelectColumns + `
 		FROM email_promotion ep
 		WHERE ` + whereClause + `
-		ORDER BY ep.created_at DESC
+		ORDER BY ` + promotionPromotedAtExpr("ep") + ` DESC, ep.created_at DESC, ep.id DESC
 		LIMIT ? OFFSET ?
 	`
 	dataArgs := append([]interface{}{}, args...)
@@ -414,6 +418,10 @@ func promotionStatusRank(alias string) string {
 	return "CASE " + alias + ".status WHEN 2 THEN 0 WHEN 1 THEN 1 WHEN 0 THEN 2 WHEN 3 THEN 3 ELSE 4 END"
 }
 
+func promotionPromotedAtExpr(alias string) string {
+	return "COALESCE(" + alias + ".started_at, " + alias + ".created_at)"
+}
+
 func bestPromotionPredicate(alias, otherAlias string) string {
 	return `NOT EXISTS (
 		SELECT 1
@@ -422,9 +430,10 @@ func bestPromotionPredicate(alias, otherAlias string) string {
 		  AND ` + otherAlias + `.order_id = ` + alias + `.order_id
 		  AND (
 		    ` + promotionRealRank(otherAlias) + ` < ` + promotionRealRank(alias) + `
-		    OR (` + promotionRealRank(otherAlias) + ` = ` + promotionRealRank(alias) + ` AND ` + promotionStatusRank(otherAlias) + ` < ` + promotionStatusRank(alias) + `)
-		    OR (` + promotionRealRank(otherAlias) + ` = ` + promotionRealRank(alias) + ` AND ` + promotionStatusRank(otherAlias) + ` = ` + promotionStatusRank(alias) + ` AND ` + otherAlias + `.created_at > ` + alias + `.created_at)
-		    OR (` + promotionRealRank(otherAlias) + ` = ` + promotionRealRank(alias) + ` AND ` + promotionStatusRank(otherAlias) + ` = ` + promotionStatusRank(alias) + ` AND ` + otherAlias + `.created_at = ` + alias + `.created_at AND ` + otherAlias + `.id > ` + alias + `.id)
+		    OR (` + promotionRealRank(otherAlias) + ` = ` + promotionRealRank(alias) + ` AND ` + promotionPromotedAtExpr(otherAlias) + ` > ` + promotionPromotedAtExpr(alias) + `)
+		    OR (` + promotionRealRank(otherAlias) + ` = ` + promotionRealRank(alias) + ` AND ` + promotionPromotedAtExpr(otherAlias) + ` = ` + promotionPromotedAtExpr(alias) + ` AND ` + promotionStatusRank(otherAlias) + ` < ` + promotionStatusRank(alias) + `)
+		    OR (` + promotionRealRank(otherAlias) + ` = ` + promotionRealRank(alias) + ` AND ` + promotionPromotedAtExpr(otherAlias) + ` = ` + promotionPromotedAtExpr(alias) + ` AND ` + promotionStatusRank(otherAlias) + ` = ` + promotionStatusRank(alias) + ` AND ` + otherAlias + `.created_at > ` + alias + `.created_at)
+		    OR (` + promotionRealRank(otherAlias) + ` = ` + promotionRealRank(alias) + ` AND ` + promotionPromotedAtExpr(otherAlias) + ` = ` + promotionPromotedAtExpr(alias) + ` AND ` + promotionStatusRank(otherAlias) + ` = ` + promotionStatusRank(alias) + ` AND ` + otherAlias + `.created_at = ` + alias + `.created_at AND ` + otherAlias + `.id > ` + alias + `.id)
 		  )
 	)`
 }
