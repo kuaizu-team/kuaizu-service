@@ -56,6 +56,14 @@ type EmailPromotionRepo interface {
 	ListProjectPromotionUsers(ctx context.Context, batchID, page, size int) ([]ProjectPromotionUser, int64, error)
 }
 
+type SmsNoticeRepo interface {
+	Create(ctx context.Context, notice *models.SmsNotice) error
+	Update(ctx context.Context, notice *models.SmsNotice) error
+	GetByID(ctx context.Context, id int) (*models.SmsNotice, error)
+	GetByOliveBranchRecordID(ctx context.Context, oliveBranchRecordID int) (*models.SmsNotice, error)
+	GetByOrderID(ctx context.Context, orderID int) (*models.SmsNotice, error)
+}
+
 // UserRepo defines the interface for user repository operations used by services.
 type UserRepo interface {
 	GetByID(ctx context.Context, id int) (*models.User, error)
@@ -193,6 +201,7 @@ var _ OrderRepo = (*OrderRepository)(nil)
 var _ ProjectRepo = (*ProjectRepository)(nil)
 var _ ProductRepo = (*ProductRepository)(nil)
 var _ EmailPromotionRepo = (*EmailPromotionRepository)(nil)
+var _ SmsNoticeRepo = (*SmsNoticeRepository)(nil)
 var _ UserRepo = (*UserRepository)(nil)
 var _ ApplicationRepo = (*ApplicationRepository)(nil)
 var _ OliveBranchRepo = (*OliveBranchRepository)(nil)

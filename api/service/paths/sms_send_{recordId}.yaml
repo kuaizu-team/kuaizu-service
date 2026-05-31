@@ -1,0 +1,23 @@
+get:
+  tags:
+    - SmsNotices
+  summary: 获取短信通知记录
+  operationId: getSmsSendRecordId
+  parameters:
+    - name: recordId
+      in: path
+      required: true
+      schema:
+        type: integer
+  responses:
+    '200':
+      description: 短信通知记录
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/BaseResponse.yaml
+              - type: object
+                properties:
+                  data:
+                    $ref: ../components/schemas/SmsNoticeVO.yaml

@@ -1,0 +1,16 @@
+type: object
+properties:
+  id:
+    type: integer
+  orderId:
+    type: integer
+  status:
+    type: integer
+  errorMessage:
+    type: string
+  createdAt:
+    type: string
+    format: date-time
+  updatedAt:
+    type: string
+    format: date-time
