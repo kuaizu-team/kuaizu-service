@@ -1,0 +1,42 @@
+type: object
+properties:
+  id:
+    type: integer
+  batchId:
+    type: integer
+  orderId:
+    type: integer
+  projectId:
+    type: integer
+  strategy:
+    type: string
+  maxRecipients:
+    type: integer
+  totalSent:
+    type: integer
+  successCount:
+    type: integer
+  status:
+    $ref: ./EmailPromotionStatus.yaml
+  statusText:
+    type: string
+  promotedAt:
+    type: string
+    format: date-time
+  createdAt:
+    type: string
+    format: date-time
+  startedAt:
+    type: string
+    format: date-time
+    nullable: true
+  completedAt:
+    type: string
+    format: date-time
+    nullable: true
+  channel:
+    type: string
+  businessTag:
+    type: string
+  traceId:
+    type: string

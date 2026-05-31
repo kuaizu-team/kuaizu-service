@@ -2,7 +2,9 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"log"
+	"strings"
 	"sync"
 	"time"
 
@@ -47,6 +49,29 @@ func NewEmailPromotionServiceWithMessageCenter(repo *repository.Repository, mess
 
 // TriggerPromotion validates ownership and creates a promotion, then submits it asynchronously.
 func (s *EmailPromotionService) TriggerPromotion(ctx context.Context, userID, orderID, projectID int) (*TriggerPromotionResult, error) {
+	return s.TriggerPromotionWithInput(ctx, userID, TriggerPromotionInput{
+		OrderID:   orderID,
+		ProjectID: projectID,
+		Strategy:  "region",
+	})
+}
+
+type TriggerPromotionInput struct {
+	OrderID       int
+	ProjectID     int
+	Strategy      string
+	MaxRecipients *int
+}
+
+// TriggerPromotionWithInput validates ownership and creates a promotion, then submits it asynchronously.
+func (s *EmailPromotionService) TriggerPromotionWithInput(ctx context.Context, userID int, input TriggerPromotionInput) (*TriggerPromotionResult, error) {
+	orderID := input.OrderID
+	projectID := input.ProjectID
+	strategy := normalizePromotionStrategy(input.Strategy)
+	if !isValidPromotionStrategy(strategy) {
+		return nil, ErrBadRequest("invalid promotion strategy")
+	}
+
 	order, err := s.repo.Order.GetByID(ctx, orderID)
 	if err != nil {
 		return nil, ErrInternal("获取订单失败")
@@ -72,23 +97,78 @@ func (s *EmailPromotionService) TriggerPromotion(ctx context.Context, userID, or
 		return nil, ErrForbidden("只能推广自己创建的项目")
 	}
 
-	existingPromotion, err := s.repo.EmailPromotion.GetByOrderID(ctx, orderID)
+	channel := "EMAIL"
+	businessTag := "project_promotion"
+	traceID := fmt.Sprintf("PROJECT_PROMOTION:%d", orderID)
+
+	existingPromotion, err := s.repo.EmailPromotion.GetByOrderAndProject(ctx, orderID, projectID)
 	if err != nil {
 		return nil, ErrInternal("检查推广记录失败")
 	}
 	if existingPromotion != nil {
-		return nil, ErrBadRequest("此订单已触发过推广")
+		if existingPromotion.Strategy == "" {
+			existingPromotion.Strategy = strategy
+		}
+		if existingPromotion.MaxRecipients == 0 {
+			existingPromotion.MaxRecipients = order.Quantity
+		}
+		existingPromotion.Channel = &channel
+		existingPromotion.BusinessTag = &businessTag
+		existingPromotion.TraceID = &traceID
+		existingPromotion.ProjectID = projectID
+		existingPromotion.CreatorID = userID
+		if updateErr := s.repo.EmailPromotion.Update(ctx, existingPromotion); updateErr != nil {
+			log.Printf("[EmailPromotionService] failed to normalize existing email promotion, order_id=%d project_id=%d: %v", orderID, projectID, updateErr)
+			return nil, ErrInternal("更新推广记录失败")
+		}
+		if existingPromotion.Status == models.EmailPromotionStatusPending || existingPromotion.Status == models.EmailPromotionStatusFailed {
+			maxRecipients := existingPromotion.MaxRecipients
+			if input.MaxRecipients != nil && *input.MaxRecipients != maxRecipients {
+				return nil, ErrBadRequest("maxRecipients must equal paid order quantity")
+			}
+			recipientUserIDs, selectErr := s.repo.EmailPromotion.SelectPromotionRecipients(ctx, projectID, userID, existingPromotion.Strategy, maxRecipients)
+			if selectErr != nil {
+				log.Printf("[EmailPromotionService] failed to select promotion recipients for existing promotion: %v", selectErr)
+				return nil, ErrInternal("select promotion recipients failed")
+			}
+			if createErr := s.repo.EmailPromotion.CreateRecipients(ctx, existingPromotion.ID, projectID, recipientUserIDs); createErr != nil {
+				log.Printf("[EmailPromotionService] failed to create recipients for existing promotion: %v", createErr)
+				return nil, ErrInternal("create promotion recipients failed")
+			}
+			req := messagecenter.ProjectPromotionRequest{
+				PromotionID:      existingPromotion.ID,
+				ProjectID:        project.ID,
+				PromotionCount:   maxRecipients,
+				CreatorUserID:    project.CreatorID,
+				OrderID:          orderID,
+				Strategy:         existingPromotion.Strategy,
+				TraceID:          traceID,
+				RecipientUserIDs: recipientUserIDs,
+			}
+			s.startAsyncPromotionSubmission(existingPromotion, req)
+		}
+		return &TriggerPromotionResult{
+			Promotion:     existingPromotion,
+			MaxRecipients: existingPromotion.MaxRecipients,
+		}, nil
 	}
 
 	maxRecipients, err := s.calculateMaxRecipients(ctx, order)
 	if err != nil {
 		return nil, err
 	}
+	if input.MaxRecipients != nil && *input.MaxRecipients != maxRecipients {
+		return nil, ErrBadRequest("maxRecipients must equal paid order quantity")
+	}
 
 	promotion := &models.EmailPromotion{
+		Channel:       &channel,
+		BusinessTag:   &businessTag,
+		TraceID:       &traceID,
 		OrderID:       orderID,
 		ProjectID:     projectID,
 		CreatorID:     userID,
+		Strategy:      strategy,
 		MaxRecipients: maxRecipients,
 		Status:        models.EmailPromotionStatusPending,
 	}
@@ -98,11 +178,25 @@ func (s *EmailPromotionService) TriggerPromotion(ctx context.Context, userID, or
 		return nil, ErrInternal("创建推广记录失败")
 	}
 
+	recipientUserIDs, err := s.repo.EmailPromotion.SelectPromotionRecipients(ctx, projectID, userID, strategy, maxRecipients)
+	if err != nil {
+		log.Printf("[EmailPromotionService] failed to select promotion recipients: %v", err)
+		return nil, ErrInternal("select promotion recipients failed")
+	}
+	if err := s.repo.EmailPromotion.CreateRecipients(ctx, promotion.ID, projectID, recipientUserIDs); err != nil {
+		log.Printf("[EmailPromotionService] failed to create promotion recipients: %v", err)
+		return nil, ErrInternal("create promotion recipients failed")
+	}
+
 	req := messagecenter.ProjectPromotionRequest{
-		ProjectID:      project.ID,
-		PromotionCount: maxRecipients,
-		CreatorUserID:  project.CreatorID,
-		OrderID:        orderID,
+		PromotionID:      promotion.ID,
+		ProjectID:        project.ID,
+		PromotionCount:   maxRecipients,
+		CreatorUserID:    project.CreatorID,
+		OrderID:          orderID,
+		Strategy:         strategy,
+		TraceID:          traceID,
+		RecipientUserIDs: recipientUserIDs,
 	}
 	s.startAsyncPromotionSubmission(promotion, req)
 
@@ -116,6 +210,23 @@ func (s *EmailPromotionService) TriggerPromotion(ctx context.Context, userID, or
 type TriggerPromotionResult struct {
 	Promotion     *models.EmailPromotion
 	MaxRecipients int
+}
+
+func normalizePromotionStrategy(strategy string) string {
+	strategy = strings.TrimSpace(strings.ToLower(strategy))
+	if strategy == "" {
+		return "region"
+	}
+	return strategy
+}
+
+func isValidPromotionStrategy(strategy string) bool {
+	switch strategy {
+	case "region", "project", "major":
+		return true
+	default:
+		return false
+	}
 }
 
 func (s *EmailPromotionService) calculateMaxRecipients(ctx context.Context, order *models.Order) (int, error) {
@@ -182,6 +293,9 @@ func (s *EmailPromotionService) startAsyncPromotionSubmission(promotion *models.
 		}
 		log.Printf("[EmailPromotionService] submitted project promotion, promotion_id=%d order_id=%d project_id=%d task_id=%s requested=%d actual=%d",
 			promotion.ID, promotion.OrderID, promotion.ProjectID, resp.TaskID, resp.RequestedCount, resp.ActualCount)
+
+		// Recipient user IDs are selected and snapshotted before submission so
+		// the project owner can inspect the batch immediately.
 	}()
 }
 
@@ -253,4 +367,227 @@ func (s *EmailPromotionService) ListByCreator(ctx context.Context, userID, page,
 		return nil, 0, ErrInternal("获取推广记录失败")
 	}
 	return promotions, total, nil
+}
+
+// ProjectPromotionBatchVO is the project dashboard batch row.
+type ProjectPromotionBatchVO struct {
+	ID            int                         `json:"id"`
+	BatchID       int                         `json:"batchId"`
+	OrderID       int                         `json:"orderId"`
+	ProjectID     int                         `json:"projectId"`
+	Strategy      string                      `json:"strategy"`
+	MaxRecipients int                         `json:"maxRecipients"`
+	TotalSent     int                         `json:"totalSent"`
+	SuccessCount  int                         `json:"successCount"`
+	Status        models.EmailPromotionStatus `json:"status"`
+	StatusText    string                      `json:"statusText"`
+	PromotedAt    time.Time                   `json:"promotedAt"`
+	CreatedAt     time.Time                   `json:"createdAt"`
+	StartedAt     *time.Time                  `json:"startedAt,omitempty"`
+	CompletedAt   *time.Time                  `json:"completedAt,omitempty"`
+	Channel       string                      `json:"channel"`
+	BusinessTag   string                      `json:"businessTag"`
+	TraceID       string                      `json:"traceId"`
+}
+
+// ProjectPromotionBatchListResult holds recent project promotion batches.
+type ProjectPromotionBatchListResult struct {
+	Total int64                     `json:"total"`
+	List  []ProjectPromotionBatchVO `json:"list"`
+}
+
+// ProjectPromotionUserListResult holds users reached by a promotion batch.
+type ProjectPromotionUserListResult struct {
+	Total int64                             `json:"total"`
+	List  []repository.ProjectPromotionUser `json:"list"`
+}
+
+// ListProjectBatches returns recent promotion batches for a project owner.
+func (s *EmailPromotionService) ListProjectBatches(ctx context.Context, requesterUserID, projectID, days, limit int) (*ProjectPromotionBatchListResult, error) {
+	if days <= 0 {
+		days = 7
+	}
+	if days > 30 {
+		days = 30
+	}
+	if limit <= 0 {
+		limit = 10
+	}
+	if limit > 50 {
+		limit = 50
+	}
+
+	isOwner, err := s.repo.Project.IsOwner(ctx, projectID, requesterUserID)
+	if err != nil {
+		log.Printf("[EmailPromotionService.ListProjectBatches] ownership check error: %v", err)
+		return nil, ErrInternal("check project permission failed")
+	}
+	if !isOwner {
+		return nil, ErrForbidden("no permission to view project promotion records")
+	}
+
+	promotions, total, err := s.repo.EmailPromotion.ListByProjectSince(ctx, projectID, days, limit)
+	if err != nil {
+		log.Printf("[EmailPromotionService.ListProjectBatches] query error: %v", err)
+		return nil, ErrInternal("list project promotion batches failed")
+	}
+
+	list := make([]ProjectPromotionBatchVO, len(promotions))
+	for i, p := range promotions {
+		promotedAt := p.CreatedAt
+		if p.StartedAt != nil {
+			promotedAt = *p.StartedAt
+		}
+		list[i] = ProjectPromotionBatchVO{
+			ID:            p.ID,
+			BatchID:       p.ID,
+			OrderID:       p.OrderID,
+			ProjectID:     p.ProjectID,
+			Strategy:      p.Strategy,
+			MaxRecipients: p.MaxRecipients,
+			TotalSent:     p.TotalSent,
+			SuccessCount:  p.TotalSent,
+			Status:        p.Status,
+			StatusText:    emailPromotionStatusText(p.Status),
+			PromotedAt:    promotedAt,
+			CreatedAt:     p.CreatedAt,
+			StartedAt:     p.StartedAt,
+			CompletedAt:   p.CompletedAt,
+			Channel:       stringValue(p.Channel),
+			BusinessTag:   stringValue(p.BusinessTag),
+			TraceID:       stringValue(p.TraceID),
+		}
+	}
+
+	return &ProjectPromotionBatchListResult{Total: total, List: list}, nil
+}
+
+// ListProjectBatchesPaged returns paged promotion batches for a project owner.
+func (s *EmailPromotionService) ListProjectBatchesPaged(ctx context.Context, requesterUserID, projectID, page, size, days, limit int) (*ProjectPromotionBatchListResult, error) {
+	if page <= 0 {
+		page = 1
+	}
+	if size <= 0 {
+		size = 10
+	}
+	if size > 50 {
+		size = 50
+	}
+	if days < 0 {
+		days = 0
+	}
+	if days > 30 {
+		days = 30
+	}
+	if limit < 0 {
+		limit = 0
+	}
+	if limit > 50 {
+		limit = 50
+	}
+
+	isOwner, err := s.repo.Project.IsOwner(ctx, projectID, requesterUserID)
+	if err != nil {
+		log.Printf("[EmailPromotionService.ListProjectBatchesPaged] ownership check error: %v", err)
+		return nil, ErrInternal("check project permission failed")
+	}
+	if !isOwner {
+		return nil, ErrForbidden("no permission to view project promotion records")
+	}
+
+	promotions, total, err := s.repo.EmailPromotion.ListByProjectPaged(ctx, projectID, page, size, days, limit)
+	if err != nil {
+		log.Printf("[EmailPromotionService.ListProjectBatchesPaged] query error: %v", err)
+		return nil, ErrInternal("list project promotion batches failed")
+	}
+
+	list := make([]ProjectPromotionBatchVO, len(promotions))
+	for i, p := range promotions {
+		promotedAt := p.CreatedAt
+		if p.StartedAt != nil {
+			promotedAt = *p.StartedAt
+		}
+		list[i] = ProjectPromotionBatchVO{
+			ID:            p.ID,
+			BatchID:       p.ID,
+			OrderID:       p.OrderID,
+			ProjectID:     p.ProjectID,
+			Strategy:      p.Strategy,
+			MaxRecipients: p.MaxRecipients,
+			TotalSent:     p.TotalSent,
+			SuccessCount:  p.TotalSent,
+			Status:        p.Status,
+			StatusText:    emailPromotionStatusText(p.Status),
+			PromotedAt:    promotedAt,
+			CreatedAt:     p.CreatedAt,
+			StartedAt:     p.StartedAt,
+			CompletedAt:   p.CompletedAt,
+			Channel:       stringValue(p.Channel),
+			BusinessTag:   stringValue(p.BusinessTag),
+			TraceID:       stringValue(p.TraceID),
+		}
+	}
+
+	return &ProjectPromotionBatchListResult{Total: total, List: list}, nil
+}
+
+// ListProjectBatchUsers returns safe recipient user rows for a project batch.
+func (s *EmailPromotionService) ListProjectBatchUsers(ctx context.Context, requesterUserID, projectID, batchID, page, size int) (*ProjectPromotionUserListResult, error) {
+	if page <= 0 {
+		page = 1
+	}
+	if size <= 0 {
+		size = 20
+	}
+	if size > 100 {
+		size = 100
+	}
+
+	isOwner, err := s.repo.Project.IsOwner(ctx, projectID, requesterUserID)
+	if err != nil {
+		log.Printf("[EmailPromotionService.ListProjectBatchUsers] ownership check error: %v", err)
+		return nil, ErrInternal("check project permission failed")
+	}
+	if !isOwner {
+		return nil, ErrForbidden("no permission to view project promotion records")
+	}
+
+	promotion, err := s.repo.EmailPromotion.GetByID(ctx, batchID)
+	if err != nil {
+		log.Printf("[EmailPromotionService.ListProjectBatchUsers] get promotion error: %v", err)
+		return nil, ErrInternal("get promotion batch failed")
+	}
+	if promotion == nil || promotion.ProjectID != projectID {
+		return nil, ErrNotFound("promotion batch not found")
+	}
+
+	users, total, err := s.repo.EmailPromotion.ListProjectPromotionUsers(ctx, batchID, page, size)
+	if err != nil {
+		log.Printf("[EmailPromotionService.ListProjectBatchUsers] query users error: %v", err)
+		return nil, ErrInternal("list promotion batch users failed")
+	}
+
+	return &ProjectPromotionUserListResult{Total: total, List: users}, nil
+}
+
+func emailPromotionStatusText(status models.EmailPromotionStatus) string {
+	switch status {
+	case models.EmailPromotionStatusPending:
+		return "\u5f85\u53d1\u9001"
+	case models.EmailPromotionStatusSending:
+		return "\u53d1\u9001\u4e2d"
+	case models.EmailPromotionStatusCompleted:
+		return "\u5df2\u5b8c\u6210"
+	case models.EmailPromotionStatusFailed:
+		return "\u53d1\u9001\u5931\u8d25"
+	default:
+		return "\u672a\u77e5\u72b6\u6001"
+	}
+}
+
+func stringValue(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
 }

@@ -5,6 +5,7 @@ import (
 
 	"github.com/kuaizu-team/kuaizu-service/api"
 	"github.com/kuaizu-team/kuaizu-service/internal/models"
+	"github.com/kuaizu-team/kuaizu-service/internal/service"
 	"github.com/labstack/echo/v4"
 )
 
@@ -25,10 +26,23 @@ func (s *Server) TriggerEmailPromotion(ctx echo.Context) error {
 		return BadRequest(ctx, "项目ID无效")
 	}
 
-	log.Printf("[EmailPromotionHandler] trigger email promotion, user_id=%d order_id=%d project_id=%d",
-		userID, body.OrderId, body.ProjectId)
+	strategy := ""
+	if body.Strategy != nil {
+		strategy = string(*body.Strategy)
+	}
+	if strategy != "" && strategy != "region" && strategy != "project" && strategy != "major" {
+		return BadRequest(ctx, "invalid promotion strategy")
+	}
 
-	result, err := s.svc.EmailPromotion.TriggerPromotion(ctx.Request().Context(), userID, body.OrderId, body.ProjectId)
+	log.Printf("[EmailPromotionHandler] trigger email promotion, user_id=%d order_id=%d project_id=%d strategy=%s",
+		userID, body.OrderId, body.ProjectId, strategy)
+
+	result, err := s.svc.EmailPromotion.TriggerPromotionWithInput(ctx.Request().Context(), userID, service.TriggerPromotionInput{
+		OrderID:       body.OrderId,
+		ProjectID:     body.ProjectId,
+		Strategy:      strategy,
+		MaxRecipients: body.MaxRecipients,
+	})
 	if err != nil {
 		return mapServiceError(ctx, err)
 	}

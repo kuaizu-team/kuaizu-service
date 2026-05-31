@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -171,9 +172,36 @@ func (m *MockEmailPromotionRepo) GetByOrderID(ctx context.Context, orderID int) 
 	return args.Get(0).(*models.EmailPromotion), args.Error(1)
 }
 
+func (m *MockEmailPromotionRepo) GetByOrderAndProject(ctx context.Context, orderID, projectID int) (*models.EmailPromotion, error) {
+	args := m.Called(ctx, orderID, projectID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*models.EmailPromotion), args.Error(1)
+}
+
 func (m *MockEmailPromotionRepo) Update(ctx context.Context, promotion *models.EmailPromotion) error {
 	args := m.Called(ctx, promotion)
 	return args.Error(0)
+}
+
+func (m *MockEmailPromotionRepo) CreateRecipients(ctx context.Context, promotionID, projectID int, userIDs []int) error {
+	if !m.hasExpectation("CreateRecipients") {
+		return nil
+	}
+	args := m.Called(ctx, promotionID, projectID, userIDs)
+	return args.Error(0)
+}
+
+func (m *MockEmailPromotionRepo) SelectPromotionRecipients(ctx context.Context, projectID, creatorID int, strategy string, limit int) ([]int, error) {
+	if !m.hasExpectation("SelectPromotionRecipients") {
+		return nil, nil
+	}
+	args := m.Called(ctx, projectID, creatorID, strategy, limit)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]int), args.Error(1)
 }
 
 func (m *MockEmailPromotionRepo) ListByCreatorID(ctx context.Context, creatorID int, page, size int) ([]models.EmailPromotion, int64, error) {
@@ -190,6 +218,39 @@ func (m *MockEmailPromotionRepo) ListByProjectID(ctx context.Context, projectID 
 		return nil, args.Error(1)
 	}
 	return args.Get(0).([]models.EmailPromotion), args.Error(1)
+}
+
+func (m *MockEmailPromotionRepo) ListByProjectSince(ctx context.Context, projectID, days, limit int) ([]models.EmailPromotion, int64, error) {
+	args := m.Called(ctx, projectID, days, limit)
+	if args.Get(0) == nil {
+		return nil, args.Get(1).(int64), args.Error(2)
+	}
+	return args.Get(0).([]models.EmailPromotion), args.Get(1).(int64), args.Error(2)
+}
+
+func (m *MockEmailPromotionRepo) ListByProjectPaged(ctx context.Context, projectID, page, size, days, limit int) ([]models.EmailPromotion, int64, error) {
+	args := m.Called(ctx, projectID, page, size, days, limit)
+	if args.Get(0) == nil {
+		return nil, args.Get(1).(int64), args.Error(2)
+	}
+	return args.Get(0).([]models.EmailPromotion), args.Get(1).(int64), args.Error(2)
+}
+
+func (m *MockEmailPromotionRepo) ListProjectPromotionUsers(ctx context.Context, batchID, page, size int) ([]repository.ProjectPromotionUser, int64, error) {
+	args := m.Called(ctx, batchID, page, size)
+	if args.Get(0) == nil {
+		return nil, args.Get(1).(int64), args.Error(2)
+	}
+	return args.Get(0).([]repository.ProjectPromotionUser), args.Get(1).(int64), args.Error(2)
+}
+
+func (m *MockEmailPromotionRepo) hasExpectation(method string) bool {
+	for _, call := range m.ExpectedCalls {
+		if call.Method == method {
+			return true
+		}
+	}
+	return false
 }
 
 // --- Tests for TriggerPromotion ---
@@ -330,7 +391,7 @@ func TestTriggerPromotion_ProjectNotOwnedByUser(t *testing.T) {
 	mockProject.AssertExpectations(t)
 }
 
-func TestTriggerPromotion_AlreadyTriggered(t *testing.T) {
+func TestTriggerPromotion_AlreadyTriggeredReturnsExisting(t *testing.T) {
 	mockOrder := new(MockOrderRepo)
 	mockProject := new(MockProjectRepo)
 	mockProduct := new(MockProductRepo)
@@ -338,7 +399,18 @@ func TestTriggerPromotion_AlreadyTriggered(t *testing.T) {
 
 	mockOrder.On("GetByID", mock.Anything, 100).Return(&models.Order{ID: 100, UserID: 1, Status: 1}, nil)
 	mockProject.On("GetByID", mock.Anything, 200).Return(&models.Project{ID: 200, CreatorID: 1}, nil)
-	mockEmailPromotion.On("GetByOrderID", mock.Anything, 100).Return(&models.EmailPromotion{ID: 1, OrderID: 100}, nil)
+	mockEmailPromotion.On("GetByOrderAndProject", mock.Anything, 100, 200).Return(&models.EmailPromotion{
+		ID:            1,
+		OrderID:       100,
+		Status:        models.EmailPromotionStatusCompleted,
+		MaxRecipients: 10,
+	}, nil)
+	mockEmailPromotion.On("Update", mock.Anything, mock.MatchedBy(func(p *models.EmailPromotion) bool {
+		return p.ID == 1 && p.OrderID == 100 && p.ProjectID == 200 && p.CreatorID == 1 &&
+			p.Channel != nil && *p.Channel == "EMAIL" &&
+			p.BusinessTag != nil && *p.BusinessTag == "project_promotion" &&
+			p.TraceID != nil && *p.TraceID == "PROJECT_PROMOTION:100"
+	})).Return(nil)
 
 	repo := &repository.Repository{
 		Order:          mockOrder,
@@ -348,9 +420,10 @@ func TestTriggerPromotion_AlreadyTriggered(t *testing.T) {
 	}
 
 	svc := NewEmailPromotionService(repo)
-	_, err := svc.TriggerPromotion(context.Background(), 1, 100, 200)
-
-	assertServiceError(t, err, ErrCodeBadRequest, "此订单已触发过推广")
+	result, err := svc.TriggerPromotion(context.Background(), 1, 100, 200)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.Equal(t, 1, result.Promotion.ID)
 	mockOrder.AssertExpectations(t)
 	mockProject.AssertExpectations(t)
 	mockEmailPromotion.AssertExpectations(t)
@@ -372,7 +445,7 @@ func TestTriggerPromotion_NoEmailPromotionProduct(t *testing.T) {
 
 	mockOrder.On("GetByID", mock.Anything, 100).Return(order, nil)
 	mockProject.On("GetByID", mock.Anything, 200).Return(&models.Project{ID: 200, CreatorID: 1}, nil)
-	mockEmailPromotion.On("GetByOrderID", mock.Anything, 100).Return(nil, nil)
+	mockEmailPromotion.On("GetByOrderAndProject", mock.Anything, 100, 200).Return(nil, nil)
 	mockProduct.On("GetByID", mock.Anything, 10).Return(&models.Product{ID: 10, Type: 1}, nil)
 
 	repo := &repository.Repository{
@@ -408,10 +481,13 @@ func TestTriggerPromotion_Success(t *testing.T) {
 
 	mockOrder.On("GetByID", mock.Anything, 100).Return(order, nil)
 	mockProject.On("GetByID", mock.Anything, 200).Return(&models.Project{ID: 200, CreatorID: 1}, nil)
-	mockEmailPromotion.On("GetByOrderID", mock.Anything, 100).Return(nil, nil)
+	mockEmailPromotion.On("GetByOrderAndProject", mock.Anything, 100, 200).Return(nil, nil)
 	mockProduct.On("GetByID", mock.Anything, 10).Return(&models.Product{ID: 10, Type: 2}, nil)
 	mockEmailPromotion.On("Create", mock.Anything, mock.MatchedBy(func(p *models.EmailPromotion) bool {
-		return p.OrderID == 100 && p.ProjectID == 200 && p.CreatorID == 1 && p.MaxRecipients == 50
+		return p.OrderID == 100 && p.ProjectID == 200 && p.CreatorID == 1 && p.MaxRecipients == 50 &&
+			p.Channel != nil && *p.Channel == "EMAIL" &&
+			p.BusinessTag != nil && *p.BusinessTag == "project_promotion" &&
+			p.TraceID != nil && *p.TraceID == "PROJECT_PROMOTION:100"
 	})).Run(func(args mock.Arguments) {
 		promotion := args.Get(1).(*models.EmailPromotion)
 		promotion.ID = 1
@@ -459,7 +535,7 @@ func TestTriggerPromotion_CreateFails(t *testing.T) {
 
 	mockOrder.On("GetByID", mock.Anything, 100).Return(order, nil)
 	mockProject.On("GetByID", mock.Anything, 200).Return(&models.Project{ID: 200, CreatorID: 1}, nil)
-	mockEmailPromotion.On("GetByOrderID", mock.Anything, 100).Return(nil, nil)
+	mockEmailPromotion.On("GetByOrderAndProject", mock.Anything, 100, 200).Return(nil, nil)
 	mockProduct.On("GetByID", mock.Anything, 10).Return(&models.Product{ID: 10, Type: 2}, nil)
 	mockEmailPromotion.On("Create", mock.Anything, mock.Anything).Return(errors.New("db write error"))
 
@@ -668,6 +744,148 @@ func TestListByCreator_Empty(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, int64(0), total)
 	assert.Nil(t, promotions)
+	mockEmailPromotion.AssertExpectations(t)
+}
+
+// --- Tests for project promotion dashboard ---
+
+func TestListProjectBatches_NotProjectOwner(t *testing.T) {
+	mockProject := new(MockProjectRepo)
+	mockEmailPromotion := new(MockEmailPromotionRepo)
+
+	mockProject.On("IsOwner", mock.Anything, 200, 1).Return(false, nil)
+
+	repo := &repository.Repository{
+		Project:        mockProject,
+		EmailPromotion: mockEmailPromotion,
+	}
+	svc := NewEmailPromotionService(repo)
+
+	_, err := svc.ListProjectBatches(context.Background(), 1, 200, 7, 10)
+
+	assertServiceError(t, err, ErrCodeForbidden, "no permission to view project promotion records")
+	mockProject.AssertExpectations(t)
+	mockEmailPromotion.AssertNotCalled(t, "ListByProjectSince", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+}
+
+func TestListProjectBatches_Success(t *testing.T) {
+	mockProject := new(MockProjectRepo)
+	mockEmailPromotion := new(MockEmailPromotionRepo)
+
+	startedAt := time.Date(2026, 5, 28, 22, 48, 19, 0, time.FixedZone("CST", 8*3600))
+	createdAt := startedAt.Add(-time.Second)
+	promotions := []models.EmailPromotion{
+		{
+			ID:            42,
+			ProjectID:     369,
+			MaxRecipients: 10,
+			TotalSent:     10,
+			Status:        models.EmailPromotionStatusCompleted,
+			StartedAt:     &startedAt,
+			CreatedAt:     createdAt,
+		},
+	}
+
+	mockProject.On("IsOwner", mock.Anything, 369, 1).Return(true, nil)
+	mockEmailPromotion.On("ListByProjectSince", mock.Anything, 369, 7, 10).Return(promotions, int64(1), nil)
+
+	repo := &repository.Repository{
+		Project:        mockProject,
+		EmailPromotion: mockEmailPromotion,
+	}
+	svc := NewEmailPromotionService(repo)
+
+	result, err := svc.ListProjectBatches(context.Background(), 1, 369, 0, 0)
+
+	require.NoError(t, err)
+	require.Len(t, result.List, 1)
+	assert.Equal(t, int64(1), result.Total)
+	assert.Equal(t, 42, result.List[0].BatchID)
+	assert.Equal(t, "\u5df2\u5b8c\u6210", result.List[0].StatusText)
+	assert.Equal(t, startedAt, result.List[0].PromotedAt)
+	mockProject.AssertExpectations(t)
+	mockEmailPromotion.AssertExpectations(t)
+}
+
+func TestListProjectBatchUsers_BatchNotInProject(t *testing.T) {
+	mockProject := new(MockProjectRepo)
+	mockEmailPromotion := new(MockEmailPromotionRepo)
+
+	mockProject.On("IsOwner", mock.Anything, 200, 1).Return(true, nil)
+	mockEmailPromotion.On("GetByID", mock.Anything, 42).Return(&models.EmailPromotion{ID: 42, ProjectID: 201}, nil)
+
+	repo := &repository.Repository{
+		Project:        mockProject,
+		EmailPromotion: mockEmailPromotion,
+	}
+	svc := NewEmailPromotionService(repo)
+
+	_, err := svc.ListProjectBatchUsers(context.Background(), 1, 200, 42, 1, 20)
+
+	assertServiceError(t, err, ErrCodeNotFound, "promotion batch not found")
+	mockProject.AssertExpectations(t)
+	mockEmailPromotion.AssertExpectations(t)
+	mockEmailPromotion.AssertNotCalled(t, "ListProjectPromotionUsers", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+}
+
+func TestListProjectBatchUsers_SafeFields(t *testing.T) {
+	mockProject := new(MockProjectRepo)
+	mockEmailPromotion := new(MockEmailPromotionRepo)
+	nickname := "user"
+	avatar := "2026/05/avatar.jpg"
+	talentProfileID := 80
+	users := []repository.ProjectPromotionUser{
+		{
+			UserID:          1200,
+			TalentProfileID: &talentProfileID,
+			Nickname:        &nickname,
+			AvatarUrl:       &avatar,
+			AuthStatus:      1,
+		},
+	}
+
+	mockProject.On("IsOwner", mock.Anything, 369, 1).Return(true, nil)
+	mockEmailPromotion.On("GetByID", mock.Anything, 42).Return(&models.EmailPromotion{ID: 42, ProjectID: 369}, nil)
+	mockEmailPromotion.On("ListProjectPromotionUsers", mock.Anything, 42, 1, 20).Return(users, int64(1), nil)
+
+	repo := &repository.Repository{
+		Project:        mockProject,
+		EmailPromotion: mockEmailPromotion,
+	}
+	svc := NewEmailPromotionService(repo)
+
+	result, err := svc.ListProjectBatchUsers(context.Background(), 1, 369, 42, 1, 20)
+
+	require.NoError(t, err)
+	require.Len(t, result.List, 1)
+	assert.Equal(t, int64(1), result.Total)
+	assert.Equal(t, 1200, result.List[0].UserID)
+	assert.NotContains(t, fmt.Sprintf("%#v", result.List[0]), "Email")
+	assert.NotContains(t, fmt.Sprintf("%#v", result.List[0]), "Phone")
+	mockProject.AssertExpectations(t)
+	mockEmailPromotion.AssertExpectations(t)
+}
+
+func TestListProjectBatchUsers_FallbackResultFromRepository(t *testing.T) {
+	mockProject := new(MockProjectRepo)
+	mockEmailPromotion := new(MockEmailPromotionRepo)
+
+	users := []repository.ProjectPromotionUser{{UserID: 1200, AuthStatus: 1}}
+	mockProject.On("IsOwner", mock.Anything, 369, 1).Return(true, nil)
+	mockEmailPromotion.On("GetByID", mock.Anything, 42).Return(&models.EmailPromotion{ID: 42, ProjectID: 369}, nil)
+	mockEmailPromotion.On("ListProjectPromotionUsers", mock.Anything, 42, 1, 20).Return(users, int64(1), nil)
+
+	repo := &repository.Repository{
+		Project:        mockProject,
+		EmailPromotion: mockEmailPromotion,
+	}
+	svc := NewEmailPromotionService(repo)
+
+	result, err := svc.ListProjectBatchUsers(context.Background(), 1, 369, 42, 1, 20)
+
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), result.Total)
+	assert.Equal(t, 1200, result.List[0].UserID)
 	mockEmailPromotion.AssertExpectations(t)
 }
 

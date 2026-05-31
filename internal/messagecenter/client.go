@@ -23,10 +23,14 @@ type Client struct {
 
 // ProjectPromotionRequest is the message-center project promotion payload.
 type ProjectPromotionRequest struct {
-	ProjectID      int `json:"projectId"`
-	PromotionCount int `json:"promotionCount"`
-	CreatorUserID  int `json:"creatorUserId"`
-	OrderID        int `json:"orderId"`
+	PromotionID      int    `json:"promotionId,omitempty"`
+	ProjectID        int    `json:"projectId"`
+	PromotionCount   int    `json:"promotionCount"`
+	CreatorUserID    int    `json:"creatorUserId"`
+	OrderID          int    `json:"orderId"`
+	Strategy         string `json:"strategy,omitempty"`
+	TraceID          string `json:"traceId,omitempty"`
+	RecipientUserIDs []int  `json:"recipientUserIds,omitempty"`
 }
 
 // ProjectPromotionResponse is the useful data returned by the message center.
