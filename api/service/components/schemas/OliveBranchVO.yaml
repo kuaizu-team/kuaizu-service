@@ -33,6 +33,14 @@ properties:
   isRead:
     type: boolean
     description: 接收方是否已读(仅发出列表有意义)
+  smsNotice:
+    $ref: ./SmsNoticeSummaryVO.yaml
+  smsStatus:
+    type: integer
+  smsOrderId:
+    type: integer
+  smsRecordId:
+    type: integer
   createdAt:
     type: string
     format: date-time

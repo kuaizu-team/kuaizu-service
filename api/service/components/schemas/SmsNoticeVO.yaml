@@ -1,0 +1,26 @@
+type: object
+properties:
+  id:
+    type: integer
+  recordId:
+    type: integer
+  orderId:
+    type: integer
+  receiverUserId:
+    type: integer
+  oliveBranchRecordId:
+    type: integer
+  projectId:
+    type: integer
+  status:
+    type: integer
+  message:
+    type: string
+  errorMessage:
+    type: string
+  createdAt:
+    type: string
+    format: date-time
+  updatedAt:
+    type: string
+    format: date-time

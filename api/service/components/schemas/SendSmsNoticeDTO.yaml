@@ -1,0 +1,14 @@
+type: object
+required:
+  - orderId
+  - receiverUserId
+  - oliveBranchRecordId
+properties:
+  orderId:
+    type: integer
+  receiverUserId:
+    type: integer
+  oliveBranchRecordId:
+    type: integer
+  projectId:
+    type: integer

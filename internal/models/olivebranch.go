@@ -20,9 +20,10 @@ type OliveBranch struct {
 	UpdatedAt        time.Time `db:"updated_at"`
 
 	// Joined fields
-	Sender      *User   `db:"-"`
-	Receiver    *User   `db:"-"`
-	ProjectName *string `db:"project_name"`
+	Sender      *User      `db:"-"`
+	Receiver    *User      `db:"-"`
+	ProjectName *string    `db:"project_name"`
+	SmsNotice   *SmsNotice `db:"-"`
 }
 
 // ToVO converts OliveBranch to API OliveBranchVO
@@ -46,6 +47,20 @@ func (o *OliveBranch) ToVO() *api.OliveBranchVO {
 	}
 	if o.Receiver != nil {
 		vo.Receiver = o.Receiver.ToVO()
+	}
+	if o.SmsNotice != nil {
+		status := int(o.SmsNotice.Status)
+		vo.SmsStatus = &status
+		vo.SmsOrderId = &o.SmsNotice.OrderID
+		vo.SmsRecordId = &o.SmsNotice.ID
+		vo.SmsNotice = &api.SmsNoticeSummaryVO{
+			Id:           &o.SmsNotice.ID,
+			OrderId:      &o.SmsNotice.OrderID,
+			Status:       &status,
+			ErrorMessage: o.SmsNotice.ErrorMessage,
+			CreatedAt:    &o.SmsNotice.CreatedAt,
+			UpdatedAt:    &o.SmsNotice.UpdatedAt,
+		}
 	}
 
 	return vo

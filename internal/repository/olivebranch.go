@@ -50,6 +50,12 @@ type obUserRow struct {
 type obRow struct {
 	models.OliveBranch
 	obUserRow
+	SmsID        *int       `db:"sms_id"`
+	SmsOrderID   *int       `db:"sms_order_id"`
+	SmsStatus    *int       `db:"sms_status"`
+	SmsError     *string    `db:"sms_error_message"`
+	SmsCreatedAt *time.Time `db:"sms_created_at"`
+	SmsUpdatedAt *time.Time `db:"sms_updated_at"`
 }
 
 // ListByReceiverID retrieves paginated olive branches received by a user
@@ -257,12 +263,19 @@ func (r *OliveBranchRepository) ListBySenderID(ctx context.Context, params Olive
 			sch.school_name  AS u_school_name,
 			sch.school_code  AS u_school_code,
 			m.major_name     AS u_major_name,
-			m.class_id       AS u_class_id
+			m.class_id       AS u_class_id,
+			sn.id            AS sms_id,
+			sn.order_id      AS sms_order_id,
+			sn.status        AS sms_status,
+			sn.error_message AS sms_error_message,
+			sn.created_at    AS sms_created_at,
+			sn.updated_at    AS sms_updated_at
 		FROM olive_branch_record ob
 		LEFT JOIN project p ON ob.related_project_id = p.id
 		LEFT JOIN ` + "`user`" + ` recv ON ob.receiver_id = recv.id
 		LEFT JOIN school sch ON recv.school_id = sch.id
 		LEFT JOIN major m ON recv.major_id = m.id
+		LEFT JOIN olive_branch_sms_notice sn ON sn.olive_branch_record_id = ob.id
 		WHERE ob.sender_id = ?
 	`
 	if params.Status != nil {
@@ -300,6 +313,17 @@ func (r *OliveBranchRepository) ListBySenderID(ctx context.Context, params Olive
 			MajorName:  row.UMajorName,
 			ClassID:    row.UClassID,
 		}
+		if row.SmsID != nil {
+			ob.SmsNotice = &models.SmsNotice{
+				ID:                  *row.SmsID,
+				OrderID:             intValue(row.SmsOrderID),
+				Status:              models.SmsNoticeStatus(intValue(row.SmsStatus)),
+				ErrorMessage:        row.SmsError,
+				CreatedAt:           timeValue(row.SmsCreatedAt),
+				UpdatedAt:           timeValue(row.SmsUpdatedAt),
+				OliveBranchRecordID: ob.ID,
+			}
+		}
 		records = append(records, ob)
 	}
 	rows.Close()
@@ -309,6 +333,20 @@ func (r *OliveBranchRepository) ListBySenderID(ctx context.Context, params Olive
 	}
 
 	return records, total, nil
+}
+
+func intValue(value *int) int {
+	if value == nil {
+		return 0
+	}
+	return *value
+}
+
+func timeValue(value *time.Time) time.Time {
+	if value == nil {
+		return time.Time{}
+	}
+	return *value
 }
 
 // OliveBranchByProjectParams contains parameters for listing olive branches by project

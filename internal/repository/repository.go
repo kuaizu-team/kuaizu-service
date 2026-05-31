@@ -17,6 +17,7 @@ type Repository struct {
 	TalentProfile   TalentProfileRepo
 	Order           OrderRepo
 	EmailPromotion  EmailPromotionRepo
+	SmsNotice       SmsNoticeRepo
 	AdminUser       AdminUserRepo
 	Feedback        FeedbackRepo
 	MsgTemplate     MsgTemplateConfigRepo
@@ -44,6 +45,7 @@ func New(db *sqlx.DB) *Repository {
 		TalentProfile:   NewTalentProfileRepository(db),
 		Order:           NewOrderRepository(db),
 		EmailPromotion:  NewEmailPromotionRepository(db),
+		SmsNotice:       NewSmsNoticeRepository(db),
 		AdminUser:       NewAdminUserRepository(db),
 		Feedback:        NewFeedbackRepository(db),
 		MsgTemplate:     NewMsgTemplateConfigRepository(db),

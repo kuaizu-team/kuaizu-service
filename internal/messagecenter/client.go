@@ -47,6 +47,30 @@ type projectPromotionEnvelope struct {
 	Data    *ProjectPromotionResponse `json:"data"`
 }
 
+type SmsNoticeRequest struct {
+	TraceID             string `json:"traceId"`
+	NoticeID            int    `json:"noticeId"`
+	OrderID             int    `json:"orderId"`
+	SenderUserID        int    `json:"senderUserId"`
+	ReceiverUserID      int    `json:"receiverUserId"`
+	OliveBranchRecordID int    `json:"oliveBranchRecordId"`
+	ProjectID           *int   `json:"projectId,omitempty"`
+	Content             string `json:"content"`
+}
+
+type SmsNoticeResponse struct {
+	Provider      string `json:"provider,omitempty"`
+	ProviderBizID string `json:"providerBizId,omitempty"`
+	TaskID        string `json:"taskId,omitempty"`
+	Accepted      *bool  `json:"accepted,omitempty"`
+}
+
+type smsNoticeEnvelope struct {
+	Code    int                `json:"code"`
+	Message string             `json:"message"`
+	Data    *SmsNoticeResponse `json:"data"`
+}
+
 // NewClientFromEnv builds a message-center client from environment variables.
 func NewClientFromEnv() (*Client, error) {
 	baseURL := strings.TrimSpace(os.Getenv("MESSAGE_CENTER_BASE_URL"))
@@ -142,5 +166,72 @@ func (c *Client) SubmitProjectPromotion(ctx context.Context, req ProjectPromotio
 		return nil, fmt.Errorf("message center response data is empty")
 	}
 
+	return envelope.Data, nil
+}
+
+func (c *Client) SubmitSmsNotice(ctx context.Context, req SmsNoticeRequest) (*SmsNoticeResponse, error) {
+	if c == nil {
+		return nil, fmt.Errorf("message center client is nil")
+	}
+	if req.TraceID == "" {
+		return nil, fmt.Errorf("traceId is required")
+	}
+	if req.NoticeID <= 0 {
+		return nil, fmt.Errorf("noticeId is required")
+	}
+	if req.OrderID <= 0 {
+		return nil, fmt.Errorf("orderId is required")
+	}
+	if req.SenderUserID <= 0 || req.ReceiverUserID <= 0 {
+		return nil, fmt.Errorf("senderUserId and receiverUserId are required")
+	}
+	if req.OliveBranchRecordID <= 0 {
+		return nil, fmt.Errorf("oliveBranchRecordId is required")
+	}
+	if strings.TrimSpace(req.Content) == "" {
+		return nil, fmt.Errorf("content is required")
+	}
+
+	body, err := json.Marshal(req)
+	if err != nil {
+		return nil, fmt.Errorf("marshal request: %w", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(
+		ctx,
+		http.MethodPost,
+		c.baseURL+"/api/v2/sms/send",
+		bytes.NewReader(body),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("create request: %w", err)
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Authorization", "Bearer "+c.apiToken)
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("post sms notice: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read response: %w", err)
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("unexpected status %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	var envelope smsNoticeEnvelope
+	if err := json.Unmarshal(respBody, &envelope); err != nil {
+		return nil, fmt.Errorf("decode response: %w", err)
+	}
+	if envelope.Code != http.StatusOK {
+		return nil, fmt.Errorf("message center code %d: %s", envelope.Code, envelope.Message)
+	}
+	if envelope.Data == nil {
+		return &SmsNoticeResponse{}, nil
+	}
 	return envelope.Data, nil
 }

@@ -43,6 +43,8 @@ tags:
     description: 通用接口
   - name: EmailPromotions
     description: 邮件推广服务接口
+  - name: SmsNotices
+    description: 橄榄枝短信通知接口
   - name: Feedbacks
     description: 用户反馈接口
 paths:
@@ -122,6 +124,12 @@ paths:
     $ref: paths/email_promotion_trigger.yaml
   /email/promotions/my:
     $ref: paths/email_promotions_my.yaml
+  /sms/send:
+    $ref: paths/sms_send.yaml
+  /sms/send/{recordId}:
+    $ref: paths/sms_send_{recordId}.yaml
+  /sms/send/by-olive-branch/{oliveBranchRecordId}:
+    $ref: paths/sms_send_by-olive-branch_{oliveBranchRecordId}.yaml
   /dictionaries/schools:
     $ref: paths/dictionaries_schools.yaml
   /dictionaries/majors:

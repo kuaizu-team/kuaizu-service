@@ -8,6 +8,7 @@ import (
 type Services struct {
 	Auth             *AuthService
 	EmailPromotion   *EmailPromotionService
+	SmsNotice        *SmsNoticeService
 	Payment          *PaymentService
 	EmailUnsubscribe *EmailUnsubscribeService
 	Order            *OrderService
@@ -28,6 +29,7 @@ func New(repo *repository.Repository, deps *Dependencies) *Services {
 	return &Services{
 		Auth:             NewAuthService(repo, deps.WechatClient),
 		EmailPromotion:   NewEmailPromotionServiceWithMessageCenter(repo, deps.MessageCenter, deps.MessageCenterInitError),
+		SmsNotice:        NewSmsNoticeService(repo, deps.MessageCenter, deps.MessageCenterInitError),
 		Payment:          NewPaymentService(repo, deps.PayClient, deps.PayInitError),
 		EmailUnsubscribe: NewEmailUnsubscribeService(repo),
 		Order:            NewOrderService(repo, deps.PayClient, deps.PayInitError),
