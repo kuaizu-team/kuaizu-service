@@ -294,9 +294,8 @@ func (s *EmailPromotionService) startAsyncPromotionSubmission(promotion *models.
 		log.Printf("[EmailPromotionService] submitted project promotion, promotion_id=%d order_id=%d project_id=%d task_id=%s requested=%d actual=%d",
 			promotion.ID, promotion.OrderID, promotion.ProjectID, resp.TaskID, resp.RequestedCount, resp.ActualCount)
 
-		// Recipient user IDs are determined by the message center for this path.
-		// email_promotion_recipient should be written by the message-center
-		// callback/sync that reports the concrete email_task and user results.
+		// Recipient user IDs are selected and snapshotted before submission so
+		// the project owner can inspect the batch immediately.
 	}()
 }
 

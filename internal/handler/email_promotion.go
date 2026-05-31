@@ -26,7 +26,10 @@ func (s *Server) TriggerEmailPromotion(ctx echo.Context) error {
 		return BadRequest(ctx, "项目ID无效")
 	}
 
-	strategy := string(body.Strategy)
+	strategy := ""
+	if body.Strategy != nil {
+		strategy = string(*body.Strategy)
+	}
 	if strategy != "" && strategy != "region" && strategy != "project" && strategy != "major" {
 		return BadRequest(ctx, "invalid promotion strategy")
 	}

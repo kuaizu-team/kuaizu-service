@@ -2,7 +2,6 @@ type: object
 required:
   - orderId
   - projectId
-  - strategy
 properties:
   orderId:
     type: integer
@@ -13,7 +12,8 @@ properties:
   strategy:
     type: string
     enum: [region, project, major]
-    description: Recipient selection strategy
+    default: region
+    description: Optional recipient selection strategy. Defaults to region for backward compatibility.
   maxRecipients:
     type: integer
     description: Optional; when present it must equal the paid order quantity. The final count uses order quantity.
