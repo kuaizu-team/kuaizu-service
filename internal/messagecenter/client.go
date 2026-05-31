@@ -62,7 +62,7 @@ type SmsNoticeResponse struct {
 	Provider      string `json:"provider,omitempty"`
 	ProviderBizID string `json:"providerBizId,omitempty"`
 	TaskID        string `json:"taskId,omitempty"`
-	Accepted      bool   `json:"accepted,omitempty"`
+	Accepted      *bool  `json:"accepted,omitempty"`
 }
 
 type smsNoticeEnvelope struct {

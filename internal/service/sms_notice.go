@@ -247,6 +247,17 @@ func (s *SmsNoticeService) startAsyncSubmission(notice *models.SmsNotice) {
 			s.markFailed(notice, "submit message center failed: "+err.Error())
 			return
 		}
+		if resp != nil && resp.Accepted != nil && !*resp.Accepted {
+			fresh, getErr := s.repo.SmsNotice.GetByID(context.Background(), notice.ID)
+			if getErr != nil {
+				log.Printf("[SmsNoticeService] reload rejected sms notice failed, notice_id=%d: %v", notice.ID, getErr)
+				return
+			}
+			if fresh != nil {
+				*notice = *fresh
+			}
+			return
+		}
 
 		notice.Status = models.SmsNoticeStatusSending
 		notice.CompletedAt = nil
