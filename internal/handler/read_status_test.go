@@ -7,7 +7,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/kuaizu-team/kuaizu-service/internal/models"
 	"github.com/kuaizu-team/kuaizu-service/internal/repository"
 	"github.com/labstack/echo/v4"
 )
@@ -60,25 +59,13 @@ func TestMarkReviewerApplicationReadPassesProjectAndIDs(t *testing.T) {
 }
 
 type fakeApplicationRepo struct {
+	repository.ApplicationRepo
+
 	projectID int
 	ownerID   int
 	ids       []int
 }
 
-func (f *fakeApplicationRepo) List(context.Context, repository.ApplicationListParams) ([]models.ProjectApplication, int64, error) {
-	return nil, 0, nil
-}
-func (f *fakeApplicationRepo) Create(context.Context, *models.ProjectApplication) error { return nil }
-func (f *fakeApplicationRepo) GetByID(context.Context, int) (*models.ProjectApplication, error) {
-	return nil, nil
-}
-func (f *fakeApplicationRepo) CheckDuplicate(context.Context, int, int) (bool, error) {
-	return false, nil
-}
-func (f *fakeApplicationRepo) UpdateStatus(context.Context, int, int) error { return nil }
-func (f *fakeApplicationRepo) GetUnreadApplicationCount(context.Context, int) (int, error) {
-	return 0, nil
-}
 func (f *fakeApplicationRepo) MarkReviewerRead(_ context.Context, projectID, ownerID int, ids []int) error {
 	f.projectID = projectID
 	f.ownerID = ownerID
@@ -87,30 +74,12 @@ func (f *fakeApplicationRepo) MarkReviewerRead(_ context.Context, projectID, own
 }
 
 type fakeOliveBranchRepo struct {
+	repository.OliveBranchRepo
+
 	receiverID int
 	ids        []int
 }
 
-func (f *fakeOliveBranchRepo) ListByReceiverID(context.Context, repository.OliveBranchListParams) ([]models.OliveBranch, int64, error) {
-	return nil, 0, nil
-}
-func (f *fakeOliveBranchRepo) GetByID(context.Context, int) (*models.OliveBranch, error) {
-	return nil, nil
-}
-func (f *fakeOliveBranchRepo) Create(context.Context, *models.OliveBranch) error { return nil }
-func (f *fakeOliveBranchRepo) UpdateStatus(context.Context, int, int) error      { return nil }
-func (f *fakeOliveBranchRepo) ListBySenderID(context.Context, repository.OliveBranchListParams) ([]models.OliveBranch, int64, error) {
-	return nil, 0, nil
-}
-func (f *fakeOliveBranchRepo) ExistsPending(context.Context, int, int, int) (bool, error) {
-	return false, nil
-}
-func (f *fakeOliveBranchRepo) GetBadgeCounts(context.Context, int) (repository.OliveBranchBadgeCounts, error) {
-	return repository.OliveBranchBadgeCounts{}, nil
-}
-func (f *fakeOliveBranchRepo) ListByRelatedProjectID(context.Context, repository.OliveBranchByProjectParams) ([]models.OliveBranch, int64, error) {
-	return nil, 0, nil
-}
 func (f *fakeOliveBranchRepo) MarkReceiverRead(_ context.Context, receiverID int, ids []int) error {
 	f.receiverID = receiverID
 	f.ids = ids
