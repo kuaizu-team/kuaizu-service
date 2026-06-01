@@ -2,6 +2,7 @@ package handler
 
 import (
 	"errors"
+	"log"
 	"strconv"
 	"strings"
 
@@ -473,6 +474,7 @@ func (s *Server) MarkReviewerApplicationRead(ctx echo.Context) error {
 		return BadRequest(ctx, "projectId 不能为空")
 	}
 
+	log.Printf("mark reviewer application read request: userID=%d projectID=%d ids=%v", userID, req.ProjectId, req.Ids)
 	if err := s.repo.Application.MarkReviewerRead(ctx.Request().Context(), req.ProjectId, userID, req.Ids); err != nil {
 		if errors.Is(err, repository.ErrNotProjectOwner) {
 			return Forbidden(ctx, "无权操作")

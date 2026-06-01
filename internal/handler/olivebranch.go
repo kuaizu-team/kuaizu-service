@@ -1,6 +1,10 @@
 package handler
 
 import (
+	"bytes"
+	"encoding/json"
+	"io"
+	"log"
 	"time"
 
 	"github.com/kuaizu-team/kuaizu-service/api"
@@ -176,10 +180,17 @@ func (s *Server) MarkReceiverOliveBranchRead(ctx echo.Context) error {
 	var req struct {
 		Ids []int `json:"ids"`
 	}
-	if err := ctx.Bind(&req); err != nil {
+	body, err := io.ReadAll(ctx.Request().Body)
+	if err != nil {
 		return BadRequest(ctx, "请求参数错误")
 	}
+	if len(bytes.TrimSpace(body)) > 0 {
+		if err := json.Unmarshal(body, &req); err != nil {
+			return BadRequest(ctx, "请求参数错误")
+		}
+	}
 
+	log.Printf("mark receiver olive branch read request: userID=%d ids=%v", userID, req.Ids)
 	if err := s.repo.OliveBranch.MarkReceiverRead(ctx.Request().Context(), userID, req.Ids); err != nil {
 		return InternalError(ctx, "标记已读失败")
 	}

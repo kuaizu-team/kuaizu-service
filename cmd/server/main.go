@@ -117,8 +117,6 @@ func main() {
 	apiGroup.GET("/dictionaries/schools/cities", server.GetSchoolCities)
 	apiGroup.GET("/dictionaries/schools/districts", server.GetSchoolDistricts)
 
-	api.RegisterHandlers(apiGroup, server)
-
 	// Olive-branch badge endpoints (auth required, registered outside generated code)
 	apiGroup.GET("/olive-branches/badge", server.GetOliveBranchBadge)
 	apiGroup.POST("/olive-branches/badge/mark-sent-read", server.MarkSentOliveBranchRead)
@@ -132,6 +130,8 @@ func main() {
 
 	// Project-application reviewer read status
 	apiGroup.POST("/project-applications/mark-read", server.MarkReviewerApplicationRead)
+
+	api.RegisterHandlers(apiGroup, server)
 
 	// WeChat Pay callback (no auth required)
 	e.POST("/api/v2/payment/wechat/notify", server.WechatPayCallback)

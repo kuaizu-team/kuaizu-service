@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"log"
 	"strings"
 	"time"
 
@@ -305,9 +306,11 @@ func (r *ApplicationRepository) MarkReviewerRead(ctx context.Context, projectID,
 		return fmt.Errorf("check project owner: %w", err)
 	}
 	if !isOwner {
+		log.Printf("mark reviewer application read denied: projectID=%d ownerID=%d", projectID, ownerID)
 		return ErrNotProjectOwner
 	}
 
+	var rowsAffected int64
 	if len(ids) > 0 {
 		query, args, err := sqlx.In(
 			`UPDATE project_application SET is_read = TRUE WHERE project_id = ? AND id IN (?) AND is_read = FALSE`,
@@ -317,17 +320,22 @@ func (r *ApplicationRepository) MarkReviewerRead(ctx context.Context, projectID,
 			return fmt.Errorf("build mark reviewer read IN query: %w", err)
 		}
 		query = r.db.Rebind(query)
-		if _, err := r.db.ExecContext(ctx, query, args...); err != nil {
+		result, err := r.db.ExecContext(ctx, query, args...)
+		if err != nil {
 			return fmt.Errorf("mark reviewer read: %w", err)
 		}
+		rowsAffected, _ = result.RowsAffected()
 	} else {
-		if _, err := r.db.ExecContext(ctx,
+		result, err := r.db.ExecContext(ctx,
 			`UPDATE project_application SET is_read = TRUE WHERE project_id = ? AND is_read = FALSE`,
 			projectID,
-		); err != nil {
+		)
+		if err != nil {
 			return fmt.Errorf("mark reviewer read: %w", err)
 		}
+		rowsAffected, _ = result.RowsAffected()
 	}
+	log.Printf("mark reviewer application read updated: projectID=%d ownerID=%d ids=%v rowsAffected=%d", projectID, ownerID, ids, rowsAffected)
 	return nil
 }
 
