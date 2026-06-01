@@ -33,4 +33,3 @@ END$$
 DELIMITER ;
 CALL _olive_branch_sms_notice_order_unique();
 DROP PROCEDURE IF EXISTS _olive_branch_sms_notice_order_unique;
-
