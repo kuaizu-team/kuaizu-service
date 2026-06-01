@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/jmoiron/sqlx"
@@ -485,6 +486,7 @@ func (r *OliveBranchRepository) GetBadgeCounts(ctx context.Context, userID int) 
 // MarkReceiverRead sets is_read = TRUE for olive branches received by receiverID.
 // If ids is non-empty, only those specific records are updated; otherwise all unread records for the receiver are updated.
 func (r *OliveBranchRepository) MarkReceiverRead(ctx context.Context, receiverID int, ids []int) error {
+	var rowsAffected int64
 	if len(ids) > 0 {
 		query, args, err := sqlx.In(
 			`UPDATE olive_branch_record SET is_read = TRUE WHERE receiver_id = ? AND id IN (?) AND is_read = FALSE`,
@@ -494,17 +496,22 @@ func (r *OliveBranchRepository) MarkReceiverRead(ctx context.Context, receiverID
 			return fmt.Errorf("build mark receiver read IN query: %w", err)
 		}
 		query = r.db.Rebind(query)
-		if _, err := r.db.ExecContext(ctx, query, args...); err != nil {
+		result, err := r.db.ExecContext(ctx, query, args...)
+		if err != nil {
 			return fmt.Errorf("mark receiver read: %w", err)
 		}
+		rowsAffected, _ = result.RowsAffected()
 	} else {
-		if _, err := r.db.ExecContext(ctx,
+		result, err := r.db.ExecContext(ctx,
 			`UPDATE olive_branch_record SET is_read = TRUE WHERE receiver_id = ? AND is_read = FALSE`,
 			receiverID,
-		); err != nil {
+		)
+		if err != nil {
 			return fmt.Errorf("mark receiver read: %w", err)
 		}
+		rowsAffected, _ = result.RowsAffected()
 	}
+	log.Printf("mark receiver olive branch read updated: receiverID=%d ids=%v rowsAffected=%d", receiverID, ids, rowsAffected)
 	return nil
 }
 
