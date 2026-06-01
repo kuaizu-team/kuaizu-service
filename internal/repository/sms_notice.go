@@ -3,8 +3,10 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 
+	"github.com/go-sql-driver/mysql"
 	"github.com/jmoiron/sqlx"
 	"github.com/kuaizu-team/kuaizu-service/internal/models"
 )
@@ -38,13 +40,23 @@ func (r *SmsNoticeRepository) Create(ctx context.Context, notice *models.SmsNoti
 
 	result, err := r.db.NamedExecContext(ctx, query, notice)
 	if err != nil {
-		existing, getErr := r.GetByOliveBranchRecordID(ctx, notice.OliveBranchRecordID)
-		if getErr != nil {
-			return getErr
-		}
-		if existing != nil {
-			*notice = *existing
-			return nil
+		if isDuplicateEntryError(err) {
+			existing, getErr := r.GetByOliveBranchRecordID(ctx, notice.OliveBranchRecordID)
+			if getErr != nil {
+				return getErr
+			}
+			if existing != nil {
+				*notice = *existing
+				return nil
+			}
+			existing, getErr = r.GetByOrderID(ctx, notice.OrderID)
+			if getErr != nil {
+				return getErr
+			}
+			if existing != nil {
+				*notice = *existing
+				return nil
+			}
 		}
 		return fmt.Errorf("create sms notice: %w", err)
 	}
@@ -81,6 +93,11 @@ func (r *SmsNoticeRepository) Update(ctx context.Context, notice *models.SmsNoti
 		return fmt.Errorf("update sms notice: %w", err)
 	}
 	return nil
+}
+
+func isDuplicateEntryError(err error) bool {
+	var mysqlErr *mysql.MySQLError
+	return errors.As(err, &mysqlErr) && mysqlErr.Number == 1062
 }
 
 func (r *SmsNoticeRepository) GetByID(ctx context.Context, id int) (*models.SmsNotice, error) {
