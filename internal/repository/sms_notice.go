@@ -46,6 +46,14 @@ func (r *SmsNoticeRepository) Create(ctx context.Context, notice *models.SmsNoti
 			*notice = *existing
 			return nil
 		}
+		existing, getErr = r.GetByOrderID(ctx, notice.OrderID)
+		if getErr != nil {
+			return getErr
+		}
+		if existing != nil {
+			*notice = *existing
+			return nil
+		}
 		return fmt.Errorf("create sms notice: %w", err)
 	}
 	id, err := result.LastInsertId()

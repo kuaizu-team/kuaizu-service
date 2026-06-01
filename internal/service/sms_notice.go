@@ -117,29 +117,27 @@ func (s *SmsNoticeService) Send(ctx context.Context, userID int, input SendSmsNo
 		return nil, ErrInternal("check sms notice failed")
 	}
 	if existing != nil {
-		switch existing.Status {
-		case models.SmsNoticeStatusCompleted, models.SmsNoticeStatusPending, models.SmsNoticeStatusSending:
-			return existing, nil
-		case models.SmsNoticeStatusFailed:
-			if existing.OrderID != input.OrderID {
-				return nil, ErrBadRequest("failed sms notice can only retry with the original paid order")
-			}
-			notice := s.prepareNotice(existing, branch, order, project, receiver)
-			if err := s.repo.SmsNotice.Update(ctx, notice); err != nil {
-				log.Printf("[SmsNoticeService] update failed notice for retry: %v", err)
-				return nil, ErrInternal("update sms notice failed")
-			}
-			s.startAsyncSubmission(notice)
-			return notice, nil
-		default:
-			return existing, nil
+		return s.handleExistingNotice(ctx, existing, input, branch, order, project, receiver)
+	}
+
+	existingByOrder, err := s.repo.SmsNotice.GetByOrderID(ctx, input.OrderID)
+	if err != nil {
+		return nil, ErrInternal("check sms notice order failed")
+	}
+	if existingByOrder != nil {
+		if existingByOrder.OliveBranchRecordID != input.OliveBranchRecordID {
+			return nil, ErrBadRequest("order has already been used for another sms notice")
 		}
+		return s.handleExistingNotice(ctx, existingByOrder, input, branch, order, project, receiver)
 	}
 
 	notice := s.prepareNotice(&models.SmsNotice{}, branch, order, project, receiver)
 	if err := s.repo.SmsNotice.Create(ctx, notice); err != nil {
 		log.Printf("[SmsNoticeService] create sms notice: %v", err)
 		return nil, ErrInternal("create sms notice failed")
+	}
+	if notice.OliveBranchRecordID != input.OliveBranchRecordID {
+		return nil, ErrBadRequest("order has already been used for another sms notice")
 	}
 	if !notice.CreatedAt.IsZero() {
 		return notice, nil
@@ -150,6 +148,26 @@ func (s *SmsNoticeService) Send(ctx context.Context, userID int, input SendSmsNo
 		return fresh, nil
 	}
 	return notice, nil
+}
+
+func (s *SmsNoticeService) handleExistingNotice(ctx context.Context, existing *models.SmsNotice, input SendSmsNoticeInput, branch *models.OliveBranch, order *models.Order, project *models.Project, receiver *models.User) (*models.SmsNotice, error) {
+	switch existing.Status {
+	case models.SmsNoticeStatusCompleted, models.SmsNoticeStatusPending, models.SmsNoticeStatusSending:
+		return existing, nil
+	case models.SmsNoticeStatusFailed:
+		if existing.OrderID != input.OrderID {
+			return nil, ErrBadRequest("failed sms notice can only retry with the original paid order")
+		}
+		notice := s.prepareNotice(existing, branch, order, project, receiver)
+		if err := s.repo.SmsNotice.Update(ctx, notice); err != nil {
+			log.Printf("[SmsNoticeService] update failed notice for retry: %v", err)
+			return nil, ErrInternal("update sms notice failed")
+		}
+		s.startAsyncSubmission(notice)
+		return notice, nil
+	default:
+		return existing, nil
+	}
 }
 
 func (s *SmsNoticeService) GetByID(ctx context.Context, userID, id int) (*models.SmsNotice, error) {

@@ -22,9 +22,10 @@ func (f fakeSmsNoticeSubmitter) SubmitSmsNotice(ctx context.Context, req message
 }
 
 type smsNoticeRepoStub struct {
-	notice       *models.SmsNotice
-	getByIDCalls chan struct{}
-	updateCalls  chan *models.SmsNotice
+	notice        *models.SmsNotice
+	noticeByOrder *models.SmsNotice
+	getByIDCalls  chan struct{}
+	updateCalls   chan *models.SmsNotice
 }
 
 func (s *smsNoticeRepoStub) Create(ctx context.Context, notice *models.SmsNotice) error {
@@ -52,6 +53,9 @@ func (s *smsNoticeRepoStub) GetByOliveBranchRecordID(ctx context.Context, oliveB
 }
 
 func (s *smsNoticeRepoStub) GetByOrderID(ctx context.Context, orderID int) (*models.SmsNotice, error) {
+	if s.noticeByOrder != nil {
+		return s.noticeByOrder, nil
+	}
 	return s.notice, nil
 }
 
@@ -107,4 +111,107 @@ func TestSmsNoticeSubmissionRejectedDoesNotOverwriteMessageCenterFailure(t *test
 
 	assert.Equal(t, models.SmsNoticeStatusFailed, notice.Status)
 	assert.Equal(t, failedMessage, *notice.ErrorMessage)
+}
+
+func TestSmsNoticeSendRejectsOrderBoundToAnotherOliveBranch(t *testing.T) {
+	sceneConfig := `{"scene":"olive_branch_sms_notice"}`
+	repo := &repository.Repository{
+		OliveBranch: smsNoticeOliveBranchRepoStub{
+			branch: &models.OliveBranch{ID: 76, SenderID: 1130, ReceiverID: 1128, RelatedProjectID: 154},
+		},
+		Order: smsNoticeOrderRepoStub{
+			order: &models.Order{ID: 52, UserID: 1130, ProductID: 2, Status: models.OrderStatusPaid},
+		},
+		Product: smsNoticeProductRepoStub{
+			product: &models.Product{ID: 2, ConfigJSON: &sceneConfig},
+		},
+		Project: smsNoticeProjectRepoStub{
+			project: &models.Project{ID: 154, Name: "test project"},
+		},
+		User: smsNoticeUserRepoStub{
+			user: &models.User{ID: 1128},
+		},
+		SmsNotice: &smsNoticeRepoStub{
+			noticeByOrder: &models.SmsNotice{
+				ID:                  1,
+				OrderID:             52,
+				OliveBranchRecordID: 39,
+				SenderID:            1130,
+				ReceiverID:          1128,
+				Status:              models.SmsNoticeStatusFailed,
+			},
+		},
+	}
+	svc := &SmsNoticeService{repo: repo}
+
+	notice, err := svc.Send(context.Background(), 1130, SendSmsNoticeInput{
+		OrderID:             52,
+		ReceiverUserID:      1128,
+		OliveBranchRecordID: 76,
+		ProjectID:           intPtr(154),
+	})
+
+	require.Nil(t, notice)
+	require.Error(t, err)
+	var svcErr *ServiceError
+	require.ErrorAs(t, err, &svcErr)
+	assert.Equal(t, ErrCodeBadRequest, svcErr.Code)
+	assert.Equal(t, "order has already been used for another sms notice", svcErr.Message)
+}
+
+type smsNoticeOliveBranchRepoStub struct {
+	repository.OliveBranchRepo
+	branch *models.OliveBranch
+}
+
+func (s smsNoticeOliveBranchRepoStub) GetByID(ctx context.Context, id int) (*models.OliveBranch, error) {
+	return s.branch, nil
+}
+
+type smsNoticeOrderRepoStub struct {
+	repository.OrderRepo
+	order *models.Order
+}
+
+func (s smsNoticeOrderRepoStub) GetByID(ctx context.Context, id int) (*models.Order, error) {
+	return s.order, nil
+}
+
+type smsNoticeProductRepoStub struct {
+	repository.ProductRepo
+	product *models.Product
+}
+
+func (s smsNoticeProductRepoStub) GetByID(ctx context.Context, id int) (*models.Product, error) {
+	return s.product, nil
+}
+
+type smsNoticeProjectRepoStub struct {
+	repository.ProjectRepo
+	project *models.Project
+}
+
+func (s smsNoticeProjectRepoStub) GetByID(ctx context.Context, id int) (*models.Project, error) {
+	return s.project, nil
+}
+
+type smsNoticeUserRepoStub struct {
+	repository.UserRepo
+	user *models.User
+}
+
+func (s smsNoticeUserRepoStub) GetByID(ctx context.Context, id int) (*models.User, error) {
+	return s.user, nil
+}
+
+var (
+	_ repository.OliveBranchRepo = smsNoticeOliveBranchRepoStub{}
+	_ repository.OrderRepo       = smsNoticeOrderRepoStub{}
+	_ repository.ProductRepo     = smsNoticeProductRepoStub{}
+	_ repository.ProjectRepo     = smsNoticeProjectRepoStub{}
+	_ repository.UserRepo        = smsNoticeUserRepoStub{}
+)
+
+func intPtr(v int) *int {
+	return &v
 }
