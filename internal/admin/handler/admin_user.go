@@ -194,6 +194,10 @@ func (s *AdminServer) UpdateAdmin(ctx echo.Context) error {
 		return response.BadRequest(ctx, "invalid request body")
 	}
 
+	if callerRole == models.AdminRoleSchoolSuperAdmin && id == callerID && req.SchoolID != nil {
+		return response.Forbidden(ctx, "校区超级管理员不能修改自己的 schoolId")
+	}
+
 	if req.Nickname != nil {
 		target.Nickname = req.Nickname
 	}
