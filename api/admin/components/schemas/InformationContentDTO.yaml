@@ -1,0 +1,30 @@
+type: object
+required:
+  - title
+  - content
+  - url
+  - category
+properties:
+  title:
+    type: string
+    maxLength: 200
+  content:
+    type: string
+    maxLength: 1000
+    description: Summary text shown in the information center
+  url:
+    type: string
+    format: uri
+  category:
+    type: string
+    enum:
+      - campus_event
+      - campus_project
+      - kuaizu_talking
+      - developer_weekly
+  displayOrder:
+    type: integer
+    default: 0
+  isPublished:
+    type: boolean
+    default: true

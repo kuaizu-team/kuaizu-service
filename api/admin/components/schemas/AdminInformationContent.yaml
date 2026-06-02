@@ -1,0 +1,27 @@
+type: object
+properties:
+  id:
+    type: integer
+  title:
+    type: string
+  url:
+    type: string
+  content:
+    type: string
+  category:
+    type: string
+    enum:
+      - campus_event
+      - campus_project
+      - kuaizu_talking
+      - developer_weekly
+  displayOrder:
+    type: integer
+  isPublished:
+    type: boolean
+  createdAt:
+    type: string
+    format: date-time
+  updatedAt:
+    type: string
+    format: date-time

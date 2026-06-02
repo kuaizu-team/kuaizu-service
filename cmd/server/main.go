@@ -83,6 +83,7 @@ func main() {
 			"/api/v2/dictionaries/schools/districts", // District list
 			"/api/v2/dictionaries/majors",            // Major list
 			"/api/v2/email/unsubscribe",              // Email unsubscribe
+			"/api/v2/information/list",               // Information center list
 		}
 
 		// Check exact matches

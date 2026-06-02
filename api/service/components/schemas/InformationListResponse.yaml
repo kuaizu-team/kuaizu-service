@@ -1,0 +1,16 @@
+type: object
+required:
+  - code
+  - message
+  - data
+properties:
+  code:
+    type: integer
+    example: 0
+  message:
+    type: string
+    example: success
+  data:
+    type: array
+    items:
+      $ref: ./InformationContentVO.yaml

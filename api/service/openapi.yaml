@@ -35,6 +35,8 @@ tags:
     description: 橄榄枝邀请接口
   - name: Products
     description: 商品管理接口
+  - name: Information
+    description: Information center APIs
   - name: Orders
     description: 订单与支付接口
   - name: Dictionaries
@@ -108,6 +110,8 @@ paths:
     $ref: paths/products.yaml
   /products/{id}:
     $ref: paths/products_{id}.yaml
+  /information/list:
+    $ref: paths/information_list.yaml
   /orders:
     $ref: paths/orders.yaml
   /orders/{id}:

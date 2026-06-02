@@ -1,0 +1,32 @@
+get:
+  tags:
+    - Information
+  summary: Get information list
+  description: Get up to 4 published information items by category
+  operationId: listInformation
+  security: []
+  parameters:
+    - name: category
+      in: query
+      required: true
+      description: Information category
+      schema:
+        type: string
+        enum:
+          - campus_event
+          - campus_project
+          - kuaizu_talking
+          - developer_weekly
+  responses:
+    '200':
+      description: Success
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/InformationListResponse.yaml
+    '400':
+      description: Invalid category
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/BaseResponse.yaml

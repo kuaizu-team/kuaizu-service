@@ -40,6 +40,16 @@ type ProductRepo interface {
 	GetAll(ctx context.Context) ([]*models.Product, error)
 }
 
+// InformationContentRepo defines the interface for information-center operations.
+type InformationContentRepo interface {
+	ListPublishedByCategory(ctx context.Context, category string, limit int) ([]models.InformationContent, error)
+	AdminList(ctx context.Context, params InformationContentListParams) ([]models.InformationContent, int64, error)
+	AdminGetByID(ctx context.Context, id int) (*models.InformationContent, error)
+	AdminCreate(ctx context.Context, item *models.InformationContent) error
+	AdminUpdate(ctx context.Context, item *models.InformationContent) error
+	AdminDelete(ctx context.Context, id int) error
+}
+
 // EmailPromotionRepo defines the interface for email promotion repository operations.
 type EmailPromotionRepo interface {
 	Create(ctx context.Context, promotion *models.EmailPromotion) error
@@ -200,6 +210,7 @@ type TalentViewLogRepo interface {
 var _ OrderRepo = (*OrderRepository)(nil)
 var _ ProjectRepo = (*ProjectRepository)(nil)
 var _ ProductRepo = (*ProductRepository)(nil)
+var _ InformationContentRepo = (*InformationContentRepository)(nil)
 var _ EmailPromotionRepo = (*EmailPromotionRepository)(nil)
 var _ SmsNoticeRepo = (*SmsNoticeRepository)(nil)
 var _ UserRepo = (*UserRepository)(nil)
