@@ -15,11 +15,15 @@ const (
 
 // InformationContent represents a published information-center item.
 type InformationContent struct {
-	ID        int       `db:"id"`
-	Title     string    `db:"title"`
-	URL       string    `db:"url"`
-	Content   string    `db:"content"`
-	CreatedAt time.Time `db:"created_at"`
+	ID           int       `db:"id"`
+	Title        string    `db:"title"`
+	URL          string    `db:"url"`
+	Content      string    `db:"content"`
+	Category     string    `db:"category"`
+	DisplayOrder int       `db:"display_order"`
+	IsPublished  int       `db:"is_published"`
+	CreatedAt    time.Time `db:"created_at"`
+	UpdatedAt    time.Time `db:"updated_at"`
 }
 
 func IsValidInformationCategory(category string) bool {

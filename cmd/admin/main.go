@@ -90,6 +90,12 @@ func main() {
 	adminGroup.GET("/feedbacks/:id", server.GetFeedback)
 	adminGroup.PATCH("/feedbacks/:id", server.ReplyFeedback)
 
+	adminGroup.GET("/information", server.ListInformation)
+	adminGroup.GET("/information/:id", server.GetInformation)
+	adminGroup.POST("/information", server.CreateInformation)
+	adminGroup.PUT("/information/:id", server.UpdateInformation)
+	adminGroup.DELETE("/information/:id", server.DeleteInformation)
+
 	adminGroup.GET("/orders", server.ListOrders)
 	adminGroup.GET("/orders/:id", server.GetOrder)
 

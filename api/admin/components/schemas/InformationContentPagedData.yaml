@@ -1,0 +1,12 @@
+type: object
+properties:
+  list:
+    type: array
+    items:
+      $ref: ./AdminInformationContent.yaml
+  total:
+    type: integer
+  page:
+    type: integer
+  size:
+    type: integer

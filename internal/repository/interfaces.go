@@ -43,6 +43,11 @@ type ProductRepo interface {
 // InformationContentRepo defines the interface for information-center operations.
 type InformationContentRepo interface {
 	ListPublishedByCategory(ctx context.Context, category string, limit int) ([]models.InformationContent, error)
+	AdminList(ctx context.Context, params InformationContentListParams) ([]models.InformationContent, int64, error)
+	AdminGetByID(ctx context.Context, id int) (*models.InformationContent, error)
+	AdminCreate(ctx context.Context, item *models.InformationContent) error
+	AdminUpdate(ctx context.Context, item *models.InformationContent) error
+	AdminDelete(ctx context.Context, id int) error
 }
 
 // EmailPromotionRepo defines the interface for email promotion repository operations.

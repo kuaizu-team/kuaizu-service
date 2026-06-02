@@ -27,6 +27,8 @@ tags:
     description: 用户管理接口
   - name: TalentProfiles
     description: 人才档案管理接口
+  - name: Information
+    description: Information content management APIs
   - name: Feedbacks
     description: 反馈管理接口
 security:
@@ -54,6 +56,10 @@ paths:
     $ref: paths/feedbacks.yaml
   /feedbacks/{id}:
     $ref: paths/feedbacks_{id}.yaml
+  /information:
+    $ref: paths/information.yaml
+  /information/{id}:
+    $ref: paths/information_{id}.yaml
 components:
   securitySchemes:
     bearerAuth:

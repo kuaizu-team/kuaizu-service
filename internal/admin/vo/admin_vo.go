@@ -92,6 +92,19 @@ type AdminFeedbackVO struct {
 	UserNickname *string   `json:"userNickname"`
 }
 
+// AdminInformationContentVO is the admin-facing information-center response model.
+type AdminInformationContentVO struct {
+	ID           int       `json:"id"`
+	Title        string    `json:"title"`
+	URL          string    `json:"url"`
+	Content      string    `json:"content"`
+	Category     string    `json:"category"`
+	DisplayOrder int       `json:"displayOrder"`
+	IsPublished  bool      `json:"isPublished"`
+	CreatedAt    time.Time `json:"createdAt"`
+	UpdatedAt    time.Time `json:"updatedAt"`
+}
+
 // NewAdminProjectVO converts a Project model to AdminProjectVO.
 func NewAdminProjectVO(p *models.Project) *AdminProjectVO {
 	if p == nil {
@@ -180,6 +193,24 @@ func NewAdminFeedbackVO(f *models.Feedback) *AdminFeedbackVO {
 		CreatedAt:    f.CreatedAt,
 		UpdatedAt:    f.UpdatedAt,
 		UserNickname: f.UserNickname,
+	}
+}
+
+// NewAdminInformationContentVO converts an InformationContent model to AdminInformationContentVO.
+func NewAdminInformationContentVO(i *models.InformationContent) *AdminInformationContentVO {
+	if i == nil {
+		return nil
+	}
+	return &AdminInformationContentVO{
+		ID:           i.ID,
+		Title:        i.Title,
+		URL:          i.URL,
+		Content:      i.Content,
+		Category:     i.Category,
+		DisplayOrder: i.DisplayOrder,
+		IsPublished:  i.IsPublished == 1,
+		CreatedAt:    i.CreatedAt,
+		UpdatedAt:    i.UpdatedAt,
 	}
 }
 
@@ -354,15 +385,15 @@ func NewAdminProjectOliveBranchVO(ob *models.OliveBranch, talentProfileStatus *i
 
 // AdminUserAccountVO is the admin-facing admin-user response model (管理员账号).
 type AdminUserAccountVO struct {
-	ID         int        `json:"id"`
-	Username   string     `json:"username"`
-	Nickname   *string    `json:"nickname"`
-	Role       int        `json:"role"`
-	SchoolID   *int       `json:"schoolId"`
-	SchoolName *string    `json:"schoolName"`
-	Status     int        `json:"status"`
-	CreatedAt  time.Time  `json:"createdAt"`
-	UpdatedAt  time.Time  `json:"updatedAt"`
+	ID         int       `json:"id"`
+	Username   string    `json:"username"`
+	Nickname   *string   `json:"nickname"`
+	Role       int       `json:"role"`
+	SchoolID   *int      `json:"schoolId"`
+	SchoolName *string   `json:"schoolName"`
+	Status     int       `json:"status"`
+	CreatedAt  time.Time `json:"createdAt"`
+	UpdatedAt  time.Time `json:"updatedAt"`
 }
 
 // NewAdminUserAccountVO converts an AdminUser model to AdminUserAccountVO (no password).
