@@ -46,10 +46,11 @@ func (s *Server) LoginWithWechat(ctx echo.Context) error {
 
 	// Return login response — use custom struct to carry userStatus/banReason
 	return Success(ctx, loginResponse{
-		Token:     result.Token,
-		ExpiresIn: result.ExpiresIn,
-		IsNewUser: result.IsNewUser,
-		User:      toExtendedUserVO(result.User),
+		Token:        result.Token,
+		ExpiresIn:    result.ExpiresIn,
+		IsFirstLogin: result.IsFirstLogin,
+		IsNewUser:    result.IsNewUser,
+		User:         toExtendedUserVO(result.User),
 	})
 }
 
@@ -76,9 +77,10 @@ func (s *Server) RegisterWithPhone(ctx echo.Context) error {
 	}
 
 	return Success(ctx, loginResponse{
-		Token:     &result.Token,
-		ExpiresIn: &result.ExpiresIn,
-		IsNewUser: &result.IsNewUser,
-		User:      toExtendedUserVO(result.User),
+		Token:        &result.Token,
+		ExpiresIn:    &result.ExpiresIn,
+		IsFirstLogin: &result.IsFirstLogin,
+		IsNewUser:    &result.IsNewUser,
+		User:         toExtendedUserVO(result.User),
 	})
 }
