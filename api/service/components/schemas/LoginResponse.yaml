@@ -6,6 +6,9 @@ properties:
   expiresIn:
     type: integer
     description: Token过期时间(秒)
+  isFirstLogin:
+    type: boolean
+    description: Whether this successful login is the user's first login
   isNewUser:
     type: boolean
     description: 是否为新注册用户

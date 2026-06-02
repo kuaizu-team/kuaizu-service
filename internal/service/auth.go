@@ -28,6 +28,7 @@ type LoginWithWechatResult struct {
 	RegisterToken     *string
 	ExpiresIn         *int
 	Token             *string
+	IsFirstLogin      *bool
 	IsNewUser         *bool
 	User              *models.User // raw user; handler builds the VO to include userStatus/banReason
 }
@@ -82,6 +83,7 @@ func (s *AuthService) LoginWithWechat(ctx context.Context, code string) (*LoginW
 		NeedsPhoneBinding: false,
 		Token:             &token,
 		ExpiresIn:         &expiresIn,
+		IsFirstLogin:      &isNewUser,
 		IsNewUser:         &isNewUser,
 		User:              user,
 	}, nil
@@ -89,10 +91,11 @@ func (s *AuthService) LoginWithWechat(ctx context.Context, code string) (*LoginW
 
 // RegisterWithPhoneResult represents the result of phone registration
 type RegisterWithPhoneResult struct {
-	Token     string
-	ExpiresIn int
-	IsNewUser bool
-	User      *models.User // raw user; handler builds the VO to include userStatus/banReason
+	Token        string
+	ExpiresIn    int
+	IsFirstLogin bool
+	IsNewUser    bool
+	User         *models.User // raw user; handler builds the VO to include userStatus/banReason
 }
 
 // RegisterWithPhone handles phone registration logic
@@ -123,9 +126,11 @@ func (s *AuthService) RegisterWithPhone(ctx context.Context, registerToken, phon
 		return nil, fmt.Errorf("get user by openid failed: %w", err)
 	}
 
+	var isFirstLogin bool
 	var isNewUser bool
 	if user == nil {
 		// Create new user
+		isFirstLogin = true
 		isNewUser = true
 		user, err = s.repo.User.CreateWithPhone(ctx, claims.OpenID, phone)
 		if err != nil {
@@ -135,6 +140,7 @@ func (s *AuthService) RegisterWithPhone(ctx context.Context, registerToken, phon
 		// Update phone if not set
 		isNewUser = false
 		if user.Phone == nil || *user.Phone == "" {
+			isFirstLogin = true
 			if err := s.repo.User.UpdatePhone(ctx, user.ID, phone); err != nil {
 				return nil, fmt.Errorf("update phone failed: %w", err)
 			}
@@ -155,9 +161,10 @@ func (s *AuthService) RegisterWithPhone(ctx context.Context, registerToken, phon
 	}()
 
 	return &RegisterWithPhoneResult{
-		Token:     token,
-		ExpiresIn: expiresIn,
-		IsNewUser: isNewUser,
-		User:      user,
+		Token:        token,
+		ExpiresIn:    expiresIn,
+		IsFirstLogin: isFirstLogin,
+		IsNewUser:    isNewUser,
+		User:         user,
 	}, nil
 }

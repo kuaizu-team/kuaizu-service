@@ -9,7 +9,7 @@ import (
 // We cannot modify api.gen.go (generated), so we extend here in the handler layer.
 type extendedUserVO struct {
 	*api.UserVO
-	UserStatus int     `json:"userStatus"`         // 0=正常, 1=封禁, 2=已毕业
+	UserStatus int     `json:"userStatus"`          // 0=正常, 1=封禁, 2=已毕业
 	BanReason  *string `json:"banReason,omitempty"` // 封禁原因（仅 userStatus=1 时携带）
 }
 
@@ -29,8 +29,9 @@ func toExtendedUserVO(u *models.User) *extendedUserVO {
 // loginResponse is the custom login response body that replaces the generated
 // api.LoginResponse, allowing us to embed extendedUserVO instead of *api.UserVO.
 type loginResponse struct {
-	Token     *string         `json:"token,omitempty"`
-	ExpiresIn *int            `json:"expiresIn,omitempty"`
-	IsNewUser *bool           `json:"isNewUser,omitempty"`
-	User      *extendedUserVO `json:"user,omitempty"`
+	Token        *string         `json:"token,omitempty"`
+	ExpiresIn    *int            `json:"expiresIn,omitempty"`
+	IsFirstLogin *bool           `json:"isFirstLogin,omitempty"`
+	IsNewUser    *bool           `json:"isNewUser,omitempty"`
+	User         *extendedUserVO `json:"user,omitempty"`
 }
