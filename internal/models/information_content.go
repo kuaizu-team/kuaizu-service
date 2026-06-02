@@ -41,10 +41,11 @@ func IsValidInformationCategory(category string) bool {
 // ToVO converts InformationContent to API InformationContentVO.
 func (i *InformationContent) ToVO() api.InformationContentVO {
 	return api.InformationContentVO{
-		Id:        &i.ID,
-		Title:     &i.Title,
-		Url:       &i.URL,
-		Content:   &i.Content,
-		CreatedAt: &i.CreatedAt,
+		Id:           &i.ID,
+		Title:        &i.Title,
+		Url:          &i.URL,
+		Content:      &i.Content,
+		DisplayOrder: &i.DisplayOrder,
+		CreatedAt:    &i.CreatedAt,
 	}
 }
