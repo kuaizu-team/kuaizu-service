@@ -132,8 +132,6 @@ func main() {
 	// Project-application reviewer read status
 	apiGroup.POST("/project-applications/mark-read", server.MarkReviewerApplicationRead)
 
-	apiGroup.PATCH("/orders/:id/refund/withdraw", server.WithdrawOrderRefund)
-
 	api.RegisterHandlers(apiGroup, server)
 
 	// WeChat Pay callback (no auth required)
