@@ -120,6 +120,8 @@ paths:
     $ref: paths/orders_my.yaml
   /orders/{id}/pay:
     $ref: paths/orders_{id}_pay.yaml
+  /orders/{id}/refund/apply:
+    $ref: paths/orders_{id}_refund_apply.yaml
   /orders/{id}/cancel:
     $ref: paths/orders_{id}_cancel.yaml
   /email/unsubscribe:

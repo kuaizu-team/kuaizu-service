@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strings"
 
 	"github.com/kuaizu-team/kuaizu-service/internal/models"
 	"github.com/kuaizu-team/kuaizu-service/internal/repository"
@@ -15,6 +16,49 @@ type OrderService struct {
 	repo       *repository.Repository
 	payClient  *wechat.PayClient
 	payInitErr error
+}
+
+// ApplyRefund submits a refund request for the current user's paid order.
+func (s *OrderService) ApplyRefund(ctx context.Context, userID, orderID int, reason string) (*models.Order, error) {
+	reason = strings.TrimSpace(reason)
+	if len([]rune(reason)) < 5 || len([]rune(reason)) > 200 {
+		return nil, ErrBadRequest("退款原因需为5-200字")
+	}
+
+	order, err := s.repo.Order.GetByID(ctx, orderID)
+	if err != nil {
+		log.Printf("[OrderService.ApplyRefund] repository error getting order: %v", err)
+		return nil, ErrInternal("获取订单详情失败")
+	}
+	if order == nil {
+		return nil, ErrNotFound("订单不存在")
+	}
+	if order.UserID != userID {
+		return nil, ErrForbidden("无权操作此订单")
+	}
+	if order.Status != models.OrderStatusPaid {
+		return nil, ErrBadRequest("未支付订单不能申请退款")
+	}
+	if order.RefundStatus != 0 {
+		return nil, ErrBadRequest("该订单已申请退款")
+	}
+
+	ok, err := s.repo.Order.UpdateRefundApply(ctx, orderID, reason)
+	if err != nil {
+		log.Printf("[OrderService.ApplyRefund] repository error updating refund apply: %v", err)
+		return nil, ErrInternal("提交退款申请失败")
+	}
+	if !ok {
+		return nil, ErrBadRequest("订单状态不允许申请退款")
+	}
+
+	updated, err := s.repo.Order.GetByID(ctx, orderID)
+	if err != nil {
+		log.Printf("[OrderService.ApplyRefund] repository error getting updated order: %v", err)
+		return nil, ErrInternal("获取更新后的订单失败")
+	}
+
+	return updated, nil
 }
 
 // NewOrderService creates a new OrderService.

@@ -1,11 +1,17 @@
 package handler
 
 import (
+	"strings"
+
 	"github.com/kuaizu-team/kuaizu-service/api"
 	"github.com/kuaizu-team/kuaizu-service/internal/repository"
 	"github.com/kuaizu-team/kuaizu-service/internal/service"
 	"github.com/labstack/echo/v4"
 )
+
+type applyRefundRequest struct {
+	Reason string `json:"reason"`
+}
 
 // ListMyOrders handles GET /orders/me
 func (s *Server) ListMyOrders(ctx echo.Context, params api.ListMyOrdersParams) error {
@@ -125,6 +131,30 @@ func (s *Server) CancelOrder(ctx echo.Context, id int) error {
 	userID := GetUserID(ctx)
 
 	order, err := s.svc.Order.CancelOrder(ctx.Request().Context(), userID, id)
+	if err != nil {
+		return mapServiceError(ctx, err)
+	}
+
+	return Success(ctx, order.ToVO())
+}
+
+// ApplyOrderRefund handles generated POST /orders/{id}/refund/apply routes.
+func (s *Server) ApplyOrderRefund(ctx echo.Context, id int) error {
+	return s.applyOrderRefund(ctx, id)
+}
+
+func (s *Server) applyOrderRefund(ctx echo.Context, id int) error {
+	userID := GetUserID(ctx)
+	var req applyRefundRequest
+	if err := ctx.Bind(&req); err != nil {
+		return BadRequest(ctx, "请求参数错误")
+	}
+	req.Reason = strings.TrimSpace(req.Reason)
+	if req.Reason == "" {
+		return BadRequest(ctx, "退款原因不能为空")
+	}
+
+	order, err := s.svc.Order.ApplyRefund(ctx.Request().Context(), userID, id, req.Reason)
 	if err != nil {
 		return mapServiceError(ctx, err)
 	}

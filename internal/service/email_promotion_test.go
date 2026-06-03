@@ -61,6 +61,11 @@ func (m *MockOrderRepo) UpdateStatus(ctx context.Context, id int, status int) er
 	return args.Error(0)
 }
 
+func (m *MockOrderRepo) UpdateRefundApply(ctx context.Context, id int, reason string) (bool, error) {
+	args := m.Called(ctx, id, reason)
+	return args.Bool(0), args.Error(1)
+}
+
 func (m *MockOrderRepo) AdminList(ctx context.Context, params repository.AdminOrderListParams) ([]*models.Order, int64, error) {
 	args := m.Called(ctx, params)
 	if args.Get(0) == nil {

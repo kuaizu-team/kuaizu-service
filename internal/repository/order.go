@@ -63,6 +63,7 @@ func (r *OrderRepository) ListByUserID(ctx context.Context, params OrderListPara
 	query := fmt.Sprintf(`
 		SELECT
 			o.id, o.user_id, o.product_id, o.price, o.quantity, o.actual_paid, o.status,
+			o.refund_status, o.refund_reason, o.refund_apply_time,
 			o.wx_pay_no, o.pay_time, o.created_at, o.updated_at,
 			p.name as product_name
 		FROM `+"`order`"+` o
@@ -128,6 +129,7 @@ func (r *OrderRepository) GetByID(ctx context.Context, id int) (*models.Order, e
 	query := `
 		SELECT
 			o.id, o.user_id, o.product_id, o.price, o.quantity, o.actual_paid, o.status,
+			o.refund_status, o.refund_reason, o.refund_apply_time,
 			o.wx_pay_no, o.pay_time, o.created_at, o.updated_at,
 			p.name as product_name
 		FROM ` + "`order`" + ` o
@@ -201,6 +203,32 @@ func (r *OrderRepository) UpdateStatus(ctx context.Context, id int, status int) 
 	return nil
 }
 
+// UpdateRefundApply records a refund application for a paid order that has not applied before.
+func (r *OrderRepository) UpdateRefundApply(ctx context.Context, id int, reason string) (bool, error) {
+	query := `
+		UPDATE ` + "`order`" + ` SET
+			refund_status = ?,
+			refund_reason = ?,
+			refund_apply_time = NOW(),
+			updated_at = NOW()
+		WHERE id = ?
+			AND status = ?
+			AND refund_status = ?
+	`
+
+	result, err := r.db.ExecContext(ctx, query, 1, reason, id, models.OrderStatusPaid, 0)
+	if err != nil {
+		return false, fmt.Errorf("update refund apply: %w", err)
+	}
+
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("read refund apply affected rows: %w", err)
+	}
+
+	return affected > 0, nil
+}
+
 // AdminList retrieves paginated orders for admin with multi-condition fuzzy search.
 // JOINs user and school to support nickname/schoolName filters.
 func (r *OrderRepository) AdminList(ctx context.Context, params AdminOrderListParams) ([]*models.Order, int64, error) {
@@ -248,6 +276,7 @@ func (r *OrderRepository) AdminList(ctx context.Context, params AdminOrderListPa
 	query := fmt.Sprintf(`
 		SELECT
 			o.id, o.user_id, o.product_id, o.price, o.quantity, o.actual_paid, o.status,
+			o.refund_status, o.refund_reason, o.refund_apply_time,
 			o.wx_pay_no, o.pay_time, o.created_at, o.updated_at,
 			p.name  AS product_name,
 			u.nickname AS user_nickname,
@@ -275,6 +304,7 @@ func (r *OrderRepository) AdminGetByID(ctx context.Context, id int) (*models.Ord
 	query := `
 		SELECT
 			o.id, o.user_id, o.product_id, o.price, o.quantity, o.actual_paid, o.status,
+			o.refund_status, o.refund_reason, o.refund_apply_time,
 			o.wx_pay_no, o.pay_time, o.created_at, o.updated_at,
 			p.name        AS product_name,
 			p.description AS product_description,

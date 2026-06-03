@@ -1,0 +1,29 @@
+post:
+  tags:
+    - Orders
+  summary: Apply for order refund
+  operationId: applyOrderRefund
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema:
+        type: integer
+  requestBody:
+    required: true
+    content:
+      application/json:
+        schema:
+          $ref: ../components/schemas/ApplyOrderRefundDTO.yaml
+  responses:
+    '200':
+      description: Refund application submitted
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/BaseResponse.yaml
+              - type: object
+                properties:
+                  data:
+                    $ref: ../components/schemas/OrderVO.yaml

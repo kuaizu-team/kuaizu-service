@@ -416,20 +416,23 @@ func NewAdminUserAccountVO(a *models.AdminUser) *AdminUserAccountVO {
 
 // AdminOrderVO is the admin-facing order response model (list item).
 type AdminOrderVO struct {
-	ID           int        `json:"id"`
-	OutTradeNo   string     `json:"outTradeNo"` // 使用订单 ID 的字符串形式（out_trade_no 列未使用）
-	WxPayNo      *string    `json:"wxPayNo"`
-	UserID       int        `json:"userId"`
-	UserNickname *string    `json:"userNickname"`
-	SchoolName   *string    `json:"schoolName"`
-	ProductID    int        `json:"productId"`
-	ProductName  *string    `json:"productName"`
-	Quantity     int        `json:"quantity"`
-	UnitPrice    int        `json:"unitPrice"`  // 单价，单位：分
-	ActualPaid   int        `json:"actualPaid"` // 实付，单位：分
-	Status       int        `json:"status"`     // 0=待支付 1=支付成功 2=支付失败 3=已退款
-	CreatedAt    time.Time  `json:"createdAt"`
-	PaidAt       *time.Time `json:"paidAt"`
+	ID              int        `json:"id"`
+	OutTradeNo      string     `json:"outTradeNo"` // 使用订单 ID 的字符串形式（out_trade_no 列未使用）
+	WxPayNo         *string    `json:"wxPayNo"`
+	UserID          int        `json:"userId"`
+	UserNickname    *string    `json:"userNickname"`
+	SchoolName      *string    `json:"schoolName"`
+	ProductID       int        `json:"productId"`
+	ProductName     *string    `json:"productName"`
+	Quantity        int        `json:"quantity"`
+	UnitPrice       int        `json:"unitPrice"`  // 单价，单位：分
+	ActualPaid      int        `json:"actualPaid"` // 实付，单位：分
+	Status          int        `json:"status"`     // 0=待支付 1=支付成功 2=支付失败 3=已退款
+	RefundStatus    int        `json:"refundStatus"`
+	RefundReason    *string    `json:"refundReason"`
+	RefundApplyTime *time.Time `json:"refundApplyTime"`
+	CreatedAt       time.Time  `json:"createdAt"`
+	PaidAt          *time.Time `json:"paidAt"`
 }
 
 // AdminOrderDetailVO extends AdminOrderVO with detail-only fields.
@@ -445,20 +448,23 @@ func NewAdminOrderVO(o *models.Order) *AdminOrderVO {
 		return nil
 	}
 	return &AdminOrderVO{
-		ID:           o.ID,
-		OutTradeNo:   strconv.Itoa(o.ID), // out_trade_no 列未使用，以 ID 字符串作为订单号
-		WxPayNo:      o.WxPayNo,
-		UserID:       o.UserID,
-		UserNickname: o.UserNickname,
-		SchoolName:   o.SchoolName,
-		ProductID:    o.ProductID,
-		ProductName:  o.ProductName,
-		Quantity:     o.Quantity,
-		UnitPrice:    int(math.Round(o.Price * 100)),
-		ActualPaid:   int(math.Round(o.ActualPaid * 100)),
-		Status:       o.Status,
-		CreatedAt:    o.CreatedAt,
-		PaidAt:       o.PayTime,
+		ID:              o.ID,
+		OutTradeNo:      strconv.Itoa(o.ID), // out_trade_no 列未使用，以 ID 字符串作为订单号
+		WxPayNo:         o.WxPayNo,
+		UserID:          o.UserID,
+		UserNickname:    o.UserNickname,
+		SchoolName:      o.SchoolName,
+		ProductID:       o.ProductID,
+		ProductName:     o.ProductName,
+		Quantity:        o.Quantity,
+		UnitPrice:       int(math.Round(o.Price * 100)),
+		ActualPaid:      int(math.Round(o.ActualPaid * 100)),
+		Status:          o.Status,
+		RefundStatus:    o.RefundStatus,
+		RefundReason:    o.RefundReason,
+		RefundApplyTime: o.RefundApplyTime,
+		CreatedAt:       o.CreatedAt,
+		PaidAt:          o.PayTime,
 	}
 }
 
