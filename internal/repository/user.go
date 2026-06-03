@@ -337,6 +337,8 @@ func (r *UserRepository) ListUsers(ctx context.Context, params UserListParams) (
 			orderClause = fmt.Sprintf("pending_count %s, u.created_at DESC", dir)
 		case "lastActiveDate":
 			orderClause = fmt.Sprintf("u.last_active_date %s, u.created_at DESC", dir)
+		case "id":
+			orderClause = fmt.Sprintf("u.id %s", dir)
 		}
 		// unknown sortBy values fall through to default (no error)
 	}

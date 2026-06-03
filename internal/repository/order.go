@@ -115,8 +115,8 @@ func (r *OrderRepository) Create(ctx context.Context, order *models.Order) (*mod
 	defer tx.Rollback()
 
 	orderQuery := `
-		INSERT INTO ` + "`order`" + ` (user_id, product_id, price, quantity, actual_paid, status, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())
+		INSERT INTO ` + "`order`" + ` (user_id, product_id, price, quantity, actual_paid, status, settlement_status, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
 	`
 
 	result, err := tx.ExecContext(ctx, orderQuery,
@@ -125,7 +125,8 @@ func (r *OrderRepository) Create(ctx context.Context, order *models.Order) (*mod
 		order.Price,
 		order.Quantity,
 		order.ActualPaid,
-		order.Status)
+		order.Status,
+		2)
 	if err != nil {
 		return nil, fmt.Errorf("create order: %w", err)
 	}
@@ -136,6 +137,7 @@ func (r *OrderRepository) Create(ctx context.Context, order *models.Order) (*mod
 	}
 
 	order.ID = int(id)
+	order.SettlementStatus = 2
 	order.CreatedAt = time.Now()
 	order.UpdatedAt = time.Now()
 
@@ -175,13 +177,17 @@ func (r *OrderRepository) UpdatePaymentStatus(ctx context.Context, id int, statu
 	query := `
 		UPDATE ` + "`order`" + ` SET
 			status = ?,
+			settlement_status = CASE
+				WHEN ? = 1 AND refund_status = 0 THEN 0
+				ELSE settlement_status
+			END,
 			wx_pay_no = ?,
 			pay_time = ?,
 			updated_at = NOW()
 		WHERE id = ?
 	`
 
-	if _, err := r.db.ExecContext(ctx, query, status, wxPayNo, payTime, id); err != nil {
+	if _, err := r.db.ExecContext(ctx, query, status, status, wxPayNo, payTime, id); err != nil {
 		return fmt.Errorf("update payment status: %w", err)
 	}
 
@@ -193,13 +199,17 @@ func (r *OrderRepository) UpdatePaymentStatusTx(ctx context.Context, tx *sqlx.Tx
 	query := `
 		UPDATE ` + "`order`" + ` SET
 			status = ?,
+			settlement_status = CASE
+				WHEN ? = 1 AND refund_status = 0 THEN 0
+				ELSE settlement_status
+			END,
 			wx_pay_no = ?,
 			pay_time = ?,
 			updated_at = NOW()
 		WHERE id = ?
 	`
 
-	if _, err := tx.ExecContext(ctx, query, status, wxPayNo, payTime, id); err != nil {
+	if _, err := tx.ExecContext(ctx, query, status, status, wxPayNo, payTime, id); err != nil {
 		return fmt.Errorf("update payment status: %w", err)
 	}
 
@@ -230,6 +240,10 @@ func (r *OrderRepository) UpdateRefundApply(ctx context.Context, id int, reason 
 			refund_reason = ?,
 			refund_apply_time = NOW(),
 			refund_applicant_type = ?,
+			settlement_status = CASE
+				WHEN settlement_status = 0 THEN 3
+				ELSE settlement_status
+			END,
 			updated_at = NOW()
 		WHERE id = ?
 			AND status = ?
@@ -257,6 +271,10 @@ func (r *OrderRepository) AdminReviewRefund(ctx context.Context, id int, adminID
 			status = ?,
 			refund_handle_time = NOW(),
 			refund_operator_admin_id = ?,
+			settlement_status = CASE
+				WHEN settlement_status = 3 THEN 2
+				ELSE settlement_status
+			END,
 			updated_at = NOW()
 		WHERE id = ?
 			AND refund_status = 1
@@ -300,6 +318,9 @@ func (r *OrderRepository) AdminList(ctx context.Context, params AdminOrderListPa
 	if params.SettlementStatus != nil {
 		conditions = append(conditions, "o.settlement_status = ?")
 		args = append(args, *params.SettlementStatus)
+		if *params.SettlementStatus == 0 {
+			conditions = append(conditions, "o.status = 1", "o.refund_status = 0")
+		}
 	}
 	if params.RefundStatus != nil {
 		conditions = append(conditions, "o.refund_status = ?")
@@ -396,7 +417,7 @@ func (r *OrderRepository) RevenueStats(ctx context.Context, schoolID *int) (*Rev
 	}{
 		{fmt.Sprintf("SELECT CAST(COALESCE(ROUND(SUM(o.actual_paid) * 100), 0) AS SIGNED) FROM %s WHERE o.status = 1 AND o.refund_status != 2%s", from, schoolWhere), &stats.TotalRevenue},
 		{fmt.Sprintf("SELECT CAST(COALESCE(ROUND(SUM(o.actual_paid) * 100), 0) AS SIGNED) FROM %s WHERE o.status = 1 AND o.refund_status != 2 AND o.pay_time >= DATE_SUB(NOW(), INTERVAL 7 DAY)%s", from, schoolWhere), &stats.WeekRevenue},
-		{fmt.Sprintf("SELECT CAST(COALESCE(ROUND(SUM(o.actual_paid) * 100), 0) AS SIGNED) FROM %s WHERE o.status = 1 AND o.settlement_status = 0 AND o.refund_status != 2%s", from, schoolWhere), &stats.PendingSettlementAmount},
+		{fmt.Sprintf("SELECT CAST(COALESCE(ROUND(SUM(o.actual_paid) * 100), 0) AS SIGNED) FROM %s WHERE o.status = 1 AND o.settlement_status = 0 AND o.refund_status = 0%s", from, schoolWhere), &stats.PendingSettlementAmount},
 		{fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE o.refund_status = 1 AND o.refund_applicant_type = 0%s", from, schoolWhere), &stats.PendingConsumerRefundCount},
 		{fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE o.refund_status = 1 AND o.refund_applicant_type = 1%s", from, schoolWhere), &stats.PendingSchoolAdminRefundCount},
 		{fmt.Sprintf("SELECT CAST(COALESCE(ROUND(SUM(o.actual_paid) * 100), 0) AS SIGNED) FROM %s WHERE o.refund_status = 1 AND o.refund_applicant_type = 0%s", from, schoolWhere), &stats.PendingConsumerRefundAmount},
@@ -430,7 +451,7 @@ func (r *OrderRepository) SettleSchoolPendingOrders(ctx context.Context, schoolI
 		WHERE u.school_id = ?
 			AND o.status = 1
 			AND o.settlement_status = 0
-			AND o.refund_status != 2
+			AND o.refund_status = 0
 		FOR UPDATE
 	`, schoolID); err != nil {
 		return nil, fmt.Errorf("select settle orders: %w", err)

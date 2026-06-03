@@ -30,6 +30,18 @@ get:
       schema:
         type: string
       description: 关键词筛选（nickname/phone）
+    - in: query
+      name: sortBy
+      schema:
+        type: string
+        enum: [pendingCount, lastActiveDate, id]
+      description: Sort field for admin user list
+    - in: query
+      name: order
+      schema:
+        type: string
+        enum: [asc, desc]
+      description: Sort direction
   responses:
     '200':
       description: 成功获取用户列表
