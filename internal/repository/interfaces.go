@@ -17,7 +17,10 @@ type OrderRepo interface {
 	UpdatePaymentStatus(ctx context.Context, id int, status int, wxPayNo string, payTime time.Time) error
 	UpdatePaymentStatusTx(ctx context.Context, tx *sqlx.Tx, id int, status int, wxPayNo string, payTime time.Time) error
 	UpdateStatus(ctx context.Context, id int, status int) error
-	UpdateRefundApply(ctx context.Context, id int, reason string) (bool, error)
+	UpdateRefundApply(ctx context.Context, id int, reason string, applicantType int) (bool, error)
+	AdminReviewRefund(ctx context.Context, id int, adminID int) (bool, error)
+	RevenueStats(ctx context.Context, schoolID *int) (*RevenueStats, error)
+	SettleSchoolPendingOrders(ctx context.Context, schoolID int, adminID int, remark *string) (*SettlementResult, error)
 	// Admin-only queries
 	AdminList(ctx context.Context, params AdminOrderListParams) ([]*models.Order, int64, error)
 	AdminGetByID(ctx context.Context, id int) (*models.Order, error)
@@ -161,6 +164,7 @@ type AdminUserRepo interface {
 	Create(ctx context.Context, admin *models.AdminUser) error
 	Update(ctx context.Context, admin *models.AdminUser) error
 	UpdateStatus(ctx context.Context, id int, status int) error
+	UpdateFinanceRemark(ctx context.Context, id int, remark *string) error
 	Delete(ctx context.Context, id int) error
 }
 

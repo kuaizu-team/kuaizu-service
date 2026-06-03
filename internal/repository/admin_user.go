@@ -23,7 +23,7 @@ func NewAdminUserRepository(db *sqlx.DB) *AdminUserRepository {
 // adminUserCols is the common SELECT column list (requires LEFT JOIN school s ON au.school_id = s.id)
 const adminUserCols = `
 	au.id, au.username, au.password_hash, au.nickname,
-	au.role, au.school_id, au.status, au.created_at, au.updated_at,
+	au.role, au.school_id, au.status, au.finance_remark, au.created_at, au.updated_at,
 	s.school_name`
 
 const adminUserFrom = `
@@ -182,6 +182,19 @@ func (r *AdminUserRepository) UpdateStatus(ctx context.Context, id int, status i
 	return nil
 }
 
+// UpdateFinanceRemark updates only the finance remark field.
+func (r *AdminUserRepository) UpdateFinanceRemark(ctx context.Context, id int, remark *string) error {
+	result, err := r.db.ExecContext(ctx,
+		`UPDATE admin_user SET finance_remark = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, remark, id)
+	if err != nil {
+		return fmt.Errorf("update admin finance remark: %w", err)
+	}
+	if rows, _ := result.RowsAffected(); rows == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
 // Delete hard-deletes an admin user by ID
 func (r *AdminUserRepository) Delete(ctx context.Context, id int) error {
 	result, err := r.db.ExecContext(ctx, `DELETE FROM admin_user WHERE id = ?`, id)
@@ -193,4 +206,3 @@ func (r *AdminUserRepository) Delete(ctx context.Context, id int) error {
 	}
 	return nil
 }
-

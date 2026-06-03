@@ -2,6 +2,7 @@ package handler
 
 import (
 	"strconv"
+	"strings"
 
 	adminvo "github.com/kuaizu-team/kuaizu-service/internal/admin/vo"
 	"github.com/kuaizu-team/kuaizu-service/internal/models"
@@ -9,6 +10,15 @@ import (
 	"github.com/kuaizu-team/kuaizu-service/internal/response"
 	"github.com/labstack/echo/v4"
 )
+
+type adminRefundApplyRequest struct {
+	Reason              string `json:"reason"`
+	RefundApplicantType int    `json:"refundApplicantType"`
+}
+
+type adminRefundReviewRequest struct {
+	RefundStatus int `json:"refundStatus"`
+}
 
 // ListOrders handles GET /admin/orders
 func (s *AdminServer) ListOrders(ctx echo.Context) error {
@@ -45,6 +55,27 @@ func (s *AdminServer) ListOrders(ctx echo.Context) error {
 	}
 	if v := ctx.QueryParam("schoolName"); v != "" {
 		params.SchoolName = &v
+	}
+	if v := ctx.QueryParam("settlementStatus"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil {
+			return response.BadRequest(ctx, "invalid settlementStatus")
+		}
+		params.SettlementStatus = &n
+	}
+	if v := ctx.QueryParam("refundStatus"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil {
+			return response.BadRequest(ctx, "invalid refundStatus")
+		}
+		params.RefundStatus = &n
+	}
+	if v := ctx.QueryParam("refundApplicantType"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil {
+			return response.BadRequest(ctx, "invalid refundApplicantType")
+		}
+		params.RefundApplicantType = &n
 	}
 
 	// 校区超级管理员（role=2）自动按学校过滤
@@ -95,5 +126,94 @@ func (s *AdminServer) GetOrder(ctx echo.Context) error {
 		}
 	}
 
+	return response.Success(ctx, adminvo.NewAdminOrderDetailVO(order))
+}
+
+func (s *AdminServer) ApplyOrderRefund(ctx echo.Context) error {
+	if adminRole(ctx) != models.AdminRoleSchoolSuperAdmin {
+		return response.Forbidden(ctx, "权限不足")
+	}
+	sid := adminSchoolID(ctx)
+	if sid == nil {
+		return response.Forbidden(ctx, "当前管理员未绑定学校")
+	}
+
+	id, err := strconv.Atoi(ctx.Param("id"))
+	if err != nil {
+		return response.BadRequest(ctx, "invalid order id")
+	}
+
+	var req adminRefundApplyRequest
+	if err := ctx.Bind(&req); err != nil {
+		return response.BadRequest(ctx, "invalid request body")
+	}
+	reason := strings.TrimSpace(req.Reason)
+	if len([]rune(reason)) < 5 || len([]rune(reason)) > 200 {
+		return response.BadRequest(ctx, "退款原因需为5-200字")
+	}
+	if req.RefundApplicantType != 1 {
+		return response.BadRequest(ctx, "refundApplicantType must be 1")
+	}
+
+	order, err := s.repo.Order.AdminGetByID(ctx.Request().Context(), id)
+	if err != nil {
+		return response.InternalError(ctx, "获取订单详情失败")
+	}
+	if order == nil {
+		return response.NotFound(ctx, "订单不存在")
+	}
+	if order.UserSchoolID == nil || *order.UserSchoolID != *sid {
+		return response.Forbidden(ctx, "权限不足")
+	}
+	if order.Status != models.OrderStatusPaid {
+		return response.BadRequest(ctx, "未支付订单不能申请退款")
+	}
+	if order.RefundStatus != 0 {
+		return response.BadRequest(ctx, "该订单已申请退款")
+	}
+
+	ok, err := s.repo.Order.UpdateRefundApply(ctx.Request().Context(), id, reason, 1)
+	if err != nil {
+		return response.InternalError(ctx, "提交退款申请失败")
+	}
+	if !ok {
+		return response.BadRequest(ctx, "订单状态不允许申请退款")
+	}
+
+	updated, err := s.repo.Order.AdminGetByID(ctx.Request().Context(), id)
+	if err != nil {
+		return response.InternalError(ctx, "获取更新后的订单失败")
+	}
+	return response.Success(ctx, adminvo.NewAdminOrderDetailVO(updated))
+}
+
+func (s *AdminServer) ReviewOrderRefund(ctx echo.Context) error {
+	if adminRole(ctx) != models.AdminRoleSuperAdmin {
+		return response.Forbidden(ctx, "权限不足")
+	}
+	id, err := strconv.Atoi(ctx.Param("id"))
+	if err != nil {
+		return response.BadRequest(ctx, "invalid order id")
+	}
+	var req adminRefundReviewRequest
+	if err := ctx.Bind(&req); err != nil {
+		return response.BadRequest(ctx, "invalid request body")
+	}
+	if req.RefundStatus != 2 {
+		return response.BadRequest(ctx, "refundStatus must be 2")
+	}
+
+	ok, err := s.repo.Order.AdminReviewRefund(ctx.Request().Context(), id, currentAdminID(ctx))
+	if err != nil {
+		return response.InternalError(ctx, "审核退款失败")
+	}
+	if !ok {
+		return response.BadRequest(ctx, "只能处理待退款订单")
+	}
+
+	order, err := s.repo.Order.AdminGetByID(ctx.Request().Context(), id)
+	if err != nil {
+		return response.InternalError(ctx, "获取更新后的订单失败")
+	}
 	return response.Success(ctx, adminvo.NewAdminOrderDetailVO(order))
 }

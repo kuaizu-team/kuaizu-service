@@ -61,9 +61,30 @@ func (m *MockOrderRepo) UpdateStatus(ctx context.Context, id int, status int) er
 	return args.Error(0)
 }
 
-func (m *MockOrderRepo) UpdateRefundApply(ctx context.Context, id int, reason string) (bool, error) {
-	args := m.Called(ctx, id, reason)
+func (m *MockOrderRepo) UpdateRefundApply(ctx context.Context, id int, reason string, applicantType int) (bool, error) {
+	args := m.Called(ctx, id, reason, applicantType)
 	return args.Bool(0), args.Error(1)
+}
+
+func (m *MockOrderRepo) AdminReviewRefund(ctx context.Context, id int, adminID int) (bool, error) {
+	args := m.Called(ctx, id, adminID)
+	return args.Bool(0), args.Error(1)
+}
+
+func (m *MockOrderRepo) RevenueStats(ctx context.Context, schoolID *int) (*repository.RevenueStats, error) {
+	args := m.Called(ctx, schoolID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*repository.RevenueStats), args.Error(1)
+}
+
+func (m *MockOrderRepo) SettleSchoolPendingOrders(ctx context.Context, schoolID int, adminID int, remark *string) (*repository.SettlementResult, error) {
+	args := m.Called(ctx, schoolID, adminID, remark)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*repository.SettlementResult), args.Error(1)
 }
 
 func (m *MockOrderRepo) AdminList(ctx context.Context, params repository.AdminOrderListParams) ([]*models.Order, int64, error) {

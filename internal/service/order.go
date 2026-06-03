@@ -43,7 +43,7 @@ func (s *OrderService) ApplyRefund(ctx context.Context, userID, orderID int, rea
 		return nil, ErrBadRequest("该订单已申请退款")
 	}
 
-	ok, err := s.repo.Order.UpdateRefundApply(ctx, orderID, reason)
+	ok, err := s.repo.Order.UpdateRefundApply(ctx, orderID, reason, 0)
 	if err != nil {
 		log.Printf("[OrderService.ApplyRefund] repository error updating refund apply: %v", err)
 		return nil, ErrInternal("提交退款申请失败")

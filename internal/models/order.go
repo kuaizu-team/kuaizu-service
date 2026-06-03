@@ -8,21 +8,28 @@ import (
 
 // Order represents an order in the database.
 type Order struct {
-	ID              int        `db:"id"`
-	UserID          int        `db:"user_id"`
-	ProductID       int        `db:"product_id"`
-	Price           float64    `db:"price"`
-	Quantity        int        `db:"quantity"`
-	ActualPaid      float64    `db:"actual_paid"`
-	Status          int        `db:"status"`
-	RefundStatus    int        `db:"refund_status"`
-	RefundReason    *string    `db:"refund_reason"`
-	RefundApplyTime *time.Time `db:"refund_apply_time"`
-	WxPayNo         *string    `db:"wx_pay_no"`
-	OutTradeNo      *string    `db:"out_trade_no"`
-	PayTime         *time.Time `db:"pay_time"`
-	CreatedAt       time.Time  `db:"created_at"`
-	UpdatedAt       time.Time  `db:"updated_at"`
+	ID                        int        `db:"id"`
+	UserID                    int        `db:"user_id"`
+	ProductID                 int        `db:"product_id"`
+	Price                     float64    `db:"price"`
+	Quantity                  int        `db:"quantity"`
+	ActualPaid                float64    `db:"actual_paid"`
+	Status                    int        `db:"status"`
+	SettlementStatus          int        `db:"settlement_status"`
+	RefundStatus              int        `db:"refund_status"`
+	RefundReason              *string    `db:"refund_reason"`
+	RefundApplyTime           *time.Time `db:"refund_apply_time"`
+	RefundApplicantType       *int       `db:"refund_applicant_type"`
+	RefundHandleTime          *time.Time `db:"refund_handle_time"`
+	RefundOperatorAdminID     *int       `db:"refund_operator_admin_id"`
+	SettlementBatchNo         *string    `db:"settlement_batch_no"`
+	SettlementTime            *time.Time `db:"settlement_time"`
+	SettlementOperatorAdminID *int       `db:"settlement_operator_admin_id"`
+	WxPayNo                   *string    `db:"wx_pay_no"`
+	OutTradeNo                *string    `db:"out_trade_no"`
+	PayTime                   *time.Time `db:"pay_time"`
+	CreatedAt                 time.Time  `db:"created_at"`
+	UpdatedAt                 time.Time  `db:"updated_at"`
 
 	// Joined fields from product table.
 	ProductName        *string `db:"product_name"`
