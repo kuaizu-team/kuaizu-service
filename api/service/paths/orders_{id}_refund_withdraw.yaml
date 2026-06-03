@@ -1,0 +1,23 @@
+patch:
+  tags:
+    - Orders
+  summary: Withdraw pending refund application
+  operationId: withdrawOrderRefund
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema:
+        type: integer
+  responses:
+    '200':
+      description: Refund application withdrawn
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/BaseResponse.yaml
+              - type: object
+                properties:
+                  data:
+                    $ref: ../components/schemas/OrderVO.yaml

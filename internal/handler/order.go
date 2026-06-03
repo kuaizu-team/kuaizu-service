@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"strconv"
 	"strings"
 
 	"github.com/kuaizu-team/kuaizu-service/api"
@@ -155,6 +156,22 @@ func (s *Server) applyOrderRefund(ctx echo.Context, id int) error {
 	}
 
 	order, err := s.svc.Order.ApplyRefund(ctx.Request().Context(), userID, id, req.Reason)
+	if err != nil {
+		return mapServiceError(ctx, err)
+	}
+
+	return Success(ctx, order.ToVO())
+}
+
+// WithdrawOrderRefund handles PATCH /orders/{id}/refund/withdraw.
+func (s *Server) WithdrawOrderRefund(ctx echo.Context) error {
+	id, err := strconv.Atoi(ctx.Param("id"))
+	if err != nil {
+		return BadRequest(ctx, "invalid order id")
+	}
+
+	userID := GetUserID(ctx)
+	order, err := s.svc.Order.WithdrawRefund(ctx.Request().Context(), userID, id)
 	if err != nil {
 		return mapServiceError(ctx, err)
 	}

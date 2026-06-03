@@ -242,6 +242,54 @@ func (s *AdminServer) ListUserOliveBranches(ctx echo.Context) error {
 	})
 }
 
+// ListUserOrders handles GET /admin/users/:id/orders.
+func (s *AdminServer) ListUserOrders(ctx echo.Context) error {
+	if adminRole(ctx) == models.AdminRoleSchoolAdmin {
+		return response.Forbidden(ctx, "permission denied")
+	}
+
+	id, err := strconv.Atoi(ctx.Param("id"))
+	if err != nil {
+		return response.BadRequest(ctx, "invalid user id")
+	}
+
+	page, _ := strconv.Atoi(ctx.QueryParam("page"))
+	size, _ := strconv.Atoi(ctx.QueryParam("size"))
+	if size == 0 {
+		size, _ = strconv.Atoi(ctx.QueryParam("pageSize"))
+	}
+	if page < 1 {
+		page = 1
+	}
+	if size < 1 || size > 100 {
+		size = 10
+	}
+
+	params := repository.AdminOrderListParams{
+		UserID: &id,
+		Page:   page,
+		Size:   size,
+	}
+	if sid := adminSchoolID(ctx); sid != nil {
+		params.SchoolID = sid
+	}
+
+	orders, total, err := s.repo.Order.AdminList(ctx.Request().Context(), params)
+	if err != nil {
+		return response.InternalError(ctx, "get user orders failed")
+	}
+
+	list := make([]adminvo.AdminOrderVO, len(orders))
+	for i, o := range orders {
+		list[i] = *adminvo.NewAdminOrderVO(o)
+	}
+
+	return response.Success(ctx, map[string]interface{}{
+		"list":  list,
+		"total": total,
+	})
+}
+
 type updateUserStatusRequest struct {
 	Status    int     `json:"status"`
 	BanReason *string `json:"banReason"`

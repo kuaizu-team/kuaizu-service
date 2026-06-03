@@ -20,6 +20,10 @@ type Order struct {
 	RefundReason              *string    `db:"refund_reason"`
 	RefundApplyTime           *time.Time `db:"refund_apply_time"`
 	RefundApplicantType       *int       `db:"refund_applicant_type"`
+	RefundApplicantAdminID    *int       `db:"refund_applicant_admin_id"`
+	RejectReason              *string    `db:"reject_reason"`
+	RejectTime                *time.Time `db:"reject_time"`
+	RefundWithdrawTime        *time.Time `db:"refund_withdraw_time"`
 	RefundHandleTime          *time.Time `db:"refund_handle_time"`
 	RefundOperatorAdminID     *int       `db:"refund_operator_admin_id"`
 	SettlementBatchNo         *string    `db:"settlement_batch_no"`
@@ -46,16 +50,19 @@ func (o *Order) ToVO() *api.OrderVO {
 	status := api.OrderStatus(o.Status)
 
 	return &api.OrderVO{
-		Id:              &o.ID,
-		ProductId:       &o.ProductID,
-		ActualPaid:      &o.ActualPaid,
-		Status:          &status,
-		RefundStatus:    &o.RefundStatus,
-		RefundReason:    o.RefundReason,
-		RefundApplyTime: o.RefundApplyTime,
-		WxPayNo:         o.WxPayNo,
-		PayTime:         o.PayTime,
-		CreatedAt:       &o.CreatedAt,
-		ProductName:     o.ProductName,
+		Id:                 &o.ID,
+		ProductId:          &o.ProductID,
+		ActualPaid:         &o.ActualPaid,
+		Status:             &status,
+		RefundStatus:       &o.RefundStatus,
+		RefundReason:       o.RefundReason,
+		RefundApplyTime:    o.RefundApplyTime,
+		RejectReason:       o.RejectReason,
+		RejectTime:         o.RejectTime,
+		RefundWithdrawTime: o.RefundWithdrawTime,
+		WxPayNo:            o.WxPayNo,
+		PayTime:            o.PayTime,
+		CreatedAt:          &o.CreatedAt,
+		ProductName:        o.ProductName,
 	}
 }

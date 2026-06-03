@@ -61,13 +61,23 @@ func (m *MockOrderRepo) UpdateStatus(ctx context.Context, id int, status int) er
 	return args.Error(0)
 }
 
-func (m *MockOrderRepo) UpdateRefundApply(ctx context.Context, id int, reason string, applicantType int) (bool, error) {
-	args := m.Called(ctx, id, reason, applicantType)
+func (m *MockOrderRepo) UpdateRefundApply(ctx context.Context, id int, reason string, applicantType int, applicantAdminID *int) (bool, error) {
+	args := m.Called(ctx, id, reason, applicantType, applicantAdminID)
 	return args.Bool(0), args.Error(1)
 }
 
 func (m *MockOrderRepo) AdminReviewRefund(ctx context.Context, id int, adminID int) (bool, error) {
 	args := m.Called(ctx, id, adminID)
+	return args.Bool(0), args.Error(1)
+}
+
+func (m *MockOrderRepo) AdminRejectRefund(ctx context.Context, id int, reason string, adminID int) (bool, error) {
+	args := m.Called(ctx, id, reason, adminID)
+	return args.Bool(0), args.Error(1)
+}
+
+func (m *MockOrderRepo) WithdrawRefund(ctx context.Context, id int) (bool, error) {
+	args := m.Called(ctx, id)
 	return args.Bool(0), args.Error(1)
 }
 

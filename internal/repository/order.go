@@ -39,6 +39,7 @@ type AdminOrderListParams struct {
 	Nickname            *string
 	SchoolName          *string
 	SchoolID            *int
+	UserID              *int
 	SettlementStatus    *int
 	RefundStatus        *int
 	RefundApplicantType *int
@@ -63,7 +64,9 @@ type SettlementResult struct {
 
 const orderFinanceCols = `
 	o.settlement_status, o.refund_status, o.refund_reason, o.refund_apply_time,
-	o.refund_applicant_type, o.refund_handle_time, o.refund_operator_admin_id,
+	o.refund_applicant_type, o.refund_applicant_admin_id,
+	o.reject_reason, o.reject_time, o.refund_withdraw_time,
+	o.refund_handle_time, o.refund_operator_admin_id,
 	o.settlement_batch_no, o.settlement_time, o.settlement_operator_admin_id`
 
 // ListByUserID retrieves paginated orders for a user.
@@ -233,13 +236,17 @@ func (r *OrderRepository) UpdateStatus(ctx context.Context, id int, status int) 
 }
 
 // UpdateRefundApply records a refund application for a paid order that has not applied before.
-func (r *OrderRepository) UpdateRefundApply(ctx context.Context, id int, reason string, applicantType int) (bool, error) {
+func (r *OrderRepository) UpdateRefundApply(ctx context.Context, id int, reason string, applicantType int, applicantAdminID *int) (bool, error) {
 	query := `
 		UPDATE ` + "`order`" + ` SET
 			refund_status = ?,
 			refund_reason = ?,
 			refund_apply_time = NOW(),
 			refund_applicant_type = ?,
+			refund_applicant_admin_id = ?,
+			reject_reason = NULL,
+			reject_time = NULL,
+			refund_withdraw_time = NULL,
 			settlement_status = CASE
 				WHEN settlement_status = 0 THEN 3
 				ELSE settlement_status
@@ -250,7 +257,7 @@ func (r *OrderRepository) UpdateRefundApply(ctx context.Context, id int, reason 
 			AND refund_status = ?
 	`
 
-	result, err := r.db.ExecContext(ctx, query, 1, reason, applicantType, id, models.OrderStatusPaid, 0)
+	result, err := r.db.ExecContext(ctx, query, 1, reason, applicantType, applicantAdminID, id, models.OrderStatusPaid, 0)
 	if err != nil {
 		return false, fmt.Errorf("update refund apply: %w", err)
 	}
@@ -260,6 +267,58 @@ func (r *OrderRepository) UpdateRefundApply(ctx context.Context, id int, reason 
 		return false, fmt.Errorf("read refund apply affected rows: %w", err)
 	}
 
+	return affected > 0, nil
+}
+
+// AdminRejectRefund marks a pending refund as rejected.
+func (r *OrderRepository) AdminRejectRefund(ctx context.Context, id int, reason string, adminID int) (bool, error) {
+	query := `
+		UPDATE ` + "`order`" + ` SET
+			refund_status = 3,
+			reject_reason = ?,
+			reject_time = NOW(),
+			refund_operator_admin_id = ?,
+			settlement_status = CASE
+				WHEN settlement_status = 3 THEN 0
+				ELSE settlement_status
+			END,
+			updated_at = NOW()
+		WHERE id = ?
+			AND refund_status = 1
+	`
+	result, err := r.db.ExecContext(ctx, query, reason, adminID, id)
+	if err != nil {
+		return false, fmt.Errorf("reject refund: %w", err)
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("read reject refund affected rows: %w", err)
+	}
+	return affected > 0, nil
+}
+
+// WithdrawRefund marks a pending refund as withdrawn.
+func (r *OrderRepository) WithdrawRefund(ctx context.Context, id int) (bool, error) {
+	query := `
+		UPDATE ` + "`order`" + ` SET
+			refund_status = 4,
+			refund_withdraw_time = NOW(),
+			settlement_status = CASE
+				WHEN settlement_status = 3 THEN 0
+				ELSE settlement_status
+			END,
+			updated_at = NOW()
+		WHERE id = ?
+			AND refund_status = 1
+	`
+	result, err := r.db.ExecContext(ctx, query, id)
+	if err != nil {
+		return false, fmt.Errorf("withdraw refund: %w", err)
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("read withdraw refund affected rows: %w", err)
+	}
 	return affected > 0, nil
 }
 
@@ -314,6 +373,10 @@ func (r *OrderRepository) AdminList(ctx context.Context, params AdminOrderListPa
 	if params.SchoolID != nil {
 		conditions = append(conditions, "u.school_id = ?")
 		args = append(args, *params.SchoolID)
+	}
+	if params.UserID != nil {
+		conditions = append(conditions, "o.user_id = ?")
+		args = append(args, *params.UserID)
 	}
 	if params.SettlementStatus != nil {
 		conditions = append(conditions, "o.settlement_status = ?")

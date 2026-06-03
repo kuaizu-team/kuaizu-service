@@ -81,6 +81,7 @@ func main() {
 	adminGroup.PATCH("/talent-profiles/:id/takedown", server.TakedownTalentProfile)
 
 	adminGroup.GET("/users", server.ListUsers)
+	adminGroup.GET("/users/:id/orders", server.ListUserOrders)
 	adminGroup.GET("/users/:id", server.GetUser)
 	adminGroup.PATCH("/users/:id/auth", server.ReviewUserAuth)
 	adminGroup.PUT("/users/:id/status", server.UpdateUserStatus)
@@ -99,6 +100,10 @@ func main() {
 
 	adminGroup.GET("/orders", server.ListOrders)
 	adminGroup.POST("/orders/:id/refund/apply", server.ApplyOrderRefund)
+	adminGroup.PATCH("/orders/:id/refund/reject", server.RejectOrderRefund)
+	adminGroup.POST("/orders/:id/refund/reject", server.RejectOrderRefund)
+	adminGroup.PATCH("/orders/:id/refund/withdraw", server.WithdrawOrderRefund)
+	adminGroup.POST("/orders/:id/refund/withdraw", server.WithdrawOrderRefund)
 	adminGroup.PATCH("/orders/:id/refund", server.ReviewOrderRefund)
 	adminGroup.GET("/orders/:id", server.GetOrder)
 
