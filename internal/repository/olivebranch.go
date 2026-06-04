@@ -200,6 +200,32 @@ func (r *OliveBranchRepository) Create(ctx context.Context, ob *models.OliveBran
 	return nil
 }
 
+// CreateTx creates a new olive branch record within a transaction.
+func (r *OliveBranchRepository) CreateTx(ctx context.Context, tx *sqlx.Tx, ob *models.OliveBranch) error {
+	query := `
+		INSERT INTO olive_branch_record (
+			sender_id, receiver_id, related_project_id,
+			type, cost_type, status
+		) VALUES (
+			:sender_id, :receiver_id, :related_project_id,
+			:type, :cost_type, :status
+		)
+	`
+
+	result, err := tx.NamedExecContext(ctx, query, ob)
+	if err != nil {
+		return fmt.Errorf("create olive branch: %w", err)
+	}
+
+	id, err := result.LastInsertId()
+	if err != nil {
+		return fmt.Errorf("get last insert id: %w", err)
+	}
+	ob.ID = int(id)
+
+	return nil
+}
+
 // ExistsPending checks if there is a pending (status=0) olive branch from sender to receiver.
 func (r *OliveBranchRepository) ExistsPending(ctx context.Context, senderID, receiverID, relatedProjectID int) (bool, error) {
 	var count int

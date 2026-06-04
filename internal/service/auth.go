@@ -73,10 +73,10 @@ func (s *AuthService) LoginWithWechat(ctx context.Context, code string) (*LoginW
 		return nil, fmt.Errorf("generate token failed: %w", err)
 	}
 
-	// Update last_active_date in the background; login must not fail if this does.
-	go func() {
-		_ = s.repo.User.TouchLastActiveDate(context.Background(), user.ID)
-	}()
+	_ = s.repo.User.TouchLastActiveDate(ctx, user.ID)
+	if refreshedUser, err := s.repo.User.GetByID(ctx, user.ID); err == nil && refreshedUser != nil {
+		user = refreshedUser
+	}
 
 	isNewUser := false
 	return &LoginWithWechatResult{
@@ -155,10 +155,10 @@ func (s *AuthService) RegisterWithPhone(ctx context.Context, registerToken, phon
 		return nil, fmt.Errorf("generate token failed: %w", err)
 	}
 
-	// Update last_active_date in the background; registration must not fail if this does.
-	go func() {
-		_ = s.repo.User.TouchLastActiveDate(context.Background(), user.ID)
-	}()
+	_ = s.repo.User.TouchLastActiveDate(ctx, user.ID)
+	if refreshedUser, err := s.repo.User.GetByID(ctx, user.ID); err == nil && refreshedUser != nil {
+		user = refreshedUser
+	}
 
 	return &RegisterWithPhoneResult{
 		Token:        token,

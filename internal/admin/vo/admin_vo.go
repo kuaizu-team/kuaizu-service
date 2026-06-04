@@ -240,31 +240,13 @@ func NewAdminUserDetailVO(u *models.User, p *models.TalentProfile) *AdminUserDet
 	}
 
 	// 计算今日剩余免费橄榄枝额度（与用户端 /olive-branch-quota 逻辑保持一致）
-	freeBranchUsedToday := 0
-	if u.FreeBranchUsedToday != nil {
-		today := time.Now().Truncate(24 * time.Hour)
-		if u.LastActiveDate != nil && !u.LastActiveDate.Truncate(24*time.Hour).Before(today) {
-			freeBranchUsedToday = *u.FreeBranchUsedToday
-		}
-	}
-	freeRemaining := models.OliveBranchDailyFreeQuota - freeBranchUsedToday
-	if freeRemaining < 0 {
-		freeRemaining = 0
-	}
-
-	paidBalance := 0
-	if u.OliveBranchCount != nil {
-		paidBalance = *u.OliveBranchCount
-	}
-	if paidBalance < 0 {
-		paidBalance = 0
-	}
+	quota := models.CalculateOliveBranchQuota(u, time.Now())
 
 	return &AdminUserDetailVO{
 		AdminUserVO:   *NewAdminUserVO(u, nil),
 		TalentProfile: NewAdminTalentProfileVO(p),
-		FreeRemaining: freeRemaining,
-		PaidBalance:   paidBalance,
+		FreeRemaining: quota.FreeRemaining,
+		PaidBalance:   quota.PaidBalance,
 	}
 }
 

@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"log"
-	"time"
 
 	"github.com/kuaizu-team/kuaizu-service/internal/models"
 	"github.com/kuaizu-team/kuaizu-service/internal/repository"
@@ -68,25 +67,28 @@ func (s *OliveBranchService) SendOliveBranch(ctx context.Context, userID int, re
 		return nil, ErrBadRequest("已有待处理的橄榄枝，请等待对方处理后再发送")
 	}
 
-	// Get sender for quota check
-	sender, err := s.repo.User.GetByID(ctx, userID)
+	tx, err := s.repo.DB().BeginTxx(ctx, nil)
 	if err != nil {
-		log.Printf("[OliveBranchService.SendOliveBranch] repository error getting sender: %v", err)
+		log.Printf("[OliveBranchService.SendOliveBranch] failed to begin transaction: %v", err)
+		return nil, ErrInternal("发送橄榄枝失败")
+	}
+	defer tx.Rollback()
+
+	if err := s.repo.User.ResetDailyFreeBranchQuotaIfNeededTx(ctx, tx, userID); err != nil {
+		log.Printf("[OliveBranchService.SendOliveBranch] repository error resetting daily quota: %v", err)
+		return nil, ErrInternal("更新额度失败")
+	}
+
+	// Lock sender row before recalculating and deducting quota to avoid lost updates.
+	sender, err := s.repo.User.GetByIDForUpdateTx(ctx, tx, userID)
+	if err != nil {
+		log.Printf("[OliveBranchService.SendOliveBranch] repository error locking sender: %v", err)
 		return nil, ErrInternal("获取用户信息失败")
 	}
-
-	// Determine cost type with daily free quota logic
-	today := time.Now().Truncate(24 * time.Hour)
-	costType := 0
-
-	// Reset free quota if last active date is not today
-	if sender.LastActiveDate == nil || sender.LastActiveDate.Truncate(24*time.Hour).Before(today) {
-		zero := 0
-		sender.FreeBranchUsedToday = &zero
-		sender.LastActiveDate = &today
+	if sender == nil {
+		return nil, ErrNotFound("用户不存在")
 	}
 
-	// Check quota: free first, then paid
 	freeBranchUsedToday := 0
 	if sender.FreeBranchUsedToday != nil {
 		freeBranchUsedToday = *sender.FreeBranchUsedToday
@@ -95,6 +97,7 @@ func (s *OliveBranchService) SendOliveBranch(ctx context.Context, userID int, re
 	if sender.OliveBranchCount != nil {
 		oliveBranchCount = *sender.OliveBranchCount
 	}
+	costType := 0
 
 	if freeBranchUsedToday < models.OliveBranchDailyFreeQuota {
 		costType = models.OliveBranchCostFree // Free quota
@@ -107,9 +110,10 @@ func (s *OliveBranchService) SendOliveBranch(ctx context.Context, userID int, re
 	} else {
 		return nil, &ServiceError{Code: ErrorCode(4002), Message: "橄榄枝额度不足，今日免费额度已用完且无付费余额"}
 	}
+	sender.OliveBranchCount = &oliveBranchCount
 
 	// Update user quota
-	if err := s.repo.User.UpdateQuota(ctx, sender); err != nil {
+	if err := s.repo.User.UpdateQuotaTx(ctx, tx, sender); err != nil {
 		log.Printf("[OliveBranchService.SendOliveBranch] repository error updating quota: %v", err)
 		return nil, ErrInternal("更新额度失败")
 	}
@@ -123,8 +127,13 @@ func (s *OliveBranchService) SendOliveBranch(ctx context.Context, userID int, re
 		Status:           models.OliveBranchStatusPending,
 	}
 
-	if err := s.repo.OliveBranch.Create(ctx, ob); err != nil {
+	if err := s.repo.OliveBranch.CreateTx(ctx, tx, ob); err != nil {
 		log.Printf("[OliveBranchService.SendOliveBranch] repository error creating olive branch: %v", err)
+		return nil, ErrInternal("发送橄榄枝失败")
+	}
+
+	if err := tx.Commit(); err != nil {
+		log.Printf("[OliveBranchService.SendOliveBranch] failed to commit transaction: %v", err)
 		return nil, ErrInternal("发送橄榄枝失败")
 	}
 
@@ -141,8 +150,8 @@ func (s *OliveBranchService) SendOliveBranch(ctx context.Context, userID int, re
 		}
 
 		data := map[string]string{
-			"project_name": truncate20(project.Name),         // thing1 ≤ 20 字
-			"inviter":      truncate20(inviterName),           // thing2 ≤ 20 字
+			"project_name": truncate20(project.Name), // thing1 ≤ 20 字
+			"inviter":      truncate20(inviterName),  // thing2 ≤ 20 字
 			"remark":       "您收到一条橄榄枝邀请",             // thing4，10 字 ≤ 20
 		}
 
@@ -209,11 +218,11 @@ func (s *OliveBranchService) HandleOliveBranch(ctx context.Context, userID, bran
 			responderName = *responder.Nickname
 		}
 
-		resultStr := "同意"                           // phrase3 ≤ 5 字
-		remark := "恭喜！对方已同意您的邀请。"          // thing5，13 字 ≤ 20
+		resultStr := "同意"         // phrase3 ≤ 5 字
+		remark := "恭喜！对方已同意您的邀请。" // thing5，13 字 ≤ 20
 		if status == models.OliveBranchStatusRejected {
 			resultStr = "拒绝"
-			remark = "很遗憾，对方拒绝了您的邀请。"   // thing5，14 字 ≤ 20
+			remark = "很遗憾，对方拒绝了您的邀请。" // thing5，14 字 ≤ 20
 		}
 
 		data := map[string]string{
