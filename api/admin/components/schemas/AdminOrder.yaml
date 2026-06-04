@@ -1,0 +1,87 @@
+type: object
+properties:
+  id:
+    type: integer
+  outTradeNo:
+    type: string
+  wxPayNo:
+    type: string
+    nullable: true
+  userId:
+    type: integer
+  userNickname:
+    type: string
+    nullable: true
+  schoolName:
+    type: string
+    nullable: true
+  productId:
+    type: integer
+  productName:
+    type: string
+    nullable: true
+  quantity:
+    type: integer
+  unitPrice:
+    type: integer
+    description: Unit price in cents
+  actualPaid:
+    type: integer
+    description: Actual paid amount in cents
+  status:
+    type: integer
+  refundStatus:
+    type: integer
+    description: 0-none,1-pending,2-success,3-rejected,4-withdrawn
+  refundReason:
+    type: string
+    nullable: true
+  rejectReason:
+    type: string
+    nullable: true
+  rejectTime:
+    type: string
+    format: date-time
+    nullable: true
+  refundApplyTime:
+    type: string
+    format: date-time
+    nullable: true
+  refundWithdrawTime:
+    type: string
+    format: date-time
+    nullable: true
+  refundApplicantType:
+    type: integer
+    nullable: true
+    description: 0-consumer,1-school super admin
+  refundApplicantAdminId:
+    type: integer
+    nullable: true
+  refundHandleTime:
+    type: string
+    format: date-time
+    nullable: true
+  settlementStatus:
+    type: integer
+    description: 0-pending,1-settled,2-invalid,3-refunding
+  settlementBatchNo:
+    type: string
+    nullable: true
+  settlementTime:
+    type: string
+    format: date-time
+    nullable: true
+  createdAt:
+    type: string
+    format: date-time
+  paidAt:
+    type: string
+    format: date-time
+    nullable: true
+  description:
+    type: string
+    nullable: true
+  updatedAt:
+    type: string
+    format: date-time

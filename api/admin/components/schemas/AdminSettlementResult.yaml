@@ -1,0 +1,9 @@
+type: object
+properties:
+  batchNo:
+    type: string
+  orderCount:
+    type: integer
+  totalAmount:
+    type: integer
+    format: int64

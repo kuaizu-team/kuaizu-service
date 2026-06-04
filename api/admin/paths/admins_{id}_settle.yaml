@@ -1,0 +1,38 @@
+post:
+  tags:
+    - Admins
+  summary: 一键结算管理员所属学校待结算订单
+  parameters:
+    - in: path
+      name: id
+      required: true
+      schema:
+        type: integer
+  requestBody:
+    required: false
+    content:
+      application/json:
+        schema:
+          $ref: ../components/schemas/AdminSettleDTO.yaml
+  responses:
+    '200':
+      description: 结算完成
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/BaseResponse.yaml
+              - type: object
+                properties:
+                  data:
+                    $ref: ../components/schemas/AdminSettlementResult.yaml
+    '400':
+      $ref: ../components/responses/BadRequest.yaml
+    '401':
+      $ref: ../components/responses/Unauthorized.yaml
+    '403':
+      $ref: ../components/responses/Forbidden.yaml
+    '404':
+      $ref: ../components/responses/NotFound.yaml
+    '500':
+      $ref: ../components/responses/InternalError.yaml

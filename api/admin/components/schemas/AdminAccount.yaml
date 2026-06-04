@@ -1,0 +1,35 @@
+type: object
+properties:
+  id:
+    type: integer
+  username:
+    type: string
+  nickname:
+    type: string
+    nullable: true
+  role:
+    type: integer
+    description: 1-super admin,2-school super admin,3-school admin
+  schoolId:
+    type: integer
+    nullable: true
+  schoolName:
+    type: string
+    nullable: true
+  status:
+    type: integer
+  pendingSettlementAmount:
+    type: integer
+    format: int64
+  pendingRefundOrderCount:
+    type: integer
+    format: int64
+  financeRemark:
+    type: string
+    nullable: true
+  createdAt:
+    type: string
+    format: date-time
+  updatedAt:
+    type: string
+    format: date-time

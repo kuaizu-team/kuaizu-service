@@ -1,0 +1,40 @@
+get:
+  tags:
+    - Users
+  summary: 用户详情页订单列表
+  parameters:
+    - in: path
+      name: userId
+      required: true
+      schema:
+        type: integer
+    - in: query
+      name: page
+      schema:
+        type: integer
+        default: 1
+    - in: query
+      name: pageSize
+      schema:
+        type: integer
+        default: 10
+  responses:
+    '200':
+      description: 成功获取用户订单列表，total 为过滤后的总数
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/BaseResponse.yaml
+              - type: object
+                properties:
+                  data:
+                    $ref: ../components/schemas/AdminOrderPagedData.yaml
+    '400':
+      $ref: ../components/responses/BadRequest.yaml
+    '401':
+      $ref: ../components/responses/Unauthorized.yaml
+    '403':
+      $ref: ../components/responses/Forbidden.yaml
+    '500':
+      $ref: ../components/responses/InternalError.yaml

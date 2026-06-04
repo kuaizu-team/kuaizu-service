@@ -1,0 +1,70 @@
+get:
+  tags:
+    - Orders
+  summary: 后台订单列表
+  parameters:
+    - in: query
+      name: page
+      schema:
+        type: integer
+        default: 1
+    - in: query
+      name: pageSize
+      schema:
+        type: integer
+        default: 10
+    - in: query
+      name: userId
+      schema:
+        type: integer
+    - in: query
+      name: orderNo
+      schema:
+        type: string
+    - in: query
+      name: wxPayNo
+      schema:
+        type: string
+    - in: query
+      name: nickname
+      schema:
+        type: string
+    - in: query
+      name: schoolName
+      schema:
+        type: string
+    - in: query
+      name: settlementStatus
+      schema:
+        type: integer
+        enum: [0, 1, 2, 3]
+    - in: query
+      name: refundStatus
+      schema:
+        type: integer
+        enum: [0, 1, 2, 3, 4]
+    - in: query
+      name: refundApplicantType
+      schema:
+        type: integer
+        enum: [0, 1]
+  responses:
+    '200':
+      description: 成功获取订单列表，total 为过滤后的总数
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/BaseResponse.yaml
+              - type: object
+                properties:
+                  data:
+                    $ref: ../components/schemas/AdminOrderPagedData.yaml
+    '400':
+      $ref: ../components/responses/BadRequest.yaml
+    '401':
+      $ref: ../components/responses/Unauthorized.yaml
+    '403':
+      $ref: ../components/responses/Forbidden.yaml
+    '500':
+      $ref: ../components/responses/InternalError.yaml
