@@ -11,6 +11,25 @@ get:
       description: 订单状态筛选
       schema:
         $ref: ../components/schemas/OrderStatus.yaml
+    - name: afterSale
+      in: query
+      description: |
+        After-sale aggregate filter. When true, returns orders whose status is Refunded
+        or refundStatus is 1, 2, or 3.
+      schema:
+        type: boolean
+    - name: refundStatus
+      in: query
+      description: |
+        Refund status filter: 0=none, 1=pending, 2=success, 3=rejected, 4=withdrawn.
+      schema:
+        type: integer
+        enum:
+          - 0
+          - 1
+          - 2
+          - 3
+          - 4
   responses:
     '200':
       description: 成功

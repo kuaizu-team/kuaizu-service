@@ -24,10 +24,12 @@ func NewOrderRepository(db *sqlx.DB) *OrderRepository {
 
 // OrderListParams contains parameters for listing orders.
 type OrderListParams struct {
-	UserID int
-	Page   int
-	Size   int
-	Status *int
+	UserID       int
+	Page         int
+	Size         int
+	Status       *int
+	RefundStatus *int
+	AfterSale    bool
 }
 
 // AdminOrderListParams contains parameters for admin order list.
@@ -77,6 +79,14 @@ func (r *OrderRepository) ListByUserID(ctx context.Context, params OrderListPara
 	if params.Status != nil {
 		where += ` AND o.status = ?`
 		args = append(args, *params.Status)
+	}
+	if params.RefundStatus != nil {
+		where += ` AND o.refund_status = ?`
+		args = append(args, *params.RefundStatus)
+	}
+	if params.AfterSale {
+		where += ` AND (o.status = ? OR o.refund_status IN (?, ?, ?))`
+		args = append(args, models.OrderStatusRefunded, 1, 2, 3)
 	}
 
 	countQuery := fmt.Sprintf("SELECT COUNT(*) FROM `order` o %s", where)
