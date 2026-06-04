@@ -1,0 +1,9 @@
+type: object
+required:
+  - reason
+properties:
+  reason:
+    type: string
+    minLength: 5
+    maxLength: 200
+    description: Refund reason

@@ -1,0 +1,33 @@
+get:
+  tags:
+    - Admins
+  summary: 管理员列表
+  parameters:
+    - in: query
+      name: page
+      schema:
+        type: integer
+        default: 1
+    - in: query
+      name: pageSize
+      schema:
+        type: integer
+        default: 10
+  responses:
+    '200':
+      description: 成功获取管理员列表
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/BaseResponse.yaml
+              - type: object
+                properties:
+                  data:
+                    $ref: ../components/schemas/AdminAccountPagedData.yaml
+    '401':
+      $ref: ../components/responses/Unauthorized.yaml
+    '403':
+      $ref: ../components/responses/Forbidden.yaml
+    '500':
+      $ref: ../components/responses/InternalError.yaml

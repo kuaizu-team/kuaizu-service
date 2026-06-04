@@ -1,0 +1,36 @@
+patch:
+  tags:
+    - Orders
+  summary: 撤回未处理退款申请
+  parameters:
+    - in: path
+      name: orderId
+      required: true
+      schema:
+        type: integer
+  requestBody:
+    required: false
+    content:
+      application/json:
+        schema:
+          type: object
+  responses:
+    '200':
+      description: 退款申请撤回成功
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/BaseResponse.yaml
+              - type: object
+                properties:
+                  data:
+                    $ref: ../components/schemas/AdminOrder.yaml
+    '400':
+      $ref: ../components/responses/BadRequest.yaml
+    '401':
+      $ref: ../components/responses/Unauthorized.yaml
+    '403':
+      $ref: ../components/responses/Forbidden.yaml
+    '500':
+      $ref: ../components/responses/InternalError.yaml

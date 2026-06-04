@@ -1,45 +1,56 @@
 get:
   tags:
-    - Projects
-  summary: 获取项目列表（支持分页和筛选）
+    - Orders
+  summary: 后台订单列表
   parameters:
     - in: query
       name: page
       schema:
         type: integer
         default: 1
-      description: 页码
     - in: query
-      name: size
+      name: pageSize
       schema:
         type: integer
-        default: 20
-      description: 每页条数
+        default: 10
     - in: query
-      name: status
+      name: userId
       schema:
         type: integer
-      description: 项目状态筛选
     - in: query
-      name: keyword
+      name: orderNo
       schema:
         type: string
-      description: 关键词筛选（name/description）
     - in: query
-      name: sortBy
+      name: wxPayNo
       schema:
         type: string
-        enum: [pendingCount, createdAt, id]
-      description: Sort field for admin project list
     - in: query
-      name: order
+      name: nickname
       schema:
         type: string
-        enum: [asc, desc]
-      description: Sort direction
+    - in: query
+      name: schoolName
+      schema:
+        type: string
+    - in: query
+      name: settlementStatus
+      schema:
+        type: integer
+        enum: [0, 1, 2, 3]
+    - in: query
+      name: refundStatus
+      schema:
+        type: integer
+        enum: [0, 1, 2, 3, 4]
+    - in: query
+      name: refundApplicantType
+      schema:
+        type: integer
+        enum: [0, 1]
   responses:
     '200':
-      description: 成功获取项目列表
+      description: 成功获取订单列表，total 为过滤后的总数
       content:
         application/json:
           schema:
@@ -48,7 +59,7 @@ get:
               - type: object
                 properties:
                   data:
-                    $ref: ../components/schemas/ProjectPagedData.yaml
+                    $ref: ../components/schemas/AdminOrderPagedData.yaml
     '400':
       $ref: ../components/responses/BadRequest.yaml
     '401':

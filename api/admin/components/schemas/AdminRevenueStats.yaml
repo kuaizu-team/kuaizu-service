@@ -1,0 +1,28 @@
+type: object
+properties:
+  totalRevenue:
+    type: integer
+    format: int64
+    description: Total paid revenue in cents
+  weekRevenue:
+    type: integer
+    format: int64
+    description: Revenue in last 7 days, in cents
+  pendingSettlementAmount:
+    type: integer
+    format: int64
+  pendingConsumerRefundCount:
+    type: integer
+    format: int64
+  pendingSchoolAdminRefundCount:
+    type: integer
+    format: int64
+  pendingConsumerRefundAmount:
+    type: integer
+    format: int64
+  pendingSchoolAdminRefundAmount:
+    type: integer
+    format: int64
+  schoolId:
+    type: integer
+    nullable: true

@@ -21,6 +21,10 @@ tags:
     description: 认证相关接口
   - name: Dashboard
     description: 数据看板接口
+  - name: Orders
+    description: 订单与退款管理接口
+  - name: Admins
+    description: 管理员财务与账号管理接口
   - name: Projects
     description: 项目大厅接口
   - name: Users
@@ -40,6 +44,8 @@ paths:
     $ref: paths/auth_login.yaml
   /dashboard/stats:
     $ref: paths/dashboard_stats.yaml
+  /stats/revenue:
+    $ref: paths/stats_revenue.yaml
   /projects:
     $ref: paths/projects.yaml
   /projects/{id}:
@@ -50,8 +56,28 @@ paths:
     $ref: paths/users.yaml
   /users/{id}:
     $ref: paths/users_{id}.yaml
+  /users/{userId}/orders:
+    $ref: paths/users_{id}_orders.yaml
   /users/{id}/auth:
     $ref: paths/users_{id}_auth.yaml
+  /orders:
+    $ref: paths/orders.yaml
+  /orders/{orderId}:
+    $ref: paths/orders_{id}.yaml
+  /orders/{orderId}/refund:
+    $ref: paths/orders_{id}_refund.yaml
+  /orders/{orderId}/refund/reject:
+    $ref: paths/orders_{id}_refund_reject.yaml
+  /orders/{orderId}/refund/withdraw:
+    $ref: paths/orders_{id}_refund_withdraw.yaml
+  /admins:
+    $ref: paths/admins.yaml
+  /admins/{id}:
+    $ref: paths/admins_{id}.yaml
+  /admins/{id}/finance-remark:
+    $ref: paths/admins_{id}_finance-remark.yaml
+  /admins/{id}/settle:
+    $ref: paths/admins_{id}_settle.yaml
   /feedbacks:
     $ref: paths/feedbacks.yaml
   /feedbacks/{id}:

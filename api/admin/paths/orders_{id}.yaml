@@ -1,0 +1,30 @@
+get:
+  tags:
+    - Orders
+  summary: 后台订单详情
+  parameters:
+    - in: path
+      name: orderId
+      required: true
+      schema:
+        type: integer
+  responses:
+    '200':
+      description: 成功获取订单详情
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/BaseResponse.yaml
+              - type: object
+                properties:
+                  data:
+                    $ref: ../components/schemas/AdminOrder.yaml
+    '401':
+      $ref: ../components/responses/Unauthorized.yaml
+    '403':
+      $ref: ../components/responses/Forbidden.yaml
+    '404':
+      $ref: ../components/responses/NotFound.yaml
+    '500':
+      $ref: ../components/responses/InternalError.yaml

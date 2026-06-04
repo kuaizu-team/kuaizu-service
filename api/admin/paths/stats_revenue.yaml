@@ -1,0 +1,30 @@
+get:
+  tags:
+    - Dashboard
+  summary: 后台营收与待处理财务统计
+  parameters:
+    - in: query
+      name: schoolId
+      schema:
+        type: integer
+      description: 超级管理员可选；校区超级管理员强制使用自身学校
+  responses:
+    '200':
+      description: 成功获取营收统计
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/BaseResponse.yaml
+              - type: object
+                properties:
+                  data:
+                    $ref: ../components/schemas/AdminRevenueStats.yaml
+    '400':
+      $ref: ../components/responses/BadRequest.yaml
+    '401':
+      $ref: ../components/responses/Unauthorized.yaml
+    '403':
+      $ref: ../components/responses/Forbidden.yaml
+    '500':
+      $ref: ../components/responses/InternalError.yaml

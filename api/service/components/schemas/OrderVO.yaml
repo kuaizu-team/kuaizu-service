@@ -8,6 +8,32 @@ properties:
   productName:
     type: string
     description: 商品名称
+  refundStatus:
+    type: integer
+    description: Refund status, 0=none, 1=pending, 2=success, 3=rejected, 4=withdrawn
+  refundReason:
+    type: string
+    nullable: true
+    description: Refund application reason
+  refundApplyTime:
+    type: string
+    format: date-time
+    nullable: true
+    description: Refund application time
+  rejectReason:
+    type: string
+    nullable: true
+    description: Refund reject reason
+  rejectTime:
+    type: string
+    format: date-time
+    nullable: true
+    description: Refund reject time
+  refundWithdrawTime:
+    type: string
+    format: date-time
+    nullable: true
+    description: Refund withdraw time
   actualPaid:
     type: number
     format: double

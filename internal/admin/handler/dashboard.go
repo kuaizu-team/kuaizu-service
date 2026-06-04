@@ -1,6 +1,9 @@
 package handler
 
 import (
+	"strconv"
+
+	"github.com/kuaizu-team/kuaizu-service/internal/models"
 	"github.com/kuaizu-team/kuaizu-service/internal/response"
 	"github.com/labstack/echo/v4"
 )
@@ -87,4 +90,31 @@ func (s *AdminServer) GetDashboardStats(ctx echo.Context) error {
 		PendingFeedbackCount:      pendingFeedbackCount,
 		PendingTalentProfileCount: pendingTalentProfileCount,
 	})
+}
+
+func (s *AdminServer) GetRevenueStats(ctx echo.Context) error {
+	role := adminRole(ctx)
+	if role == models.AdminRoleSchoolAdmin {
+		return response.Forbidden(ctx, "权限不足")
+	}
+
+	var schoolID *int
+	if role == models.AdminRoleSchoolSuperAdmin {
+		schoolID = adminSchoolID(ctx)
+		if schoolID == nil {
+			return response.Forbidden(ctx, "当前管理员未绑定学校")
+		}
+	} else if v := ctx.QueryParam("schoolId"); v != "" {
+		id, err := strconv.Atoi(v)
+		if err != nil {
+			return response.BadRequest(ctx, "invalid schoolId")
+		}
+		schoolID = &id
+	}
+
+	stats, err := s.repo.Order.RevenueStats(ctx.Request().Context(), schoolID)
+	if err != nil {
+		return response.InternalError(ctx, "获取营收统计失败")
+	}
+	return response.Success(ctx, stats)
 }

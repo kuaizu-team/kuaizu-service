@@ -6,43 +6,63 @@ import (
 	"github.com/kuaizu-team/kuaizu-service/api"
 )
 
-// Order represents an order in the database (wide table design)
+// Order represents an order in the database.
 type Order struct {
-	ID         int        `db:"id"`
-	UserID     int        `db:"user_id"`
-	ProductID  int        `db:"product_id"`   // 商品ID
-	Price      float64    `db:"price"`        // 下单时的单价快照
-	Quantity   int        `db:"quantity"`     // 购买数量
-	ActualPaid float64    `db:"actual_paid"`  // 实付金额
-	Status     int        `db:"status"`       // 0-待支付, 1-已支付, 2-已取消, 3-已退款
-	WxPayNo    *string    `db:"wx_pay_no"`    // 微信支付订单号
-	OutTradeNo *string    `db:"out_trade_no"` // 商户单号
-	PayTime    *time.Time `db:"pay_time"`     // 支付时间
-	CreatedAt  time.Time  `db:"created_at"`   // 创建时间
-	UpdatedAt  time.Time  `db:"updated_at"`   // 更新时间
+	ID                        int        `db:"id"`
+	UserID                    int        `db:"user_id"`
+	ProductID                 int        `db:"product_id"`
+	Price                     float64    `db:"price"`
+	Quantity                  int        `db:"quantity"`
+	ActualPaid                float64    `db:"actual_paid"`
+	Status                    int        `db:"status"`
+	SettlementStatus          int        `db:"settlement_status"`
+	RefundStatus              int        `db:"refund_status"`
+	RefundReason              *string    `db:"refund_reason"`
+	RefundApplyTime           *time.Time `db:"refund_apply_time"`
+	RefundApplicantType       *int       `db:"refund_applicant_type"`
+	RefundApplicantAdminID    *int       `db:"refund_applicant_admin_id"`
+	RejectReason              *string    `db:"reject_reason"`
+	RejectTime                *time.Time `db:"reject_time"`
+	RefundWithdrawTime        *time.Time `db:"refund_withdraw_time"`
+	RefundHandleTime          *time.Time `db:"refund_handle_time"`
+	RefundOperatorAdminID     *int       `db:"refund_operator_admin_id"`
+	SettlementBatchNo         *string    `db:"settlement_batch_no"`
+	SettlementTime            *time.Time `db:"settlement_time"`
+	SettlementOperatorAdminID *int       `db:"settlement_operator_admin_id"`
+	WxPayNo                   *string    `db:"wx_pay_no"`
+	OutTradeNo                *string    `db:"out_trade_no"`
+	PayTime                   *time.Time `db:"pay_time"`
+	CreatedAt                 time.Time  `db:"created_at"`
+	UpdatedAt                 time.Time  `db:"updated_at"`
 
-	// Joined fields from product table
-	ProductName        *string `db:"product_name"`        // 商品名称（查询时连接获取）
-	ProductDescription *string `db:"product_description"` // 商品描述（admin详情时连接获取）
+	// Joined fields from product table.
+	ProductName        *string `db:"product_name"`
+	ProductDescription *string `db:"product_description"`
 
-	// Joined fields populated only in admin queries
-	UserNickname *string `db:"user_nickname"` // 用户昵称（admin查询时JOIN获取）
-	SchoolName   *string `db:"school_name"`   // 学校名称（admin查询时JOIN获取）
-	UserSchoolID *int    `db:"user_school_id"` // 用户学校ID（admin权限校验用）
+	// Joined fields populated only in admin queries.
+	UserNickname *string `db:"user_nickname"`
+	SchoolName   *string `db:"school_name"`
+	UserSchoolID *int    `db:"user_school_id"`
 }
 
-// ToVO converts Order to API OrderVO
+// ToVO converts Order to API OrderVO.
 func (o *Order) ToVO() *api.OrderVO {
 	status := api.OrderStatus(o.Status)
 
 	return &api.OrderVO{
-		Id:          &o.ID,
-		ProductId:   &o.ProductID,
-		ActualPaid:  &o.ActualPaid,
-		Status:      &status,
-		WxPayNo:     o.WxPayNo,
-		PayTime:     o.PayTime,
-		CreatedAt:   &o.CreatedAt,
-		ProductName: o.ProductName,
+		Id:                 &o.ID,
+		ProductId:          &o.ProductID,
+		ActualPaid:         &o.ActualPaid,
+		Status:             &status,
+		RefundStatus:       &o.RefundStatus,
+		RefundReason:       o.RefundReason,
+		RefundApplyTime:    o.RefundApplyTime,
+		RejectReason:       o.RejectReason,
+		RejectTime:         o.RejectTime,
+		RefundWithdrawTime: o.RefundWithdrawTime,
+		WxPayNo:            o.WxPayNo,
+		PayTime:            o.PayTime,
+		CreatedAt:          &o.CreatedAt,
+		ProductName:        o.ProductName,
 	}
 }

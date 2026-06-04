@@ -67,6 +67,7 @@ func main() {
 	adminGroup.Use(adminmw.AdminJWTAuth(adminmw.DefaultAdminJWTConfig()))
 
 	adminGroup.GET("/dashboard/stats", server.GetDashboardStats)
+	adminGroup.GET("/stats/revenue", server.GetRevenueStats)
 	adminGroup.GET("/stats/registrations", server.GetRegistrationStats)
 	adminGroup.GET("/stats/activations", server.GetActivationStats)
 
@@ -80,6 +81,7 @@ func main() {
 	adminGroup.PATCH("/talent-profiles/:id/takedown", server.TakedownTalentProfile)
 
 	adminGroup.GET("/users", server.ListUsers)
+	adminGroup.GET("/users/:id/orders", server.ListUserOrders)
 	adminGroup.GET("/users/:id", server.GetUser)
 	adminGroup.PATCH("/users/:id/auth", server.ReviewUserAuth)
 	adminGroup.PUT("/users/:id/status", server.UpdateUserStatus)
@@ -97,10 +99,19 @@ func main() {
 	adminGroup.DELETE("/information/:id", server.DeleteInformation)
 
 	adminGroup.GET("/orders", server.ListOrders)
+	adminGroup.POST("/orders/:id/refund/apply", server.ApplyOrderRefund)
+	adminGroup.PATCH("/orders/:id/refund/reject", server.RejectOrderRefund)
+	adminGroup.POST("/orders/:id/refund/reject", server.RejectOrderRefund)
+	adminGroup.PATCH("/orders/:id/refund/withdraw", server.WithdrawOrderRefund)
+	adminGroup.POST("/orders/:id/refund/withdraw", server.WithdrawOrderRefund)
+	adminGroup.PATCH("/orders/:id/refund", server.ReviewOrderRefund)
 	adminGroup.GET("/orders/:id", server.GetOrder)
 
 	adminGroup.GET("/admins", server.ListAdmins)
 	adminGroup.POST("/admins", server.CreateAdmin)
+	adminGroup.GET("/admins/:id", server.GetAdmin)
+	adminGroup.PATCH("/admins/:id/finance-remark", server.UpdateAdminFinanceRemark)
+	adminGroup.POST("/admins/:id/settle", server.SettleAdminOrders)
 	adminGroup.PUT("/admins/:id", server.UpdateAdmin)
 	adminGroup.PATCH("/admins/:id/status", server.UpdateAdminStatus)
 	adminGroup.DELETE("/admins/:id", server.DeleteAdmin)

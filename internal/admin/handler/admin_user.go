@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"strconv"
+	"strings"
 	"time"
 
 	adminvo "github.com/kuaizu-team/kuaizu-service/internal/admin/vo"
@@ -76,13 +77,116 @@ func (s *AdminServer) ListAdmins(ctx echo.Context) error {
 
 	list := make([]adminvo.AdminUserAccountVO, len(admins))
 	for i, a := range admins {
-		list[i] = *adminvo.NewAdminUserAccountVO(a)
+		vo := adminvo.NewAdminUserAccountVO(a)
+		s.enrichAdminFinance(ctx, vo, a, callerRole == models.AdminRoleSuperAdmin)
+		list[i] = *vo
 	}
 
 	return response.Success(ctx, map[string]interface{}{
 		"list":  list,
 		"total": total,
 	})
+}
+
+func (s *AdminServer) GetAdmin(ctx echo.Context) error {
+	callerRole := adminRole(ctx)
+	callerID := currentAdminID(ctx)
+	callerSchoolID := adminSchoolID(ctx)
+
+	if callerRole == models.AdminRoleSchoolAdmin {
+		return response.Forbidden(ctx, adminCenterForbiddenMessage)
+	}
+	if callerRole == models.AdminRoleSchoolSuperAdmin && callerSchoolID == nil {
+		return response.Forbidden(ctx, schoolSuperAdminNoSchoolMessage)
+	}
+
+	id, err := strconv.Atoi(ctx.Param("id"))
+	if err != nil {
+		return response.BadRequest(ctx, "invalid admin id")
+	}
+	target, err := s.repo.AdminUser.GetByID(ctx.Request().Context(), id)
+	if err != nil {
+		return response.InternalError(ctx, "查询管理员失败")
+	}
+	if target == nil {
+		return response.NotFound(ctx, "管理员不存在")
+	}
+	if !canViewAdminDetail(callerRole, callerID, target, callerSchoolID) {
+		return response.Forbidden(ctx, "权限不足")
+	}
+
+	vo := adminvo.NewAdminUserAccountVO(target)
+	s.enrichAdminFinance(ctx, vo, target, callerRole == models.AdminRoleSuperAdmin)
+	return response.Success(ctx, vo)
+}
+
+type updateFinanceRemarkRequest struct {
+	FinanceRemark *string `json:"financeRemark"`
+}
+
+func (s *AdminServer) UpdateAdminFinanceRemark(ctx echo.Context) error {
+	if adminRole(ctx) != models.AdminRoleSuperAdmin {
+		return response.Forbidden(ctx, "权限不足")
+	}
+	id, err := strconv.Atoi(ctx.Param("id"))
+	if err != nil {
+		return response.BadRequest(ctx, "invalid admin id")
+	}
+	var req updateFinanceRemarkRequest
+	if err := ctx.Bind(&req); err != nil {
+		return response.BadRequest(ctx, "invalid request body")
+	}
+	if req.FinanceRemark != nil {
+		v := strings.TrimSpace(*req.FinanceRemark)
+		req.FinanceRemark = &v
+	}
+	if err := s.repo.AdminUser.UpdateFinanceRemark(ctx.Request().Context(), id, req.FinanceRemark); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return response.NotFound(ctx, "管理员不存在")
+		}
+		return response.InternalError(ctx, "更新财务备注失败")
+	}
+	target, _ := s.repo.AdminUser.GetByID(ctx.Request().Context(), id)
+	vo := adminvo.NewAdminUserAccountVO(target)
+	s.enrichAdminFinance(ctx, vo, target, true)
+	return response.Success(ctx, vo)
+}
+
+type settleAdminRequest struct {
+	Remark *string `json:"remark"`
+}
+
+func (s *AdminServer) SettleAdminOrders(ctx echo.Context) error {
+	if adminRole(ctx) != models.AdminRoleSuperAdmin {
+		return response.Forbidden(ctx, "权限不足")
+	}
+	id, err := strconv.Atoi(ctx.Param("id"))
+	if err != nil {
+		return response.BadRequest(ctx, "invalid admin id")
+	}
+	target, err := s.repo.AdminUser.GetByID(ctx.Request().Context(), id)
+	if err != nil {
+		return response.InternalError(ctx, "查询管理员失败")
+	}
+	if target == nil {
+		return response.NotFound(ctx, "管理员不存在")
+	}
+	if target.SchoolID == nil {
+		return response.BadRequest(ctx, "管理员未绑定学校，无法一键结算")
+	}
+	var req settleAdminRequest
+	if err := ctx.Bind(&req); err != nil {
+		return response.BadRequest(ctx, "invalid request body")
+	}
+	if req.Remark != nil {
+		v := strings.TrimSpace(*req.Remark)
+		req.Remark = &v
+	}
+	result, err := s.repo.Order.SettleSchoolPendingOrders(ctx.Request().Context(), *target.SchoolID, currentAdminID(ctx), req.Remark)
+	if err != nil {
+		return response.InternalError(ctx, "一键结算失败")
+	}
+	return response.Success(ctx, result)
 }
 
 type createAdminRequest struct {
