@@ -49,6 +49,36 @@ func (r *UserRepository) GetByID(ctx context.Context, id int) (*models.User, err
 	return &user, nil
 }
 
+// GetByIDForUpdateTx retrieves and locks a user row in the current transaction.
+func (r *UserRepository) GetByIDForUpdateTx(ctx context.Context, tx *sqlx.Tx, id int) (*models.User, error) {
+	query := `
+		SELECT
+			u.id, u.openid, u.nickname, u.phone, u.email,
+			u.school_id, u.major_id, u.grade, u.olive_branch_count,
+			u.free_branch_used_today, u.last_active_date,
+			u.auth_status, u.auth_img_url, u.avatar_url, u.cover_image,
+			u.wechat_id, u.sent_olive_viewed_at, u.applications_last_viewed_at,
+			u.user_status, u.ban_reason, u.created_at,
+			s.school_name, s.school_code,
+			m.major_name, m.class_id
+		FROM ` + "`user`" + ` u
+		LEFT JOIN school s ON u.school_id = s.id
+		LEFT JOIN major m ON u.major_id = m.id
+		WHERE u.id = ?
+		FOR UPDATE
+	`
+
+	var user models.User
+	if err := tx.QueryRowxContext(ctx, query, id).StructScan(&user); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("query user by id for update: %w", err)
+	}
+
+	return &user, nil
+}
+
 // GetByOpenID retrieves a user by WeChat OpenID
 func (r *UserRepository) GetByOpenID(ctx context.Context, openid string) (*models.User, error) {
 	query := `
@@ -169,6 +199,24 @@ func (r *UserRepository) UpdateQuota(ctx context.Context, user *models.User) err
 	`
 
 	_, err := r.db.NamedExecContext(ctx, query, user)
+	if err != nil {
+		return fmt.Errorf("update user quota: %w", err)
+	}
+
+	return nil
+}
+
+// UpdateQuotaTx updates user's olive branch quota fields within a transaction.
+func (r *UserRepository) UpdateQuotaTx(ctx context.Context, tx *sqlx.Tx, user *models.User) error {
+	query := `
+		UPDATE ` + "`user`" + ` SET
+			olive_branch_count = :olive_branch_count,
+			free_branch_used_today = :free_branch_used_today,
+			last_active_date = :last_active_date
+		WHERE id = :id
+	`
+
+	_, err := tx.NamedExecContext(ctx, query, user)
 	if err != nil {
 		return fmt.Errorf("update user quota: %w", err)
 	}

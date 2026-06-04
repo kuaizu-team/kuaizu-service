@@ -115,25 +115,12 @@ func (s *Server) GetMyOliveBranchQuota(ctx echo.Context) error {
 		return NotFound(ctx, "用户不存在")
 	}
 
-	freeBranchUsedToday := 0
-	if user.FreeBranchUsedToday != nil {
-		today := time.Now().Truncate(24 * time.Hour)
-		if user.LastActiveDate != nil && !user.LastActiveDate.Truncate(24*time.Hour).Before(today) {
-			freeBranchUsedToday = *user.FreeBranchUsedToday
-		}
-	}
-
-	paidBalance := 0
-	if user.OliveBranchCount != nil {
-		paidBalance = *user.OliveBranchCount
-	}
-
-	freeRemaining := models.OliveBranchDailyFreeQuota - freeBranchUsedToday
-	totalRemaining := freeRemaining + paidBalance
-
-	dq := models.OliveBranchDailyFreeQuota
-	fr := freeRemaining
-	tr := totalRemaining
+	quota := models.CalculateOliveBranchQuota(user, time.Now())
+	dq := quota.DailyFreeQuota
+	freeBranchUsedToday := quota.FreeBranchUsedToday
+	fr := quota.FreeRemaining
+	paidBalance := quota.PaidBalance
+	tr := quota.TotalRemaining
 
 	return Success(ctx, api.OliveBranchQuotaVO{
 		DailyFreeQuota:      &dq,

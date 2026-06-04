@@ -83,12 +83,14 @@ type SmsNoticeRepo interface {
 // UserRepo defines the interface for user repository operations used by services.
 type UserRepo interface {
 	GetByID(ctx context.Context, id int) (*models.User, error)
+	GetByIDForUpdateTx(ctx context.Context, tx *sqlx.Tx, id int) (*models.User, error)
 	GetByOpenID(ctx context.Context, openid string) (*models.User, error)
 	Create(ctx context.Context, openid string) (*models.User, error)
 	CreateWithPhone(ctx context.Context, openid string, phone string) (*models.User, error)
 	Update(ctx context.Context, user *models.User) error
 	UpdatePhone(ctx context.Context, userID int, phone string) error
 	UpdateQuota(ctx context.Context, user *models.User) error
+	UpdateQuotaTx(ctx context.Context, tx *sqlx.Tx, user *models.User) error
 	AddOliveBranchCount(ctx context.Context, userID int, count int) error
 	AddOliveBranchCountTx(ctx context.Context, tx *sqlx.Tx, userID int, count int) error
 	UpdateAuthStatus(ctx context.Context, userID int, authStatus int) error
@@ -122,6 +124,7 @@ type OliveBranchRepo interface {
 	ListByReceiverID(ctx context.Context, params OliveBranchListParams) ([]models.OliveBranch, int64, error)
 	GetByID(ctx context.Context, id int) (*models.OliveBranch, error)
 	Create(ctx context.Context, ob *models.OliveBranch) error
+	CreateTx(ctx context.Context, tx *sqlx.Tx, ob *models.OliveBranch) error
 	UpdateStatus(ctx context.Context, id int, status int) error
 	ListBySenderID(ctx context.Context, params OliveBranchListParams) ([]models.OliveBranch, int64, error)
 	ExistsPending(ctx context.Context, senderID, receiverID, relatedProjectID int) (bool, error)
