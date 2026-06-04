@@ -66,31 +66,31 @@ func (s *OrderService) WithdrawRefund(ctx context.Context, userID, orderID int) 
 	order, err := s.repo.Order.GetByID(ctx, orderID)
 	if err != nil {
 		log.Printf("[OrderService.WithdrawRefund] repository error getting order: %v", err)
-		return nil, ErrInternal("get order failed")
+		return nil, ErrInternal("获取订单详情失败")
 	}
 	if order == nil {
-		return nil, ErrNotFound("order not found")
+		return nil, ErrNotFound("订单不存在")
 	}
 	if order.UserID != userID {
-		return nil, ErrForbidden("no permission to operate this order")
+		return nil, ErrForbidden("无权操作此订单")
 	}
 	if order.RefundStatus != 1 {
-		return nil, ErrBadRequest("only pending refund can be withdrawn")
+		return nil, ErrBadRequest("只能撤回待退款申请")
 	}
 
 	ok, err := s.repo.Order.WithdrawRefund(ctx, orderID)
 	if err != nil {
 		log.Printf("[OrderService.WithdrawRefund] repository error withdrawing refund: %v", err)
-		return nil, ErrInternal("withdraw refund failed")
+		return nil, ErrInternal("撤回退款申请失败")
 	}
 	if !ok {
-		return nil, ErrBadRequest("only pending refund can be withdrawn")
+		return nil, ErrBadRequest("只能撤回待退款申请")
 	}
 
 	updated, err := s.repo.Order.GetByID(ctx, orderID)
 	if err != nil {
 		log.Printf("[OrderService.WithdrawRefund] repository error getting updated order: %v", err)
-		return nil, ErrInternal("get updated order failed")
+		return nil, ErrInternal("获取更新后的订单失败")
 	}
 
 	return updated, nil

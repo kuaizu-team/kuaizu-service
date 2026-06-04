@@ -29,7 +29,7 @@ type adminRefundRejectRequest struct {
 // ListOrders handles GET /admin/orders.
 func (s *AdminServer) ListOrders(ctx echo.Context) error {
 	if adminRole(ctx) == models.AdminRoleSchoolAdmin {
-		return response.Forbidden(ctx, "permission denied")
+		return response.Forbidden(ctx, "权限不足")
 	}
 
 	page, _ := strconv.Atoi(ctx.QueryParam("page"))
@@ -96,7 +96,7 @@ func (s *AdminServer) ListOrders(ctx echo.Context) error {
 
 	orders, total, err := s.repo.Order.AdminList(ctx.Request().Context(), params)
 	if err != nil {
-		return response.InternalError(ctx, "get order list failed")
+		return response.InternalError(ctx, "获取订单列表失败")
 	}
 
 	list := make([]adminvo.AdminOrderVO, len(orders))
@@ -113,7 +113,7 @@ func (s *AdminServer) ListOrders(ctx echo.Context) error {
 // GetOrder handles GET /admin/orders/:id.
 func (s *AdminServer) GetOrder(ctx echo.Context) error {
 	if adminRole(ctx) == models.AdminRoleSchoolAdmin {
-		return response.Forbidden(ctx, "permission denied")
+		return response.Forbidden(ctx, "权限不足")
 	}
 
 	id, err := strconv.Atoi(ctx.Param("id"))
@@ -123,15 +123,15 @@ func (s *AdminServer) GetOrder(ctx echo.Context) error {
 
 	order, err := s.repo.Order.AdminGetByID(ctx.Request().Context(), id)
 	if err != nil {
-		return response.InternalError(ctx, "get order detail failed")
+		return response.InternalError(ctx, "获取订单详情失败")
 	}
 	if order == nil {
-		return response.NotFound(ctx, "order not found")
+		return response.NotFound(ctx, "订单不存在")
 	}
 
 	if sid := adminSchoolID(ctx); sid != nil {
 		if order.UserSchoolID == nil || *order.UserSchoolID != *sid {
-			return response.Forbidden(ctx, "permission denied")
+			return response.Forbidden(ctx, "权限不足")
 		}
 	}
 
@@ -141,11 +141,11 @@ func (s *AdminServer) GetOrder(ctx echo.Context) error {
 // ApplyOrderRefund handles POST /admin/orders/:id/refund/apply.
 func (s *AdminServer) ApplyOrderRefund(ctx echo.Context) error {
 	if adminRole(ctx) != models.AdminRoleSchoolSuperAdmin {
-		return response.Forbidden(ctx, "permission denied")
+		return response.Forbidden(ctx, "权限不足")
 	}
 	sid := adminSchoolID(ctx)
 	if sid == nil {
-		return response.Forbidden(ctx, "current admin has no school")
+		return response.Forbidden(ctx, "当前管理员未绑定学校")
 	}
 
 	id, err := strconv.Atoi(ctx.Param("id"))
@@ -159,7 +159,7 @@ func (s *AdminServer) ApplyOrderRefund(ctx echo.Context) error {
 	}
 	reason := strings.TrimSpace(req.Reason)
 	if len([]rune(reason)) < 5 || len([]rune(reason)) > 200 {
-		return response.BadRequest(ctx, "refund reason must be 5-200 chars")
+		return response.BadRequest(ctx, "退款原因需为5-200字")
 	}
 	if req.RefundApplicantType != 1 {
 		return response.BadRequest(ctx, "refundApplicantType must be 1")
@@ -167,33 +167,33 @@ func (s *AdminServer) ApplyOrderRefund(ctx echo.Context) error {
 
 	order, err := s.repo.Order.AdminGetByID(ctx.Request().Context(), id)
 	if err != nil {
-		return response.InternalError(ctx, "get order detail failed")
+		return response.InternalError(ctx, "获取订单详情失败")
 	}
 	if order == nil {
-		return response.NotFound(ctx, "order not found")
+		return response.NotFound(ctx, "订单不存在")
 	}
 	if order.UserSchoolID == nil || *order.UserSchoolID != *sid {
-		return response.Forbidden(ctx, "permission denied")
+		return response.Forbidden(ctx, "权限不足")
 	}
 	if order.Status != models.OrderStatusPaid {
-		return response.BadRequest(ctx, "unpaid order cannot apply refund")
+		return response.BadRequest(ctx, "未支付订单不能申请退款")
 	}
 	if order.RefundStatus != 0 {
-		return response.BadRequest(ctx, "order already has refund status")
+		return response.BadRequest(ctx, "该订单已有退款状态")
 	}
 
 	adminID := currentAdminID(ctx)
 	ok, err := s.repo.Order.UpdateRefundApply(ctx.Request().Context(), id, reason, 1, &adminID)
 	if err != nil {
-		return response.InternalError(ctx, "apply refund failed")
+		return response.InternalError(ctx, "提交退款申请失败")
 	}
 	if !ok {
-		return response.BadRequest(ctx, "order status cannot apply refund")
+		return response.BadRequest(ctx, "订单状态不允许申请退款")
 	}
 
 	updated, err := s.repo.Order.AdminGetByID(ctx.Request().Context(), id)
 	if err != nil {
-		return response.InternalError(ctx, "get updated order failed")
+		return response.InternalError(ctx, "获取更新后的订单失败")
 	}
 	return response.Success(ctx, adminvo.NewAdminOrderDetailVO(updated))
 }
@@ -223,20 +223,20 @@ func (s *AdminServer) ReviewOrderRefund(ctx echo.Context) error {
 		return response.BadRequest(ctx, "refundStatus must be 2 or 3")
 	}
 	if adminRole(ctx) != models.AdminRoleSuperAdmin {
-		return response.Forbidden(ctx, "permission denied")
+		return response.Forbidden(ctx, "权限不足")
 	}
 
 	ok, err := s.repo.Order.AdminReviewRefund(ctx.Request().Context(), id, currentAdminID(ctx))
 	if err != nil {
-		return response.InternalError(ctx, "review refund failed")
+		return response.InternalError(ctx, "审核退款失败")
 	}
 	if !ok {
-		return response.BadRequest(ctx, "only pending refund can be reviewed")
+		return response.BadRequest(ctx, "只能处理待退款订单")
 	}
 
 	order, err := s.repo.Order.AdminGetByID(ctx.Request().Context(), id)
 	if err != nil {
-		return response.InternalError(ctx, "get updated order failed")
+		return response.InternalError(ctx, "获取更新后的订单失败")
 	}
 	return response.Success(ctx, adminvo.NewAdminOrderDetailVO(order))
 }
@@ -257,45 +257,45 @@ func (s *AdminServer) RejectOrderRefund(ctx echo.Context) error {
 func (s *AdminServer) rejectOrderRefund(ctx echo.Context, id int, reason string) error {
 	reason = strings.TrimSpace(reason)
 	if len([]rune(reason)) < 5 || len([]rune(reason)) > 200 {
-		return response.BadRequest(ctx, "reject reason must be 5-200 chars")
+		return response.BadRequest(ctx, "驳回原因需为5-200字")
 	}
 
 	role := adminRole(ctx)
 	if role != models.AdminRoleSuperAdmin && role != models.AdminRoleSchoolSuperAdmin {
-		return response.Forbidden(ctx, "permission denied")
+		return response.Forbidden(ctx, "权限不足")
 	}
 
 	order, err := s.repo.Order.AdminGetByID(ctx.Request().Context(), id)
 	if err != nil {
-		return response.InternalError(ctx, "get order detail failed")
+		return response.InternalError(ctx, "获取订单详情失败")
 	}
 	if order == nil {
-		return response.NotFound(ctx, "order not found")
+		return response.NotFound(ctx, "订单不存在")
 	}
 	if order.RefundStatus != 1 {
-		return response.BadRequest(ctx, "only pending refund can be rejected")
+		return response.BadRequest(ctx, "只能驳回待退款订单")
 	}
 	if role == models.AdminRoleSchoolSuperAdmin {
 		sid := adminSchoolID(ctx)
 		if sid == nil || order.UserSchoolID == nil || *order.UserSchoolID != *sid {
-			return response.Forbidden(ctx, "permission denied")
+			return response.Forbidden(ctx, "权限不足")
 		}
 		if order.RefundApplicantType == nil || *order.RefundApplicantType != 0 {
-			return response.Forbidden(ctx, "school super admin can only reject consumer refund")
+			return response.Forbidden(ctx, "校区超级管理员只能驳回消费者发起的退款")
 		}
 	}
 
 	ok, err := s.repo.Order.AdminRejectRefund(ctx.Request().Context(), id, reason, currentAdminID(ctx))
 	if err != nil {
-		return response.InternalError(ctx, "reject refund failed")
+		return response.InternalError(ctx, "驳回退款失败")
 	}
 	if !ok {
-		return response.BadRequest(ctx, "only pending refund can be rejected")
+		return response.BadRequest(ctx, "只能驳回待退款订单")
 	}
 
 	updated, err := s.repo.Order.AdminGetByID(ctx.Request().Context(), id)
 	if err != nil {
-		return response.InternalError(ctx, "get updated order failed")
+		return response.InternalError(ctx, "获取更新后的订单失败")
 	}
 	return response.Success(ctx, adminvo.NewAdminOrderDetailVO(updated))
 }
@@ -303,11 +303,11 @@ func (s *AdminServer) rejectOrderRefund(ctx echo.Context, id int, reason string)
 // WithdrawOrderRefund handles PATCH/POST /admin/orders/:id/refund/withdraw.
 func (s *AdminServer) WithdrawOrderRefund(ctx echo.Context) error {
 	if adminRole(ctx) != models.AdminRoleSchoolSuperAdmin {
-		return response.Forbidden(ctx, "permission denied")
+		return response.Forbidden(ctx, "权限不足")
 	}
 	sid := adminSchoolID(ctx)
 	if sid == nil {
-		return response.Forbidden(ctx, "current admin has no school")
+		return response.Forbidden(ctx, "当前管理员未绑定学校")
 	}
 
 	id, err := strconv.Atoi(ctx.Param("id"))
@@ -317,36 +317,36 @@ func (s *AdminServer) WithdrawOrderRefund(ctx echo.Context) error {
 
 	order, err := s.repo.Order.AdminGetByID(ctx.Request().Context(), id)
 	if err != nil {
-		return response.InternalError(ctx, "get order detail failed")
+		return response.InternalError(ctx, "获取订单详情失败")
 	}
 	if order == nil {
-		return response.NotFound(ctx, "order not found")
+		return response.NotFound(ctx, "订单不存在")
 	}
 	if order.UserSchoolID == nil || *order.UserSchoolID != *sid {
-		return response.Forbidden(ctx, "permission denied")
+		return response.Forbidden(ctx, "权限不足")
 	}
 	if order.RefundStatus != 1 {
-		return response.BadRequest(ctx, "only pending refund can be withdrawn")
+		return response.BadRequest(ctx, "只能撤回待退款申请")
 	}
 	if order.RefundApplicantType == nil || *order.RefundApplicantType != 1 {
-		return response.Forbidden(ctx, "only school admin refund can be withdrawn")
+		return response.Forbidden(ctx, "只能撤回校区超级管理员发起的退款")
 	}
 	adminID := currentAdminID(ctx)
 	if order.RefundApplicantAdminID == nil || *order.RefundApplicantAdminID != adminID {
-		return response.Forbidden(ctx, "only applicant admin can withdraw refund")
+		return response.Forbidden(ctx, "只能由退款申请管理员撤回")
 	}
 
 	ok, err := s.repo.Order.WithdrawRefund(ctx.Request().Context(), id)
 	if err != nil {
-		return response.InternalError(ctx, "withdraw refund failed")
+		return response.InternalError(ctx, "撤回退款申请失败")
 	}
 	if !ok {
-		return response.BadRequest(ctx, "only pending refund can be withdrawn")
+		return response.BadRequest(ctx, "只能撤回待退款申请")
 	}
 
 	updated, err := s.repo.Order.AdminGetByID(ctx.Request().Context(), id)
 	if err != nil {
-		return response.InternalError(ctx, "get updated order failed")
+		return response.InternalError(ctx, "获取更新后的订单失败")
 	}
 	return response.Success(ctx, adminvo.NewAdminOrderDetailVO(updated))
 }
