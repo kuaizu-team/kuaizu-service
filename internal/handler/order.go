@@ -41,6 +41,13 @@ func (s *Server) ListMyOrders(ctx echo.Context, params api.ListMyOrdersParams) e
 		status := int(*params.Status)
 		listParams.Status = &status
 	}
+	if params.RefundStatus != nil {
+		refundStatus := int(*params.RefundStatus)
+		listParams.RefundStatus = &refundStatus
+	}
+	if params.AfterSale != nil {
+		listParams.AfterSale = *params.AfterSale
+	}
 
 	// Query (list stays as simple passthrough)
 	orders, total, err := s.repo.Order.ListByUserID(ctx.Request().Context(), listParams)

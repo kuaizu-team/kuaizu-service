@@ -11,6 +11,26 @@ get:
       description: 订单状态筛选
       schema:
         $ref: ../components/schemas/OrderStatus.yaml
+    - name: afterSale
+      in: query
+      description: |
+        售后中聚合筛选。为 true 时返回订单状态为已退款，或退款状态为
+        1（退款中）、2（退款成功）、3（退款已驳回）的订单。
+        该参数优先于 status 和 refundStatus。
+      schema:
+        type: boolean
+    - name: refundStatus
+      in: query
+      description: |
+        退款状态筛选：0=无退款，1=退款中，2=退款成功，3=退款已驳回，4=已撤销。
+      schema:
+        type: integer
+        enum:
+          - 0
+          - 1
+          - 2
+          - 3
+          - 4
   responses:
     '200':
       description: 成功
