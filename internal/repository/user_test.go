@@ -41,8 +41,8 @@ func TestTouchLastActiveDateResetsDailyFreeBranchQuota(t *testing.T) {
 	capturedExec.Unlock()
 
 	for _, want := range []string{
-		"SET free_branch_used_today = 0, last_active_date = CURDATE()",
-		"WHERE id = ? AND (last_active_date IS NULL OR last_active_date < CURDATE())",
+		"SET free_branch_used_today = 0, last_active_date = DATE(UTC_TIMESTAMP() + INTERVAL 8 HOUR)",
+		"WHERE id = ? AND (last_active_date IS NULL OR last_active_date < DATE(UTC_TIMESTAMP() + INTERVAL 8 HOUR))",
 	} {
 		if !strings.Contains(query, want) {
 			t.Fatalf("query = %q, want to contain %q", query, want)

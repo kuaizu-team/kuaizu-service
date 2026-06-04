@@ -224,13 +224,13 @@ func (r *UserRepository) UpdateQuotaTx(ctx context.Context, tx *sqlx.Tx, user *m
 	return nil
 }
 
-// ResetDailyFreeBranchQuotaIfNeeded resets daily free olive branch usage when a new DB calendar day starts.
+// ResetDailyFreeBranchQuotaIfNeeded resets daily free olive branch usage when a new Asia/Shanghai calendar day starts.
 func (r *UserRepository) ResetDailyFreeBranchQuotaIfNeeded(ctx context.Context, userID int) error {
 	query := `
 		UPDATE ` + "`user`" + `
 		SET free_branch_used_today = 0,
-			last_active_date = CURDATE()
-		WHERE id = ? AND (last_active_date IS NULL OR last_active_date < CURDATE())
+			last_active_date = DATE(UTC_TIMESTAMP() + INTERVAL 8 HOUR)
+		WHERE id = ? AND (last_active_date IS NULL OR last_active_date < DATE(UTC_TIMESTAMP() + INTERVAL 8 HOUR))
 	`
 	_, err := r.db.ExecContext(ctx, query, userID)
 	if err != nil {
@@ -244,8 +244,8 @@ func (r *UserRepository) ResetDailyFreeBranchQuotaIfNeededTx(ctx context.Context
 	query := `
 		UPDATE ` + "`user`" + `
 		SET free_branch_used_today = 0,
-			last_active_date = CURDATE()
-		WHERE id = ? AND (last_active_date IS NULL OR last_active_date < CURDATE())
+			last_active_date = DATE(UTC_TIMESTAMP() + INTERVAL 8 HOUR)
+		WHERE id = ? AND (last_active_date IS NULL OR last_active_date < DATE(UTC_TIMESTAMP() + INTERVAL 8 HOUR))
 	`
 	_, err := tx.ExecContext(ctx, query, userID)
 	if err != nil {

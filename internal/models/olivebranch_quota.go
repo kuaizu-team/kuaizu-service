@@ -2,6 +2,8 @@ package models
 
 import "time"
 
+var oliveBranchQuotaLocation = time.FixedZone("Asia/Shanghai", 8*60*60)
+
 type OliveBranchQuota struct {
 	DailyFreeQuota      int
 	FreeBranchUsedToday int
@@ -45,7 +47,9 @@ func isSameDate(date *time.Time, now time.Time) bool {
 	if date == nil {
 		return false
 	}
-	y1, m1, d1 := date.Date()
-	y2, m2, d2 := now.Date()
+	dateInLocation := date.In(oliveBranchQuotaLocation)
+	nowInLocation := now.In(oliveBranchQuotaLocation)
+	y1, m1, d1 := dateInLocation.Date()
+	y2, m2, d2 := nowInLocation.Date()
 	return y1 == y2 && m1 == m2 && d1 == d2
 }
