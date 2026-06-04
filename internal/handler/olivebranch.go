@@ -107,6 +107,10 @@ func (s *Server) HandleOliveBranch(ctx echo.Context, id int) error {
 func (s *Server) GetMyOliveBranchQuota(ctx echo.Context) error {
 	userID := GetUserID(ctx)
 
+	if err := s.repo.User.ResetDailyFreeBranchQuotaIfNeeded(ctx.Request().Context(), userID); err != nil {
+		return InternalError(ctx, "更新额度失败")
+	}
+
 	user, err := s.repo.User.GetByID(ctx.Request().Context(), userID)
 	if err != nil {
 		return InternalError(ctx, "获取用户信息失败")

@@ -91,6 +91,8 @@ type UserRepo interface {
 	UpdatePhone(ctx context.Context, userID int, phone string) error
 	UpdateQuota(ctx context.Context, user *models.User) error
 	UpdateQuotaTx(ctx context.Context, tx *sqlx.Tx, user *models.User) error
+	ResetDailyFreeBranchQuotaIfNeeded(ctx context.Context, userID int) error
+	ResetDailyFreeBranchQuotaIfNeededTx(ctx context.Context, tx *sqlx.Tx, userID int) error
 	AddOliveBranchCount(ctx context.Context, userID int, count int) error
 	AddOliveBranchCountTx(ctx context.Context, tx *sqlx.Tx, userID int, count int) error
 	UpdateAuthStatus(ctx context.Context, userID int, authStatus int) error

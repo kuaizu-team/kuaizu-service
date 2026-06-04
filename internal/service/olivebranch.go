@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"log"
-	"time"
 
 	"github.com/kuaizu-team/kuaizu-service/internal/models"
 	"github.com/kuaizu-team/kuaizu-service/internal/repository"
@@ -75,6 +74,11 @@ func (s *OliveBranchService) SendOliveBranch(ctx context.Context, userID int, re
 	}
 	defer tx.Rollback()
 
+	if err := s.repo.User.ResetDailyFreeBranchQuotaIfNeededTx(ctx, tx, userID); err != nil {
+		log.Printf("[OliveBranchService.SendOliveBranch] repository error resetting daily quota: %v", err)
+		return nil, ErrInternal("更新额度失败")
+	}
+
 	// Lock sender row before recalculating and deducting quota to avoid lost updates.
 	sender, err := s.repo.User.GetByIDForUpdateTx(ctx, tx, userID)
 	if err != nil {
@@ -85,11 +89,14 @@ func (s *OliveBranchService) SendOliveBranch(ctx context.Context, userID int, re
 		return nil, ErrNotFound("用户不存在")
 	}
 
-	now := time.Now()
-	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
-	quota := models.CalculateOliveBranchQuota(sender, now)
-	freeBranchUsedToday := quota.FreeBranchUsedToday
-	oliveBranchCount := quota.PaidBalance
+	freeBranchUsedToday := 0
+	if sender.FreeBranchUsedToday != nil {
+		freeBranchUsedToday = *sender.FreeBranchUsedToday
+	}
+	oliveBranchCount := 0
+	if sender.OliveBranchCount != nil {
+		oliveBranchCount = *sender.OliveBranchCount
+	}
 	costType := 0
 
 	if freeBranchUsedToday < models.OliveBranchDailyFreeQuota {
@@ -104,7 +111,6 @@ func (s *OliveBranchService) SendOliveBranch(ctx context.Context, userID int, re
 		return nil, &ServiceError{Code: ErrorCode(4002), Message: "橄榄枝额度不足，今日免费额度已用完且无付费余额"}
 	}
 	sender.OliveBranchCount = &oliveBranchCount
-	sender.LastActiveDate = &today
 
 	// Update user quota
 	if err := s.repo.User.UpdateQuotaTx(ctx, tx, sender); err != nil {
