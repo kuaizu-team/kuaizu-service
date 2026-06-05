@@ -1,0 +1,22 @@
+parameters:
+  - name: id
+    in: path
+    required: true
+    schema: { type: integer }
+  - name: type
+    in: query
+    required: true
+    schema: { type: string, enum: [like, favorite, share] }
+  - name: page
+    in: query
+    schema: { type: integer, default: 1 }
+  - name: size
+    in: query
+    schema: { type: integer, default: 20, maximum: 100 }
+  - name: days
+    in: query
+    schema: { type: integer, default: 30, maximum: 30 }
+get:
+  summary: List recent interaction users; total is cumulative
+  responses:
+    '200': { description: Success }

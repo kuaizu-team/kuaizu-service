@@ -3,6 +3,8 @@ package service
 import (
 	"context"
 	"log"
+	"strings"
+	"unicode/utf8"
 
 	"github.com/kuaizu-team/kuaizu-service/api"
 	"github.com/kuaizu-team/kuaizu-service/internal/models"
@@ -164,6 +166,9 @@ type ProjectDashboardResult struct {
 	ConversionRate     float64                     `json:"conversion_rate"`
 	AvgDurationSeconds int                         `json:"avg_duration_seconds"`
 	HourlyViews        []repository.HourlyViewItem `json:"hourly_views"`
+	LikeCount          int                         `json:"like_count"`
+	FavoriteCount      int                         `json:"favorite_count"`
+	ShareCount         int                         `json:"share_count"`
 	SourceStats        struct {
 		FromList  int `json:"from_list"`
 		FromShare int `json:"from_share"`
@@ -173,7 +178,7 @@ type ProjectDashboardResult struct {
 
 // GetProjectDashboard returns aggregated stats for the project dashboard.
 // Only the project creator (requesterUserID == project.creator_id) may access this.
-func (s *ProjectService) GetProjectDashboard(ctx context.Context, projectID, requesterUserID int) (*ProjectDashboardResult, error) {
+func (s *ProjectService) GetProjectDashboard(ctx context.Context, projectID, requesterUserID, days int) (*ProjectDashboardResult, error) {
 	isOwner, err := s.repo.Project.IsOwner(ctx, projectID, requesterUserID)
 	if err != nil {
 		log.Printf("[ProjectService.GetProjectDashboard] ownership check error: %v", err)
@@ -200,6 +205,11 @@ func (s *ProjectService) GetProjectDashboard(ctx context.Context, projectID, req
 	result.SourceStats.FromList = raw.FromList
 	result.SourceStats.FromShare = raw.FromShare
 	result.SourceStats.Unknown = raw.Unknown
+	counts, err := s.repo.Interaction.CountsSince(ctx, repository.InteractionProject, projectID, days)
+	if err != nil {
+		return nil, ErrInternal("get interaction dashboard failed")
+	}
+	result.LikeCount, result.FavoriteCount, result.ShareCount = counts.LikeCount, counts.FavoriteCount, counts.ShareCount
 
 	return result, nil
 }
@@ -260,6 +270,30 @@ type CreateProjectInput struct {
 	Direction            *api.Direction
 	EducationRequirement *int
 	SkillRequirement     *string
+	Tags                 *[]string
+	PublisherRole        *string
+	InitiatingSchoolID   *int
+}
+
+func validateProjectTags(tags *[]string) error {
+	if tags == nil {
+		return nil
+	}
+	if len(*tags) < 1 || len(*tags) > 5 {
+		return ErrBadRequest("tags must contain 1-5 items")
+	}
+	seen := map[string]struct{}{}
+	for i := range *tags {
+		(*tags)[i] = strings.TrimSpace((*tags)[i])
+		if (*tags)[i] == "" || utf8.RuneCountInString((*tags)[i]) > 12 {
+			return ErrBadRequest("each tag must contain 1-12 characters")
+		}
+		if _, ok := seen[(*tags)[i]]; ok {
+			return ErrBadRequest("tags must be unique")
+		}
+		seen[(*tags)[i]] = struct{}{}
+	}
+	return nil
 }
 
 // CreateProject validates input, audits content, and creates a new project.
@@ -269,6 +303,18 @@ func (s *ProjectService) CreateProject(ctx context.Context, input CreateProjectI
 	}
 	if input.MemberCount < 1 {
 		return nil, ErrBadRequest("需求人数必须大于0")
+	}
+	if err := validateProjectTags(input.Tags); err != nil {
+		return nil, err
+	}
+	if input.InitiatingSchoolID == nil {
+		user, err := s.repo.User.GetByID(ctx, input.CreatorID)
+		if err != nil {
+			return nil, ErrInternal("get creator failed")
+		}
+		if user != nil {
+			input.InitiatingSchoolID = user.SchoolID
+		}
 	}
 
 	// 文字内容审核
@@ -319,8 +365,15 @@ func (s *ProjectService) CreateProject(ctx context.Context, input CreateProjectI
 		log.Printf("[ProjectService.CreateProject] repository error: %v", err)
 		return nil, ErrInternal("创建项目失败")
 	}
-
-	return project, nil
+	if err := s.repo.Interaction.SaveProjectMetadata(ctx, project.ID, input.Tags, input.PublisherRole, input.InitiatingSchoolID); err != nil {
+		log.Printf("[ProjectService.CreateProject] metadata transaction error: %v", err)
+		return nil, ErrInternal("save project metadata failed")
+	}
+	created, err := s.repo.Project.GetByID(ctx, project.ID)
+	if err != nil {
+		return nil, ErrInternal("reload project failed")
+	}
+	return created, nil
 }
 
 // UpdateProjectInput is the DTO for updating a project.
@@ -335,11 +388,17 @@ type UpdateProjectInput struct {
 	// NeedReview when true resets the project status to pending (0) so it goes
 	// back into the admin review queue. Set by the frontend whenever the user
 	// actually modifies content.
-	NeedReview *bool
+	NeedReview         *bool
+	Tags               *[]string
+	PublisherRole      *string
+	InitiatingSchoolID *int
 }
 
 // UpdateProject checks ownership, audits content, applies updates, and returns the updated project.
 func (s *ProjectService) UpdateProject(ctx context.Context, id, userID int, input UpdateProjectInput) (*models.Project, error) {
+	if err := validateProjectTags(input.Tags); err != nil {
+		return nil, err
+	}
 	// Check ownership
 	isOwner, err := s.repo.Project.IsOwner(ctx, id, userID)
 	if err != nil {
@@ -412,6 +471,9 @@ func (s *ProjectService) UpdateProject(ctx context.Context, id, userID int, inpu
 	if err := s.repo.Project.Update(ctx, project); err != nil {
 		log.Printf("[ProjectService.UpdateProject] repository error updating: %v", err)
 		return nil, ErrInternal("更新项目失败")
+	}
+	if err := s.repo.Interaction.SaveProjectMetadata(ctx, id, input.Tags, input.PublisherRole, input.InitiatingSchoolID); err != nil {
+		return nil, ErrInternal("save project metadata failed")
 	}
 
 	// If the caller signals that content changed, reset status to pending so the

@@ -1,5 +1,17 @@
 type: object
 properties:
+  creator:
+    $ref: ./UserVO.yaml
+  tags:
+    type: array
+    items:
+      $ref: ./ProjectTagVO.yaml
+  publisherRole: { type: string }
+  publisherRoleName: { type: string }
+  initiatingSchoolId: { type: integer }
+  initiatingSchoolName: { type: string }
+  interaction:
+    $ref: ./InteractionVO.yaml
   id:
     type: integer
   name:

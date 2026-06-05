@@ -70,6 +70,18 @@ paths:
     $ref: paths/projects.yaml
   /projects/{id}:
     $ref: paths/projects_{id}.yaml
+  /projects/{id}/interactions:
+    $ref: paths/interactions_target.yaml
+  /projects/{id}/like:
+    $ref: paths/interactions_toggle.yaml
+  /projects/{id}/favorite:
+    $ref: paths/interactions_toggle.yaml
+  /projects/{id}/share:
+    $ref: paths/interactions_share.yaml
+  /projects/{id}/interaction-users:
+    $ref: paths/interactions_users.yaml
+  /projects/favorites:
+    $ref: paths/interactions_favorites.yaml
   /projects/{id}/dashboard:
     $ref: paths/projects_{id}_dashboard.yaml
   /projects/{id}/view-duration:
@@ -92,6 +104,18 @@ paths:
     $ref: paths/talent-profiles.yaml
   /talent-profiles/{id}:
     $ref: paths/talent-profiles_{id}.yaml
+  /talent-profiles/{id}/interactions:
+    $ref: paths/interactions_target.yaml
+  /talent-profiles/{id}/like:
+    $ref: paths/interactions_toggle.yaml
+  /talent-profiles/{id}/favorite:
+    $ref: paths/interactions_toggle.yaml
+  /talent-profiles/{id}/share:
+    $ref: paths/interactions_share.yaml
+  /talent-profiles/{id}/interaction-users:
+    $ref: paths/interactions_users.yaml
+  /talent-profiles/favorites:
+    $ref: paths/interactions_favorites.yaml
   /talent-profiles/{id}/dashboard:
     $ref: paths/talent-profiles_{id}_dashboard.yaml
   /talent-profiles/{id}/view-duration:
@@ -144,6 +168,10 @@ paths:
     $ref: paths/dictionaries_majors.yaml
   /feedbacks:
     $ref: paths/feedbacks.yaml
+  /interactions/favorites/unread-count:
+    $ref: paths/interactions_favorites_unread-count.yaml
+  /interactions/favorites/mark-viewed:
+    $ref: paths/interactions_favorites_mark-viewed.yaml
   /commons/uploads:
     $ref: paths/commons_uploads.yaml
 components:

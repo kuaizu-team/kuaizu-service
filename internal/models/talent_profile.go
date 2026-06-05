@@ -79,8 +79,9 @@ type TalentProfile struct {
 	SchoolID *int `db:"school_id"`
 	MajorID  *int `db:"major_id"`
 	// Populated after follow-up queries
-	SchoolName *string `db:"-"`
-	MajorName  *string `db:"-"`
+	SchoolName  *string     `db:"-"`
+	MajorName   *string     `db:"-"`
+	Interaction Interaction `db:"-"`
 }
 
 func (t *TalentProfile) skills() *[]string {
@@ -95,17 +96,18 @@ func (t *TalentProfile) skills() *[]string {
 // ToVO converts TalentProfile to API TalentProfileVO (list view)
 func (t *TalentProfile) ToVO() *api.TalentProfileVO {
 	return &api.TalentProfileVO{
-		Id:         &t.ID,
-		UserId:     &t.UserID,
-		Nickname:   t.Nickname,
-		SchoolName: t.SchoolName,
-		MajorName:  t.MajorName,
-		Mbti:       t.MBTI,
-		Skills:     t.skills(),
-		Status:     (*api.TalentStatus)(t.Status),
-		AvatarUrl:  ptrFullURL(t.AvatarUrl),
-		AuthStatus: t.AuthStatus,
-		Grade:      t.Grade,
+		Id:          &t.ID,
+		UserId:      &t.UserID,
+		Nickname:    t.Nickname,
+		SchoolName:  t.SchoolName,
+		MajorName:   t.MajorName,
+		Mbti:        t.MBTI,
+		Skills:      t.skills(),
+		Status:      (*api.TalentStatus)(t.Status),
+		AvatarUrl:   ptrFullURL(t.AvatarUrl),
+		AuthStatus:  t.AuthStatus,
+		Grade:       t.Grade,
+		Interaction: t.Interaction.ToVO(),
 	}
 }
 
@@ -128,6 +130,7 @@ func (t *TalentProfile) ToDetailVO() *api.TalentProfileDetailVO {
 		Wechat:            t.WechatID,
 		Grade:             t.Grade,
 		AuthStatus:        t.AuthStatus,
+		Interaction:       t.Interaction.ToVO(),
 	}
 
 	return vo

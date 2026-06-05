@@ -1,5 +1,8 @@
 type: object
 properties:
+  talentProfileId: { type: integer }
+  schoolName: { type: string }
+  majorName: { type: string }
   id:
     type: integer
   nickname:

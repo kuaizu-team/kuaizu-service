@@ -1,0 +1,13 @@
+post:
+  summary: Mark a favorite target list viewed
+  requestBody:
+    required: true
+    content:
+      application/json:
+        schema:
+          type: object
+          required: [target]
+          properties:
+            target: { type: string, enum: [projects, talent-profiles] }
+  responses:
+    '200': { description: Success }

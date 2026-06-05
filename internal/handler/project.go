@@ -46,6 +46,17 @@ func (s *Server) ListProjects(ctx echo.Context, params api.ListProjectsParams) e
 	if err != nil {
 		return mapServiceError(ctx, err)
 	}
+	ids := make([]int, len(result.List))
+	for i := range result.List {
+		ids[i] = result.List[i].ID
+	}
+	interactions, err := s.repo.Interaction.Batch(ctx.Request().Context(), repository.InteractionProject, ids, GetOptionalUserID(ctx))
+	if err != nil {
+		return InternalError(ctx, "get project interactions failed")
+	}
+	for i := range result.List {
+		result.List[i].Interaction = interactions[result.List[i].ID]
+	}
 
 	list := make([]api.ProjectVO, len(result.List))
 	for i, p := range result.List {
@@ -84,6 +95,9 @@ func (s *Server) CreateProject(ctx echo.Context) error {
 		Direction:            req.Direction,
 		EducationRequirement: req.EducationRequirement,
 		SkillRequirement:     req.SkillRequirement,
+		Tags:                 req.Tags,
+		PublisherRole:        req.PublisherRole,
+		InitiatingSchoolID:   req.InitiatingSchoolId,
 	}
 
 	project, err := s.svc.Project.CreateProject(ctx.Request().Context(), input)
@@ -159,19 +173,28 @@ func (s *Server) GetProject(ctx echo.Context, id int, params api.GetProjectParam
 	if err != nil {
 		return mapServiceError(ctx, err)
 	}
+	interaction, err := s.repo.Interaction.Get(ctx.Request().Context(), repository.InteractionProject, id, userID)
+	if err != nil {
+		return InternalError(ctx, "get project interactions failed")
+	}
+	project.Interaction = *interaction
 
 	return Success(ctx, project.ToDetailVO())
 }
 
 // GetProjectDashboard handles GET /projects/{id}/dashboard
-func (s *Server) GetProjectDashboard(ctx echo.Context, id int) error {
+func (s *Server) GetProjectDashboard(ctx echo.Context, id int, params api.GetProjectDashboardParams) error {
 	userID := GetUserID(ctx)
 
 	if id <= 0 {
 		return BadRequest(ctx, "无效的项目 ID")
 	}
 
-	result, err := s.svc.Project.GetProjectDashboard(ctx.Request().Context(), id, userID)
+	days := 30
+	if params.Days != nil {
+		days = *params.Days
+	}
+	result, err := s.svc.Project.GetProjectDashboard(ctx.Request().Context(), id, userID, days)
 	if err != nil {
 		return mapServiceError(ctx, err)
 	}
@@ -309,6 +332,9 @@ func (s *Server) UpdateProject(ctx echo.Context, id int) error {
 		EducationRequirement: req.EducationRequirement,
 		SkillRequirement:     req.SkillRequirement,
 		NeedReview:           req.NeedReview,
+		Tags:                 req.Tags,
+		PublisherRole:        req.PublisherRole,
+		InitiatingSchoolID:   req.InitiatingSchoolId,
 	}
 
 	project, err := s.svc.Project.UpdateProject(ctx.Request().Context(), id, userID, input)

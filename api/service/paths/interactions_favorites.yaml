@@ -1,0 +1,11 @@
+get:
+  summary: List favorites ordered by favoritedAt descending
+  parameters:
+    - name: page
+      in: query
+      schema: { type: integer, default: 1 }
+    - name: size
+      in: query
+      schema: { type: integer, default: 10, maximum: 100 }
+  responses:
+    '200': { description: Success }
