@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jmoiron/sqlx"
@@ -17,6 +18,19 @@ type FavoriteProject struct {
 type FavoriteTalent struct {
 	models.TalentProfile
 	FavoritedAt time.Time `db:"favorited_at"`
+}
+
+type InteractionUnread struct {
+	LikeCount     int `db:"like_count" json:"like_count"`
+	FavoriteCount int `db:"favorite_count" json:"favorite_count"`
+	ShareCount    int `db:"share_count" json:"share_count"`
+	TotalCount    int `db:"total_count" json:"total_count"`
+}
+
+type DashboardUnreadTotals struct {
+	ProjectCount int `db:"project_count" json:"projectCount"`
+	TalentCount  int `db:"talent_count" json:"talentCount"`
+	TotalCount   int `db:"total_count" json:"totalCount"`
 }
 
 const (
@@ -207,6 +221,9 @@ func (r *InteractionRepository) UnreadFavorites(ctx context.Context, userID int)
 		(SELECT COUNT(*) FROM talent_favorite f LEFT JOIN user_favorite_view_state s ON s.user_id=f.user_id AND s.target_type='talent-profiles' WHERE f.user_id=? AND f.created_at>COALESCE(s.last_viewed_at,'1970-01-01'))`
 	err := r.db.QueryRowxContext(ctx, query, userID, userID).Scan(&state.Projects, &state.TalentProfiles)
 	state.Total = state.Projects + state.TalentProfiles
+	state.ProjectCount = state.Projects
+	state.TalentCount = state.TalentProfiles
+	state.TotalCount = state.Total
 	return state, err
 }
 
@@ -216,6 +233,121 @@ func (r *InteractionRepository) MarkFavoritesViewed(ctx context.Context, userID 
 	}
 	_, err := r.db.ExecContext(ctx, `INSERT INTO user_favorite_view_state(user_id,target_type,last_viewed_at)
 		VALUES(?,?,NOW()) ON DUPLICATE KEY UPDATE last_viewed_at=VALUES(last_viewed_at),updated_at=NOW()`, userID, target)
+	return err
+}
+
+func (r *InteractionRepository) UnreadForTarget(ctx context.Context, target string, targetID, ownerUserID int) (InteractionUnread, error) {
+	like, favorite, share, idCol, err := interactionTables(target)
+	if err != nil {
+		return InteractionUnread{}, err
+	}
+	query := fmt.Sprintf(`SELECT
+		(SELECT COUNT(*) FROM %s i WHERE i.%s=? AND i.created_at>COALESCE(
+			(SELECT s.last_viewed_at FROM interaction_dashboard_view_state s WHERE s.user_id=? AND s.target_type=? AND s.target_id=? AND s.interaction_type='like'),
+			'1970-01-01 00:00:01')) like_count,
+		(SELECT COUNT(*) FROM %s i WHERE i.%s=? AND i.created_at>COALESCE(
+			(SELECT s.last_viewed_at FROM interaction_dashboard_view_state s WHERE s.user_id=? AND s.target_type=? AND s.target_id=? AND s.interaction_type='favorite'),
+			'1970-01-01 00:00:01')) favorite_count,
+		(SELECT COUNT(*) FROM %s i WHERE i.%s=? AND i.created_at>COALESCE(
+			(SELECT s.last_viewed_at FROM interaction_dashboard_view_state s WHERE s.user_id=? AND s.target_type=? AND s.target_id=? AND s.interaction_type='share'),
+			'1970-01-01 00:00:01')) share_count`,
+		like, idCol, favorite, idCol, share, idCol)
+	args := []interface{}{
+		targetID, ownerUserID, target, targetID,
+		targetID, ownerUserID, target, targetID,
+		targetID, ownerUserID, target, targetID,
+	}
+	var unread InteractionUnread
+	if err := r.db.QueryRowxContext(ctx, query, args...).StructScan(&unread); err != nil {
+		return InteractionUnread{}, err
+	}
+	unread.TotalCount = unread.LikeCount + unread.FavoriteCount + unread.ShareCount
+	return unread, nil
+}
+
+func (r *InteractionRepository) UnreadDashboardTotals(ctx context.Context, ownerUserID int) (DashboardUnreadTotals, error) {
+	query := `SELECT
+		(
+			(SELECT COUNT(*) FROM project_like i JOIN project p ON p.id=i.project_id WHERE p.creator_id=? AND i.created_at>COALESCE(
+				(SELECT s.last_viewed_at FROM interaction_dashboard_view_state s WHERE s.user_id=? AND s.target_type='projects' AND s.target_id=i.project_id AND s.interaction_type='like'),'1970-01-01 00:00:01'))
+			+(SELECT COUNT(*) FROM project_favorite i JOIN project p ON p.id=i.project_id WHERE p.creator_id=? AND i.created_at>COALESCE(
+				(SELECT s.last_viewed_at FROM interaction_dashboard_view_state s WHERE s.user_id=? AND s.target_type='projects' AND s.target_id=i.project_id AND s.interaction_type='favorite'),'1970-01-01 00:00:01'))
+			+(SELECT COUNT(*) FROM project_share i JOIN project p ON p.id=i.project_id WHERE p.creator_id=? AND i.created_at>COALESCE(
+				(SELECT s.last_viewed_at FROM interaction_dashboard_view_state s WHERE s.user_id=? AND s.target_type='projects' AND s.target_id=i.project_id AND s.interaction_type='share'),'1970-01-01 00:00:01'))
+		) project_count,
+		(
+			(SELECT COUNT(*) FROM talent_like i JOIN talent_profile tp ON tp.id=i.talent_profile_id WHERE tp.user_id=? AND i.created_at>COALESCE(
+				(SELECT s.last_viewed_at FROM interaction_dashboard_view_state s WHERE s.user_id=? AND s.target_type='talent-profiles' AND s.target_id=i.talent_profile_id AND s.interaction_type='like'),'1970-01-01 00:00:01'))
+			+(SELECT COUNT(*) FROM talent_favorite i JOIN talent_profile tp ON tp.id=i.talent_profile_id WHERE tp.user_id=? AND i.created_at>COALESCE(
+				(SELECT s.last_viewed_at FROM interaction_dashboard_view_state s WHERE s.user_id=? AND s.target_type='talent-profiles' AND s.target_id=i.talent_profile_id AND s.interaction_type='favorite'),'1970-01-01 00:00:01'))
+			+(SELECT COUNT(*) FROM talent_share i JOIN talent_profile tp ON tp.id=i.talent_profile_id WHERE tp.user_id=? AND i.created_at>COALESCE(
+				(SELECT s.last_viewed_at FROM interaction_dashboard_view_state s WHERE s.user_id=? AND s.target_type='talent-profiles' AND s.target_id=i.talent_profile_id AND s.interaction_type='share'),'1970-01-01 00:00:01'))
+		) talent_count`
+	args := make([]interface{}, 0, 12)
+	for i := 0; i < 12; i++ {
+		args = append(args, ownerUserID)
+	}
+	var totals DashboardUnreadTotals
+	if err := r.db.QueryRowxContext(ctx, query, args...).StructScan(&totals); err != nil {
+		return DashboardUnreadTotals{}, err
+	}
+	totals.TotalCount = totals.ProjectCount + totals.TalentCount
+	return totals, nil
+}
+
+func (r *InteractionRepository) BatchProjectUnread(ctx context.Context, ownerUserID int, projectIDs []int) (map[int]int, error) {
+	result := make(map[int]int, len(projectIDs))
+	if len(projectIDs) == 0 {
+		return result, nil
+	}
+	query, args, err := sqlx.In(`SELECT x.project_id,SUM(x.cnt) unread_count FROM (
+		SELECT i.project_id,COUNT(*) cnt FROM project_like i JOIN project p ON p.id=i.project_id
+		WHERE p.creator_id=? AND i.project_id IN (?) AND i.created_at>COALESCE(
+			(SELECT s.last_viewed_at FROM interaction_dashboard_view_state s WHERE s.user_id=? AND s.target_type='projects' AND s.target_id=i.project_id AND s.interaction_type='like'),'1970-01-01 00:00:01') GROUP BY i.project_id
+		UNION ALL
+		SELECT i.project_id,COUNT(*) cnt FROM project_favorite i JOIN project p ON p.id=i.project_id
+		WHERE p.creator_id=? AND i.project_id IN (?) AND i.created_at>COALESCE(
+			(SELECT s.last_viewed_at FROM interaction_dashboard_view_state s WHERE s.user_id=? AND s.target_type='projects' AND s.target_id=i.project_id AND s.interaction_type='favorite'),'1970-01-01 00:00:01') GROUP BY i.project_id
+		UNION ALL
+		SELECT i.project_id,COUNT(*) cnt FROM project_share i JOIN project p ON p.id=i.project_id
+		WHERE p.creator_id=? AND i.project_id IN (?) AND i.created_at>COALESCE(
+			(SELECT s.last_viewed_at FROM interaction_dashboard_view_state s WHERE s.user_id=? AND s.target_type='projects' AND s.target_id=i.project_id AND s.interaction_type='share'),'1970-01-01 00:00:01') GROUP BY i.project_id
+	) x GROUP BY x.project_id`, ownerUserID, projectIDs, ownerUserID, ownerUserID, projectIDs, ownerUserID, ownerUserID, projectIDs, ownerUserID)
+	if err != nil {
+		return nil, err
+	}
+	type row struct {
+		ProjectID   int `db:"project_id"`
+		UnreadCount int `db:"unread_count"`
+	}
+	var rows []row
+	if err := r.db.SelectContext(ctx, &rows, r.db.Rebind(query), args...); err != nil {
+		return nil, err
+	}
+	for _, item := range rows {
+		result[item.ProjectID] = item.UnreadCount
+	}
+	return result, nil
+}
+
+func (r *InteractionRepository) MarkDashboardViewed(ctx context.Context, ownerUserID int, target string, targetID int, kind *string) error {
+	if _, _, _, _, err := interactionTables(target); err != nil {
+		return err
+	}
+	kinds := []string{"like", "favorite", "share"}
+	if kind != nil {
+		kinds = []string{*kind}
+	}
+	values := make([]string, 0, len(kinds))
+	args := make([]interface{}, 0, len(kinds)*4)
+	for _, interactionType := range kinds {
+		values = append(values, "(?,?,?,?,NOW())")
+		args = append(args, ownerUserID, target, targetID, interactionType)
+	}
+	query := `INSERT INTO interaction_dashboard_view_state(user_id,target_type,target_id,interaction_type,last_viewed_at)
+		VALUES ` + strings.Join(values, ",") + `
+		ON DUPLICATE KEY UPDATE last_viewed_at=VALUES(last_viewed_at),updated_at=NOW()`
+	_, err := r.db.ExecContext(ctx, query, args...)
 	return err
 }
 

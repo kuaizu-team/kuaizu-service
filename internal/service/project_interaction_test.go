@@ -20,3 +20,16 @@ func TestValidateProjectTags(t *testing.T) {
 		t.Fatal("expected tag length error")
 	}
 }
+
+func TestValidInteractionType(t *testing.T) {
+	for _, kind := range []string{"like", "favorite", "share"} {
+		if !validInteractionType(kind) {
+			t.Fatalf("%q should be valid", kind)
+		}
+	}
+	for _, kind := range []string{"", "view", "LIKE"} {
+		if validInteractionType(kind) {
+			t.Fatalf("%q should be invalid", kind)
+		}
+	}
+}

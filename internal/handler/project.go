@@ -141,6 +141,18 @@ func (s *Server) ListMyProjects(ctx echo.Context, params api.ListMyProjectsParam
 	if err != nil {
 		return mapServiceError(ctx, err)
 	}
+	ids := make([]int, len(result.List))
+	for i := range result.List {
+		ids[i] = result.List[i].ID
+	}
+	unread, err := s.repo.Interaction.BatchProjectUnread(ctx.Request().Context(), userID, ids)
+	if err != nil {
+		return InternalError(ctx, "get project dashboard unread failed")
+	}
+	for i := range result.List {
+		count := unread[result.List[i].ID]
+		result.List[i].InteractionUnreadCount = &count
+	}
 
 	list := make([]api.ProjectVO, len(result.List))
 	for i, p := range result.List {

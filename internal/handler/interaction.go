@@ -1,6 +1,9 @@
 package handler
 
 import (
+	"encoding/json"
+	"errors"
+	"io"
 	"strconv"
 	"time"
 
@@ -114,6 +117,31 @@ func (s *Server) MarkFavoritesViewed(ctx echo.Context) error {
 	return Success(ctx, nil)
 }
 
+func (s *Server) GetDashboardUnreadCount(ctx echo.Context) error {
+	totals, err := s.svc.Interaction.DashboardUnreadTotals(ctx.Request().Context(), GetUserID(ctx))
+	if err != nil {
+		return mapServiceError(ctx, err)
+	}
+	return Success(ctx, totals)
+}
+
+func (s *Server) MarkDashboardViewed(ctx echo.Context, target string) error {
+	id, err := strconv.Atoi(ctx.Param("id"))
+	if err != nil {
+		return BadRequest(ctx, "invalid target id")
+	}
+	var req struct {
+		Type *string `json:"type"`
+	}
+	if err := json.NewDecoder(ctx.Request().Body).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
+		return BadRequest(ctx, "invalid request")
+	}
+	if err := s.svc.Interaction.MarkDashboardViewed(ctx.Request().Context(), target, id, GetUserID(ctx), req.Type); err != nil {
+		return mapServiceError(ctx, err)
+	}
+	return Success(ctx, nil)
+}
+
 func (s *Server) ListFavorites(ctx echo.Context, target string) error {
 	page, size, _ := interactionParams(ctx)
 	userID := GetUserID(ctx)
@@ -160,6 +188,9 @@ func (s *Server) ListFavorites(ctx echo.Context, target string) error {
 func (s *Server) GetInteractionsFavoritesUnreadCount(ctx echo.Context) error {
 	return s.GetFavoriteUnreadCount(ctx)
 }
+func (s *Server) GetInteractionsDashboardUnreadCount(ctx echo.Context) error {
+	return s.GetDashboardUnreadCount(ctx)
+}
 func (s *Server) PostInteractionsFavoritesMarkViewed(ctx echo.Context) error {
 	return s.MarkFavoritesViewed(ctx)
 }
@@ -198,4 +229,10 @@ func (s *Server) GetProjectsIdInteractionUsers(ctx echo.Context, _ int, _ api.Ge
 }
 func (s *Server) GetTalentProfilesIdInteractionUsers(ctx echo.Context, _ int, _ api.GetTalentProfilesIdInteractionUsersParams) error {
 	return s.ListInteractionUsers(ctx, repository.InteractionTalent)
+}
+func (s *Server) PostProjectsIdInteractionsMarkViewed(ctx echo.Context, _ int) error {
+	return s.MarkDashboardViewed(ctx, repository.InteractionProject)
+}
+func (s *Server) PostTalentProfilesIdInteractionsMarkViewed(ctx echo.Context, _ int) error {
+	return s.MarkDashboardViewed(ctx, repository.InteractionTalent)
 }

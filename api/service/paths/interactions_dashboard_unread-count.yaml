@@ -1,5 +1,5 @@
 get:
-  summary: Get unread favorite badge counts
+  summary: Get all owned dashboard interaction unread counts
   responses:
     '200':
       description: Success
@@ -11,4 +11,4 @@ get:
               - type: object
                 properties:
                   data:
-                    $ref: ../components/schemas/FavoriteUnreadTotalsVO.yaml
+                    $ref: ../components/schemas/DashboardUnreadTotalsVO.yaml

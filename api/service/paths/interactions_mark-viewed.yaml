@@ -1,0 +1,16 @@
+parameters:
+  - name: id
+    in: path
+    required: true
+    schema: { type: integer }
+post:
+  summary: Mark owned target dashboard interactions viewed
+  requestBody:
+    required: false
+    content:
+      application/json:
+        schema:
+          $ref: ../components/schemas/MarkDashboardViewedDTO.yaml
+  responses:
+    '200':
+      description: Success

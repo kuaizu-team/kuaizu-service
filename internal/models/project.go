@@ -33,6 +33,7 @@ type Project struct {
 	InitiatingSchoolName       *string      `db:"initiating_school_name"`
 	Tags                       []ProjectTag `db:"-"`
 	Interaction                Interaction  `db:"-"`
+	InteractionUnreadCount     *int         `db:"-"`
 	Creator                    *User        `db:"-"`
 	CreatorTalentProfileStatus *int         `db:"-"`                         // 创建者名片状态（仅详情接口填充）
 	PendingApplicationCount    int          `db:"pending_application_count"` // 待处理申请数（仅列表接口填充）
@@ -67,6 +68,7 @@ func (p *Project) ToVO() *api.ProjectVO {
 		InitiatingSchoolId:      p.InitiatingSchoolID,
 		InitiatingSchoolName:    p.InitiatingSchoolName,
 		Interaction:             p.Interaction.ToVO(),
+		InteractionUnreadCount:  p.InteractionUnreadCount,
 	}
 	if len(p.Tags) > 0 {
 		tags := make([]api.ProjectTagVO, len(p.Tags))

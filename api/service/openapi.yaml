@@ -80,6 +80,8 @@ paths:
     $ref: paths/interactions_share.yaml
   /projects/{id}/interaction-users:
     $ref: paths/interactions_users.yaml
+  /projects/{id}/interactions/mark-viewed:
+    $ref: paths/interactions_mark-viewed.yaml
   /projects/favorites:
     $ref: paths/interactions_favorites.yaml
   /projects/{id}/dashboard:
@@ -114,6 +116,8 @@ paths:
     $ref: paths/interactions_share.yaml
   /talent-profiles/{id}/interaction-users:
     $ref: paths/interactions_users.yaml
+  /talent-profiles/{id}/interactions/mark-viewed:
+    $ref: paths/interactions_mark-viewed.yaml
   /talent-profiles/favorites:
     $ref: paths/interactions_favorites.yaml
   /talent-profiles/{id}/dashboard:
@@ -172,6 +176,8 @@ paths:
     $ref: paths/interactions_favorites_unread-count.yaml
   /interactions/favorites/mark-viewed:
     $ref: paths/interactions_favorites_mark-viewed.yaml
+  /interactions/dashboard/unread-count:
+    $ref: paths/interactions_dashboard_unread-count.yaml
   /commons/uploads:
     $ref: paths/commons_uploads.yaml
 components:

@@ -160,15 +160,16 @@ func (s *ProjectService) GetProjectWithView(ctx context.Context, id, viewerUserI
 
 // ProjectDashboardResult is the response payload for GET /projects/{id}/dashboard.
 type ProjectDashboardResult struct {
-	TotalViews         int                         `json:"total_views"`
-	TodayViews         int                         `json:"today_views"`
-	TotalApplicants    int                         `json:"total_applicants"`
-	ConversionRate     float64                     `json:"conversion_rate"`
-	AvgDurationSeconds int                         `json:"avg_duration_seconds"`
-	HourlyViews        []repository.HourlyViewItem `json:"hourly_views"`
-	LikeCount          int                         `json:"like_count"`
-	FavoriteCount      int                         `json:"favorite_count"`
-	ShareCount         int                         `json:"share_count"`
+	TotalViews         int                          `json:"total_views"`
+	TodayViews         int                          `json:"today_views"`
+	TotalApplicants    int                          `json:"total_applicants"`
+	ConversionRate     float64                      `json:"conversion_rate"`
+	AvgDurationSeconds int                          `json:"avg_duration_seconds"`
+	HourlyViews        []repository.HourlyViewItem  `json:"hourly_views"`
+	LikeCount          int                          `json:"like_count"`
+	FavoriteCount      int                          `json:"favorite_count"`
+	ShareCount         int                          `json:"share_count"`
+	InteractionUnread  repository.InteractionUnread `json:"interaction_unread"`
 	SourceStats        struct {
 		FromList  int `json:"from_list"`
 		FromShare int `json:"from_share"`
@@ -210,6 +211,11 @@ func (s *ProjectService) GetProjectDashboard(ctx context.Context, projectID, req
 		return nil, ErrInternal("get interaction dashboard failed")
 	}
 	result.LikeCount, result.FavoriteCount, result.ShareCount = counts.LikeCount, counts.FavoriteCount, counts.ShareCount
+	unread, err := s.repo.Interaction.UnreadForTarget(ctx, repository.InteractionProject, projectID, requesterUserID)
+	if err != nil {
+		return nil, ErrInternal("get interaction unread failed")
+	}
+	result.InteractionUnread = unread
 
 	return result, nil
 }

@@ -204,13 +204,14 @@ func (s *TalentProfileService) GetTalentProfileWithView(ctx context.Context, id,
 
 // TalentDashboardResult is the response payload for GET /talent-profiles/{id}/dashboard.
 type TalentDashboardResult struct {
-	TotalViews         int                         `json:"total_views"`
-	TodayViews         int                         `json:"today_views"`
-	AvgDurationSeconds int                         `json:"avg_duration_seconds"`
-	HourlyViews        []repository.HourlyViewItem `json:"hourly_views"`
-	LikeCount          int                         `json:"like_count"`
-	FavoriteCount      int                         `json:"favorite_count"`
-	ShareCount         int                         `json:"share_count"`
+	TotalViews         int                          `json:"total_views"`
+	TodayViews         int                          `json:"today_views"`
+	AvgDurationSeconds int                          `json:"avg_duration_seconds"`
+	HourlyViews        []repository.HourlyViewItem  `json:"hourly_views"`
+	LikeCount          int                          `json:"like_count"`
+	FavoriteCount      int                          `json:"favorite_count"`
+	ShareCount         int                          `json:"share_count"`
+	InteractionUnread  repository.InteractionUnread `json:"interaction_unread"`
 	SourceStats        struct {
 		FromList  int `json:"from_list"`
 		FromShare int `json:"from_share"`
@@ -249,6 +250,11 @@ func (s *TalentProfileService) GetTalentDashboard(ctx context.Context, talentID,
 		return nil, ErrInternal("get interaction dashboard failed")
 	}
 	result.LikeCount, result.FavoriteCount, result.ShareCount = counts.LikeCount, counts.FavoriteCount, counts.ShareCount
+	unread, err := s.repo.Interaction.UnreadForTarget(ctx, repository.InteractionTalent, talentID, requesterUserID)
+	if err != nil {
+		return nil, ErrInternal("get interaction unread failed")
+	}
+	result.InteractionUnread = unread
 	return result, nil
 }
 

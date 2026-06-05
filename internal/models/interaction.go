@@ -29,6 +29,9 @@ type InteractionUser struct {
 }
 
 type FavoriteViewState struct {
+	ProjectCount   int `json:"projectCount"`
+	TalentCount    int `json:"talentCount"`
+	TotalCount     int `json:"totalCount"`
 	Projects       int `json:"projects"`
 	TalentProfiles int `json:"talentProfiles"`
 	Total          int `json:"total"`

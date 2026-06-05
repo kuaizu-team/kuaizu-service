@@ -12,6 +12,9 @@ properties:
   initiatingSchoolName: { type: string }
   interaction:
     $ref: ./InteractionVO.yaml
+  interactionUnreadCount:
+    type: integer
+    minimum: 0
   id:
     type: integer
   name:

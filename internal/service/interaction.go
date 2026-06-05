@@ -41,6 +41,33 @@ func (s *InteractionService) ensureTarget(ctx context.Context, target string, id
 	return nil
 }
 
+func validInteractionType(kind string) bool {
+	return kind == "like" || kind == "favorite" || kind == "share"
+}
+
+func (s *InteractionService) ensureTargetOwner(ctx context.Context, target string, id, userID int) error {
+	if err := s.ensureTarget(ctx, target, id); err != nil {
+		return err
+	}
+	var (
+		owned bool
+		err   error
+	)
+	switch target {
+	case repository.InteractionProject:
+		owned, err = s.repo.Project.IsOwner(ctx, id, userID)
+	case repository.InteractionTalent:
+		owned, err = s.repo.TalentProfile.IsOwner(ctx, id, userID)
+	}
+	if err != nil {
+		return ErrInternal("check target ownership failed")
+	}
+	if !owned {
+		return ErrForbidden("only the target owner can access interaction unread state")
+	}
+	return nil
+}
+
 func (s *InteractionService) Get(ctx context.Context, target string, id, userID int) (*models.Interaction, error) {
 	if err := s.ensureTarget(ctx, target, id); err != nil {
 		return nil, err
@@ -99,4 +126,39 @@ func (s *InteractionService) ListUsers(ctx context.Context, target, kind string,
 		return nil, ErrInternal("list interaction users failed")
 	}
 	return map[string]interface{}{"list": list, "page": page, "size": size, "total": total}, nil
+}
+
+func (s *InteractionService) DashboardUnreadTotals(ctx context.Context, ownerUserID int) (repository.DashboardUnreadTotals, error) {
+	totals, err := s.repo.Interaction.UnreadDashboardTotals(ctx, ownerUserID)
+	if err != nil {
+		log.Printf("[Interaction.DashboardUnreadTotals] %v", err)
+		return repository.DashboardUnreadTotals{}, ErrInternal("get dashboard unread totals failed")
+	}
+	return totals, nil
+}
+
+func (s *InteractionService) TargetUnread(ctx context.Context, target string, id, ownerUserID int) (repository.InteractionUnread, error) {
+	if err := s.ensureTargetOwner(ctx, target, id, ownerUserID); err != nil {
+		return repository.InteractionUnread{}, err
+	}
+	unread, err := s.repo.Interaction.UnreadForTarget(ctx, target, id, ownerUserID)
+	if err != nil {
+		log.Printf("[Interaction.TargetUnread] %v", err)
+		return repository.InteractionUnread{}, ErrInternal("get target interaction unread failed")
+	}
+	return unread, nil
+}
+
+func (s *InteractionService) MarkDashboardViewed(ctx context.Context, target string, id, ownerUserID int, kind *string) error {
+	if kind != nil && !validInteractionType(*kind) {
+		return ErrBadRequest("invalid interaction type")
+	}
+	if err := s.ensureTargetOwner(ctx, target, id, ownerUserID); err != nil {
+		return err
+	}
+	if err := s.repo.Interaction.MarkDashboardViewed(ctx, ownerUserID, target, id, kind); err != nil {
+		log.Printf("[Interaction.MarkDashboardViewed] %v", err)
+		return ErrInternal("mark dashboard interactions viewed failed")
+	}
+	return nil
 }
