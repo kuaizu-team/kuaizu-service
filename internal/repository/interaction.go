@@ -417,18 +417,84 @@ func (r *InteractionRepository) enrichFavoriteProjects(ctx context.Context, item
 
 func (r *InteractionRepository) ListFavoriteTalents(ctx context.Context, userID, page, size int) ([]FavoriteTalent, int64, error) {
 	var total int64
-	if err := r.db.QueryRowxContext(ctx, "SELECT COUNT(*) FROM talent_favorite WHERE user_id=?", userID).Scan(&total); err != nil {
+	if err := r.db.QueryRowxContext(ctx, `SELECT COUNT(*) FROM talent_favorite f
+		JOIN talent_profile tp ON tp.id=f.talent_profile_id
+		JOIN `+"`user`"+` u ON u.id=tp.user_id WHERE f.user_id=?`, userID).Scan(&total); err != nil {
 		return nil, 0, err
 	}
 	query := `SELECT tp.id,tp.user_id,tp.self_evaluation,tp.skill_summary,tp.project_experience,tp.mbti,tp.status,tp.view_count,
-		tp.created_at,tp.updated_at,u.nickname,u.phone,u.email,u.avatar_url,u.school_id,u.major_id,u.grade,u.auth_status,
-		s.school_name,m.major_name,f.created_at favorited_at
+		tp.created_at,tp.updated_at,u.nickname,u.avatar_url,u.school_id,u.major_id,u.grade,u.auth_status,
+		f.created_at favorited_at
 		FROM talent_favorite f JOIN talent_profile tp ON tp.id=f.talent_profile_id JOIN ` + "`user`" + ` u ON u.id=tp.user_id
-		LEFT JOIN school s ON s.id=u.school_id LEFT JOIN major m ON m.id=u.major_id
 		WHERE f.user_id=? ORDER BY f.created_at DESC LIMIT ? OFFSET ?`
 	var items []FavoriteTalent
-	err := r.db.SelectContext(ctx, &items, query, userID, size, (page-1)*size)
-	return items, total, err
+	if err := r.db.SelectContext(ctx, &items, query, userID, size, (page-1)*size); err != nil {
+		return nil, 0, err
+	}
+	if err := r.enrichFavoriteTalentSchoolMajorBatch(ctx, items); err != nil {
+		return nil, 0, err
+	}
+	return items, total, nil
+}
+
+func (r *InteractionRepository) enrichFavoriteTalentSchoolMajorBatch(ctx context.Context, items []FavoriteTalent) error {
+	schoolIDs := make([]int, 0)
+	majorIDs := make([]int, 0)
+	for i := range items {
+		if items[i].SchoolID != nil {
+			schoolIDs = append(schoolIDs, *items[i].SchoolID)
+		}
+		if items[i].MajorID != nil {
+			majorIDs = append(majorIDs, *items[i].MajorID)
+		}
+	}
+	schools := make(map[int]string)
+	if len(schoolIDs) > 0 {
+		query, args, err := sqlx.In("SELECT id,school_name FROM school WHERE id IN (?)", schoolIDs)
+		if err != nil {
+			return err
+		}
+		var rows []struct {
+			ID   int    `db:"id"`
+			Name string `db:"school_name"`
+		}
+		if err := r.db.SelectContext(ctx, &rows, r.db.Rebind(query), args...); err != nil {
+			return err
+		}
+		for _, row := range rows {
+			schools[row.ID] = row.Name
+		}
+	}
+	majors := make(map[int]string)
+	if len(majorIDs) > 0 {
+		query, args, err := sqlx.In("SELECT id,major_name FROM major WHERE id IN (?)", majorIDs)
+		if err != nil {
+			return err
+		}
+		var rows []struct {
+			ID   int    `db:"id"`
+			Name string `db:"major_name"`
+		}
+		if err := r.db.SelectContext(ctx, &rows, r.db.Rebind(query), args...); err != nil {
+			return err
+		}
+		for _, row := range rows {
+			majors[row.ID] = row.Name
+		}
+	}
+	for i := range items {
+		if items[i].SchoolID != nil {
+			if name, ok := schools[*items[i].SchoolID]; ok {
+				items[i].SchoolName = &name
+			}
+		}
+		if items[i].MajorID != nil {
+			if name, ok := majors[*items[i].MajorID]; ok {
+				items[i].MajorName = &name
+			}
+		}
+	}
+	return nil
 }
 
 func (r *InteractionRepository) SaveProjectMetadata(ctx context.Context, projectID int, tags *[]string, publisherRole *string, initiatingSchoolID *int) error {

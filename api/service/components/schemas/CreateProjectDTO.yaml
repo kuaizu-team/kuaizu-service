@@ -19,6 +19,7 @@ properties:
     type: string
   schoolId:
     type: integer
+    description: Project school ID; defaults to the current user's school and is synchronized with initiatingSchoolId.
   direction:
     $ref: ./Direction.yaml
   memberCount:

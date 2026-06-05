@@ -346,6 +346,7 @@ func (s *Server) UpdateProject(ctx echo.Context, id int) error {
 		NeedReview:           req.NeedReview,
 		Tags:                 req.Tags,
 		PublisherRole:        req.PublisherRole,
+		SchoolID:             req.SchoolId,
 		InitiatingSchoolID:   req.InitiatingSchoolId,
 	}
 

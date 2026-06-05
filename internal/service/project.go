@@ -302,6 +302,33 @@ func validateProjectTags(tags *[]string) error {
 	return nil
 }
 
+func (s *ProjectService) resolveProjectSchool(ctx context.Context, creatorID int, schoolID, initiatingSchoolID *int, useCreatorDefault bool) (*int, error) {
+	effectiveSchoolID := schoolID
+	if effectiveSchoolID == nil {
+		effectiveSchoolID = initiatingSchoolID
+	}
+	if effectiveSchoolID == nil && useCreatorDefault {
+		user, err := s.repo.User.GetByID(ctx, creatorID)
+		if err != nil {
+			return nil, ErrInternal("get creator failed")
+		}
+		if user != nil {
+			effectiveSchoolID = user.SchoolID
+		}
+	}
+	if effectiveSchoolID == nil {
+		return nil, ErrBadRequest("project school is required; current user has no school")
+	}
+	school, err := s.repo.School.GetByID(ctx, *effectiveSchoolID)
+	if err != nil {
+		return nil, ErrInternal("validate project school failed")
+	}
+	if school == nil {
+		return nil, ErrBadRequest("project school does not exist")
+	}
+	return effectiveSchoolID, nil
+}
+
 // CreateProject validates input, audits content, and creates a new project.
 func (s *ProjectService) CreateProject(ctx context.Context, input CreateProjectInput) (*models.Project, error) {
 	if input.Name == "" {
@@ -313,15 +340,12 @@ func (s *ProjectService) CreateProject(ctx context.Context, input CreateProjectI
 	if err := validateProjectTags(input.Tags); err != nil {
 		return nil, err
 	}
-	if input.InitiatingSchoolID == nil {
-		user, err := s.repo.User.GetByID(ctx, input.CreatorID)
-		if err != nil {
-			return nil, ErrInternal("get creator failed")
-		}
-		if user != nil {
-			input.InitiatingSchoolID = user.SchoolID
-		}
+	effectiveSchoolID, err := s.resolveProjectSchool(ctx, input.CreatorID, input.SchoolID, input.InitiatingSchoolID, true)
+	if err != nil {
+		return nil, err
 	}
+	input.SchoolID = effectiveSchoolID
+	input.InitiatingSchoolID = effectiveSchoolID
 
 	// 文字内容审核
 	auditTexts := []string{input.Name, input.Description}
@@ -397,6 +421,7 @@ type UpdateProjectInput struct {
 	NeedReview         *bool
 	Tags               *[]string
 	PublisherRole      *string
+	SchoolID           *int
 	InitiatingSchoolID *int
 }
 
@@ -426,6 +451,16 @@ func (s *ProjectService) UpdateProject(ctx context.Context, id, userID int, inpu
 	}
 
 	// 文字内容审核
+	if input.SchoolID != nil || input.InitiatingSchoolID != nil {
+		effectiveSchoolID, err := s.resolveProjectSchool(ctx, userID, input.SchoolID, input.InitiatingSchoolID, false)
+		if err != nil {
+			return nil, err
+		}
+		input.SchoolID = effectiveSchoolID
+		input.InitiatingSchoolID = effectiveSchoolID
+		project.SchoolID = effectiveSchoolID
+	}
+
 	var auditTexts []string
 	if input.Name != nil {
 		auditTexts = append(auditTexts, *input.Name)

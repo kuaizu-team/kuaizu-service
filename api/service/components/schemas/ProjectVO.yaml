@@ -8,7 +8,9 @@ properties:
       $ref: ./ProjectTagVO.yaml
   publisherRole: { type: string }
   publisherRoleName: { type: string }
-  initiatingSchoolId: { type: integer }
+  initiatingSchoolId:
+    type: integer
+    description: Same school ID as schoolId.
   initiatingSchoolName: { type: string }
   interaction:
     $ref: ./InteractionVO.yaml
@@ -23,6 +25,7 @@ properties:
     type: string
   schoolId:
     type: integer
+    description: Project school ID.
   schoolName:
     type: string
   direction:

@@ -6,6 +6,9 @@ properties:
     maxItems: 5
     items: { type: string, maxLength: 12 }
   publisherRole: { type: string }
+  schoolId:
+    type: integer
+    description: Project school ID; synchronized with initiatingSchoolId when provided.
   initiatingSchoolId: { type: integer }
   name:
     type: string

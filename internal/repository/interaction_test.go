@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/jmoiron/sqlx"
 )
@@ -14,7 +15,14 @@ import (
 var capturedQuery struct {
 	sync.Mutex
 	query   string
+	queries []string
 	args    []driver.NamedValue
+	columns []string
+	rows    [][]driver.Value
+	queue   []captureQueryResult
+}
+
+type captureQueryResult struct {
 	columns []string
 	rows    [][]driver.Value
 }
@@ -23,12 +31,18 @@ func (captureConn) QueryContext(_ context.Context, query string, args []driver.N
 	capturedQuery.Lock()
 	defer capturedQuery.Unlock()
 	capturedQuery.query = query
+	capturedQuery.queries = append(capturedQuery.queries, query)
 	capturedQuery.args = append([]driver.NamedValue(nil), args...)
-	rows := make([][]driver.Value, len(capturedQuery.rows))
-	for i := range capturedQuery.rows {
-		rows[i] = append([]driver.Value(nil), capturedQuery.rows[i]...)
+	result := captureQueryResult{columns: capturedQuery.columns, rows: capturedQuery.rows}
+	if len(capturedQuery.queue) > 0 {
+		result = capturedQuery.queue[0]
+		capturedQuery.queue = capturedQuery.queue[1:]
 	}
-	return &captureRows{columns: append([]string(nil), capturedQuery.columns...), rows: rows}, nil
+	rows := make([][]driver.Value, len(result.rows))
+	for i := range result.rows {
+		rows[i] = append([]driver.Value(nil), result.rows[i]...)
+	}
+	return &captureRows{columns: append([]string(nil), result.columns...), rows: rows}, nil
 }
 
 type captureRows struct {
@@ -128,10 +142,80 @@ func TestBatchProjectUnreadUsesOneAggregateQuery(t *testing.T) {
 func setCapturedQuery(columns []string, rows [][]driver.Value) {
 	capturedQuery.Lock()
 	capturedQuery.query = ""
+	capturedQuery.queries = nil
 	capturedQuery.args = nil
 	capturedQuery.columns = columns
 	capturedQuery.rows = rows
+	capturedQuery.queue = nil
 	capturedQuery.Unlock()
+}
+
+func setCapturedQueryQueue(results ...captureQueryResult) {
+	capturedQuery.Lock()
+	capturedQuery.query = ""
+	capturedQuery.queries = nil
+	capturedQuery.args = nil
+	capturedQuery.columns = nil
+	capturedQuery.rows = nil
+	capturedQuery.queue = append([]captureQueryResult(nil), results...)
+	capturedQuery.Unlock()
+}
+
+func TestListFavoriteTalentsBatchEnrichesAndExcludesPrivateFields(t *testing.T) {
+	db := openCaptureDB(t)
+	defer db.Close()
+	repo := NewInteractionRepository(sqlx.NewDb(db, "capture_user_repo"))
+	setCapturedQueryQueue(
+		captureQueryResult{columns: []string{"count"}, rows: [][]driver.Value{{int64(1)}}},
+		captureQueryResult{
+			columns: []string{"id", "user_id", "self_evaluation", "skill_summary", "project_experience", "mbti", "status", "view_count", "created_at", "updated_at", "nickname", "avatar_url", "school_id", "major_id", "grade", "auth_status", "favorited_at"},
+			rows:    [][]driver.Value{{int64(9), int64(5), nil, `["Go"]`, nil, "INTJ", int64(1), int64(3), nil, nil, "Alice", "avatar", int64(2), int64(4), int64(2024), int64(1), time.Date(2026, 6, 5, 10, 0, 0, 0, time.Local)}},
+		},
+		captureQueryResult{columns: []string{"id", "school_name"}, rows: [][]driver.Value{{int64(2), "北京大学"}}},
+		captureQueryResult{columns: []string{"id", "major_name"}, rows: [][]driver.Value{{int64(4), "计算机科学"}}},
+	)
+
+	items, total, err := repo.ListFavoriteTalents(context.Background(), 7, 1, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if total != 1 || len(items) != 1 || items[0].SchoolName == nil || *items[0].SchoolName != "北京大学" || items[0].MajorName == nil || *items[0].MajorName != "计算机科学" {
+		t.Fatalf("unexpected favorites: total=%d items=%#v", total, items)
+	}
+	if items[0].Phone != nil || items[0].Email != nil || items[0].WechatID != nil {
+		t.Fatalf("private fields must not be selected: %#v", items[0].TalentProfile)
+	}
+	capturedQuery.Lock()
+	queries := append([]string(nil), capturedQuery.queries...)
+	capturedQuery.Unlock()
+	if len(queries) != 4 || strings.Contains(queries[1], "u.phone") || strings.Contains(queries[1], "u.email") || !strings.Contains(queries[1], "ORDER BY f.created_at DESC") {
+		t.Fatalf("unexpected favorite talent queries: %#v", queries)
+	}
+}
+
+func TestListFavoriteTalentsSkipsOrphansAndReturnsEmptyPage(t *testing.T) {
+	db := openCaptureDB(t)
+	defer db.Close()
+	repo := NewInteractionRepository(sqlx.NewDb(db, "capture_user_repo"))
+	setCapturedQueryQueue(
+		captureQueryResult{columns: []string{"count"}, rows: [][]driver.Value{{int64(0)}}},
+		captureQueryResult{columns: []string{"id", "user_id", "self_evaluation", "skill_summary", "project_experience", "mbti", "status", "view_count", "created_at", "updated_at", "nickname", "avatar_url", "school_id", "major_id", "grade", "auth_status", "favorited_at"}},
+	)
+
+	items, total, err := repo.ListFavoriteTalents(context.Background(), 7, 2, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if total != 0 || len(items) != 0 {
+		t.Fatalf("unexpected empty favorites: total=%d items=%#v", total, items)
+	}
+	capturedQuery.Lock()
+	queries := append([]string(nil), capturedQuery.queries...)
+	args := append([]driver.NamedValue(nil), capturedQuery.args...)
+	capturedQuery.Unlock()
+	if !strings.Contains(queries[0], "JOIN talent_profile") || len(args) != 3 || args[2].Value != int64(10) {
+		t.Fatalf("orphan/pagination query mismatch: queries=%#v args=%#v", queries, args)
+	}
 }
 
 func TestMarkDashboardViewedAllTypes(t *testing.T) {

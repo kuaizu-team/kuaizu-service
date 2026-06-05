@@ -59,8 +59,12 @@ func (r *ProjectRepository) List(ctx context.Context, params ListParams) ([]mode
 	whereArgs := []interface{}{}
 
 	if params.Keyword != nil && *params.Keyword != "" {
-		conditions = append(conditions, "(p.name LIKE ? OR p.description LIKE ?)")
-		whereArgs = append(whereArgs, "%"+*params.Keyword+"%", "%"+*params.Keyword+"%")
+		conditions = append(conditions, `(p.name LIKE ? OR p.description LIKE ?
+			OR EXISTS (SELECT 1 FROM school ks WHERE ks.id=p.school_id AND ks.school_name LIKE ?)
+			OR EXISTS (SELECT 1 FROM project_tag_relation ptr JOIN project_tag pt ON pt.id=ptr.tag_id
+				WHERE ptr.project_id=p.id AND pt.status=1 AND pt.name LIKE ?))`)
+		pattern := "%" + *params.Keyword + "%"
+		whereArgs = append(whereArgs, pattern, pattern, pattern, pattern)
 	}
 	if params.SchoolID != nil {
 		conditions = append(conditions, "p.school_id = ?")
@@ -434,6 +438,7 @@ func (r *ProjectRepository) Update(ctx context.Context, p *models.Project) error
 		UPDATE project SET
 			name                 = :name,
 			description          = :description,
+			school_id            = :school_id,
 			direction            = :direction,
 			member_count         = :member_count,
 			is_cross_school      = :is_cross_school,
