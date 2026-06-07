@@ -88,6 +88,9 @@ func main() {
 	adminGroup.GET("/users/:id/applications", server.ListUserApplications)
 	adminGroup.GET("/users/:id/olive-branches", server.ListUserOliveBranches)
 
+	adminGroup.POST("/sms/send", server.SendAdminSms)
+	adminGroup.GET("/sms/send-count", server.CountAdminSms)
+
 	adminGroup.GET("/feedbacks", server.ListFeedbacks)
 	adminGroup.GET("/feedbacks/:id", server.GetFeedback)
 	adminGroup.PATCH("/feedbacks/:id", server.ReplyFeedback)

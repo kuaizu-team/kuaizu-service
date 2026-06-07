@@ -1,0 +1,68 @@
+get:
+  tags:
+    - AdminSms
+  summary: Get recent admin SMS send count
+  operationId: countAdminSms
+  security:
+    - bearerAuth: []
+  parameters:
+    - name: user_id
+      in: query
+      required: true
+      schema:
+        type: integer
+      example: 1001
+    - name: template_key
+      in: query
+      required: true
+      schema:
+        type: string
+        enum:
+          - URGE_PROCESS
+          - INVITE_SUPER_ADMIN
+      example: URGE_PROCESS
+    - name: days
+      in: query
+      required: false
+      schema:
+        type: integer
+        default: 30
+      example: 30
+  responses:
+    '200':
+      description: Recent SMS send count
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              code:
+                type: integer
+                example: 200
+              message:
+                type: string
+                example: success
+              data:
+                type: object
+                properties:
+                  user_id:
+                    type: integer
+                    example: 1001
+                  template_key:
+                    type: string
+                    example: URGE_PROCESS
+                  days:
+                    type: integer
+                    example: 30
+                  count:
+                    type: integer
+                    format: int64
+                    example: 3
+    '400':
+      $ref: ../components/responses/BadRequest.yaml
+    '401':
+      $ref: ../components/responses/Unauthorized.yaml
+    '403':
+      $ref: ../components/responses/Forbidden.yaml
+    '500':
+      $ref: ../components/responses/InternalError.yaml
