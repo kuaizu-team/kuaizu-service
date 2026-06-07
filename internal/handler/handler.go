@@ -30,6 +30,11 @@ func GetUserID(ctx interface{ Get(string) interface{} }) int {
 	return userID
 }
 
+func GetOptionalUserID(ctx interface{ Get(string) interface{} }) int {
+	userID, _ := ctx.Get("userID").(int)
+	return userID
+}
+
 // GetOpenID extracts OpenID from context (set by auth middleware)
 func GetOpenID(ctx interface{ Get(string) interface{} }) string {
 	openID, ok := ctx.Get("openID").(string)

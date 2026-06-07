@@ -63,6 +63,17 @@ func (s *Server) ListTalentProfiles(ctx echo.Context, params api.ListTalentProfi
 	if err != nil {
 		return InternalError(ctx, "获取人才列表失败")
 	}
+	ids := make([]int, len(profiles))
+	for i := range profiles {
+		ids[i] = profiles[i].ID
+	}
+	interactions, err := s.repo.Interaction.Batch(ctx.Request().Context(), repository.InteractionTalent, ids, GetOptionalUserID(ctx))
+	if err != nil {
+		return InternalError(ctx, "get talent interactions failed")
+	}
+	for i := range profiles {
+		profiles[i].Interaction = interactions[profiles[i].ID]
+	}
 
 	var profileVOs []api.TalentProfileVO
 	for _, p := range profiles {
@@ -125,18 +136,27 @@ func (s *Server) GetTalentProfile(ctx echo.Context, id int, params api.GetTalent
 	if err != nil {
 		return mapServiceError(ctx, err)
 	}
+	interaction, err := s.repo.Interaction.Get(ctx.Request().Context(), repository.InteractionTalent, id, userID)
+	if err != nil {
+		return InternalError(ctx, "get talent interactions failed")
+	}
+	profile.Interaction = *interaction
 
 	return Success(ctx, profile.ToDetailVO())
 }
 
 // GetTalentDashboard handles GET /talent-profiles/{id}/dashboard
-func (s *Server) GetTalentDashboard(ctx echo.Context, id int) error {
+func (s *Server) GetTalentDashboard(ctx echo.Context, id int, params api.GetTalentDashboardParams) error {
 	userID := GetUserID(ctx)
 	if id <= 0 {
 		return BadRequest(ctx, "无效的人才档案ID")
 	}
 
-	result, err := s.svc.TalentProfile.GetTalentDashboard(ctx.Request().Context(), id, userID)
+	days := 30
+	if params.Days != nil {
+		days = *params.Days
+	}
+	result, err := s.svc.TalentProfile.GetTalentDashboard(ctx.Request().Context(), id, userID, days)
 	if err != nil {
 		return mapServiceError(ctx, err)
 	}

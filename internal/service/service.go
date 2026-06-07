@@ -20,6 +20,7 @@ type Services struct {
 	Message          *MessageService
 	User             *UserService
 	Feedback         *FeedbackService
+	Interaction      *InteractionService
 }
 
 // New creates a new Services instance with all sub-services.
@@ -41,6 +42,7 @@ func New(repo *repository.Repository, deps *Dependencies) *Services {
 		Message:          message,
 		User:             NewUserService(repo, message),
 		Feedback:         NewFeedbackService(repo, message),
+		Interaction:      NewInteractionService(repo),
 	}
 }
 

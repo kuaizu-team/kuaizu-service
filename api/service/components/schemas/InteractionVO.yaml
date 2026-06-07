@@ -1,0 +1,9 @@
+type: object
+required: [liked, favorited, likeCount, favoriteCount, shareCount]
+properties:
+  active: { type: boolean }
+  liked: { type: boolean }
+  favorited: { type: boolean }
+  likeCount: { type: integer }
+  favoriteCount: { type: integer }
+  shareCount: { type: integer }

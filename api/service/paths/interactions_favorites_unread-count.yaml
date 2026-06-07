@@ -1,0 +1,14 @@
+get:
+  summary: Get unread favorite badge counts
+  responses:
+    '200':
+      description: Success
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/BaseResponse.yaml
+              - type: object
+                properties:
+                  data:
+                    $ref: ../components/schemas/FavoriteUnreadTotalsVO.yaml

@@ -24,20 +24,32 @@ type Project struct {
 	IsCrossSchool        *int       `db:"is_cross_school"`
 	EducationRequirement *int       `db:"education_requirement"`
 	SkillRequirement     *string    `db:"skill_requirement"`
+	PublisherRole        *string    `db:"publisher_role"`
+	InitiatingSchoolID   *int       `db:"initiating_school_id"`
 
 	// Joined fields
-	SchoolName                 *string `db:"school_name"`
-	Creator                    *User   `db:"-"`
-	CreatorTalentProfileStatus *int    `db:"-"` // 创建者名片状态（仅详情接口填充）
-	PendingApplicationCount    int     `db:"pending_application_count"` // 待处理申请数（仅列表接口填充）
-	PendingCount               int     `db:"pending_count"`             // 管理后台用：投递+橄榄枝待处理总数（仅管理后台列表填充）
+	SchoolName                 *string      `db:"school_name"`
+	PublisherRoleName          *string      `db:"publisher_role_name"`
+	InitiatingSchoolName       *string      `db:"initiating_school_name"`
+	Tags                       []ProjectTag `db:"-"`
+	Interaction                Interaction  `db:"-"`
+	InteractionUnreadCount     *int         `db:"-"`
+	Creator                    *User        `db:"-"`
+	CreatorTalentProfileStatus *int         `db:"-"`                         // 创建者名片状态（仅详情接口填充）
+	PendingApplicationCount    int          `db:"pending_application_count"` // 待处理申请数（仅列表接口填充）
+	PendingCount               int          `db:"pending_count"`             // 管理后台用：投递+橄榄枝待处理总数（仅管理后台列表填充）
+}
+
+type ProjectTag struct {
+	ID   int    `db:"id" json:"id"`
+	Name string `db:"name" json:"name"`
 }
 
 // ToVO converts Project to API ProjectVO
 func (p *Project) ToVO() *api.ProjectVO {
 	status := api.ProjectStatus(p.Status)
 
-	return &api.ProjectVO{
+	vo := &api.ProjectVO{
 		Id:                      &p.ID,
 		Name:                    &p.Name,
 		Description:             p.Description,
@@ -51,7 +63,24 @@ func (p *Project) ToVO() *api.ProjectVO {
 		ViewCount:               &p.ViewCount,
 		PendingApplicationCount: &p.PendingApplicationCount,
 		UpdatedAt:               &p.UpdatedAt,
+		PublisherRole:           p.PublisherRole,
+		PublisherRoleName:       p.PublisherRoleName,
+		InitiatingSchoolId:      p.InitiatingSchoolID,
+		InitiatingSchoolName:    p.InitiatingSchoolName,
+		Interaction:             p.Interaction.ToVO(),
+		InteractionUnreadCount:  p.InteractionUnreadCount,
 	}
+	if len(p.Tags) > 0 {
+		tags := make([]api.ProjectTagVO, len(p.Tags))
+		for i := range p.Tags {
+			tags[i] = api.ProjectTagVO{Id: p.Tags[i].ID, Name: p.Tags[i].Name}
+		}
+		vo.Tags = &tags
+	}
+	if p.Creator != nil {
+		vo.Creator = p.Creator.ToVO()
+	}
+	return vo
 }
 
 // ToDetailVO converts Project to API ProjectDetailVO
@@ -74,6 +103,18 @@ func (p *Project) ToDetailVO() *api.ProjectDetailVO {
 		EducationRequirement: p.EducationRequirement,
 		SkillRequirement:     p.SkillRequirement,
 		PromotionExpireTime:  p.PromotionExpireTime,
+		PublisherRole:        p.PublisherRole,
+		PublisherRoleName:    p.PublisherRoleName,
+		InitiatingSchoolId:   p.InitiatingSchoolID,
+		InitiatingSchoolName: p.InitiatingSchoolName,
+		Interaction:          p.Interaction.ToVO(),
+	}
+	if len(p.Tags) > 0 {
+		tags := make([]api.ProjectTagVO, len(p.Tags))
+		for i := range p.Tags {
+			tags[i] = api.ProjectTagVO{Id: p.Tags[i].ID, Name: p.Tags[i].Name}
+		}
+		vo.Tags = &tags
 	}
 
 	if p.Creator != nil {

@@ -59,8 +59,12 @@ func (r *ProjectRepository) List(ctx context.Context, params ListParams) ([]mode
 	whereArgs := []interface{}{}
 
 	if params.Keyword != nil && *params.Keyword != "" {
-		conditions = append(conditions, "(p.name LIKE ? OR p.description LIKE ?)")
-		whereArgs = append(whereArgs, "%"+*params.Keyword+"%", "%"+*params.Keyword+"%")
+		conditions = append(conditions, `(p.name LIKE ? OR p.description LIKE ?
+			OR EXISTS (SELECT 1 FROM school ks WHERE ks.id=p.school_id AND ks.school_name LIKE ?)
+			OR EXISTS (SELECT 1 FROM project_tag_relation ptr JOIN project_tag pt ON pt.id=ptr.tag_id
+				WHERE ptr.project_id=p.id AND pt.status=1 AND pt.name LIKE ?))`)
+		pattern := "%" + *params.Keyword + "%"
+		whereArgs = append(whereArgs, pattern, pattern, pattern, pattern)
 	}
 	if params.SchoolID != nil {
 		conditions = append(conditions, "p.school_id = ?")
@@ -211,10 +215,13 @@ func (r *ProjectRepository) List(ctx context.Context, params ListParams) ([]mode
 			p.promotion_status, p.promotion_expire_time, p.view_count,
 			p.created_at, p.updated_at, p.is_cross_school,
 			p.education_requirement, p.skill_requirement,
-			s.school_name,
+			p.publisher_role, p.initiating_school_id,
+			s.school_name, pr.name AS publisher_role_name, ins.school_name AS initiating_school_name,
 			COALESCE(pa_counts.pending_count, 0) AS pending_application_count%s
 		FROM project p
 		LEFT JOIN school s ON p.school_id = s.id
+		LEFT JOIN project_role pr ON p.publisher_role = pr.code
+		LEFT JOIN school ins ON p.initiating_school_id = ins.id
 		LEFT JOIN (
 			SELECT project_id, COUNT(*) AS pending_count
 			FROM project_application
@@ -236,8 +243,43 @@ func (r *ProjectRepository) List(ctx context.Context, params ListParams) ([]mode
 	if err := r.db.SelectContext(ctx, &projects, query, dataArgs...); err != nil {
 		return nil, 0, fmt.Errorf("query projects: %w", err)
 	}
+	if err := r.enrichTagsBatch(ctx, projects); err != nil {
+		return nil, 0, err
+	}
+	if err := r.enrichCreatorsBatch(ctx, projects); err != nil {
+		return nil, 0, err
+	}
 
 	return projects, total, nil
+}
+
+func (r *ProjectRepository) enrichCreatorsBatch(ctx context.Context, projects []models.Project) error {
+	if len(projects) == 0 {
+		return nil
+	}
+	ids, index := make([]int, 0, len(projects)), map[int][]int{}
+	for i := range projects {
+		if _, ok := index[projects[i].CreatorID]; !ok {
+			ids = append(ids, projects[i].CreatorID)
+		}
+		index[projects[i].CreatorID] = append(index[projects[i].CreatorID], i)
+	}
+	query, args, err := sqlx.In(`SELECT u.id,u.openid,u.nickname,u.avatar_url,u.auth_status,s.school_name,m.major_name,tp.id talent_profile_id
+		FROM `+"`user`"+` u LEFT JOIN school s ON s.id=u.school_id LEFT JOIN major m ON m.id=u.major_id LEFT JOIN talent_profile tp ON tp.user_id=u.id WHERE u.id IN (?)`, ids)
+	if err != nil {
+		return err
+	}
+	var creators []models.User
+	if err := r.db.SelectContext(ctx, &creators, r.db.Rebind(query), args...); err != nil {
+		return fmt.Errorf("query project creators: %w", err)
+	}
+	for i := range creators {
+		for _, projectIndex := range index[creators[i].ID] {
+			creator := creators[i]
+			projects[projectIndex].Creator = &creator
+		}
+	}
+	return nil
 }
 
 // creatorRow holds the JOIN-ed creator columns for GetByID.
@@ -254,6 +296,8 @@ type creatorRow struct {
 	UCreatedAt           *time.Time `db:"u_created_at"`
 	USchoolName          *string    `db:"u_school_name"`
 	UTalentProfileStatus *int       `db:"u_talent_profile_status"`
+	UTalentProfileID     *int       `db:"u_talent_profile_id"`
+	UMajorName           *string    `db:"u_major_name"`
 }
 
 // projectRow is the flat scan target for GetByID (project + creator columns).
@@ -271,7 +315,8 @@ func (r *ProjectRepository) GetByID(ctx context.Context, id int) (*models.Projec
 			p.promotion_status, p.promotion_expire_time, p.view_count,
 			p.created_at, p.updated_at, p.is_cross_school,
 			p.education_requirement, p.skill_requirement,
-			s.school_name,
+			p.publisher_role, p.initiating_school_id,
+			s.school_name, pr.name AS publisher_role_name, ins.school_name AS initiating_school_name,
 			u.id          AS u_id,
 			u.openid      AS u_openid,
 			u.nickname    AS u_nickname,
@@ -283,11 +328,16 @@ func (r *ProjectRepository) GetByID(ctx context.Context, id int) (*models.Projec
 			u.created_at  AS u_created_at,
 			us.school_name AS u_school_name,
 			tp.status      AS u_talent_profile_status
+			,tp.id         AS u_talent_profile_id
+			,um.major_name AS u_major_name
 		FROM project p
 		LEFT JOIN school s ON p.school_id = s.id
+		LEFT JOIN project_role pr ON p.publisher_role = pr.code
+		LEFT JOIN school ins ON p.initiating_school_id = ins.id
 		LEFT JOIN ` + "`user`" + ` u ON p.creator_id = u.id
 		LEFT JOIN school us ON u.school_id = us.id
 		LEFT JOIN talent_profile tp ON u.id = tp.user_id
+		LEFT JOIN major um ON u.major_id = um.id
 		WHERE p.id = ?
 	`
 
@@ -301,19 +351,58 @@ func (r *ProjectRepository) GetByID(ctx context.Context, id int) (*models.Projec
 
 	p := row.Project
 	p.Creator = &models.User{
-		ID:         row.UID,
-		OpenID:     row.UOpenID,
-		Nickname:   row.UNickname,
-		Phone:      row.UPhone,
-		Email:      row.UEmail,
-		WechatID:   row.UWechatID,
-		AuthStatus: row.UAuthStatus,
-		AvatarUrl:  row.UAvatarUrl,
-		CreatedAt:  row.UCreatedAt,
-		SchoolName: row.USchoolName,
+		ID:              row.UID,
+		OpenID:          row.UOpenID,
+		Nickname:        row.UNickname,
+		Phone:           row.UPhone,
+		Email:           row.UEmail,
+		WechatID:        row.UWechatID,
+		AuthStatus:      row.UAuthStatus,
+		AvatarUrl:       row.UAvatarUrl,
+		CreatedAt:       row.UCreatedAt,
+		SchoolName:      row.USchoolName,
+		TalentProfileID: row.UTalentProfileID,
+		MajorName:       row.UMajorName,
 	}
 	p.CreatorTalentProfileStatus = row.UTalentProfileStatus
+	items := []models.Project{p}
+	if err := r.enrichTagsBatch(ctx, items); err != nil {
+		return nil, err
+	}
+	p = items[0]
 	return &p, nil
+}
+
+func (r *ProjectRepository) enrichTagsBatch(ctx context.Context, projects []models.Project) error {
+	if len(projects) == 0 {
+		return nil
+	}
+	ids := make([]int, len(projects))
+	index := make(map[int]int, len(projects))
+	for i := range projects {
+		ids[i] = projects[i].ID
+		index[projects[i].ID] = i
+	}
+	query, args, err := sqlx.In(`SELECT r.project_id,t.id,t.name FROM project_tag_relation r JOIN project_tag t ON t.id=r.tag_id WHERE r.project_id IN (?) AND t.status=1 ORDER BY t.sort_order,t.id`, ids)
+	if err != nil {
+		return err
+	}
+	rows, err := r.db.QueryxContext(ctx, r.db.Rebind(query), args...)
+	if err != nil {
+		return fmt.Errorf("query project tags: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var projectID int
+		var tag models.ProjectTag
+		if err := rows.Scan(&projectID, &tag.ID, &tag.Name); err != nil {
+			return err
+		}
+		if i, ok := index[projectID]; ok {
+			projects[i].Tags = append(projects[i].Tags, tag)
+		}
+	}
+	return rows.Err()
 }
 
 // Create creates a new project
@@ -343,12 +432,45 @@ func (r *ProjectRepository) Create(ctx context.Context, p *models.Project) error
 	return nil
 }
 
+func (r *ProjectRepository) CreateWithMetadata(ctx context.Context, p *models.Project, tags *[]string, publisherRole *string, initiatingSchoolID *int) error {
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	query := `
+		INSERT INTO project (
+			creator_id, name, description, school_id, direction,
+			member_count, status, promotion_status, view_count,
+			is_cross_school, education_requirement, skill_requirement
+		) VALUES (
+			:creator_id, :name, :description, :school_id, :direction,
+			:member_count, :status, :promotion_status, :view_count,
+			:is_cross_school, :education_requirement, :skill_requirement
+		)
+	`
+	result, err := tx.NamedExecContext(ctx, query, p)
+	if err != nil {
+		return fmt.Errorf("create project: %w", err)
+	}
+	id, err := result.LastInsertId()
+	if err != nil {
+		return fmt.Errorf("get last insert id: %w", err)
+	}
+	p.ID = int(id)
+	if err := saveProjectMetadataTx(ctx, tx, p.ID, tags, publisherRole, initiatingSchoolID); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
 // Update updates a project
 func (r *ProjectRepository) Update(ctx context.Context, p *models.Project) error {
 	query := `
 		UPDATE project SET
 			name                 = :name,
 			description          = :description,
+			school_id            = :school_id,
 			direction            = :direction,
 			member_count         = :member_count,
 			is_cross_school      = :is_cross_school,
@@ -366,6 +488,72 @@ func (r *ProjectRepository) Update(ctx context.Context, p *models.Project) error
 	rowsAffected, _ := result.RowsAffected()
 	if rowsAffected == 0 {
 		return fmt.Errorf("project not found")
+	}
+	return nil
+}
+
+func (r *ProjectRepository) UpdateWithMetadata(ctx context.Context, p *models.Project, tags *[]string, publisherRole *string, initiatingSchoolID *int) error {
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	query := `
+		UPDATE project SET
+			name                 = :name,
+			description          = :description,
+			school_id            = :school_id,
+			direction            = :direction,
+			member_count         = :member_count,
+			is_cross_school      = :is_cross_school,
+			education_requirement = :education_requirement,
+			skill_requirement    = :skill_requirement,
+			updated_at           = CURRENT_TIMESTAMP
+		WHERE id = :id
+	`
+	result, err := tx.NamedExecContext(ctx, query, p)
+	if err != nil {
+		return fmt.Errorf("update project: %w", err)
+	}
+	rowsAffected, _ := result.RowsAffected()
+	if rowsAffected == 0 {
+		return fmt.Errorf("project not found")
+	}
+	if err := saveProjectMetadataTx(ctx, tx, p.ID, tags, publisherRole, initiatingSchoolID); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func saveProjectMetadataTx(ctx context.Context, tx *sqlx.Tx, projectID int, tags *[]string, publisherRole *string, initiatingSchoolID *int) error {
+	if publisherRole != nil {
+		if _, err := tx.ExecContext(ctx, "UPDATE project SET publisher_role=? WHERE id=?", *publisherRole, projectID); err != nil {
+			return err
+		}
+	}
+	if initiatingSchoolID != nil {
+		if _, err := tx.ExecContext(ctx, "UPDATE project SET initiating_school_id=? WHERE id=?", *initiatingSchoolID, projectID); err != nil {
+			return err
+		}
+	}
+	if tags != nil {
+		if _, err := tx.ExecContext(ctx, "DELETE FROM project_tag_relation WHERE project_id=?", projectID); err != nil {
+			return err
+		}
+		for _, name := range *tags {
+			res, err := tx.ExecContext(ctx, `INSERT INTO project_tag(name,status) VALUES(?,1)
+				ON DUPLICATE KEY UPDATE id=LAST_INSERT_ID(id),status=1`, name)
+			if err != nil {
+				return err
+			}
+			tagID, err := res.LastInsertId()
+			if err != nil {
+				return err
+			}
+			if _, err := tx.ExecContext(ctx, "INSERT INTO project_tag_relation(project_id,tag_id) VALUES(?,?)", projectID, tagID); err != nil {
+				return err
+			}
+		}
 	}
 	return nil
 }

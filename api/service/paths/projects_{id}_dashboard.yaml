@@ -5,6 +5,9 @@ parameters:
     schema:
       type: integer
     description: Project ID
+  - name: days
+    in: query
+    schema: { type: integer, default: 30 }
 get:
   tags:
     - Projects
@@ -35,6 +38,11 @@ get:
                         format: double
                       avg_duration_seconds:
                         type: integer
+                      like_count: { type: integer }
+                      favorite_count: { type: integer }
+                      share_count: { type: integer }
+                      interaction_unread:
+                        $ref: ../components/schemas/InteractionUnreadVO.yaml
                       hourly_views:
                         type: array
                         items:

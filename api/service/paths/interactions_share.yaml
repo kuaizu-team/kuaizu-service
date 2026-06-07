@@ -1,0 +1,14 @@
+parameters:
+  - name: id
+    in: path
+    required: true
+    schema: { type: integer }
+post:
+  summary: Record a share event
+  requestBody:
+    required: true
+    content:
+      application/json:
+        schema: { $ref: ../components/schemas/ShareInteractionDTO.yaml }
+  responses:
+    '200': { description: Success }
