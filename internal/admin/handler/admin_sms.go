@@ -3,6 +3,7 @@ package handler
 import (
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/kuaizu-team/kuaizu-service/internal/messagecenter"
 	"github.com/kuaizu-team/kuaizu-service/internal/response"
@@ -31,6 +32,11 @@ func (s *AdminServer) SendAdminSms(ctx echo.Context) error {
 	})
 	if err != nil {
 		return mapServiceError(ctx, err)
+	}
+	if resp != nil && resp.Success && strings.EqualFold(strings.TrimSpace(req.TemplateKey), "INVITE_SUPER_ADMIN") {
+		if err := s.svc.Invitation.ResetAfterInviteSent(ctx.Request().Context(), req.UserID); err != nil {
+			return mapServiceError(ctx, err)
+		}
 	}
 
 	return adminSmsSuccess(ctx, resp)

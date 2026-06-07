@@ -185,6 +185,14 @@ type FeedbackRepo interface {
 	Reply(ctx context.Context, id int, reply string, status *int) error
 }
 
+// InvitationFeedbackRepo defines invitation feedback repository operations.
+type InvitationFeedbackRepo interface {
+	GetByUserID(ctx context.Context, userID int) (*models.InvitationFeedback, error)
+	UpsertFeedback(ctx context.Context, userID int, status string, intentionText *string) (*models.InvitationFeedback, error)
+	ResetAfterInviteSent(ctx context.Context, userID int) (*models.InvitationFeedback, error)
+	UpsertConversationStatus(ctx context.Context, userID int, conversationStatus string) (*models.InvitationFeedback, error)
+}
+
 // SubscribeConfigRepo defines the interface for subscribe config repository operations.
 type SubscribeConfigRepo interface {
 	GetByUserIDAndBizKey(ctx context.Context, userID int, bizKey string) (*models.SubscribeConfig, error)
@@ -233,6 +241,7 @@ var _ MajorRepo = (*MajorRepository)(nil)
 var _ TalentProfileRepo = (*TalentProfileRepository)(nil)
 var _ AdminUserRepo = (*AdminUserRepository)(nil)
 var _ FeedbackRepo = (*FeedbackRepository)(nil)
+var _ InvitationFeedbackRepo = (*InvitationFeedbackRepository)(nil)
 var _ SubscribeConfigRepo = (*SubscribeConfigRepository)(nil)
 var _ MsgTemplateConfigRepo = (*MsgTemplateConfigRepository)(nil)
 var _ ProjectViewLogRepo = (*ProjectViewLogRepository)(nil)

@@ -21,6 +21,7 @@ type Services struct {
 	Message          *MessageService
 	User             *UserService
 	Feedback         *FeedbackService
+	Invitation       *InvitationFeedbackService
 	Interaction      *InteractionService
 }
 
@@ -44,6 +45,7 @@ func New(repo *repository.Repository, deps *Dependencies) *Services {
 		Message:          message,
 		User:             NewUserService(repo, message),
 		Feedback:         NewFeedbackService(repo, message),
+		Invitation:       NewInvitationFeedbackService(repo),
 		Interaction:      NewInteractionService(repo),
 	}
 }
