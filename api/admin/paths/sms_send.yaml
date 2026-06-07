@@ -1,0 +1,77 @@
+post:
+  tags:
+    - AdminSms
+  summary: Forward admin SMS send request
+  operationId: sendAdminSms
+  security:
+    - bearerAuth: []
+  requestBody:
+    required: true
+    content:
+      application/json:
+        schema:
+          type: object
+          required:
+            - template_key
+            - user_id
+          properties:
+            template_key:
+              type: string
+              enum:
+                - URGE_PROCESS
+                - INVITE_SUPER_ADMIN
+            user_id:
+              type: integer
+              example: 1001
+            variables:
+              type: object
+              additionalProperties: true
+              example:
+                nickname: 张三
+  responses:
+    '200':
+      description: SMS send result
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              code:
+                type: integer
+                example: 200
+              message:
+                type: string
+                example: success
+              data:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  template_key:
+                    type: string
+                    example: URGE_PROCESS
+                  user_id:
+                    type: integer
+                    example: 1001
+                  record_id:
+                    type: integer
+                    format: int64
+                    example: 12
+                  provider:
+                    type: string
+                    example: aliyun_sms
+                  provider_biz_id:
+                    type: string
+                    example: xxx
+                  error_code:
+                    type: string
+                  error_message:
+                    type: string
+    '400':
+      $ref: ../components/responses/BadRequest.yaml
+    '401':
+      $ref: ../components/responses/Unauthorized.yaml
+    '403':
+      $ref: ../components/responses/Forbidden.yaml
+    '500':
+      $ref: ../components/responses/InternalError.yaml

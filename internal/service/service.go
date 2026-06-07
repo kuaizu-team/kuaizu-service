@@ -7,6 +7,7 @@ import (
 // Services aggregates all service instances.
 type Services struct {
 	Auth             *AuthService
+	AdminSms         *AdminSmsService
 	EmailPromotion   *EmailPromotionService
 	SmsNotice        *SmsNoticeService
 	Payment          *PaymentService
@@ -29,6 +30,7 @@ func New(repo *repository.Repository, deps *Dependencies) *Services {
 	message := NewMessageService(repo, deps.WechatClient)
 	return &Services{
 		Auth:             NewAuthService(repo, deps.WechatClient),
+		AdminSms:         NewAdminSmsService(deps.MessageCenter, deps.MessageCenterInitError),
 		EmailPromotion:   NewEmailPromotionServiceWithMessageCenter(repo, deps.MessageCenter, deps.MessageCenterInitError),
 		SmsNotice:        NewSmsNoticeService(repo, deps.MessageCenter, deps.MessageCenterInitError),
 		Payment:          NewPaymentService(repo, deps.PayClient, deps.PayInitError),

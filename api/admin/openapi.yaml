@@ -60,6 +60,10 @@ paths:
     $ref: paths/users_{id}_orders.yaml
   /users/{id}/auth:
     $ref: paths/users_{id}_auth.yaml
+  /sms/send:
+    $ref: paths/sms_send.yaml
+  /sms/send-count:
+    $ref: paths/sms_send-count.yaml
   /orders:
     $ref: paths/orders.yaml
   /orders/{orderId}:
