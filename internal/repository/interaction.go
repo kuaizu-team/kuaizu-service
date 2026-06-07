@@ -140,18 +140,24 @@ func (r *InteractionRepository) Batch(ctx context.Context, target string, target
 	if err != nil {
 		return nil, err
 	}
-	query, args, err := sqlx.In(fmt.Sprintf(`SELECT x.target_id,
+	parts := make([]string, len(targetIDs))
+	args := []interface{}{userID, userID}
+	for i, id := range targetIDs {
+		if i == 0 {
+			parts[i] = "SELECT ? target_id"
+		} else {
+			parts[i] = "SELECT ?"
+		}
+		args = append(args, id)
+	}
+	query := fmt.Sprintf(`SELECT x.target_id,
 		EXISTS(SELECT 1 FROM %s WHERE %s=x.target_id AND user_id=?) liked,
 		EXISTS(SELECT 1 FROM %s WHERE %s=x.target_id AND user_id=?) favorited,
 		(SELECT COUNT(*) FROM %s WHERE %s=x.target_id) like_count,
 		(SELECT COUNT(*) FROM %s WHERE %s=x.target_id) favorite_count,
 		(SELECT COUNT(*) FROM %s WHERE %s=x.target_id) share_count
-		FROM (SELECT %s target_id FROM %s WHERE %s IN (?)) x`,
-		like, idCol, favorite, idCol, like, idCol, favorite, idCol, share, idCol, idCol, like, idCol),
-		userID, userID, targetIDs)
-	if err != nil {
-		return nil, err
-	}
+		FROM (%s) x`,
+		like, idCol, favorite, idCol, like, idCol, favorite, idCol, share, idCol, strings.Join(parts, " UNION ALL "))
 	type row struct {
 		TargetID int `db:"target_id"`
 		models.Interaction

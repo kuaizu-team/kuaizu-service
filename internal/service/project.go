@@ -18,6 +18,11 @@ type ProjectService struct {
 	message      *MessageService
 }
 
+type projectMetadataRepo interface {
+	CreateWithMetadata(ctx context.Context, p *models.Project, tags *[]string, publisherRole *string, initiatingSchoolID *int) error
+	UpdateWithMetadata(ctx context.Context, p *models.Project, tags *[]string, publisherRole *string, initiatingSchoolID *int) error
+}
+
 // NewProjectService creates a new ProjectService.
 func NewProjectService(repo *repository.Repository, contentAudit *ContentAuditService, message *MessageService) *ProjectService {
 	return &ProjectService{repo: repo, contentAudit: contentAudit, message: message}
@@ -391,13 +396,13 @@ func (s *ProjectService) CreateProject(ctx context.Context, input CreateProjectI
 		}
 	}
 
-	if err := s.repo.Project.Create(ctx, project); err != nil {
+	projectRepo, ok := s.repo.Project.(projectMetadataRepo)
+	if !ok {
+		return nil, ErrInternal("project repository does not support metadata transaction")
+	}
+	if err := projectRepo.CreateWithMetadata(ctx, project, input.Tags, input.PublisherRole, input.InitiatingSchoolID); err != nil {
 		log.Printf("[ProjectService.CreateProject] repository error: %v", err)
 		return nil, ErrInternal("创建项目失败")
-	}
-	if err := s.repo.Interaction.SaveProjectMetadata(ctx, project.ID, input.Tags, input.PublisherRole, input.InitiatingSchoolID); err != nil {
-		log.Printf("[ProjectService.CreateProject] metadata transaction error: %v", err)
-		return nil, ErrInternal("save project metadata failed")
 	}
 	created, err := s.repo.Project.GetByID(ctx, project.ID)
 	if err != nil {
@@ -509,12 +514,13 @@ func (s *ProjectService) UpdateProject(ctx context.Context, id, userID int, inpu
 		project.SkillRequirement = input.SkillRequirement
 	}
 
-	if err := s.repo.Project.Update(ctx, project); err != nil {
+	projectRepo, ok := s.repo.Project.(projectMetadataRepo)
+	if !ok {
+		return nil, ErrInternal("project repository does not support metadata transaction")
+	}
+	if err := projectRepo.UpdateWithMetadata(ctx, project, input.Tags, input.PublisherRole, input.InitiatingSchoolID); err != nil {
 		log.Printf("[ProjectService.UpdateProject] repository error updating: %v", err)
 		return nil, ErrInternal("更新项目失败")
-	}
-	if err := s.repo.Interaction.SaveProjectMetadata(ctx, id, input.Tags, input.PublisherRole, input.InitiatingSchoolID); err != nil {
-		return nil, ErrInternal("save project metadata failed")
 	}
 
 	// If the caller signals that content changed, reset status to pending so the

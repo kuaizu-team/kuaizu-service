@@ -432,6 +432,38 @@ func (r *ProjectRepository) Create(ctx context.Context, p *models.Project) error
 	return nil
 }
 
+func (r *ProjectRepository) CreateWithMetadata(ctx context.Context, p *models.Project, tags *[]string, publisherRole *string, initiatingSchoolID *int) error {
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	query := `
+		INSERT INTO project (
+			creator_id, name, description, school_id, direction,
+			member_count, status, promotion_status, view_count,
+			is_cross_school, education_requirement, skill_requirement
+		) VALUES (
+			:creator_id, :name, :description, :school_id, :direction,
+			:member_count, :status, :promotion_status, :view_count,
+			:is_cross_school, :education_requirement, :skill_requirement
+		)
+	`
+	result, err := tx.NamedExecContext(ctx, query, p)
+	if err != nil {
+		return fmt.Errorf("create project: %w", err)
+	}
+	id, err := result.LastInsertId()
+	if err != nil {
+		return fmt.Errorf("get last insert id: %w", err)
+	}
+	p.ID = int(id)
+	if err := saveProjectMetadataTx(ctx, tx, p.ID, tags, publisherRole, initiatingSchoolID); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
 // Update updates a project
 func (r *ProjectRepository) Update(ctx context.Context, p *models.Project) error {
 	query := `
@@ -456,6 +488,72 @@ func (r *ProjectRepository) Update(ctx context.Context, p *models.Project) error
 	rowsAffected, _ := result.RowsAffected()
 	if rowsAffected == 0 {
 		return fmt.Errorf("project not found")
+	}
+	return nil
+}
+
+func (r *ProjectRepository) UpdateWithMetadata(ctx context.Context, p *models.Project, tags *[]string, publisherRole *string, initiatingSchoolID *int) error {
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	query := `
+		UPDATE project SET
+			name                 = :name,
+			description          = :description,
+			school_id            = :school_id,
+			direction            = :direction,
+			member_count         = :member_count,
+			is_cross_school      = :is_cross_school,
+			education_requirement = :education_requirement,
+			skill_requirement    = :skill_requirement,
+			updated_at           = CURRENT_TIMESTAMP
+		WHERE id = :id
+	`
+	result, err := tx.NamedExecContext(ctx, query, p)
+	if err != nil {
+		return fmt.Errorf("update project: %w", err)
+	}
+	rowsAffected, _ := result.RowsAffected()
+	if rowsAffected == 0 {
+		return fmt.Errorf("project not found")
+	}
+	if err := saveProjectMetadataTx(ctx, tx, p.ID, tags, publisherRole, initiatingSchoolID); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func saveProjectMetadataTx(ctx context.Context, tx *sqlx.Tx, projectID int, tags *[]string, publisherRole *string, initiatingSchoolID *int) error {
+	if publisherRole != nil {
+		if _, err := tx.ExecContext(ctx, "UPDATE project SET publisher_role=? WHERE id=?", *publisherRole, projectID); err != nil {
+			return err
+		}
+	}
+	if initiatingSchoolID != nil {
+		if _, err := tx.ExecContext(ctx, "UPDATE project SET initiating_school_id=? WHERE id=?", *initiatingSchoolID, projectID); err != nil {
+			return err
+		}
+	}
+	if tags != nil {
+		if _, err := tx.ExecContext(ctx, "DELETE FROM project_tag_relation WHERE project_id=?", projectID); err != nil {
+			return err
+		}
+		for _, name := range *tags {
+			res, err := tx.ExecContext(ctx, `INSERT INTO project_tag(name,status) VALUES(?,1)
+				ON DUPLICATE KEY UPDATE id=LAST_INSERT_ID(id),status=1`, name)
+			if err != nil {
+				return err
+			}
+			tagID, err := res.LastInsertId()
+			if err != nil {
+				return err
+			}
+			if _, err := tx.ExecContext(ctx, "INSERT INTO project_tag_relation(project_id,tag_id) VALUES(?,?)", projectID, tagID); err != nil {
+				return err
+			}
+		}
 	}
 	return nil
 }

@@ -133,14 +133,14 @@ func (s *Server) GetTalentProfile(ctx echo.Context, id int, params api.GetTalent
 			return s.getTalentProfileByUserIDFallback(ctx, *params.UserId)
 		}
 	}
+	if err != nil {
+		return mapServiceError(ctx, err)
+	}
 	interaction, err := s.repo.Interaction.Get(ctx.Request().Context(), repository.InteractionTalent, id, userID)
 	if err != nil {
 		return InternalError(ctx, "get talent interactions failed")
 	}
 	profile.Interaction = *interaction
-	if err != nil {
-		return mapServiceError(ctx, err)
-	}
 
 	return Success(ctx, profile.ToDetailVO())
 }

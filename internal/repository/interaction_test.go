@@ -118,6 +118,29 @@ func TestUnreadDashboardTotals(t *testing.T) {
 	}
 }
 
+func TestBatchUsesRequestedTargetsAsBaseSet(t *testing.T) {
+	db := openCaptureDB(t)
+	defer db.Close()
+	repo := NewInteractionRepository(sqlx.NewDb(db, "capture_user_repo"))
+	setCapturedQuery([]string{"target_id", "liked", "favorited", "like_count", "favorite_count", "share_count"}, [][]driver.Value{
+		{int64(10), false, true, int64(0), int64(1), int64(2)},
+	})
+
+	got, err := repo.Batch(context.Background(), InteractionProject, []int{10}, 7)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if item := got[10]; item.LikeCount != 0 || item.FavoriteCount != 1 || item.ShareCount != 2 || !item.Favorited {
+		t.Fatalf("unexpected batch interaction: %#v", got[10])
+	}
+	capturedQuery.Lock()
+	query := normalizeSQL(capturedQuery.query)
+	capturedQuery.Unlock()
+	if !strings.Contains(query, "FROM (SELECT ? target_id)") || strings.Contains(query, "FROM project_like WHERE project_id IN") {
+		t.Fatalf("batch query should be based on requested IDs, got: %s", query)
+	}
+}
+
 func TestBatchProjectUnreadUsesOneAggregateQuery(t *testing.T) {
 	db := openCaptureDB(t)
 	defer db.Close()
