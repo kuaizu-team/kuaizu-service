@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"strings"
+	"time"
 
 	"github.com/kuaizu-team/kuaizu-service/internal/models"
 	"github.com/kuaizu-team/kuaizu-service/internal/repository"
@@ -13,6 +14,8 @@ import (
 type InvitationFeedbackService struct {
 	repo *repository.Repository
 }
+
+const pendingInvitationTTL = 7 * 24 * time.Hour
 
 func NewInvitationFeedbackService(repo *repository.Repository) *InvitationFeedbackService {
 	return &InvitationFeedbackService{repo: repo}
@@ -48,6 +51,12 @@ func (s *InvitationFeedbackService) SubmitFeedback(ctx context.Context, userID i
 	if err != nil {
 		log.Printf("[InvitationFeedbackService.SubmitFeedback] repository error: %v", err)
 		return nil, ErrInternal("save invitation feedback failed")
+	}
+	if s.repo.PendingInvitation != nil {
+		if err := s.repo.PendingInvitation.ClearByUserID(ctx, userID); err != nil {
+			log.Printf("[InvitationFeedbackService.SubmitFeedback] clear pending invitation error: %v", err)
+			return nil, ErrInternal("clear pending invitation failed")
+		}
 	}
 	return f, nil
 }
@@ -95,6 +104,50 @@ func (s *InvitationFeedbackService) ResetAfterInviteSent(ctx context.Context, us
 	if _, err := s.repo.InvitationFeedback.ResetAfterInviteSent(ctx, userID); err != nil {
 		log.Printf("[InvitationFeedbackService.ResetAfterInviteSent] repository error: %v", err)
 		return ErrInternal("reset invitation feedback failed")
+	}
+	return nil
+}
+
+func (s *InvitationFeedbackService) CreatePendingSuperAdminInvitation(ctx context.Context, userID int) error {
+	if userID <= 0 {
+		return ErrBadRequest("invalid user_id")
+	}
+	if s.repo.PendingInvitation == nil {
+		return ErrInternal("pending invitation repository is nil")
+	}
+	expireAt := time.Now().Add(pendingInvitationTTL)
+	if err := s.repo.PendingInvitation.Upsert(ctx, userID, models.PendingInvitationTypeSuperAdmin, expireAt); err != nil {
+		log.Printf("[InvitationFeedbackService.CreatePendingSuperAdminInvitation] repository error: %v", err)
+		return ErrInternal("create pending invitation failed")
+	}
+	return nil
+}
+
+func (s *InvitationFeedbackService) GetPendingInvitation(ctx context.Context, userID int) (*models.PendingInvitation, error) {
+	if userID <= 0 {
+		return nil, ErrBadRequest("invalid user_id")
+	}
+	if s.repo.PendingInvitation == nil {
+		return nil, ErrInternal("pending invitation repository is nil")
+	}
+	item, err := s.repo.PendingInvitation.GetActiveByUserID(ctx, userID, time.Now())
+	if err != nil {
+		log.Printf("[InvitationFeedbackService.GetPendingInvitation] repository error: %v", err)
+		return nil, ErrInternal("get pending invitation failed")
+	}
+	return item, nil
+}
+
+func (s *InvitationFeedbackService) ClearPendingInvitation(ctx context.Context, userID int) error {
+	if userID <= 0 {
+		return ErrBadRequest("invalid user_id")
+	}
+	if s.repo.PendingInvitation == nil {
+		return ErrInternal("pending invitation repository is nil")
+	}
+	if err := s.repo.PendingInvitation.ClearByUserID(ctx, userID); err != nil {
+		log.Printf("[InvitationFeedbackService.ClearPendingInvitation] repository error: %v", err)
+		return ErrInternal("clear pending invitation failed")
 	}
 	return nil
 }

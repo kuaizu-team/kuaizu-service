@@ -193,6 +193,13 @@ type InvitationFeedbackRepo interface {
 	UpsertConversationStatus(ctx context.Context, userID int, conversationStatus string) (*models.InvitationFeedback, error)
 }
 
+// PendingInvitationRepo defines pending invitation display flag operations.
+type PendingInvitationRepo interface {
+	Upsert(ctx context.Context, userID int, inviteType string, expireAt time.Time) error
+	GetActiveByUserID(ctx context.Context, userID int, now time.Time) (*models.PendingInvitation, error)
+	ClearByUserID(ctx context.Context, userID int) error
+}
+
 // SubscribeConfigRepo defines the interface for subscribe config repository operations.
 type SubscribeConfigRepo interface {
 	GetByUserIDAndBizKey(ctx context.Context, userID int, bizKey string) (*models.SubscribeConfig, error)
@@ -242,6 +249,7 @@ var _ TalentProfileRepo = (*TalentProfileRepository)(nil)
 var _ AdminUserRepo = (*AdminUserRepository)(nil)
 var _ FeedbackRepo = (*FeedbackRepository)(nil)
 var _ InvitationFeedbackRepo = (*InvitationFeedbackRepository)(nil)
+var _ PendingInvitationRepo = (*PendingInvitationRepository)(nil)
 var _ SubscribeConfigRepo = (*SubscribeConfigRepository)(nil)
 var _ MsgTemplateConfigRepo = (*MsgTemplateConfigRepository)(nil)
 var _ ProjectViewLogRepo = (*ProjectViewLogRepository)(nil)

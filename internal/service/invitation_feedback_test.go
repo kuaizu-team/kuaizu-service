@@ -43,7 +43,11 @@ func TestInvitationFeedbackSubmitInterestedRequiresText(t *testing.T) {
 
 func TestInvitationFeedbackSubmitNotInterestedClearsText(t *testing.T) {
 	repo := &fakeInvitationFeedbackRepo{}
-	svc := NewInvitationFeedbackService(&repository.Repository{InvitationFeedback: repo})
+	pendingRepo := &fakePendingInvitationRepo{}
+	svc := NewInvitationFeedbackService(&repository.Repository{
+		InvitationFeedback: repo,
+		PendingInvitation:  pendingRepo,
+	})
 	text := "不用了"
 
 	got, err := svc.SubmitFeedback(context.Background(), 1001, models.InvitationFeedbackStatusNotInterested, &text)
@@ -55,6 +59,9 @@ func TestInvitationFeedbackSubmitNotInterestedClearsText(t *testing.T) {
 	}
 	if repo.upsertText != nil || got.IntentionText != nil {
 		t.Fatalf("intention_text was not cleared")
+	}
+	if pendingRepo.clearUserID != 1001 {
+		t.Fatalf("clear pending user_id = %d, want 1001", pendingRepo.clearUserID)
 	}
 }
 
@@ -74,6 +81,26 @@ func TestInvitationFeedbackSetConversationCreatesPendingWhenMissing(t *testing.T
 	}
 	if got.ConversationStatus == nil || *got.ConversationStatus != models.InvitationConversationStatusAccepted {
 		t.Fatalf("conversation_status = %v", got.ConversationStatus)
+	}
+}
+
+func TestInvitationFeedbackCreateAndGetPendingInvitation(t *testing.T) {
+	pendingRepo := &fakePendingInvitationRepo{}
+	svc := NewInvitationFeedbackService(&repository.Repository{PendingInvitation: pendingRepo})
+
+	if err := svc.CreatePendingSuperAdminInvitation(context.Background(), 1001); err != nil {
+		t.Fatalf("CreatePendingSuperAdminInvitation returned error: %v", err)
+	}
+	if pendingRepo.userID != 1001 || pendingRepo.inviteType != models.PendingInvitationTypeSuperAdmin {
+		t.Fatalf("pending invitation = (%d, %s)", pendingRepo.userID, pendingRepo.inviteType)
+	}
+
+	got, err := svc.GetPendingInvitation(context.Background(), 1001)
+	if err != nil {
+		t.Fatalf("GetPendingInvitation returned error: %v", err)
+	}
+	if got == nil || got.InviteType != models.PendingInvitationTypeSuperAdmin {
+		t.Fatalf("pending invitation = %#v", got)
 	}
 }
 
@@ -125,4 +152,33 @@ func (f *fakeInvitationFeedbackRepo) UpsertConversationStatus(_ context.Context,
 		ConversationStatus: &conversationStatus,
 		UpdatedAt:          &now,
 	}, nil
+}
+
+type fakePendingInvitationRepo struct {
+	repository.PendingInvitationRepo
+
+	userID      int
+	inviteType  string
+	expireAt    time.Time
+	clearUserID int
+}
+
+func (f *fakePendingInvitationRepo) Upsert(_ context.Context, userID int, inviteType string, expireAt time.Time) error {
+	f.userID = userID
+	f.inviteType = inviteType
+	f.expireAt = expireAt
+	return nil
+}
+
+func (f *fakePendingInvitationRepo) GetActiveByUserID(_ context.Context, userID int, _ time.Time) (*models.PendingInvitation, error) {
+	return &models.PendingInvitation{
+		UserID:     userID,
+		InviteType: models.PendingInvitationTypeSuperAdmin,
+		ExpireAt:   f.expireAt,
+	}, nil
+}
+
+func (f *fakePendingInvitationRepo) ClearByUserID(_ context.Context, userID int) error {
+	f.clearUserID = userID
+	return nil
 }

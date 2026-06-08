@@ -193,6 +193,27 @@ CREATE TABLE `invitation_feedback` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='校区超级管理员邀请反馈表';
 /*!40101 SET character_set_client = @saved_cs_client */;
 --
+-- Table structure for table `pending_invitation`
+--
+
+DROP TABLE IF EXISTS `pending_invitation`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `pending_invitation` (
+  `id` int(11) NOT NULL AUTO_INCREMENT COMMENT 'ID',
+  `user_id` int(11) NOT NULL COMMENT 'user id',
+  `invite_type` enum('SUPER_ADMIN') NOT NULL COMMENT 'invitation type',
+  `expire_at` timestamp NOT NULL COMMENT 'expire time',
+  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'created time',
+  `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'updated time',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_pending_invitation_user_type` (`user_id`,`invite_type`),
+  KEY `idx_pending_invitation_expire_at` (`expire_at`),
+  CONSTRAINT `fk_pending_invitation_user` FOREIGN KEY (`user_id`) REFERENCES `user` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='pending invitation display flag';
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
 -- Table structure for table `major`
 --
 

@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -41,6 +42,36 @@ func TestSubmitInvitationFeedbackUsesCurrentUserID(t *testing.T) {
 	}
 }
 
+func TestGetMyPendingInvitationReturnsPendingVO(t *testing.T) {
+	pendingRepo := &fakeHandlerPendingInvitationRepo{}
+	repo := &repository.Repository{PendingInvitation: pendingRepo}
+	server := &Server{
+		repo: repo,
+		svc: &service.Services{
+			Invitation: service.NewInvitationFeedbackService(repo),
+		},
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v2/users/me/pending-invitation", nil)
+	rec := httptest.NewRecorder()
+	ctx := echo.New().NewContext(req, rec)
+	ctx.Set("userID", 1001)
+
+	if err := server.GetMyPendingInvitation(ctx); err != nil {
+		t.Fatalf("GetMyPendingInvitation returned error: %v", err)
+	}
+
+	var body struct {
+		Data *pendingInvitationVO `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if body.Data == nil || !body.Data.HasPending || body.Data.Type != models.PendingInvitationTypeSuperAdmin {
+		t.Fatalf("data = %#v", body.Data)
+	}
+}
+
 type fakeHandlerInvitationFeedbackRepo struct {
 	repository.InvitationFeedbackRepo
 	userID int
@@ -54,5 +85,17 @@ func (f *fakeHandlerInvitationFeedbackRepo) UpsertFeedback(_ context.Context, us
 		Status:        status,
 		IntentionText: intentionText,
 		UpdatedAt:     &now,
+	}, nil
+}
+
+type fakeHandlerPendingInvitationRepo struct {
+	repository.PendingInvitationRepo
+}
+
+func (f *fakeHandlerPendingInvitationRepo) GetActiveByUserID(_ context.Context, userID int, _ time.Time) (*models.PendingInvitation, error) {
+	return &models.PendingInvitation{
+		UserID:     userID,
+		InviteType: models.PendingInvitationTypeSuperAdmin,
+		ExpireAt:   time.Now().Add(time.Hour),
 	}, nil
 }
