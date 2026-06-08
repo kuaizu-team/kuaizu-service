@@ -196,6 +196,21 @@ func (s *TalentProfileService) GetTalentProfileWithView(ctx context.Context, id,
 		}
 		if err := s.repo.TalentViewLog.InsertViewLog(asyncCtx, entry); err != nil {
 			log.Printf("[TalentProfileService.GetTalentProfileWithView] view log error (non-fatal): %v", err)
+			return
+		}
+		if viewerUserID <= 0 || viewerUserID == profile.UserID {
+			return
+		}
+		if s.message == nil {
+			return
+		}
+		viewer, err := s.repo.User.GetByID(asyncCtx, viewerUserID)
+		if err != nil {
+			log.Printf("[TalentProfileService.GetTalentProfileWithView] get viewer error (non-fatal): %v", err)
+		}
+		notification, ok := buildTalentVisitNotification(viewerUserID, profile, notificationUserName(viewer))
+		if ok {
+			sendSubscribeNotification(asyncCtx, s.message, notification)
 		}
 	}(context.WithoutCancel(ctx))
 

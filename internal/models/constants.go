@@ -135,4 +135,12 @@ const (
 	MsgBizKeyInviteJoin         = "MSG_INVITE_JOIN"          // 邀请加入项目通知
 	MsgBizKeyAuditResultUser    = "MSG_AUDIT_RESULT_USER"    // 审核结果通知(个人)
 	MsgBizKeyIdentityAuth       = "MSG_IDENTITY_AUTH"        // 身份认证通知
+	MsgBizKeyProjectLike        = "MSG_PROJECT_LIKE"         // 项目点赞提醒
+	MsgBizKeyProjectFavorite    = "MSG_PROJECT_FAVORITE"     // 项目收藏提醒
+	MsgBizKeyProjectShare       = "MSG_PROJECT_SHARE"        // 项目转发提醒
+	MsgBizKeyProjectVisit       = "MSG_PROJECT_VISIT"        // 项目被访提醒
+	MsgBizKeyTalentLike         = "MSG_TALENT_LIKE"          // 名片点赞提醒
+	MsgBizKeyTalentFavorite     = "MSG_TALENT_FAVORITE"      // 名片收藏提醒
+	MsgBizKeyTalentShare        = "MSG_TALENT_SHARE"         // 名片转发提醒
+	MsgBizKeyTalentVisit        = "MSG_TALENT_VISIT"         // 名片被访提醒
 )
