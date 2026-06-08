@@ -30,6 +30,12 @@ func (s *MessageService) SendSubscribeMsgByBizKey(ctx context.Context, userID in
 	return s.sendSubscribeMsg(ctx, userID, bizKey, businessData, "")
 }
 
+// SendSubscribeMsgByBizKeyWithPage sends a subscription message with a caller-provided
+// page path. It is used when the target page depends on the concrete business entity.
+func (s *MessageService) SendSubscribeMsgByBizKeyWithPage(ctx context.Context, userID int, bizKey string, businessData map[string]string, pagePath string) error {
+	return s.sendSubscribeMsg(ctx, userID, bizKey, businessData, pagePath)
+}
+
 // sendSubscribeMsg is the shared implementation. When pageOverride is non-empty it
 // takes precedence over the page_path stored in msg_template_config.
 func (s *MessageService) sendSubscribeMsg(ctx context.Context, userID int, bizKey string, businessData map[string]string, pageOverride string) error {

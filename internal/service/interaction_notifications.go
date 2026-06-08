@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"strings"
 
@@ -15,10 +16,23 @@ type subscribeMessageSender interface {
 	SendSubscribeMsgByBizKey(ctx context.Context, userID int, bizKey string, businessData map[string]string) error
 }
 
+type subscribeMessagePageSender interface {
+	SendSubscribeMsgByBizKeyWithPage(ctx context.Context, userID int, bizKey string, businessData map[string]string, pagePath string) error
+}
+
 type subscribeNotification struct {
 	ownerUserID int
 	bizKey      string
 	data        map[string]string
+	pagePath    string
+}
+
+func projectDashboardPagePath(projectID int) string {
+	return fmt.Sprintf("pages/project-dashboard/project-dashboard?id=%d", projectID)
+}
+
+func talentDashboardPagePath(talentID int) string {
+	return fmt.Sprintf("pages/talent-dashboard/talent-dashboard?id=%d", talentID)
 }
 
 func notificationUserName(user *models.User) string {
@@ -58,7 +72,12 @@ func buildProjectInteractionNotification(kind string, operatorUserID int, projec
 		userFieldByKind[kind]: truncate20(operatorName),
 		"remark":              subscribeInteractionRemark,
 	}
-	return subscribeNotification{ownerUserID: project.CreatorID, bizKey: bizKey, data: data}, true
+	return subscribeNotification{
+		ownerUserID: project.CreatorID,
+		bizKey:      bizKey,
+		data:        data,
+		pagePath:    projectDashboardPagePath(project.ID),
+	}, true
 }
 
 func buildTalentInteractionNotification(kind string, operatorUserID int, profile *models.TalentProfile, operatorName string) (subscribeNotification, bool) {
@@ -86,7 +105,12 @@ func buildTalentInteractionNotification(kind string, operatorUserID int, profile
 		userFieldByKind[kind]: truncate20(operatorName),
 		"remark":              subscribeInteractionRemark,
 	}
-	return subscribeNotification{ownerUserID: profile.UserID, bizKey: bizKey, data: data}, true
+	return subscribeNotification{
+		ownerUserID: profile.UserID,
+		bizKey:      bizKey,
+		data:        data,
+		pagePath:    talentDashboardPagePath(profile.ID),
+	}, true
 }
 
 func buildProjectVisitNotification(viewerUserID int, project *models.Project, viewerName string) (subscribeNotification, bool) {
@@ -101,6 +125,7 @@ func buildProjectVisitNotification(viewerUserID int, project *models.Project, vi
 			"visit_user":   truncate20(viewerName),
 			"remark":       subscribeInteractionRemark,
 		},
+		pagePath: projectDashboardPagePath(project.ID),
 	}, true
 }
 
@@ -115,6 +140,7 @@ func buildTalentVisitNotification(viewerUserID int, profile *models.TalentProfil
 			"visit_user": truncate20(viewerName),
 			"remark":     subscribeInteractionRemark,
 		},
+		pagePath: talentDashboardPagePath(profile.ID),
 	}, true
 }
 
@@ -155,15 +181,21 @@ func (s *InteractionService) notifyInteractionAsync(ctx context.Context, target,
 		if !ok {
 			return
 		}
-		if err := s.message.SendSubscribeMsgByBizKey(asyncCtx, notification.ownerUserID, notification.bizKey, notification.data); err != nil {
-			log.Printf("[Interaction.notifyInteractionAsync] send subscribe message error (non-fatal): %v", err)
-		}
+		sendSubscribeNotification(asyncCtx, s.message, notification)
 	}(context.WithoutCancel(ctx))
 }
 
 func sendSubscribeNotification(ctx context.Context, sender subscribeMessageSender, notification subscribeNotification) {
 	if sender == nil {
 		return
+	}
+	if notification.pagePath != "" {
+		if pageSender, ok := sender.(subscribeMessagePageSender); ok {
+			if err := pageSender.SendSubscribeMsgByBizKeyWithPage(ctx, notification.ownerUserID, notification.bizKey, notification.data, notification.pagePath); err != nil {
+				log.Printf("[sendSubscribeNotification] send subscribe message error (non-fatal): %v", err)
+			}
+			return
+		}
 	}
 	if err := sender.SendSubscribeMsgByBizKey(ctx, notification.ownerUserID, notification.bizKey, notification.data); err != nil {
 		log.Printf("[sendSubscribeNotification] send subscribe message error (non-fatal): %v", err)
