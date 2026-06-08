@@ -162,6 +162,44 @@ func TestBatchProjectUnreadUsesOneAggregateQuery(t *testing.T) {
 	}
 }
 
+func TestListUsersConvertsAvatarURL(t *testing.T) {
+	t.Setenv("OSS_DOMAIN", "https://cdn.example.com")
+	t.Setenv("OSS_BASE_PATH", "kuaizu")
+
+	db := openCaptureDB(t)
+	defer db.Close()
+	repo := NewInteractionRepository(sqlx.NewDb(db, "capture_user_repo"))
+	now := time.Date(2026, 6, 8, 10, 0, 0, 0, time.Local)
+	setCapturedQueryQueue(
+		captureQueryResult{columns: []string{"count"}, rows: [][]driver.Value{{int64(3)}}},
+		captureQueryResult{
+			columns: []string{"user_id", "talent_profile_id", "nickname", "avatar_url", "operated_at"},
+			rows: [][]driver.Value{
+				{int64(1), int64(11), "relative", "2026/06/08/a.jpg", now},
+				{int64(2), int64(22), "absolute", "https://img.example.com/b.jpg", now},
+				{int64(3), nil, "empty", "", now},
+			},
+		},
+	)
+
+	users, total, err := repo.ListUsers(context.Background(), InteractionProject, "like", 9, 1, 10, 7)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if total != 3 || len(users) != 3 {
+		t.Fatalf("unexpected users: total=%d users=%#v", total, users)
+	}
+	if users[0].AvatarURL == nil || *users[0].AvatarURL != "https://cdn.example.com/kuaizu/2026/06/08/a.jpg" {
+		t.Fatalf("relative avatar not converted: %#v", users[0].AvatarURL)
+	}
+	if users[1].AvatarURL == nil || *users[1].AvatarURL != "https://img.example.com/b.jpg" {
+		t.Fatalf("absolute avatar should stay unchanged: %#v", users[1].AvatarURL)
+	}
+	if users[2].AvatarURL == nil || *users[2].AvatarURL != "" {
+		t.Fatalf("empty avatar should stay empty: %#v", users[2].AvatarURL)
+	}
+}
+
 func setCapturedQuery(columns []string, rows [][]driver.Value) {
 	capturedQuery.Lock()
 	capturedQuery.query = ""
