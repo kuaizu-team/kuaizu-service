@@ -153,6 +153,38 @@ func (m *MockProjectRepo) IsOwner(ctx context.Context, projectID, userID int) (b
 	return args.Bool(0), args.Error(1)
 }
 
+func (m *MockProjectRepo) IsOwnerOrMember(ctx context.Context, projectID, userID int) (bool, error) {
+	args := m.Called(ctx, projectID, userID)
+	return args.Bool(0), args.Error(1)
+}
+
+func (m *MockProjectRepo) RoleExists(ctx context.Context, role string) (bool, error) {
+	args := m.Called(ctx, role)
+	return args.Bool(0), args.Error(1)
+}
+
+func (m *MockProjectRepo) GetMemberRole(ctx context.Context, projectID, userID int) (*string, error) {
+	args := m.Called(ctx, projectID, userID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	role := args.Get(0).(string)
+	return &role, args.Error(1)
+}
+
+func (m *MockProjectRepo) ListMembers(ctx context.Context, projectID int) ([]models.ProjectMember, error) {
+	args := m.Called(ctx, projectID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]models.ProjectMember), args.Error(1)
+}
+
+func (m *MockProjectRepo) AddMembers(ctx context.Context, projectID int, members []models.ProjectMember) error {
+	args := m.Called(ctx, projectID, members)
+	return args.Error(0)
+}
+
 func (m *MockProjectRepo) UpdateStatus(ctx context.Context, id int, status int) error {
 	args := m.Called(ctx, id, status)
 	return args.Error(0)

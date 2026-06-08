@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"log"
+	"sort"
 	"strings"
 	"unicode/utf8"
 
@@ -19,8 +20,8 @@ type ProjectService struct {
 }
 
 type projectMetadataRepo interface {
-	CreateWithMetadata(ctx context.Context, p *models.Project, tags *[]string, publisherRole *string, initiatingSchoolID *int) error
-	UpdateWithMetadata(ctx context.Context, p *models.Project, tags *[]string, publisherRole *string, initiatingSchoolID *int) error
+	CreateWithMetadata(ctx context.Context, p *models.Project, tags *[]string, publisherRole *string, initiatingSchoolID *int, milestones *[]models.ProjectMilestone, members *[]models.ProjectMember) error
+	UpdateWithMetadata(ctx context.Context, p *models.Project, tags *[]string, publisherRole *string, initiatingSchoolID *int, milestones *[]models.ProjectMilestone, members *[]models.ProjectMember) error
 }
 
 // NewProjectService creates a new ProjectService.
@@ -299,6 +300,8 @@ type CreateProjectInput struct {
 	Tags                 *[]string
 	PublisherRole        *string
 	InitiatingSchoolID   *int
+	Milestones           *[]api.ProjectMilestoneDTO
+	Members              *[]api.ProjectMemberDTO
 }
 
 func validateProjectTags(tags *[]string) error {
@@ -320,6 +323,88 @@ func validateProjectTags(tags *[]string) error {
 		seen[(*tags)[i]] = struct{}{}
 	}
 	return nil
+}
+
+func (s *ProjectService) buildProjectMilestones(input *[]api.ProjectMilestoneDTO) (*[]models.ProjectMilestone, error) {
+	if input == nil {
+		return nil, nil
+	}
+	milestones := make([]models.ProjectMilestone, len(*input))
+	for i, item := range *input {
+		description := strings.TrimSpace(item.Description)
+		if description == "" {
+			return nil, ErrBadRequest("milestone description is required")
+		}
+		if utf8.RuneCountInString(description) > 10 {
+			return nil, ErrBadRequest("milestone description must be at most 10 characters")
+		}
+		milestones[i] = models.ProjectMilestone{
+			MilestoneDate: item.MilestoneDate.Time,
+			Description:   description,
+		}
+	}
+	sort.SliceStable(milestones, func(i, j int) bool {
+		return milestones[i].MilestoneDate.Before(milestones[j].MilestoneDate)
+	})
+	for i := range milestones {
+		milestones[i].SortOrder = i + 1
+	}
+	return &milestones, nil
+}
+
+func (s *ProjectService) buildProjectMembers(ctx context.Context, input *[]api.ProjectMemberDTO, creatorID int, creatorRole *string, ensureCreator bool) (*[]models.ProjectMember, error) {
+	if input == nil && !ensureCreator {
+		return nil, nil
+	}
+	membersByUser := map[int]models.ProjectMember{}
+	if input != nil {
+		for _, item := range *input {
+			if item.UserId <= 0 {
+				return nil, ErrBadRequest("member userId is required")
+			}
+			role := strings.TrimSpace(item.Role)
+			if role == "" {
+				return nil, ErrBadRequest("member role is required")
+			}
+			if _, exists := membersByUser[item.UserId]; exists {
+				return nil, ErrBadRequest("members must be unique")
+			}
+			membersByUser[item.UserId] = models.ProjectMember{UserID: item.UserId, Role: role}
+		}
+	}
+	if ensureCreator {
+		role := models.ProjectRoleTeamLeader
+		if creatorRole != nil && strings.TrimSpace(*creatorRole) != "" {
+			role = strings.TrimSpace(*creatorRole)
+		}
+		membersByUser[creatorID] = models.ProjectMember{UserID: creatorID, Role: role}
+	}
+	members := make([]models.ProjectMember, 0, len(membersByUser))
+	roleChecked := map[string]bool{}
+	for _, member := range membersByUser {
+		if _, ok := roleChecked[member.Role]; !ok {
+			exists, err := s.repo.Project.RoleExists(ctx, member.Role)
+			if err != nil {
+				return nil, ErrInternal("validate project role failed")
+			}
+			if !exists {
+				return nil, ErrBadRequest("project role does not exist")
+			}
+			roleChecked[member.Role] = true
+		}
+		user, err := s.repo.User.GetByID(ctx, member.UserID)
+		if err != nil {
+			return nil, ErrInternal("validate project member failed")
+		}
+		if user == nil {
+			return nil, ErrBadRequest("member user does not exist")
+		}
+		members = append(members, member)
+	}
+	sort.SliceStable(members, func(i, j int) bool {
+		return members[i].UserID < members[j].UserID
+	})
+	return &members, nil
 }
 
 func (s *ProjectService) resolveProjectSchool(ctx context.Context, creatorID int, schoolID, initiatingSchoolID *int, useCreatorDefault bool) (*int, error) {
@@ -358,6 +443,14 @@ func (s *ProjectService) CreateProject(ctx context.Context, input CreateProjectI
 		return nil, ErrBadRequest("需求人数必须大于0")
 	}
 	if err := validateProjectTags(input.Tags); err != nil {
+		return nil, err
+	}
+	milestones, err := s.buildProjectMilestones(input.Milestones)
+	if err != nil {
+		return nil, err
+	}
+	members, err := s.buildProjectMembers(ctx, input.Members, input.CreatorID, input.PublisherRole, true)
+	if err != nil {
 		return nil, err
 	}
 	effectiveSchoolID, err := s.resolveProjectSchool(ctx, input.CreatorID, input.SchoolID, input.InitiatingSchoolID, true)
@@ -415,7 +508,7 @@ func (s *ProjectService) CreateProject(ctx context.Context, input CreateProjectI
 	if !ok {
 		return nil, ErrInternal("project repository does not support metadata transaction")
 	}
-	if err := projectRepo.CreateWithMetadata(ctx, project, input.Tags, input.PublisherRole, input.InitiatingSchoolID); err != nil {
+	if err := projectRepo.CreateWithMetadata(ctx, project, input.Tags, input.PublisherRole, input.InitiatingSchoolID, milestones, members); err != nil {
 		log.Printf("[ProjectService.CreateProject] repository error: %v", err)
 		return nil, ErrInternal("创建项目失败")
 	}
@@ -443,6 +536,8 @@ type UpdateProjectInput struct {
 	PublisherRole      *string
 	SchoolID           *int
 	InitiatingSchoolID *int
+	Milestones         *[]api.ProjectMilestoneDTO
+	Members            *[]api.ProjectMemberDTO
 }
 
 // UpdateProject checks ownership, audits content, applies updates, and returns the updated project.
@@ -450,17 +545,7 @@ func (s *ProjectService) UpdateProject(ctx context.Context, id, userID int, inpu
 	if err := validateProjectTags(input.Tags); err != nil {
 		return nil, err
 	}
-	// Check ownership
-	isOwner, err := s.repo.Project.IsOwner(ctx, id, userID)
-	if err != nil {
-		log.Printf("[ProjectService.UpdateProject] repository error checking ownership: %v", err)
-		return nil, ErrInternal("检查权限失败")
-	}
-	if !isOwner {
-		return nil, ErrForbidden("只有队长可以修改项目")
-	}
 
-	// Get existing project
 	project, err := s.repo.Project.GetByID(ctx, id)
 	if err != nil {
 		log.Printf("[ProjectService.UpdateProject] repository error getting project: %v", err)
@@ -470,7 +555,70 @@ func (s *ProjectService) UpdateProject(ctx context.Context, id, userID int, inpu
 		return nil, ErrNotFound("项目不存在")
 	}
 
-	// 文字内容审核
+	isOwner := project.CreatorID == userID
+	memberRole, err := s.repo.Project.GetMemberRole(ctx, id, userID)
+	if err != nil {
+		log.Printf("[ProjectService.UpdateProject] repository error checking member role: %v", err)
+		return nil, ErrInternal("检查权限失败")
+	}
+	isTeamLeader := memberRole != nil && *memberRole == models.ProjectRoleTeamLeader
+	if !isOwner && memberRole == nil {
+		return nil, ErrForbidden("无权修改项目")
+	}
+
+	milestones, err := s.buildProjectMilestones(input.Milestones)
+	if err != nil {
+		return nil, err
+	}
+	members, err := s.buildProjectMembers(ctx, input.Members, 0, nil, false)
+	if err != nil {
+		return nil, err
+	}
+
+	if !isOwner && !isTeamLeader {
+		if input.Milestones != nil {
+			return nil, ErrForbidden("只有队长可以修改项目时间线")
+		}
+		if input.Members == nil {
+			return nil, ErrForbidden("普通成员只能添加项目成员")
+		}
+		existingMembers, err := s.repo.Project.ListMembers(ctx, id)
+		if err != nil {
+			return nil, ErrInternal("获取项目成员失败")
+		}
+		existing := map[int]string{}
+		for _, member := range existingMembers {
+			existing[member.UserID] = member.Role
+		}
+		additions := make([]models.ProjectMember, 0)
+		for _, member := range *members {
+			if role, ok := existing[member.UserID]; ok {
+				if role != member.Role {
+					return nil, ErrForbidden("普通成员不能修改已有成员角色")
+				}
+				continue
+			}
+			additions = append(additions, member)
+		}
+		if err := s.repo.Project.AddMembers(ctx, id, additions); err != nil {
+			log.Printf("[ProjectService.UpdateProject] repository error adding members: %v", err)
+			return nil, ErrInternal("添加项目成员失败")
+		}
+		updated, err := s.repo.Project.GetByID(ctx, id)
+		if err != nil {
+			return nil, ErrInternal("获取项目信息失败")
+		}
+		return updated, nil
+	}
+
+	contentUpdate := input.Name != nil || input.Description != nil || input.Direction != nil ||
+		input.MemberCount != nil || input.IsCrossSchool != nil || input.EducationRequirement != nil ||
+		input.SkillRequirement != nil || input.Tags != nil || input.PublisherRole != nil ||
+		input.SchoolID != nil || input.InitiatingSchoolID != nil || input.NeedReview != nil
+	if contentUpdate && !isOwner {
+		return nil, ErrForbidden("只有项目创建者可以修改项目内容")
+	}
+
 	if input.SchoolID != nil || input.InitiatingSchoolID != nil {
 		effectiveSchoolID, err := s.resolveProjectSchool(ctx, userID, input.SchoolID, input.InitiatingSchoolID, false)
 		if err != nil {
@@ -533,7 +681,7 @@ func (s *ProjectService) UpdateProject(ctx context.Context, id, userID int, inpu
 	if !ok {
 		return nil, ErrInternal("project repository does not support metadata transaction")
 	}
-	if err := projectRepo.UpdateWithMetadata(ctx, project, input.Tags, input.PublisherRole, input.InitiatingSchoolID); err != nil {
+	if err := projectRepo.UpdateWithMetadata(ctx, project, input.Tags, input.PublisherRole, input.InitiatingSchoolID, milestones, members); err != nil {
 		log.Printf("[ProjectService.UpdateProject] repository error updating: %v", err)
 		return nil, ErrInternal("更新项目失败")
 	}
@@ -585,18 +733,17 @@ type ApplicationListResult struct {
 	Size       int
 }
 
-// ListProjectApplications returns paginated applications for a project (owner only).
+// ListProjectApplications returns paginated applications for a project reviewer.
 func (s *ProjectService) ListProjectApplications(ctx context.Context, projectID, userID int, params repository.ApplicationListParams) (*ApplicationListResult, error) {
 	params.Page, params.Size = normalizePageParams(params.Page, params.Size)
 
-	// Only the project owner may view applications
-	isOwner, err := s.repo.Project.IsOwner(ctx, projectID, userID)
+	isReviewer, err := s.repo.Project.IsOwnerOrMember(ctx, projectID, userID)
 	if err != nil {
 		log.Printf("[ProjectService.ListProjectApplications] repository error checking ownership: %v", err)
 		return nil, ErrInternal("检查权限失败")
 	}
-	if !isOwner {
-		return nil, ErrForbidden("只有队长可以查看申请列表")
+	if !isReviewer {
+		return nil, ErrForbidden("无权查看申请列表")
 	}
 
 	params.ProjectID = &projectID
@@ -725,29 +872,39 @@ func (s *ProjectService) ReviewApplication(ctx context.Context, applicationID, u
 		return ErrNotFound("申请不存在")
 	}
 
-	isOwner, err := s.repo.Project.IsOwner(ctx, app.ProjectID, userID)
+	project, err := s.repo.Project.GetByID(ctx, app.ProjectID)
 	if err != nil {
-		log.Printf("[ProjectService.ReviewApplication] repository error checking ownership: %v", err)
+		log.Printf("[ProjectService.ReviewApplication] repository error getting project: %v", err)
+		return ErrInternal("获取项目信息失败")
+	}
+	if project == nil {
+		return ErrNotFound("项目不存在")
+	}
+	memberRole, err := s.repo.Project.GetMemberRole(ctx, app.ProjectID, userID)
+	if err != nil {
+		log.Printf("[ProjectService.ReviewApplication] repository error checking member role: %v", err)
 		return ErrInternal("检查权限失败")
 	}
-	if !isOwner {
-		return ErrForbidden("只有队长可以审核申请")
+	isOwner := project.CreatorID == userID
+	if !isOwner && memberRole == nil {
+		return ErrForbidden("无权审核申请")
+	}
+	reviewerRole := memberRole
+	if reviewerRole == nil && isOwner {
+		reviewerRole = project.PublisherRole
+		if reviewerRole == nil || strings.TrimSpace(*reviewerRole) == "" {
+			fallback := models.ProjectRoleTeamLeader
+			reviewerRole = &fallback
+		}
 	}
 
-	if err := s.repo.Application.UpdateStatus(ctx, applicationID, int(status)); err != nil {
+	if err := s.repo.Application.UpdateStatusWithReviewer(ctx, applicationID, int(status), userID, reviewerRole); err != nil {
 		log.Printf("[ProjectService.ReviewApplication] repository error updating status: %v", err)
 		return ErrInternal("更新申请状态失败")
 	}
 
 	// 向申请人发送名片投递结果通知
 	go func(asyncCtx context.Context) {
-		// 1. 获取项目信息以拿到名称
-		project, err := s.repo.Project.GetByID(asyncCtx, app.ProjectID)
-		if err != nil {
-			log.Printf("[ProjectService.ReviewApplication] error getting project: %v", err)
-			return
-		}
-
 		// 2. 准备通知数据
 		resultStr := "已通过"
 		remark := "请在名片-投递名片管理及时处理哦。"

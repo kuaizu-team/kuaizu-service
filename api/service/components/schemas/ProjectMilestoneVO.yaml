@@ -1,0 +1,13 @@
+type: object
+properties:
+  id:
+    type: integer
+  projectId:
+    type: integer
+  milestoneDate:
+    type: string
+    format: date
+  description:
+    type: string
+  sortOrder:
+    type: integer

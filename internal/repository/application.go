@@ -95,10 +95,13 @@ func (r *ApplicationRepository) List(ctx context.Context, params ApplicationList
 	query := fmt.Sprintf(`
 		SELECT
 			pa.id, pa.project_id, pa.user_id,
-			pa.status, pa.is_read, pa.applied_at, pa.updated_at,
-			p.name AS project_name
+			pa.status, pa.is_read, pa.reviewer_id, pa.reviewer_role,
+			pa.applied_at, pa.updated_at,
+			p.name AS project_name,
+			pr.name AS reviewer_role_name
 		FROM project_application pa
 		LEFT JOIN project p ON pa.project_id = p.id
+		LEFT JOIN project_role pr ON pr.code = pa.reviewer_role
 		WHERE %s
 		ORDER BY pa.applied_at DESC
 		LIMIT ? OFFSET ?
@@ -229,7 +232,8 @@ func (r *ApplicationRepository) GetByID(ctx context.Context, id int) (*models.Pr
 	query := `
 		SELECT
 			pa.id, pa.project_id, pa.user_id,
-			pa.status, pa.applied_at, pa.updated_at
+			pa.status, pa.is_read, pa.reviewer_id, pa.reviewer_role,
+			pa.applied_at, pa.updated_at
 		FROM project_application pa
 		WHERE pa.id = ?
 	`
@@ -294,19 +298,22 @@ func (r *ApplicationRepository) GetUnreadApplicationCount(ctx context.Context, u
 }
 
 // MarkReviewerRead sets is_read = TRUE for applications belonging to projectID.
-// ownerID must be the project's creator; returns an error if the user is not the owner.
+// reviewerID must be the project's creator or a project member.
 // If ids is non-empty, only those specific records are updated; otherwise all unread records for the project are updated.
-func (r *ApplicationRepository) MarkReviewerRead(ctx context.Context, projectID, ownerID int, ids []int) error {
-	// Verify current user is the project owner
-	var isOwner bool
+func (r *ApplicationRepository) MarkReviewerRead(ctx context.Context, projectID, reviewerID int, ids []int) error {
+	var allowed bool
 	if err := r.db.QueryRowxContext(ctx,
-		`SELECT EXISTS(SELECT 1 FROM project WHERE id = ? AND creator_id = ?)`,
-		projectID, ownerID,
-	).Scan(&isOwner); err != nil {
-		return fmt.Errorf("check project owner: %w", err)
+		`SELECT EXISTS(
+			SELECT 1 FROM project WHERE id = ? AND creator_id = ?
+			UNION
+			SELECT 1 FROM project_members WHERE project_id = ? AND user_id = ?
+		)`,
+		projectID, reviewerID, projectID, reviewerID,
+	).Scan(&allowed); err != nil {
+		return fmt.Errorf("check project reviewer: %w", err)
 	}
-	if !isOwner {
-		log.Printf("mark reviewer application read denied: projectID=%d ownerID=%d", projectID, ownerID)
+	if !allowed {
+		log.Printf("mark reviewer application read denied: projectID=%d reviewerID=%d", projectID, reviewerID)
 		return ErrNotProjectOwner
 	}
 
@@ -335,7 +342,7 @@ func (r *ApplicationRepository) MarkReviewerRead(ctx context.Context, projectID,
 		}
 		rowsAffected, _ = result.RowsAffected()
 	}
-	log.Printf("mark reviewer application read updated: projectID=%d ownerID=%d ids=%v rowsAffected=%d", projectID, ownerID, ids, rowsAffected)
+	log.Printf("mark reviewer application read updated: projectID=%d reviewerID=%d ids=%v rowsAffected=%d", projectID, reviewerID, ids, rowsAffected)
 	return nil
 }
 
@@ -346,6 +353,24 @@ func (r *ApplicationRepository) UpdateStatus(ctx context.Context, id int, status
 	result, err := r.db.ExecContext(ctx, query, status, id)
 	if err != nil {
 		return fmt.Errorf("update application status: %w", err)
+	}
+
+	rowsAffected, _ := result.RowsAffected()
+	if rowsAffected == 0 {
+		return fmt.Errorf("application not found")
+	}
+
+	return nil
+}
+
+func (r *ApplicationRepository) UpdateStatusWithReviewer(ctx context.Context, id int, status int, reviewerID int, reviewerRole *string) error {
+	query := `UPDATE project_application
+		SET status = ?, reviewer_id = ?, reviewer_role = ?, updated_at = CURRENT_TIMESTAMP
+		WHERE id = ?`
+
+	result, err := r.db.ExecContext(ctx, query, status, reviewerID, reviewerRole, id)
+	if err != nil {
+		return fmt.Errorf("update application status with reviewer: %w", err)
 	}
 
 	rowsAffected, _ := result.RowsAffected()

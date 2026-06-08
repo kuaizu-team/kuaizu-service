@@ -1,0 +1,23 @@
+get:
+  tags:
+    - Users
+  summary: 通过手机号精确搜索用户
+  operationId: searchUserByPhone
+  parameters:
+    - name: phone
+      in: query
+      required: true
+      schema:
+        type: string
+  responses:
+    '200':
+      description: 成功
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/BaseResponse.yaml
+              - type: object
+                properties:
+                  data:
+                    $ref: ../components/schemas/UserVO.yaml

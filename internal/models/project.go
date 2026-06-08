@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/kuaizu-team/kuaizu-service/api"
+	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
 // Project represents a project in the database
@@ -28,21 +29,65 @@ type Project struct {
 	InitiatingSchoolID   *int       `db:"initiating_school_id"`
 
 	// Joined fields
-	SchoolName                 *string      `db:"school_name"`
-	PublisherRoleName          *string      `db:"publisher_role_name"`
-	InitiatingSchoolName       *string      `db:"initiating_school_name"`
-	Tags                       []ProjectTag `db:"-"`
-	Interaction                Interaction  `db:"-"`
-	InteractionUnreadCount     *int         `db:"-"`
-	Creator                    *User        `db:"-"`
-	CreatorTalentProfileStatus *int         `db:"-"`                         // 创建者名片状态（仅详情接口填充）
-	PendingApplicationCount    int          `db:"pending_application_count"` // 待处理申请数（仅列表接口填充）
-	PendingCount               int          `db:"pending_count"`             // 管理后台用：投递+橄榄枝待处理总数（仅管理后台列表填充）
+	SchoolName                 *string            `db:"school_name"`
+	PublisherRoleName          *string            `db:"publisher_role_name"`
+	InitiatingSchoolName       *string            `db:"initiating_school_name"`
+	Tags                       []ProjectTag       `db:"-"`
+	Milestones                 []ProjectMilestone `db:"-"`
+	Members                    []ProjectMember    `db:"-"`
+	Interaction                Interaction        `db:"-"`
+	InteractionUnreadCount     *int               `db:"-"`
+	Creator                    *User              `db:"-"`
+	CreatorTalentProfileStatus *int               `db:"-"`                         // 创建者名片状态（仅详情接口填充）
+	PendingApplicationCount    int                `db:"pending_application_count"` // 待处理申请数（仅列表接口填充）
+	PendingCount               int                `db:"pending_count"`             // 管理后台用：投递+橄榄枝待处理总数（仅管理后台列表填充）
 }
 
 type ProjectTag struct {
 	ID   int    `db:"id" json:"id"`
 	Name string `db:"name" json:"name"`
+}
+
+type ProjectMilestone struct {
+	ID            int       `db:"id"`
+	ProjectID     int       `db:"project_id"`
+	MilestoneDate time.Time `db:"milestone_date"`
+	Description   string    `db:"description"`
+	SortOrder     int       `db:"sort_order"`
+}
+
+func (m ProjectMilestone) ToVO() api.ProjectMilestoneVO {
+	date := openapi_types.Date{Time: m.MilestoneDate}
+	return api.ProjectMilestoneVO{
+		Id:            &m.ID,
+		ProjectId:     &m.ProjectID,
+		MilestoneDate: &date,
+		Description:   &m.Description,
+		SortOrder:     &m.SortOrder,
+	}
+}
+
+type ProjectMember struct {
+	ID        int     `db:"id"`
+	ProjectID int     `db:"project_id"`
+	UserID    int     `db:"user_id"`
+	Role      string  `db:"role"`
+	RoleName  *string `db:"role_name"`
+	User      *User   `db:"-"`
+}
+
+func (m ProjectMember) ToVO() api.ProjectMemberVO {
+	vo := api.ProjectMemberVO{
+		Id:        &m.ID,
+		ProjectId: &m.ProjectID,
+		UserId:    &m.UserID,
+		Role:      &m.Role,
+		RoleName:  m.RoleName,
+	}
+	if m.User != nil {
+		vo.User = m.User.ToVO()
+	}
+	return vo
 }
 
 // ToVO converts Project to API ProjectVO
@@ -119,6 +164,20 @@ func (p *Project) ToDetailVO() *api.ProjectDetailVO {
 
 	if p.Creator != nil {
 		vo.Creator = p.Creator.ToVO()
+	}
+	if len(p.Milestones) > 0 {
+		milestones := make([]api.ProjectMilestoneVO, len(p.Milestones))
+		for i := range p.Milestones {
+			milestones[i] = p.Milestones[i].ToVO()
+		}
+		vo.Milestones = &milestones
+	}
+	if len(p.Members) > 0 {
+		members := make([]api.ProjectMemberVO, len(p.Members))
+		for i := range p.Members {
+			members[i] = p.Members[i].ToVO()
+		}
+		vo.Members = &members
 	}
 
 	return vo
