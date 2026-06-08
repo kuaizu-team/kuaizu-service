@@ -8,6 +8,7 @@ import (
 
 	"github.com/jmoiron/sqlx"
 	"github.com/kuaizu-team/kuaizu-service/internal/models"
+	"github.com/kuaizu-team/kuaizu-service/internal/oss"
 )
 
 type FavoriteProject struct {
@@ -217,6 +218,15 @@ func (r *InteractionRepository) ListUsers(ctx context.Context, target, kind stri
 	args = append(args, size, (page-1)*size)
 	var users []models.InteractionUser
 	err = r.db.SelectContext(ctx, &users, query, args...)
+	if err != nil {
+		return nil, 0, err
+	}
+	for i := range users {
+		if users[i].AvatarURL != nil && *users[i].AvatarURL != "" {
+			fullURL := oss.FullURL(*users[i].AvatarURL)
+			users[i].AvatarURL = &fullURL
+		}
+	}
 	return users, total, err
 }
 

@@ -46,7 +46,7 @@ func New(repo *repository.Repository, deps *Dependencies) *Services {
 		User:             NewUserService(repo, message),
 		Feedback:         NewFeedbackService(repo, message),
 		Invitation:       NewInvitationFeedbackService(repo),
-		Interaction:      NewInteractionService(repo),
+		Interaction:      NewInteractionService(repo, message),
 	}
 }
 

@@ -8,10 +8,17 @@ import (
 	"github.com/kuaizu-team/kuaizu-service/internal/repository"
 )
 
-type InteractionService struct{ repo *repository.Repository }
+type InteractionService struct {
+	repo    *repository.Repository
+	message subscribeMessageSender
+}
 
-func NewInteractionService(repo *repository.Repository) *InteractionService {
-	return &InteractionService{repo: repo}
+func NewInteractionService(repo *repository.Repository, message ...subscribeMessageSender) *InteractionService {
+	var sender subscribeMessageSender
+	if len(message) > 0 {
+		sender = message[0]
+	}
+	return &InteractionService{repo: repo, message: sender}
 }
 
 func (s *InteractionService) ensureTarget(ctx context.Context, target string, id int) error {
@@ -89,6 +96,9 @@ func (s *InteractionService) Toggle(ctx context.Context, target, kind string, id
 		log.Printf("[Interaction.Toggle] %v", err)
 		return nil, ErrInternal("toggle interaction failed")
 	}
+	if result.Active != nil && *result.Active {
+		s.notifyInteractionAsync(ctx, target, kind, id, userID)
+	}
 	return result, nil
 }
 
@@ -104,6 +114,7 @@ func (s *InteractionService) Share(ctx context.Context, target string, id, userI
 		log.Printf("[Interaction.Share] %v", err)
 		return nil, ErrInternal("record share failed")
 	}
+	s.notifyInteractionAsync(ctx, target, "share", id, userID)
 	return result, nil
 }
 

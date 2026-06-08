@@ -1,0 +1,193 @@
+package service
+
+import (
+	"context"
+	"testing"
+
+	"github.com/kuaizu-team/kuaizu-service/internal/models"
+)
+
+func TestBuildProjectInteractionNotification(t *testing.T) {
+	project := &models.Project{ID: 10, CreatorID: 100, Name: "project"}
+
+	tests := []struct {
+		name      string
+		kind      string
+		operator  int
+		wantOK    bool
+		wantBiz   string
+		wantField string
+	}{
+		{name: "self like skipped", kind: "like", operator: 100, wantOK: false},
+		{name: "like", kind: "like", operator: 200, wantOK: true, wantBiz: models.MsgBizKeyProjectLike, wantField: "like_user"},
+		{name: "favorite", kind: "favorite", operator: 200, wantOK: true, wantBiz: models.MsgBizKeyProjectFavorite, wantField: "favorite_user"},
+		{name: "share", kind: "share", operator: 200, wantOK: true, wantBiz: models.MsgBizKeyProjectShare, wantField: "share_user"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := buildProjectInteractionNotification(tt.kind, tt.operator, project, "user")
+			if ok != tt.wantOK {
+				t.Fatalf("ok = %v, want %v", ok, tt.wantOK)
+			}
+			if !tt.wantOK {
+				return
+			}
+			if got.ownerUserID != project.CreatorID {
+				t.Fatalf("ownerUserID = %d, want %d", got.ownerUserID, project.CreatorID)
+			}
+			if got.bizKey != tt.wantBiz {
+				t.Fatalf("bizKey = %q, want %q", got.bizKey, tt.wantBiz)
+			}
+			if got.pagePath != "pages/project-dashboard/project-dashboard?id=10" {
+				t.Fatalf("pagePath = %q", got.pagePath)
+			}
+			if got.data["project_name"] != "project" || got.data[tt.wantField] != "user" || got.data["remark"] != subscribeInteractionRemark {
+				t.Fatalf("unexpected data: %#v", got.data)
+			}
+		})
+	}
+}
+
+func TestBuildTalentInteractionNotification(t *testing.T) {
+	profile := &models.TalentProfile{ID: 20, UserID: 101}
+
+	tests := []struct {
+		name      string
+		kind      string
+		operator  int
+		wantOK    bool
+		wantBiz   string
+		wantField string
+	}{
+		{name: "self like skipped", kind: "like", operator: 101, wantOK: false},
+		{name: "like", kind: "like", operator: 201, wantOK: true, wantBiz: models.MsgBizKeyTalentLike, wantField: "like_user"},
+		{name: "favorite", kind: "favorite", operator: 201, wantOK: true, wantBiz: models.MsgBizKeyTalentFavorite, wantField: "favorite_user"},
+		{name: "share", kind: "share", operator: 201, wantOK: true, wantBiz: models.MsgBizKeyTalentShare, wantField: "share_user"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := buildTalentInteractionNotification(tt.kind, tt.operator, profile, "user")
+			if ok != tt.wantOK {
+				t.Fatalf("ok = %v, want %v", ok, tt.wantOK)
+			}
+			if !tt.wantOK {
+				return
+			}
+			if got.ownerUserID != profile.UserID {
+				t.Fatalf("ownerUserID = %d, want %d", got.ownerUserID, profile.UserID)
+			}
+			if got.bizKey != tt.wantBiz {
+				t.Fatalf("bizKey = %q, want %q", got.bizKey, tt.wantBiz)
+			}
+			if got.pagePath != "pages/talent-dashboard/talent-dashboard?id=20" {
+				t.Fatalf("pagePath = %q", got.pagePath)
+			}
+			if got.data[tt.wantField] != "user" || got.data["remark"] != subscribeInteractionRemark {
+				t.Fatalf("unexpected data: %#v", got.data)
+			}
+		})
+	}
+}
+
+func TestBuildVisitNotifications(t *testing.T) {
+	project := &models.Project{ID: 10, CreatorID: 100, Name: "project"}
+	if _, ok := buildProjectVisitNotification(0, project, "visitor"); ok {
+		t.Fatal("anonymous project visit should not notify")
+	}
+	if _, ok := buildProjectVisitNotification(100, project, "owner"); ok {
+		t.Fatal("owner project visit should not notify")
+	}
+	projectNotice, ok := buildProjectVisitNotification(200, project, "visitor")
+	if !ok {
+		t.Fatal("visitor project visit should notify")
+	}
+	if projectNotice.ownerUserID != 100 || projectNotice.bizKey != models.MsgBizKeyProjectVisit {
+		t.Fatalf("unexpected project notice: %#v", projectNotice)
+	}
+	if projectNotice.pagePath != "pages/project-dashboard/project-dashboard?id=10" {
+		t.Fatalf("project pagePath = %q", projectNotice.pagePath)
+	}
+	if projectNotice.data["project_name"] != "project" || projectNotice.data["visit_user"] != "visitor" {
+		t.Fatalf("unexpected project data: %#v", projectNotice.data)
+	}
+
+	profile := &models.TalentProfile{ID: 20, UserID: 101}
+	if _, ok := buildTalentVisitNotification(0, profile, "visitor"); ok {
+		t.Fatal("anonymous talent visit should not notify")
+	}
+	if _, ok := buildTalentVisitNotification(101, profile, "owner"); ok {
+		t.Fatal("owner talent visit should not notify")
+	}
+	talentNotice, ok := buildTalentVisitNotification(201, profile, "visitor")
+	if !ok {
+		t.Fatal("visitor talent visit should notify")
+	}
+	if talentNotice.ownerUserID != 101 || talentNotice.bizKey != models.MsgBizKeyTalentVisit {
+		t.Fatalf("unexpected talent notice: %#v", talentNotice)
+	}
+	if talentNotice.pagePath != "pages/talent-dashboard/talent-dashboard?id=20" {
+		t.Fatalf("talent pagePath = %q", talentNotice.pagePath)
+	}
+	if talentNotice.data["visit_user"] != "visitor" || talentNotice.data["remark"] != subscribeInteractionRemark {
+		t.Fatalf("unexpected talent data: %#v", talentNotice.data)
+	}
+}
+
+func TestNotificationUserNameFallback(t *testing.T) {
+	if got := notificationUserName(nil); got != "用户" {
+		t.Fatalf("nil user name = %q", got)
+	}
+	blank := "  "
+	if got := notificationUserName(&models.User{Nickname: &blank}); got != "用户" {
+		t.Fatalf("blank user name = %q", got)
+	}
+	name := "  user  "
+	if got := notificationUserName(&models.User{Nickname: &name}); got != "user" {
+		t.Fatalf("trimmed user name = %q", got)
+	}
+}
+
+type fakeSubscribeSender struct {
+	userID   int
+	bizKey   string
+	data     map[string]string
+	pagePath string
+	usedPage bool
+}
+
+func (f *fakeSubscribeSender) SendSubscribeMsgByBizKey(ctx context.Context, userID int, bizKey string, businessData map[string]string) error {
+	f.userID = userID
+	f.bizKey = bizKey
+	f.data = businessData
+	return nil
+}
+
+func (f *fakeSubscribeSender) SendSubscribeMsgByBizKeyWithPage(ctx context.Context, userID int, bizKey string, businessData map[string]string, pagePath string) error {
+	f.userID = userID
+	f.bizKey = bizKey
+	f.data = businessData
+	f.pagePath = pagePath
+	f.usedPage = true
+	return nil
+}
+
+func TestSendSubscribeNotificationUsesDynamicPagePath(t *testing.T) {
+	sender := &fakeSubscribeSender{}
+	notification := subscribeNotification{
+		ownerUserID: 100,
+		bizKey:      models.MsgBizKeyProjectLike,
+		data:        map[string]string{"project_name": "project"},
+		pagePath:    "pages/project-dashboard/project-dashboard?id=10",
+	}
+
+	sendSubscribeNotification(context.Background(), sender, notification)
+
+	if !sender.usedPage {
+		t.Fatal("expected dynamic page sender to be used")
+	}
+	if sender.userID != notification.ownerUserID || sender.bizKey != notification.bizKey || sender.pagePath != notification.pagePath {
+		t.Fatalf("unexpected send: %#v", sender)
+	}
+}

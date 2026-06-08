@@ -157,6 +157,21 @@ func (s *ProjectService) GetProjectWithView(ctx context.Context, id, viewerUserI
 		}
 		if err := s.repo.ProjectViewLog.InsertViewLog(asyncCtx, entry); err != nil {
 			log.Printf("[ProjectService.GetProject] view log error (non-fatal): %v", err)
+			return
+		}
+		if viewerUserID <= 0 || viewerUserID == project.CreatorID {
+			return
+		}
+		if s.message == nil {
+			return
+		}
+		viewer, err := s.repo.User.GetByID(asyncCtx, viewerUserID)
+		if err != nil {
+			log.Printf("[ProjectService.GetProjectWithView] get viewer error (non-fatal): %v", err)
+		}
+		notification, ok := buildProjectVisitNotification(viewerUserID, project, notificationUserName(viewer))
+		if ok {
+			sendSubscribeNotification(asyncCtx, s.message, notification)
 		}
 	}(context.WithoutCancel(ctx))
 
