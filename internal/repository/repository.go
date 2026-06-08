@@ -21,6 +21,8 @@ type Repository struct {
 	SmsNotice          SmsNoticeRepo
 	AdminUser          AdminUserRepo
 	Feedback           FeedbackRepo
+	InvitationFeedback InvitationFeedbackRepo
+	PendingInvitation  PendingInvitationRepo
 	MsgTemplate        MsgTemplateConfigRepo
 	SubscribeConfig    SubscribeConfigRepo
 	ProjectViewLog     ProjectViewLogRepo
@@ -51,6 +53,8 @@ func New(db *sqlx.DB) *Repository {
 		SmsNotice:          NewSmsNoticeRepository(db),
 		AdminUser:          NewAdminUserRepository(db),
 		Feedback:           NewFeedbackRepository(db),
+		InvitationFeedback: NewInvitationFeedbackRepository(db),
+		PendingInvitation:  NewPendingInvitationRepository(db),
 		MsgTemplate:        NewMsgTemplateConfigRepository(db),
 		SubscribeConfig:    NewSubscribeConfigRepository(db),
 		ProjectViewLog:     NewProjectViewLogRepository(db),

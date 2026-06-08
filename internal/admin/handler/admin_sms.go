@@ -3,6 +3,7 @@ package handler
 import (
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/kuaizu-team/kuaizu-service/internal/messagecenter"
 	"github.com/kuaizu-team/kuaizu-service/internal/response"
@@ -24,16 +25,45 @@ func (s *AdminServer) SendAdminSms(ctx echo.Context) error {
 		return err
 	}
 
+	variables := req.Variables
+	if isInviteSuperAdminTemplate(req.TemplateKey) {
+		variables = withSuperAdminInvitationVariables(variables)
+	}
+
 	resp, err := s.svc.AdminSms.Send(ctx.Request().Context(), messagecenter.AdminSmsSendRequest{
 		TemplateKey: req.TemplateKey,
 		UserID:      req.UserID,
-		Variables:   req.Variables,
+		Variables:   variables,
 	})
 	if err != nil {
 		return mapServiceError(ctx, err)
 	}
+	if resp != nil && resp.Success && isInviteSuperAdminTemplate(req.TemplateKey) {
+		if err := s.svc.Invitation.ResetAfterInviteSent(ctx.Request().Context(), req.UserID); err != nil {
+			return mapServiceError(ctx, err)
+		}
+		if err := s.svc.Invitation.CreatePendingSuperAdminInvitation(ctx.Request().Context(), req.UserID); err != nil {
+			return mapServiceError(ctx, err)
+		}
+	}
 
 	return adminSmsSuccess(ctx, resp)
+}
+
+func isInviteSuperAdminTemplate(templateKey string) bool {
+	return strings.EqualFold(strings.TrimSpace(templateKey), "INVITE_SUPER_ADMIN")
+}
+
+func withSuperAdminInvitationVariables(variables map[string]interface{}) map[string]interface{} {
+	next := make(map[string]interface{}, len(variables)+4)
+	for k, v := range variables {
+		next[k] = v
+	}
+	next["invitation_feedback"] = "1"
+	next["invite_type"] = "super_admin"
+	next["invite_query"] = "invitation_feedback=1&source=sms&invite_type=super_admin"
+	next["invite_path"] = "/pages/home/home?invitation_feedback=1&source=sms&invite_type=super_admin"
+	return next
 }
 
 func (s *AdminServer) CountAdminSms(ctx echo.Context) error {

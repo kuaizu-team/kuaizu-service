@@ -132,6 +132,11 @@ func main() {
 	// Project-application reviewer read status
 	apiGroup.POST("/project-applications/mark-read", server.MarkReviewerApplicationRead)
 
+	// Super-admin invitation feedback
+	apiGroup.POST("/invitation/feedback", server.SubmitInvitationFeedback)
+	apiGroup.GET("/users/me/pending-invitation", server.GetMyPendingInvitation)
+	apiGroup.POST("/users/me/pending-invitation/clear", server.ClearMyPendingInvitation)
+
 	api.RegisterHandlers(apiGroup, server)
 
 	// WeChat Pay callback (no auth required)
