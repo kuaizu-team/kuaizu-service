@@ -41,6 +41,7 @@ type ProjectRepo interface {
 	GetMemberRole(ctx context.Context, projectID, userID int) (*string, error)
 	ListMembers(ctx context.Context, projectID int) ([]models.ProjectMember, error)
 	AddMembers(ctx context.Context, projectID int, members []models.ProjectMember) error
+	ReplaceMembers(ctx context.Context, projectID int, members []models.ProjectMember) error
 	UpdateStatus(ctx context.Context, id int, status int) error
 	IncrementViewCount(ctx context.Context, id int) error
 }

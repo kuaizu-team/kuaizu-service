@@ -17,6 +17,18 @@ properties:
   interactionUnreadCount:
     type: integer
     minimum: 0
+  currentUserRole:
+    type: string
+    description: Current user's role in this project, when the current user is creator or member.
+  currentUserRoleName:
+    type: string
+    description: Display name for currentUserRole.
+  canCompleteRecruitment:
+    type: boolean
+    description: Whether the current user is in the highest permission role group and can complete recruitment.
+  canDeleteMembers:
+    type: boolean
+    description: Whether the current user is in the highest permission role group and can delete project members.
   id:
     type: integer
   name:

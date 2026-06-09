@@ -185,6 +185,11 @@ func (m *MockProjectRepo) AddMembers(ctx context.Context, projectID int, members
 	return args.Error(0)
 }
 
+func (m *MockProjectRepo) ReplaceMembers(ctx context.Context, projectID int, members []models.ProjectMember) error {
+	args := m.Called(ctx, projectID, members)
+	return args.Error(0)
+}
+
 func (m *MockProjectRepo) UpdateStatus(ctx context.Context, id int, status int) error {
 	args := m.Called(ctx, id, status)
 	return args.Error(0)
@@ -821,7 +826,7 @@ func TestListProjectBatches_NotProjectOwner(t *testing.T) {
 	mockProject := new(MockProjectRepo)
 	mockEmailPromotion := new(MockEmailPromotionRepo)
 
-	mockProject.On("IsOwner", mock.Anything, 200, 1).Return(false, nil)
+	mockProject.On("IsOwnerOrMember", mock.Anything, 200, 1).Return(false, nil)
 
 	repo := &repository.Repository{
 		Project:        mockProject,
@@ -854,7 +859,7 @@ func TestListProjectBatches_Success(t *testing.T) {
 		},
 	}
 
-	mockProject.On("IsOwner", mock.Anything, 369, 1).Return(true, nil)
+	mockProject.On("IsOwnerOrMember", mock.Anything, 369, 1).Return(true, nil)
 	mockEmailPromotion.On("ListByProjectSince", mock.Anything, 369, 7, 10).Return(promotions, int64(1), nil)
 
 	repo := &repository.Repository{
@@ -879,7 +884,7 @@ func TestListProjectBatchUsers_BatchNotInProject(t *testing.T) {
 	mockProject := new(MockProjectRepo)
 	mockEmailPromotion := new(MockEmailPromotionRepo)
 
-	mockProject.On("IsOwner", mock.Anything, 200, 1).Return(true, nil)
+	mockProject.On("IsOwnerOrMember", mock.Anything, 200, 1).Return(true, nil)
 	mockEmailPromotion.On("GetByID", mock.Anything, 42).Return(&models.EmailPromotion{ID: 42, ProjectID: 201}, nil)
 
 	repo := &repository.Repository{
@@ -912,7 +917,7 @@ func TestListProjectBatchUsers_SafeFields(t *testing.T) {
 		},
 	}
 
-	mockProject.On("IsOwner", mock.Anything, 369, 1).Return(true, nil)
+	mockProject.On("IsOwnerOrMember", mock.Anything, 369, 1).Return(true, nil)
 	mockEmailPromotion.On("GetByID", mock.Anything, 42).Return(&models.EmailPromotion{ID: 42, ProjectID: 369}, nil)
 	mockEmailPromotion.On("ListProjectPromotionUsers", mock.Anything, 42, 1, 20).Return(users, int64(1), nil)
 
@@ -939,7 +944,7 @@ func TestListProjectBatchUsers_FallbackResultFromRepository(t *testing.T) {
 	mockEmailPromotion := new(MockEmailPromotionRepo)
 
 	users := []repository.ProjectPromotionUser{{UserID: 1200, AuthStatus: 1}}
-	mockProject.On("IsOwner", mock.Anything, 369, 1).Return(true, nil)
+	mockProject.On("IsOwnerOrMember", mock.Anything, 369, 1).Return(true, nil)
 	mockEmailPromotion.On("GetByID", mock.Anything, 42).Return(&models.EmailPromotion{ID: 42, ProjectID: 369}, nil)
 	mockEmailPromotion.On("ListProjectPromotionUsers", mock.Anything, 42, 1, 20).Return(users, int64(1), nil)
 

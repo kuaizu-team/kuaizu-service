@@ -37,6 +37,10 @@ type Project struct {
 	Members                    []ProjectMember    `db:"-"`
 	Interaction                Interaction        `db:"-"`
 	InteractionUnreadCount     *int               `db:"-"`
+	CurrentUserRole            *string            `db:"-"`
+	CurrentUserRoleName        *string            `db:"-"`
+	CanCompleteRecruitment     *bool              `db:"-"`
+	CanDeleteMembers           *bool              `db:"-"`
 	Creator                    *User              `db:"-"`
 	CreatorTalentProfileStatus *int               `db:"-"`                         // 创建者名片状态（仅详情接口填充）
 	PendingApplicationCount    int                `db:"pending_application_count"` // 待处理申请数（仅列表接口填充）
@@ -114,6 +118,10 @@ func (p *Project) ToVO() *api.ProjectVO {
 		InitiatingSchoolName:    p.InitiatingSchoolName,
 		Interaction:             p.Interaction.ToVO(),
 		InteractionUnreadCount:  p.InteractionUnreadCount,
+		CurrentUserRole:         p.CurrentUserRole,
+		CurrentUserRoleName:     p.CurrentUserRoleName,
+		CanCompleteRecruitment:  p.CanCompleteRecruitment,
+		CanDeleteMembers:        p.CanDeleteMembers,
 	}
 	if len(p.Tags) > 0 {
 		tags := make([]api.ProjectTagVO, len(p.Tags))
@@ -133,26 +141,30 @@ func (p *Project) ToDetailVO() *api.ProjectDetailVO {
 	status := api.ProjectStatus(p.Status)
 
 	vo := &api.ProjectDetailVO{
-		Id:                   &p.ID,
-		Name:                 &p.Name,
-		Description:          p.Description,
-		Direction:            (*api.Direction)(p.Direction),
-		SchoolId:             p.SchoolID,
-		SchoolName:           p.SchoolName,
-		MemberCount:          p.MemberCount,
-		Status:               &status,
-		PromotionStatus:      &p.PromotionStatus,
-		ViewCount:            &p.ViewCount,
-		CreatedAt:            &p.CreatedAt,
-		IsCrossSchool:        p.IsCrossSchool,
-		EducationRequirement: p.EducationRequirement,
-		SkillRequirement:     p.SkillRequirement,
-		PromotionExpireTime:  p.PromotionExpireTime,
-		PublisherRole:        p.PublisherRole,
-		PublisherRoleName:    p.PublisherRoleName,
-		InitiatingSchoolId:   p.InitiatingSchoolID,
-		InitiatingSchoolName: p.InitiatingSchoolName,
-		Interaction:          p.Interaction.ToVO(),
+		Id:                     &p.ID,
+		Name:                   &p.Name,
+		Description:            p.Description,
+		Direction:              (*api.Direction)(p.Direction),
+		SchoolId:               p.SchoolID,
+		SchoolName:             p.SchoolName,
+		MemberCount:            p.MemberCount,
+		Status:                 &status,
+		PromotionStatus:        &p.PromotionStatus,
+		ViewCount:              &p.ViewCount,
+		CreatedAt:              &p.CreatedAt,
+		IsCrossSchool:          p.IsCrossSchool,
+		EducationRequirement:   p.EducationRequirement,
+		SkillRequirement:       p.SkillRequirement,
+		PromotionExpireTime:    p.PromotionExpireTime,
+		PublisherRole:          p.PublisherRole,
+		PublisherRoleName:      p.PublisherRoleName,
+		InitiatingSchoolId:     p.InitiatingSchoolID,
+		InitiatingSchoolName:   p.InitiatingSchoolName,
+		Interaction:            p.Interaction.ToVO(),
+		CurrentUserRole:        p.CurrentUserRole,
+		CurrentUserRoleName:    p.CurrentUserRoleName,
+		CanCompleteRecruitment: p.CanCompleteRecruitment,
+		CanDeleteMembers:       p.CanDeleteMembers,
 	}
 	if len(p.Tags) > 0 {
 		tags := make([]api.ProjectTagVO, len(p.Tags))

@@ -31,6 +31,7 @@ type ListParams struct {
 	Statuses      []int
 	Direction     *int
 	CreatorID     *int
+	MemberUserID  *int
 	IsCrossSchool *int
 	// SortBy controls the primary sort key.
 	// Public values: "school_priority" (geo-priority), "updated_at"
@@ -88,6 +89,13 @@ func (r *ProjectRepository) List(ctx context.Context, params ListParams) ([]mode
 	if params.CreatorID != nil {
 		conditions = append(conditions, "p.creator_id = ?")
 		whereArgs = append(whereArgs, *params.CreatorID)
+	}
+	if params.MemberUserID != nil {
+		conditions = append(conditions, `(p.creator_id = ? OR EXISTS (
+			SELECT 1 FROM project_members pm
+			WHERE pm.project_id = p.id AND pm.user_id = ?
+		))`)
+		whereArgs = append(whereArgs, *params.MemberUserID, *params.MemberUserID)
 	}
 	if params.IsCrossSchool != nil {
 		conditions = append(conditions, "p.is_cross_school = ?")
@@ -662,6 +670,25 @@ func (r *ProjectRepository) AddMembers(ctx context.Context, projectID int, membe
 			VALUES(?,?,?)
 			ON DUPLICATE KEY UPDATE role=role`, projectID, member.UserID, member.Role); err != nil {
 			return fmt.Errorf("add project member: %w", err)
+		}
+	}
+	return tx.Commit()
+}
+
+func (r *ProjectRepository) ReplaceMembers(ctx context.Context, projectID int, members []models.ProjectMember) error {
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.ExecContext(ctx, "DELETE FROM project_members WHERE project_id=?", projectID); err != nil {
+		return fmt.Errorf("delete project members: %w", err)
+	}
+	for _, member := range members {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO project_members(project_id,user_id,role)
+			VALUES(?,?,?)`, projectID, member.UserID, member.Role); err != nil {
+			return fmt.Errorf("replace project member: %w", err)
 		}
 	}
 	return tx.Commit()

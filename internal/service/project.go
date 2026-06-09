@@ -82,7 +82,7 @@ func (s *ProjectService) ListProjects(ctx context.Context, params repository.Lis
 // sorted by updated_at descending so recently-modified projects appear first.
 func (s *ProjectService) ListMyProjects(ctx context.Context, userID int, params repository.ListParams) (*ProjectListResult, error) {
 	params.Page, params.Size = normalizePageParams(params.Page, params.Size)
-	params.CreatorID = &userID
+	params.MemberUserID = &userID
 	sortBy := "updated_at"
 	params.SortBy = &sortBy
 
@@ -93,6 +93,10 @@ func (s *ProjectService) ListMyProjects(ctx context.Context, userID int, params 
 	projects, total, err := s.repo.Project.List(ctx, params)
 	if err != nil {
 		log.Printf("[ProjectService.ListMyProjects] repository error: %v", err)
+		return nil, ErrInternal("获取我的项目列表失败")
+	}
+	if err := s.attachProjectPermissions(ctx, projects, userID); err != nil {
+		log.Printf("[ProjectService.ListMyProjects] permission enrichment error: %v", err)
 		return nil, ErrInternal("获取我的项目列表失败")
 	}
 
@@ -143,6 +147,10 @@ func (s *ProjectService) GetProjectWithView(ctx context.Context, id, viewerUserI
 	if err != nil {
 		return nil, err
 	}
+	if err := s.attachProjectPermission(ctx, project, viewerUserID); err != nil {
+		log.Printf("[ProjectService.GetProjectWithView] permission enrichment error: %v", err)
+		return nil, ErrInternal("获取项目详情失败")
+	}
 
 	go func(asyncCtx context.Context) {
 		_ = s.repo.Project.IncrementViewCount(asyncCtx, id)
@@ -179,6 +187,93 @@ func (s *ProjectService) GetProjectWithView(ctx context.Context, id, viewerUserI
 	return project, nil
 }
 
+func isProjectLeaderRole(role string) bool {
+	return strings.TrimSpace(role) != "" && role != models.ProjectRoleTeamMember
+}
+
+func canOperateAsHighestRole(currentRole *string, members []models.ProjectMember) bool {
+	if currentRole == nil || strings.TrimSpace(*currentRole) == "" {
+		return false
+	}
+	role := strings.TrimSpace(*currentRole)
+	hasTeamLeader := false
+	hasOtherLeader := false
+	hasTeamMember := false
+	for _, member := range members {
+		switch member.Role {
+		case models.ProjectRoleTeamLeader:
+			hasTeamLeader = true
+		case models.ProjectRoleTeamMember:
+			hasTeamMember = true
+		default:
+			if isProjectLeaderRole(member.Role) {
+				hasOtherLeader = true
+			}
+		}
+	}
+	if hasTeamLeader {
+		return role == models.ProjectRoleTeamLeader
+	}
+	if hasOtherLeader {
+		return isProjectLeaderRole(role)
+	}
+	if hasTeamMember {
+		return role == models.ProjectRoleTeamMember
+	}
+	return role != ""
+}
+
+func currentUserProjectRole(project *models.Project, userID int, members []models.ProjectMember) (*string, *string) {
+	if userID <= 0 {
+		return nil, nil
+	}
+	for _, member := range members {
+		if member.UserID == userID {
+			role := member.Role
+			return &role, member.RoleName
+		}
+	}
+	if project.CreatorID == userID {
+		role := models.ProjectRoleTeamLeader
+		roleName := project.PublisherRoleName
+		if project.PublisherRole != nil && strings.TrimSpace(*project.PublisherRole) != "" {
+			role = strings.TrimSpace(*project.PublisherRole)
+		}
+		return &role, roleName
+	}
+	return nil, nil
+}
+
+func (s *ProjectService) attachProjectPermission(ctx context.Context, project *models.Project, userID int) error {
+	if project == nil {
+		return nil
+	}
+	members := project.Members
+	if len(members) == 0 {
+		var err error
+		members, err = s.repo.Project.ListMembers(ctx, project.ID)
+		if err != nil {
+			return err
+		}
+	}
+	currentRole, currentRoleName := currentUserProjectRole(project, userID, members)
+	canOperate := canOperateAsHighestRole(currentRole, members)
+	project.CurrentUserRole = currentRole
+	project.CurrentUserRoleName = currentRoleName
+	project.CanCompleteRecruitment = &canOperate
+	project.CanDeleteMembers = &canOperate
+	return nil
+}
+
+func (s *ProjectService) attachProjectPermissions(ctx context.Context, projects []models.Project, userID int) error {
+	for i := range projects {
+		if err := s.attachProjectPermission(ctx, &projects[i], userID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // ProjectDashboardResult is the response payload for GET /projects/{id}/dashboard.
 type ProjectDashboardResult struct {
 	TotalViews         int                          `json:"total_views"`
@@ -199,15 +294,15 @@ type ProjectDashboardResult struct {
 }
 
 // GetProjectDashboard returns aggregated stats for the project dashboard.
-// Only the project creator (requesterUserID == project.creator_id) may access this.
+// Project creators and members may access this.
 func (s *ProjectService) GetProjectDashboard(ctx context.Context, projectID, requesterUserID, days int) (*ProjectDashboardResult, error) {
-	isOwner, err := s.repo.Project.IsOwner(ctx, projectID, requesterUserID)
+	isReviewer, err := s.repo.Project.IsOwnerOrMember(ctx, projectID, requesterUserID)
 	if err != nil {
 		log.Printf("[ProjectService.GetProjectDashboard] ownership check error: %v", err)
 		return nil, ErrInternal("检查权限失败")
 	}
-	if !isOwner {
-		return nil, ErrForbidden("只有项目队长可以查看数据看板")
+	if !isReviewer {
+		return nil, ErrForbidden("无权查看数据看板")
 	}
 
 	raw, err := s.repo.ProjectViewLog.GetDashboardStats(ctx, projectID)
@@ -266,15 +361,15 @@ type ViewersResult struct {
 }
 
 // GetProjectViewers returns authenticated viewers of the project in the last 24 h.
-// Only the project creator may call this endpoint.
+// Project creators and members may call this endpoint.
 func (s *ProjectService) GetProjectViewers(ctx context.Context, projectID, requesterUserID, limit int) (*ViewersResult, error) {
-	isOwner, err := s.repo.Project.IsOwner(ctx, projectID, requesterUserID)
+	isReviewer, err := s.repo.Project.IsOwnerOrMember(ctx, projectID, requesterUserID)
 	if err != nil {
 		log.Printf("[ProjectService.GetProjectViewers] ownership check error: %v", err)
 		return nil, ErrInternal("检查权限失败")
 	}
-	if !isOwner {
-		return nil, ErrForbidden("只有项目队长可以查看访客记录")
+	if !isReviewer {
+		return nil, ErrForbidden("无权查看访客记录")
 	}
 
 	viewers, total, err := s.repo.ProjectViewLog.GetViewers(ctx, projectID, limit)
@@ -561,7 +656,6 @@ func (s *ProjectService) UpdateProject(ctx context.Context, id, userID int, inpu
 		log.Printf("[ProjectService.UpdateProject] repository error checking member role: %v", err)
 		return nil, ErrInternal("检查权限失败")
 	}
-	isTeamLeader := memberRole != nil && *memberRole == models.ProjectRoleTeamLeader
 	if !isOwner && memberRole == nil {
 		return nil, ErrForbidden("无权修改项目")
 	}
@@ -575,26 +669,46 @@ func (s *ProjectService) UpdateProject(ctx context.Context, id, userID int, inpu
 		return nil, err
 	}
 
-	if !isOwner && !isTeamLeader {
+	if !isOwner {
 		if input.Milestones != nil {
-			return nil, ErrForbidden("只有队长可以修改项目时间线")
+			return nil, ErrForbidden("只有项目创建者可以修改项目时间线")
 		}
 		if input.Members == nil {
-			return nil, ErrForbidden("普通成员只能添加项目成员")
+			return nil, ErrForbidden("项目成员只能修改成员列表")
 		}
 		existingMembers, err := s.repo.Project.ListMembers(ctx, id)
 		if err != nil {
 			return nil, ErrInternal("获取项目成员失败")
 		}
+		if canOperateAsHighestRole(memberRole, existingMembers) {
+			if err := s.repo.Project.ReplaceMembers(ctx, id, *members); err != nil {
+				log.Printf("[ProjectService.UpdateProject] repository error replacing members: %v", err)
+				return nil, ErrInternal("更新项目成员失败")
+			}
+			updated, err := s.repo.Project.GetByID(ctx, id)
+			if err != nil {
+				return nil, ErrInternal("获取项目信息失败")
+			}
+			return updated, nil
+		}
 		existing := map[int]string{}
 		for _, member := range existingMembers {
 			existing[member.UserID] = member.Role
+		}
+		next := map[int]string{}
+		for _, member := range *members {
+			next[member.UserID] = member.Role
+		}
+		for _, member := range existingMembers {
+			if _, ok := next[member.UserID]; !ok {
+				return nil, ErrForbidden("当前角色不能删除项目成员")
+			}
 		}
 		additions := make([]models.ProjectMember, 0)
 		for _, member := range *members {
 			if role, ok := existing[member.UserID]; ok {
 				if role != member.Role {
-					return nil, ErrForbidden("普通成员不能修改已有成员角色")
+					return nil, ErrForbidden("当前角色不能修改已有成员角色")
 				}
 				continue
 			}
@@ -707,13 +821,22 @@ func (s *ProjectService) UpdateProject(ctx context.Context, id, userID int, inpu
 
 // DeleteProject checks ownership and deletes the project.
 func (s *ProjectService) DeleteProject(ctx context.Context, id, userID int) error {
-	isOwner, err := s.repo.Project.IsOwner(ctx, id, userID)
+	project, err := s.repo.Project.GetByID(ctx, id)
 	if err != nil {
-		log.Printf("[ProjectService.DeleteProject] repository error checking ownership: %v", err)
+		log.Printf("[ProjectService.DeleteProject] repository error getting project: %v", err)
+		return ErrInternal("获取项目信息失败")
+	}
+	if project == nil {
+		return ErrNotFound("项目不存在")
+	}
+	members, err := s.repo.Project.ListMembers(ctx, id)
+	if err != nil {
+		log.Printf("[ProjectService.DeleteProject] repository error listing members: %v", err)
 		return ErrInternal("检查权限失败")
 	}
-	if !isOwner {
-		return ErrForbidden("只有队长可以删除项目")
+	currentRole, _ := currentUserProjectRole(project, userID, members)
+	if !canOperateAsHighestRole(currentRole, members) {
+		return ErrForbidden("当前角色无权完成招募")
 	}
 
 	if err := s.repo.Project.Delete(ctx, id); err != nil {
