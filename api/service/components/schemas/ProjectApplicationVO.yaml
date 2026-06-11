@@ -6,6 +6,12 @@ properties:
     type: integer
   projectName:
     type: string
+  reviewerId:
+    type: integer
+  reviewerRole:
+    type: string
+  reviewerRoleName:
+    type: string
   applicant:
     $ref: ./UserVO.yaml
   applyReason:

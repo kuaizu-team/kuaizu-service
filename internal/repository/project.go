@@ -31,6 +31,7 @@ type ListParams struct {
 	Statuses      []int
 	Direction     *int
 	CreatorID     *int
+	MemberUserID  *int
 	IsCrossSchool *int
 	// SortBy controls the primary sort key.
 	// Public values: "school_priority" (geo-priority), "updated_at"
@@ -88,6 +89,13 @@ func (r *ProjectRepository) List(ctx context.Context, params ListParams) ([]mode
 	if params.CreatorID != nil {
 		conditions = append(conditions, "p.creator_id = ?")
 		whereArgs = append(whereArgs, *params.CreatorID)
+	}
+	if params.MemberUserID != nil {
+		conditions = append(conditions, `(p.creator_id = ? OR EXISTS (
+			SELECT 1 FROM project_members pm
+			WHERE pm.project_id = p.id AND pm.user_id = ?
+		))`)
+		whereArgs = append(whereArgs, *params.MemberUserID, *params.MemberUserID)
 	}
 	if params.IsCrossSchool != nil {
 		conditions = append(conditions, "p.is_cross_school = ?")
@@ -432,7 +440,7 @@ func (r *ProjectRepository) Create(ctx context.Context, p *models.Project) error
 	return nil
 }
 
-func (r *ProjectRepository) CreateWithMetadata(ctx context.Context, p *models.Project, tags *[]string, publisherRole *string, initiatingSchoolID *int) error {
+func (r *ProjectRepository) CreateWithMetadata(ctx context.Context, p *models.Project, tags *[]string, publisherRole *string, initiatingSchoolID *int, milestones *[]models.ProjectMilestone, members *[]models.ProjectMember) error {
 	tx, err := r.db.BeginTxx(ctx, nil)
 	if err != nil {
 		return err
@@ -458,7 +466,7 @@ func (r *ProjectRepository) CreateWithMetadata(ctx context.Context, p *models.Pr
 		return fmt.Errorf("get last insert id: %w", err)
 	}
 	p.ID = int(id)
-	if err := saveProjectMetadataTx(ctx, tx, p.ID, tags, publisherRole, initiatingSchoolID); err != nil {
+	if err := saveProjectMetadataTx(ctx, tx, p.ID, tags, publisherRole, initiatingSchoolID, milestones, members); err != nil {
 		return err
 	}
 	return tx.Commit()
@@ -492,7 +500,7 @@ func (r *ProjectRepository) Update(ctx context.Context, p *models.Project) error
 	return nil
 }
 
-func (r *ProjectRepository) UpdateWithMetadata(ctx context.Context, p *models.Project, tags *[]string, publisherRole *string, initiatingSchoolID *int) error {
+func (r *ProjectRepository) UpdateWithMetadata(ctx context.Context, p *models.Project, tags *[]string, publisherRole *string, initiatingSchoolID *int, milestones *[]models.ProjectMilestone, members *[]models.ProjectMember) error {
 	tx, err := r.db.BeginTxx(ctx, nil)
 	if err != nil {
 		return err
@@ -519,13 +527,13 @@ func (r *ProjectRepository) UpdateWithMetadata(ctx context.Context, p *models.Pr
 	if rowsAffected == 0 {
 		return fmt.Errorf("project not found")
 	}
-	if err := saveProjectMetadataTx(ctx, tx, p.ID, tags, publisherRole, initiatingSchoolID); err != nil {
+	if err := saveProjectMetadataTx(ctx, tx, p.ID, tags, publisherRole, initiatingSchoolID, milestones, members); err != nil {
 		return err
 	}
 	return tx.Commit()
 }
 
-func saveProjectMetadataTx(ctx context.Context, tx *sqlx.Tx, projectID int, tags *[]string, publisherRole *string, initiatingSchoolID *int) error {
+func saveProjectMetadataTx(ctx context.Context, tx *sqlx.Tx, projectID int, tags *[]string, publisherRole *string, initiatingSchoolID *int, milestones *[]models.ProjectMilestone, members *[]models.ProjectMember) error {
 	if publisherRole != nil {
 		if _, err := tx.ExecContext(ctx, "UPDATE project SET publisher_role=? WHERE id=?", *publisherRole, projectID); err != nil {
 			return err
@@ -555,7 +563,149 @@ func saveProjectMetadataTx(ctx context.Context, tx *sqlx.Tx, projectID int, tags
 			}
 		}
 	}
+	if milestones != nil {
+		if _, err := tx.ExecContext(ctx, "DELETE FROM project_milestones WHERE project_id=?", projectID); err != nil {
+			return err
+		}
+		for i := range *milestones {
+			m := (*milestones)[i]
+			sortOrder := i + 1
+			if _, err := tx.ExecContext(ctx, `INSERT INTO project_milestones(project_id,milestone_date,description,sort_order)
+				VALUES(?,?,?,?)`, projectID, m.MilestoneDate, m.Description, sortOrder); err != nil {
+				return err
+			}
+		}
+	}
+	if members != nil {
+		if _, err := tx.ExecContext(ctx, "DELETE FROM project_members WHERE project_id=?", projectID); err != nil {
+			return err
+		}
+		for _, member := range *members {
+			if _, err := tx.ExecContext(ctx, `INSERT INTO project_members(project_id,user_id,role)
+				VALUES(?,?,?)`, projectID, member.UserID, member.Role); err != nil {
+				return err
+			}
+		}
+	}
 	return nil
+}
+
+func (r *ProjectRepository) ListMilestones(ctx context.Context, projectID int) ([]models.ProjectMilestone, error) {
+	var milestones []models.ProjectMilestone
+	if err := r.db.SelectContext(ctx, &milestones, `SELECT id,project_id,milestone_date,description,sort_order
+		FROM project_milestones WHERE project_id=? ORDER BY milestone_date ASC, id ASC`, projectID); err != nil {
+		return nil, fmt.Errorf("query project milestones: %w", err)
+	}
+	return milestones, nil
+}
+
+func (r *ProjectRepository) ListMembers(ctx context.Context, projectID int) ([]models.ProjectMember, error) {
+	var members []models.ProjectMember
+	if err := r.db.SelectContext(ctx, &members, `SELECT pm.id,pm.project_id,pm.user_id,pm.role,pr.name AS role_name
+		FROM project_members pm
+		LEFT JOIN project_role pr ON pr.code=pm.role
+		WHERE pm.project_id=?
+		ORDER BY FIELD(pm.role,'TEAM_LEADER','TECH_LEADER','PRODUCT_MANAGER','TEAM_MEMBER'), pm.id ASC`, projectID); err != nil {
+		return nil, fmt.Errorf("query project members: %w", err)
+	}
+	if len(members) == 0 {
+		return members, nil
+	}
+	userIDs := make([]int, 0, len(members))
+	for i := range members {
+		userIDs = append(userIDs, members[i].UserID)
+	}
+	query, args, err := sqlx.In(`SELECT u.id,u.openid,u.nickname,u.avatar_url,u.auth_status,s.school_name,m.major_name,tp.id talent_profile_id
+		FROM `+"`user`"+` u
+		LEFT JOIN school s ON s.id=u.school_id
+		LEFT JOIN major m ON m.id=u.major_id
+		LEFT JOIN talent_profile tp ON tp.user_id=u.id
+		WHERE u.id IN (?)`, userIDs)
+	if err != nil {
+		return nil, err
+	}
+	var users []models.User
+	if err := r.db.SelectContext(ctx, &users, r.db.Rebind(query), args...); err != nil {
+		return nil, fmt.Errorf("query project member users: %w", err)
+	}
+	userMap := make(map[int]*models.User, len(users))
+	for i := range users {
+		user := users[i]
+		userMap[user.ID] = &user
+	}
+	for i := range members {
+		members[i].User = userMap[members[i].UserID]
+	}
+	return members, nil
+}
+
+func (r *ProjectRepository) AddMembers(ctx context.Context, projectID int, members []models.ProjectMember) error {
+	if len(members) == 0 {
+		return nil
+	}
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	for _, member := range members {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO project_members(project_id,user_id,role)
+			VALUES(?,?,?)
+			ON DUPLICATE KEY UPDATE role=role`, projectID, member.UserID, member.Role); err != nil {
+			return fmt.Errorf("add project member: %w", err)
+		}
+	}
+	return tx.Commit()
+}
+
+func (r *ProjectRepository) ReplaceMembers(ctx context.Context, projectID int, members []models.ProjectMember) error {
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.ExecContext(ctx, "DELETE FROM project_members WHERE project_id=?", projectID); err != nil {
+		return fmt.Errorf("delete project members: %w", err)
+	}
+	for _, member := range members {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO project_members(project_id,user_id,role)
+			VALUES(?,?,?)`, projectID, member.UserID, member.Role); err != nil {
+			return fmt.Errorf("replace project member: %w", err)
+		}
+	}
+	return tx.Commit()
+}
+
+func (r *ProjectRepository) GetMemberRole(ctx context.Context, projectID, userID int) (*string, error) {
+	var role string
+	if err := r.db.QueryRowxContext(ctx, `SELECT role FROM project_members WHERE project_id=? AND user_id=?`, projectID, userID).Scan(&role); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("query project member role: %w", err)
+	}
+	return &role, nil
+}
+
+func (r *ProjectRepository) IsOwnerOrMember(ctx context.Context, projectID, userID int) (bool, error) {
+	var exists bool
+	if err := r.db.QueryRowxContext(ctx, `SELECT EXISTS(
+		SELECT 1 FROM project WHERE id=? AND creator_id=?
+		UNION
+		SELECT 1 FROM project_members WHERE project_id=? AND user_id=?
+	)`, projectID, userID, projectID, userID).Scan(&exists); err != nil {
+		return false, fmt.Errorf("check project owner or member: %w", err)
+	}
+	return exists, nil
+}
+
+func (r *ProjectRepository) RoleExists(ctx context.Context, role string) (bool, error) {
+	var exists bool
+	if err := r.db.QueryRowxContext(ctx, `SELECT EXISTS(SELECT 1 FROM project_role WHERE code=? AND status=1)`, role).Scan(&exists); err != nil {
+		return false, fmt.Errorf("check project role: %w", err)
+	}
+	return exists, nil
 }
 
 // Delete performs a logical delete (sets status to CLOSED)

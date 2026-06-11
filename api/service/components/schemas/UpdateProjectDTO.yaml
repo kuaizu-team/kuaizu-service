@@ -10,6 +10,14 @@ properties:
     type: integer
     description: Project school ID; synchronized with initiatingSchoolId when provided.
   initiatingSchoolId: { type: integer }
+  milestones:
+    type: array
+    items:
+      $ref: ./ProjectMilestoneDTO.yaml
+  members:
+    type: array
+    items:
+      $ref: ./ProjectMemberDTO.yaml
   name:
     type: string
     maxLength: 200

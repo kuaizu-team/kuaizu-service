@@ -6,6 +6,11 @@ const (
 	AdminUserStatusEnabled  = 1 // 启用
 )
 
+const (
+	ProjectRoleTeamLeader = "TEAM_LEADER"
+	ProjectRoleTeamMember = "TEAM_MEMBER"
+)
+
 // Admin Role
 const (
 	AdminRoleSuperAdmin       = 1 // 超级管理员（全量权限）

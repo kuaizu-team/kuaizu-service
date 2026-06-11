@@ -12,6 +12,14 @@ properties:
     items: { type: string, maxLength: 12 }
   publisherRole: { type: string }
   initiatingSchoolId: { type: integer }
+  milestones:
+    type: array
+    items:
+      $ref: ./ProjectMilestoneDTO.yaml
+  members:
+    type: array
+    items:
+      $ref: ./ProjectMemberDTO.yaml
   name:
     type: string
     maxLength: 200

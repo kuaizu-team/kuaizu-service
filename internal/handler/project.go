@@ -98,6 +98,8 @@ func (s *Server) CreateProject(ctx echo.Context) error {
 		Tags:                 req.Tags,
 		PublisherRole:        req.PublisherRole,
 		InitiatingSchoolID:   req.InitiatingSchoolId,
+		Milestones:           req.Milestones,
+		Members:              req.Members,
 	}
 
 	project, err := s.svc.Project.CreateProject(ctx.Request().Context(), input)
@@ -348,6 +350,8 @@ func (s *Server) UpdateProject(ctx echo.Context, id int) error {
 		PublisherRole:        req.PublisherRole,
 		SchoolID:             req.SchoolId,
 		InitiatingSchoolID:   req.InitiatingSchoolId,
+		Milestones:           req.Milestones,
+		Members:              req.Members,
 	}
 
 	project, err := s.svc.Project.UpdateProject(ctx.Request().Context(), id, userID, input)

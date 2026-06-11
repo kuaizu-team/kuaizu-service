@@ -417,12 +417,12 @@ func (s *EmailPromotionService) ListProjectBatches(ctx context.Context, requeste
 		limit = 50
 	}
 
-	isOwner, err := s.repo.Project.IsOwner(ctx, projectID, requesterUserID)
+	isReviewer, err := s.repo.Project.IsOwnerOrMember(ctx, projectID, requesterUserID)
 	if err != nil {
 		log.Printf("[EmailPromotionService.ListProjectBatches] ownership check error: %v", err)
 		return nil, ErrInternal("check project permission failed")
 	}
-	if !isOwner {
+	if !isReviewer {
 		return nil, ErrForbidden("no permission to view project promotion records")
 	}
 
@@ -486,12 +486,12 @@ func (s *EmailPromotionService) ListProjectBatchesPaged(ctx context.Context, req
 		limit = 50
 	}
 
-	isOwner, err := s.repo.Project.IsOwner(ctx, projectID, requesterUserID)
+	isReviewer, err := s.repo.Project.IsOwnerOrMember(ctx, projectID, requesterUserID)
 	if err != nil {
 		log.Printf("[EmailPromotionService.ListProjectBatchesPaged] ownership check error: %v", err)
 		return nil, ErrInternal("check project permission failed")
 	}
-	if !isOwner {
+	if !isReviewer {
 		return nil, ErrForbidden("no permission to view project promotion records")
 	}
 
@@ -543,12 +543,12 @@ func (s *EmailPromotionService) ListProjectBatchUsers(ctx context.Context, reque
 		size = 100
 	}
 
-	isOwner, err := s.repo.Project.IsOwner(ctx, projectID, requesterUserID)
+	isReviewer, err := s.repo.Project.IsOwnerOrMember(ctx, projectID, requesterUserID)
 	if err != nil {
 		log.Printf("[EmailPromotionService.ListProjectBatchUsers] ownership check error: %v", err)
 		return nil, ErrInternal("check project permission failed")
 	}
-	if !isOwner {
+	if !isReviewer {
 		return nil, ErrForbidden("no permission to view project promotion records")
 	}
 

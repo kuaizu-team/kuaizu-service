@@ -1,0 +1,14 @@
+type: object
+properties:
+  id:
+    type: integer
+  projectId:
+    type: integer
+  userId:
+    type: integer
+  role:
+    type: string
+  roleName:
+    type: string
+  user:
+    $ref: ./UserVO.yaml

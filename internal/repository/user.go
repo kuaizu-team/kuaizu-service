@@ -49,6 +49,35 @@ func (r *UserRepository) GetByID(ctx context.Context, id int) (*models.User, err
 	return &user, nil
 }
 
+// GetByPhone retrieves a user by exact phone number with safe display joins.
+func (r *UserRepository) GetByPhone(ctx context.Context, phone string) (*models.User, error) {
+	query := `
+		SELECT
+			u.id, u.openid, u.nickname, u.phone, u.email,
+			u.school_id, u.major_id, u.grade,
+			u.auth_status, u.avatar_url, u.created_at,
+			s.school_name,
+			m.major_name,
+			tp.id AS talent_profile_id
+		FROM ` + "`user`" + ` u
+		LEFT JOIN school s ON u.school_id = s.id
+		LEFT JOIN major m ON u.major_id = m.id
+		LEFT JOIN talent_profile tp ON u.id = tp.user_id
+		WHERE u.phone = ?
+		LIMIT 1
+	`
+
+	var user models.User
+	if err := r.db.QueryRowxContext(ctx, query, phone).StructScan(&user); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("query user by phone: %w", err)
+	}
+
+	return &user, nil
+}
+
 // GetByIDForUpdateTx retrieves and locks a user row in the current transaction.
 func (r *UserRepository) GetByIDForUpdateTx(ctx context.Context, tx *sqlx.Tx, id int) (*models.User, error) {
 	query := `

@@ -4,6 +4,14 @@ allOf:
     properties:
       creator:
         $ref: ./UserVO.yaml
+      milestones:
+        type: array
+        items:
+          $ref: ./ProjectMilestoneVO.yaml
+      members:
+        type: array
+        items:
+          $ref: ./ProjectMemberVO.yaml
       viewCount:
         type: integer
         description: 浏览量

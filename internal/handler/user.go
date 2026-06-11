@@ -28,6 +28,35 @@ func (s *Server) GetCurrentUser(ctx echo.Context) error {
 	return Success(ctx, toExtendedUserVO(user))
 }
 
+// SearchUserByPhone handles GET /users/search-by-phone.
+func (s *Server) SearchUserByPhone(ctx echo.Context, params api.SearchUserByPhoneParams) error {
+	if params.Phone == "" {
+		return BadRequest(ctx, "手机号不能为空")
+	}
+	user, err := s.repo.User.GetByPhone(ctx.Request().Context(), params.Phone)
+	if err != nil {
+		return InternalError(ctx, "搜索用户失败")
+	}
+	if user == nil {
+		return NotFound(ctx, "用户不存在")
+	}
+	vo := user.ToVO()
+	vo.Phone = nil
+	vo.Email = nil
+	vo.AuthImgUrl = nil
+	vo.CoverImage = nil
+	vo.CreatedAt = nil
+	vo.Grade = nil
+	vo.OliveBranchCount = nil
+	vo.FreeBranchUsedToday = nil
+	vo.LastActiveDate = nil
+	vo.School = nil
+	vo.Major = nil
+	vo.Skills = nil
+	vo.Wechat = nil
+	return Success(ctx, vo)
+}
+
 // UpdateCurrentUser handles PUT /users/me
 func (s *Server) UpdateCurrentUser(ctx echo.Context) error {
 	userID := GetUserID(ctx)

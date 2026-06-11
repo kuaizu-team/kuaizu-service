@@ -36,6 +36,13 @@ type ProjectRepo interface {
 	Update(ctx context.Context, p *models.Project) error
 	Delete(ctx context.Context, id int) error
 	IsOwner(ctx context.Context, projectID, userID int) (bool, error)
+	IsOwnerOrMember(ctx context.Context, projectID, userID int) (bool, error)
+	RoleExists(ctx context.Context, role string) (bool, error)
+	GetMemberRole(ctx context.Context, projectID, userID int) (*string, error)
+	ListMilestones(ctx context.Context, projectID int) ([]models.ProjectMilestone, error)
+	ListMembers(ctx context.Context, projectID int) ([]models.ProjectMember, error)
+	AddMembers(ctx context.Context, projectID int, members []models.ProjectMember) error
+	ReplaceMembers(ctx context.Context, projectID int, members []models.ProjectMember) error
 	UpdateStatus(ctx context.Context, id int, status int) error
 	IncrementViewCount(ctx context.Context, id int) error
 }
@@ -83,6 +90,7 @@ type SmsNoticeRepo interface {
 // UserRepo defines the interface for user repository operations used by services.
 type UserRepo interface {
 	GetByID(ctx context.Context, id int) (*models.User, error)
+	GetByPhone(ctx context.Context, phone string) (*models.User, error)
 	GetByIDForUpdateTx(ctx context.Context, tx *sqlx.Tx, id int) (*models.User, error)
 	GetByOpenID(ctx context.Context, openid string) (*models.User, error)
 	Create(ctx context.Context, openid string) (*models.User, error)
@@ -117,6 +125,7 @@ type ApplicationRepo interface {
 	GetByID(ctx context.Context, id int) (*models.ProjectApplication, error)
 	CheckDuplicate(ctx context.Context, projectID, userID int) (bool, error)
 	UpdateStatus(ctx context.Context, id int, status int) error
+	UpdateStatusWithReviewer(ctx context.Context, id int, status int, reviewerID int, reviewerRole *string) error
 	GetUnreadApplicationCount(ctx context.Context, userID int) (int, error)
 	MarkReviewerRead(ctx context.Context, projectID, ownerID int, ids []int) error
 }

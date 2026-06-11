@@ -8,30 +8,36 @@ import (
 
 // ProjectApplication represents a project application in the database
 type ProjectApplication struct {
-	ID        int       `db:"id"`
-	ProjectID int       `db:"project_id"`
-	UserID    int       `db:"user_id"`
-	Status    int       `db:"status"`   // 0-待审核, 1-已通过, 2-已拒绝
-	IsRead    bool      `db:"is_read"`  // 项目方是否已读
-	AppliedAt time.Time `db:"applied_at"`
-	UpdatedAt time.Time `db:"updated_at"`
+	ID           int       `db:"id"`
+	ProjectID    int       `db:"project_id"`
+	UserID       int       `db:"user_id"`
+	Status       int       `db:"status"`  // 0-待审核, 1-已通过, 2-已拒绝
+	IsRead       bool      `db:"is_read"` // 项目方是否已读
+	ReviewerID   *int      `db:"reviewer_id"`
+	ReviewerRole *string   `db:"reviewer_role"`
+	AppliedAt    time.Time `db:"applied_at"`
+	UpdatedAt    time.Time `db:"updated_at"`
 
 	// Joined fields
-	ProjectName   *string        `db:"project_name"`
-	Applicant     *User          `db:"-"`
-	TalentProfile *TalentProfile `db:"-"`
+	ProjectName      *string        `db:"project_name"`
+	ReviewerRoleName *string        `db:"reviewer_role_name"`
+	Applicant        *User          `db:"-"`
+	TalentProfile    *TalentProfile `db:"-"`
 }
 
 // ToVO converts ProjectApplication to API ProjectApplicationVO
 func (a *ProjectApplication) ToVO() *api.ProjectApplicationVO {
 
 	vo := &api.ProjectApplicationVO{
-		Id:          &a.ID,
-		ProjectId:   &a.ProjectID,
-		ProjectName: a.ProjectName,
-		Status:      (*api.ApplicationStatus)(&a.Status),
-		IsRead:      &a.IsRead,
-		AppliedAt:   &a.AppliedAt,
+		Id:               &a.ID,
+		ProjectId:        &a.ProjectID,
+		ProjectName:      a.ProjectName,
+		Status:           (*api.ApplicationStatus)(&a.Status),
+		IsRead:           &a.IsRead,
+		ReviewerId:       a.ReviewerID,
+		ReviewerRole:     a.ReviewerRole,
+		ReviewerRoleName: a.ReviewerRoleName,
+		AppliedAt:        &a.AppliedAt,
 	}
 
 	if a.Applicant != nil {
