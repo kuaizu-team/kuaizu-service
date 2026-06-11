@@ -119,7 +119,7 @@ func (s *InteractionService) Share(ctx context.Context, target string, id, userI
 }
 
 func (s *InteractionService) ListUsers(ctx context.Context, target, kind string, id, page, size, days int) (map[string]interface{}, error) {
-	if kind != "like" && kind != "favorite" && kind != "share" {
+	if !validInteractionType(kind) {
 		return nil, ErrBadRequest("invalid interaction type")
 	}
 	if err := s.ensureTarget(ctx, target, id); err != nil {

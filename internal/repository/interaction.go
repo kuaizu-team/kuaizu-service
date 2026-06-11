@@ -200,6 +200,9 @@ func (r *InteractionRepository) ListUsers(ctx context.Context, target, kind stri
 	if err != nil {
 		return nil, 0, err
 	}
+	if kind == "visit" {
+		return r.listVisitUsers(ctx, target, targetID, page, size, days)
+	}
 	table := map[string]string{"like": like, "favorite": favorite, "share": share}[kind]
 	if table == "" {
 		return nil, 0, fmt.Errorf("invalid interaction kind")
@@ -229,6 +232,54 @@ func (r *InteractionRepository) ListUsers(ctx context.Context, target, kind stri
 		}
 	}
 	return users, total, err
+}
+
+func (r *InteractionRepository) listVisitUsers(ctx context.Context, target string, targetID, page, size, days int) ([]models.InteractionUser, int64, error) {
+	var (
+		table    string
+		idColumn string
+	)
+	switch target {
+	case InteractionProject:
+		table = "project_view_log"
+		idColumn = "project_id"
+	case InteractionTalent:
+		table = "talent_view_log"
+		idColumn = "talent_id"
+	default:
+		return nil, 0, fmt.Errorf("invalid interaction target")
+	}
+
+	where, args := "vl."+idColumn+"=? AND vl.user_id IS NOT NULL AND vl.duration_ms IS NULL", []interface{}{targetID}
+	if days > 0 {
+		where += " AND vl.viewed_at>=DATE_SUB(NOW(),INTERVAL ? DAY)"
+		args = append(args, days)
+	}
+
+	var total int64
+	countQuery := fmt.Sprintf("SELECT COUNT(DISTINCT vl.user_id) FROM %s vl WHERE %s", table, where)
+	if err := r.db.QueryRowxContext(ctx, countQuery, args...).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+
+	query := fmt.Sprintf(`SELECT vl.user_id,tp.id talent_profile_id,u.nickname,u.avatar_url,MAX(vl.viewed_at) operated_at
+		FROM %s vl JOIN `+"`user`"+` u ON u.id=vl.user_id LEFT JOIN talent_profile tp ON tp.user_id=u.id
+		WHERE %s
+		GROUP BY vl.user_id,tp.id,u.nickname,u.avatar_url
+		ORDER BY operated_at DESC LIMIT ? OFFSET ?`, table, where)
+	queryArgs := append(append([]interface{}{}, args...), size, (page-1)*size)
+
+	var users []models.InteractionUser
+	if err := r.db.SelectContext(ctx, &users, query, queryArgs...); err != nil {
+		return nil, 0, err
+	}
+	for i := range users {
+		if users[i].AvatarURL != nil && *users[i].AvatarURL != "" {
+			fullURL := oss.FullURL(*users[i].AvatarURL)
+			users[i].AvatarURL = &fullURL
+		}
+	}
+	return users, total, nil
 }
 
 func (r *InteractionRepository) UnreadFavorites(ctx context.Context, userID int) (models.FavoriteViewState, error) {
