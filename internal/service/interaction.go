@@ -49,7 +49,7 @@ func (s *InteractionService) ensureTarget(ctx context.Context, target string, id
 }
 
 func validInteractionType(kind string) bool {
-	return kind == "like" || kind == "favorite" || kind == "share"
+	return kind == "like" || kind == "favorite" || kind == "share" || kind == "visit"
 }
 
 func (s *InteractionService) ensureTargetOwner(ctx context.Context, target string, id, userID int) error {
@@ -62,7 +62,7 @@ func (s *InteractionService) ensureTargetOwner(ctx context.Context, target strin
 	)
 	switch target {
 	case repository.InteractionProject:
-		owned, err = s.repo.Project.IsOwner(ctx, id, userID)
+		owned, err = s.repo.Project.IsOwnerOrMember(ctx, id, userID)
 	case repository.InteractionTalent:
 		owned, err = s.repo.TalentProfile.IsOwner(ctx, id, userID)
 	}

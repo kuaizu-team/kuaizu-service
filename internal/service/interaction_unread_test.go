@@ -13,7 +13,7 @@ import (
 func TestMarkDashboardViewedRejectsNonOwner(t *testing.T) {
 	projectRepo := new(MockProjectRepo)
 	projectRepo.On("GetByID", mock.Anything, 42).Return(&models.Project{ID: 42}, nil)
-	projectRepo.On("IsOwner", mock.Anything, 42, 7).Return(false, nil)
+	projectRepo.On("IsOwnerOrMember", mock.Anything, 42, 7).Return(false, nil)
 	svc := NewInteractionService(&repository.Repository{Project: projectRepo})
 
 	err := svc.MarkDashboardViewed(context.Background(), repository.InteractionProject, 42, 7, nil)
@@ -26,7 +26,7 @@ func TestMarkDashboardViewedRejectsNonOwner(t *testing.T) {
 func TestTargetUnreadRejectsNonOwner(t *testing.T) {
 	projectRepo := new(MockProjectRepo)
 	projectRepo.On("GetByID", mock.Anything, 42).Return(&models.Project{ID: 42}, nil)
-	projectRepo.On("IsOwner", mock.Anything, 42, 7).Return(false, nil)
+	projectRepo.On("IsOwnerOrMember", mock.Anything, 42, 7).Return(false, nil)
 	svc := NewInteractionService(&repository.Repository{Project: projectRepo})
 
 	_, err := svc.TargetUnread(context.Background(), repository.InteractionProject, 42, 7)

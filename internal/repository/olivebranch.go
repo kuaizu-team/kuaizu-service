@@ -30,6 +30,14 @@ type OliveBranchListParams struct {
 	Status     *int
 }
 
+// OliveBranchDashboardStats contains compact olive-branch metrics for dashboards.
+type OliveBranchDashboardStats struct {
+	Total    int
+	Read     int
+	Accepted int
+	Handled  int
+}
+
 // obUserRow holds JOIN-ed user + school + major columns for olive branch queries.
 type obUserRow struct {
 	UID         int     `db:"u_id"`
@@ -256,10 +264,20 @@ func (r *OliveBranchRepository) UpdateStatus(ctx context.Context, id int, status
 // ListBySenderID retrieves paginated olive branches sent by a user
 func (r *OliveBranchRepository) ListBySenderID(ctx context.Context, params OliveBranchListParams) ([]models.OliveBranch, int64, error) {
 	// Count total
-	countArgs := []interface{}{params.SenderID}
-	countQuery := `SELECT COUNT(*) FROM olive_branch_record WHERE sender_id = ?`
+	countArgs := []interface{}{params.SenderID, params.SenderID, params.SenderID}
+	countQuery := `SELECT COUNT(*)
+		FROM olive_branch_record ob
+		LEFT JOIN project p ON ob.related_project_id = p.id
+		WHERE (
+			ob.sender_id = ?
+			OR p.creator_id = ?
+			OR EXISTS (
+				SELECT 1 FROM project_members pm
+				WHERE pm.project_id = ob.related_project_id AND pm.user_id = ?
+			)
+		)`
 	if params.Status != nil {
-		countQuery += ` AND status = ?`
+		countQuery += ` AND ob.status = ?`
 		countArgs = append(countArgs, *params.Status)
 	}
 
@@ -270,7 +288,7 @@ func (r *OliveBranchRepository) ListBySenderID(ctx context.Context, params Olive
 
 	// Query with pagination
 	offset := (params.Page - 1) * params.Size
-	args := []interface{}{params.SenderID}
+	args := []interface{}{params.SenderID, params.SenderID, params.SenderID}
 
 	query := `
 		SELECT
@@ -303,7 +321,14 @@ func (r *OliveBranchRepository) ListBySenderID(ctx context.Context, params Olive
 		LEFT JOIN school sch ON recv.school_id = sch.id
 		LEFT JOIN major m ON recv.major_id = m.id
 		LEFT JOIN olive_branch_sms_notice sn ON sn.olive_branch_record_id = ob.id
-		WHERE ob.sender_id = ?
+		WHERE (
+			ob.sender_id = ?
+			OR p.creator_id = ?
+			OR EXISTS (
+				SELECT 1 FROM project_members pm
+				WHERE pm.project_id = ob.related_project_id AND pm.user_id = ?
+			)
+		)
 	`
 	if params.Status != nil {
 		query += ` AND ob.status = ?`
@@ -360,6 +385,50 @@ func (r *OliveBranchRepository) ListBySenderID(ctx context.Context, params Olive
 	}
 
 	return records, total, nil
+}
+
+func (r *OliveBranchRepository) GetProjectDashboardStats(ctx context.Context, projectID int) (OliveBranchDashboardStats, error) {
+	var stats OliveBranchDashboardStats
+	err := r.db.QueryRowxContext(ctx, `
+		SELECT
+			COUNT(*) AS total,
+			COALESCE(SUM(CASE WHEN is_read = TRUE THEN 1 ELSE 0 END), 0) AS read_count,
+			COALESCE(SUM(CASE WHEN status = ? THEN 1 ELSE 0 END), 0) AS accepted,
+			COALESCE(SUM(CASE WHEN status IN (?, ?) THEN 1 ELSE 0 END), 0) AS handled
+		FROM olive_branch_record
+		WHERE related_project_id = ?
+	`, models.OliveBranchStatusAccepted, models.OliveBranchStatusAccepted, models.OliveBranchStatusRejected, projectID).Scan(
+		&stats.Total,
+		&stats.Read,
+		&stats.Accepted,
+		&stats.Handled,
+	)
+	if err != nil {
+		return stats, fmt.Errorf("get project olive branch dashboard stats: %w", err)
+	}
+	return stats, nil
+}
+
+func (r *OliveBranchRepository) GetUserReceivedDashboardStats(ctx context.Context, userID int) (OliveBranchDashboardStats, error) {
+	var stats OliveBranchDashboardStats
+	err := r.db.QueryRowxContext(ctx, `
+		SELECT
+			COUNT(*) AS total,
+			COALESCE(SUM(CASE WHEN is_read = TRUE THEN 1 ELSE 0 END), 0) AS read_count,
+			COALESCE(SUM(CASE WHEN status = ? THEN 1 ELSE 0 END), 0) AS accepted,
+			COALESCE(SUM(CASE WHEN status IN (?, ?) THEN 1 ELSE 0 END), 0) AS handled
+		FROM olive_branch_record
+		WHERE receiver_id = ?
+	`, models.OliveBranchStatusAccepted, models.OliveBranchStatusAccepted, models.OliveBranchStatusRejected, userID).Scan(
+		&stats.Total,
+		&stats.Read,
+		&stats.Accepted,
+		&stats.Handled,
+	)
+	if err != nil {
+		return stats, fmt.Errorf("get user received olive branch dashboard stats: %w", err)
+	}
+	return stats, nil
 }
 
 func intValue(value *int) int {

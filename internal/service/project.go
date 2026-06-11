@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"log"
+	"math"
 	"sort"
 	"strings"
 	"unicode/utf8"
@@ -286,21 +287,40 @@ func (s *ProjectService) attachProjectPermissions(ctx context.Context, projects 
 
 // ProjectDashboardResult is the response payload for GET /projects/{id}/dashboard.
 type ProjectDashboardResult struct {
-	TotalViews         int                          `json:"total_views"`
-	TodayViews         int                          `json:"today_views"`
-	TotalApplicants    int                          `json:"total_applicants"`
-	ConversionRate     float64                      `json:"conversion_rate"`
-	AvgDurationSeconds int                          `json:"avg_duration_seconds"`
-	HourlyViews        []repository.HourlyViewItem  `json:"hourly_views"`
-	LikeCount          int                          `json:"like_count"`
-	FavoriteCount      int                          `json:"favorite_count"`
-	ShareCount         int                          `json:"share_count"`
-	InteractionUnread  repository.InteractionUnread `json:"interaction_unread"`
-	SourceStats        struct {
+	TotalViews             int                                       `json:"total_views"`
+	TodayViews             int                                       `json:"today_views"`
+	UniqueVisitors         int                                       `json:"unique_visitors"`
+	TotalApplicants        int                                       `json:"total_applicants"`
+	ProcessedApplicants    int                                       `json:"processed_applicants"`
+	ConversionRate         float64                                   `json:"conversion_rate"`
+	ApplicationRate        float64                                   `json:"application_rate"`
+	ApplicationProcessRate float64                                   `json:"application_process_rate"`
+	AvgDurationSeconds     int                                       `json:"avg_duration_seconds"`
+	HourlyViews            []repository.HourlyViewItem               `json:"hourly_views"`
+	LikeCount              int                                       `json:"like_count"`
+	FavoriteCount          int                                       `json:"favorite_count"`
+	ShareCount             int                                       `json:"share_count"`
+	VisitCount             int                                       `json:"visit_count"`
+	InteractionUnread      repository.InteractionUnread              `json:"interaction_unread"`
+	VisitUnreadCount       int                                       `json:"visit_unread_count"`
+	OliveSentTotal         int                                       `json:"olive_sent_total"`
+	OliveReadCount         int                                       `json:"olive_read_count"`
+	OliveAcceptedCount     int                                       `json:"olive_accepted_count"`
+	OliveReadRate          float64                                   `json:"olive_read_rate"`
+	OliveAgreeRate         float64                                   `json:"olive_agree_rate"`
+	PromotionStats         repository.ProjectPromotionDashboardStats `json:"promotion_stats"`
+	SourceStats            struct {
 		FromList  int `json:"from_list"`
 		FromShare int `json:"from_share"`
 		Unknown   int `json:"unknown"`
 	} `json:"source_stats"`
+}
+
+func dashboardRate(numerator, denominator int) float64 {
+	if denominator <= 0 {
+		return 0
+	}
+	return math.Round(float64(numerator)/float64(denominator)*10000) / 100
 }
 
 // GetProjectDashboard returns aggregated stats for the project dashboard.
@@ -322,12 +342,18 @@ func (s *ProjectService) GetProjectDashboard(ctx context.Context, projectID, req
 	}
 
 	result := &ProjectDashboardResult{
-		TotalViews:         raw.TotalViews,
-		TodayViews:         raw.TodayViews,
-		TotalApplicants:    raw.TotalApplicants,
-		ConversionRate:     raw.ConversionRate,
-		AvgDurationSeconds: raw.AvgDurationSeconds,
-		HourlyViews:        raw.HourlyViews,
+		TotalViews:             raw.TotalViews,
+		TodayViews:             raw.TodayViews,
+		UniqueVisitors:         raw.UniqueVisitors,
+		TotalApplicants:        raw.TotalApplicants,
+		ProcessedApplicants:    raw.ProcessedApplicants,
+		ConversionRate:         raw.ConversionRate,
+		ApplicationRate:        raw.ConversionRate,
+		ApplicationProcessRate: dashboardRate(raw.ProcessedApplicants, raw.TotalApplicants),
+		AvgDurationSeconds:     raw.AvgDurationSeconds,
+		HourlyViews:            raw.HourlyViews,
+		VisitCount:             raw.TotalViews,
+		PromotionStats:         raw.PromotionStats,
 	}
 	result.SourceStats.FromList = raw.FromList
 	result.SourceStats.FromShare = raw.FromShare
@@ -342,6 +368,23 @@ func (s *ProjectService) GetProjectDashboard(ctx context.Context, projectID, req
 		return nil, ErrInternal("get interaction unread failed")
 	}
 	result.InteractionUnread = unread
+	visitUnread, err := s.repo.ProjectViewLog.CountUnreadVisits(ctx, projectID, requesterUserID)
+	if err != nil {
+		return nil, ErrInternal("get visit unread failed")
+	}
+	result.VisitUnreadCount = visitUnread
+	result.InteractionUnread.VisitCount = visitUnread
+	result.InteractionUnread.TotalCount += visitUnread
+
+	oliveStats, err := s.repo.OliveBranch.GetProjectDashboardStats(ctx, projectID)
+	if err != nil {
+		return nil, ErrInternal("get olive branch dashboard failed")
+	}
+	result.OliveSentTotal = oliveStats.Total
+	result.OliveReadCount = oliveStats.Read
+	result.OliveAcceptedCount = oliveStats.Accepted
+	result.OliveReadRate = dashboardRate(oliveStats.Read, oliveStats.Total)
+	result.OliveAgreeRate = dashboardRate(oliveStats.Accepted, oliveStats.Read)
 
 	return result, nil
 }

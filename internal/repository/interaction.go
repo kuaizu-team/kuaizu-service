@@ -25,6 +25,7 @@ type InteractionUnread struct {
 	LikeCount     int `db:"like_count" json:"like_count"`
 	FavoriteCount int `db:"favorite_count" json:"favorite_count"`
 	ShareCount    int `db:"share_count" json:"share_count"`
+	VisitCount    int `db:"visit_count" json:"visit_count"`
 	TotalCount    int `db:"total_count" json:"total_count"`
 }
 

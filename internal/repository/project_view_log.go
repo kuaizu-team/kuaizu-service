@@ -13,15 +13,27 @@ import (
 
 // ProjectDashboardStats holds aggregated statistics for the project dashboard.
 type ProjectDashboardStats struct {
-	TotalViews         int
-	TodayViews         int
-	TotalApplicants    int
-	ConversionRate     float64
-	FromList           int
-	FromShare          int
-	Unknown            int
-	AvgDurationSeconds int
-	HourlyViews        []HourlyViewItem
+	TotalViews          int
+	TodayViews          int
+	UniqueVisitors      int
+	TotalApplicants     int
+	ProcessedApplicants int
+	ConversionRate      float64
+	FromList            int
+	FromShare           int
+	Unknown             int
+	AvgDurationSeconds  int
+	HourlyViews         []HourlyViewItem
+	PromotionStats      ProjectPromotionDashboardStats
+	VisitUnread         int
+}
+
+// ProjectPromotionDashboardStats contains compact email promotion metrics.
+type ProjectPromotionDashboardStats struct {
+	TotalRecipients      int     `json:"total_recipients"`
+	CompletedRecipients  int     `json:"completed_recipients"`
+	Recent7DayRecipients int     `json:"recent_7_day_recipients"`
+	ReachRate            float64 `json:"reach_rate"`
 }
 
 // HourlyViewItem represents the view count for one hour slot.
@@ -100,6 +112,20 @@ func (r *ProjectViewLogRepository) GetDashboardStats(ctx context.Context, projec
 		return nil, fmt.Errorf("get total_applicants: %w", err)
 	}
 
+	var uniqueVisitors int
+	if err := r.db.QueryRowxContext(ctx,
+		`SELECT COUNT(DISTINCT user_id) FROM project_view_log WHERE project_id = ? AND user_id IS NOT NULL AND duration_ms IS NULL`, projectID,
+	).Scan(&uniqueVisitors); err != nil {
+		return nil, fmt.Errorf("get unique_visitors: %w", err)
+	}
+
+	var processedApplicants int
+	if err := r.db.QueryRowxContext(ctx,
+		`SELECT COUNT(*) FROM project_application WHERE project_id = ? AND status <> ?`, projectID, models.ApplicationStatusPending,
+	).Scan(&processedApplicants); err != nil {
+		return nil, fmt.Errorf("get processed_applicants: %w", err)
+	}
+
 	// 4. Source breakdown — exclude duration-only rows.
 	type sourceRow struct {
 		Source int `db:"source"`
@@ -156,11 +182,13 @@ func (r *ProjectViewLogRepository) GetDashboardStats(ctx context.Context, projec
 	}
 
 	stats := &ProjectDashboardStats{
-		TotalViews:         totalViews,
-		TodayViews:         todayViews,
-		TotalApplicants:    totalApplicants,
-		AvgDurationSeconds: int(math.Round(avgDurationMs / 1000)),
-		HourlyViews:        hourlyViews,
+		TotalViews:          totalViews,
+		TodayViews:          todayViews,
+		UniqueVisitors:      uniqueVisitors,
+		TotalApplicants:     totalApplicants,
+		ProcessedApplicants: processedApplicants,
+		AvgDurationSeconds:  int(math.Round(avgDurationMs / 1000)),
+		HourlyViews:         hourlyViews,
 	}
 
 	for _, row := range srcRows {
@@ -174,9 +202,28 @@ func (r *ProjectViewLogRepository) GetDashboardStats(ctx context.Context, projec
 		}
 	}
 
-	if totalViews > 0 {
-		raw := float64(totalApplicants) / float64(totalViews) * 100
+	if uniqueVisitors > 0 {
+		raw := float64(totalApplicants) / float64(uniqueVisitors) * 100
 		stats.ConversionRate = math.Round(raw*100) / 100
+	}
+
+	if err := r.db.QueryRowxContext(ctx, `
+		SELECT
+			COALESCE(SUM(max_recipients), 0) AS total_recipients,
+			COALESCE(SUM(total_sent), 0) AS completed_recipients,
+			COALESCE(SUM(CASE WHEN created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY) THEN max_recipients ELSE 0 END), 0) AS recent_7_day_recipients
+		FROM email_promotion
+		WHERE project_id = ?
+	`, projectID).Scan(
+		&stats.PromotionStats.TotalRecipients,
+		&stats.PromotionStats.CompletedRecipients,
+		&stats.PromotionStats.Recent7DayRecipients,
+	); err != nil {
+		return nil, fmt.Errorf("get promotion dashboard stats: %w", err)
+	}
+	if stats.PromotionStats.TotalRecipients > 0 {
+		raw := float64(stats.PromotionStats.CompletedRecipients) / float64(stats.PromotionStats.TotalRecipients) * 100
+		stats.PromotionStats.ReachRate = math.Round(raw*100) / 100
 	}
 
 	return stats, nil
@@ -220,4 +267,25 @@ func (r *ProjectViewLogRepository) GetViewers(ctx context.Context, projectID, li
 		}
 	}
 	return viewers, total, nil
+}
+
+func (r *ProjectViewLogRepository) CountUnreadVisits(ctx context.Context, projectID, ownerUserID int) (int, error) {
+	var count int
+	err := r.db.QueryRowxContext(ctx, `
+		SELECT COUNT(*)
+		FROM project_view_log vl
+		WHERE vl.project_id = ?
+		  AND vl.duration_ms IS NULL
+		  AND vl.viewed_at > COALESCE(
+			(SELECT s.last_viewed_at
+			 FROM interaction_dashboard_view_state s
+			 WHERE s.user_id = ? AND s.target_type = 'projects'
+			   AND s.target_id = ? AND s.interaction_type = 'visit'),
+			'1970-01-01 00:00:01'
+		  )
+	`, projectID, ownerUserID, projectID).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("count unread project visits: %w", err)
+	}
+	return count, nil
 }
