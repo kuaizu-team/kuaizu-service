@@ -137,6 +137,16 @@ func (s *ProjectService) GetProject(ctx context.Context, id int) (*models.Projec
 	if project == nil {
 		return nil, ErrNotFound("项目不存在")
 	}
+	milestones, err := s.repo.Project.ListMilestones(ctx, id)
+	if err != nil {
+		return nil, ErrInternal("获取项目时间线失败")
+	}
+	members, err := s.repo.Project.ListMembers(ctx, id)
+	if err != nil {
+		return nil, ErrInternal("获取项目成员失败")
+	}
+	project.Milestones = milestones
+	project.Members = members
 
 	return project, nil
 }

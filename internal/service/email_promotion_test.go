@@ -172,6 +172,14 @@ func (m *MockProjectRepo) GetMemberRole(ctx context.Context, projectID, userID i
 	return &role, args.Error(1)
 }
 
+func (m *MockProjectRepo) ListMilestones(ctx context.Context, projectID int) ([]models.ProjectMilestone, error) {
+	args := m.Called(ctx, projectID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]models.ProjectMilestone), args.Error(1)
+}
+
 func (m *MockProjectRepo) ListMembers(ctx context.Context, projectID int) ([]models.ProjectMember, error) {
 	args := m.Called(ctx, projectID)
 	if args.Get(0) == nil {

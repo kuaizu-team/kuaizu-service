@@ -378,9 +378,6 @@ func (r *ProjectRepository) GetByID(ctx context.Context, id int) (*models.Projec
 		return nil, err
 	}
 	p = items[0]
-	if err := r.enrichProjectTimelineAndMembers(ctx, &p); err != nil {
-		return nil, err
-	}
 	return &p, nil
 }
 
@@ -590,20 +587,6 @@ func saveProjectMetadataTx(ctx context.Context, tx *sqlx.Tx, projectID int, tags
 			}
 		}
 	}
-	return nil
-}
-
-func (r *ProjectRepository) enrichProjectTimelineAndMembers(ctx context.Context, p *models.Project) error {
-	milestones, err := r.ListMilestones(ctx, p.ID)
-	if err != nil {
-		return err
-	}
-	p.Milestones = milestones
-	members, err := r.ListMembers(ctx, p.ID)
-	if err != nil {
-		return err
-	}
-	p.Members = members
 	return nil
 }
 

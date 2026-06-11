@@ -39,6 +39,7 @@ type ProjectRepo interface {
 	IsOwnerOrMember(ctx context.Context, projectID, userID int) (bool, error)
 	RoleExists(ctx context.Context, role string) (bool, error)
 	GetMemberRole(ctx context.Context, projectID, userID int) (*string, error)
+	ListMilestones(ctx context.Context, projectID int) ([]models.ProjectMilestone, error)
 	ListMembers(ctx context.Context, projectID int) ([]models.ProjectMember, error)
 	AddMembers(ctx context.Context, projectID int, members []models.ProjectMember) error
 	ReplaceMembers(ctx context.Context, projectID int, members []models.ProjectMember) error
