@@ -2,4 +2,4 @@ type: object
 properties:
   type:
     type: string
-    enum: [like, favorite, share]
+    enum: [like, favorite, share, visit]

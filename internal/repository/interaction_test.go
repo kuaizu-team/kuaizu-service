@@ -80,23 +80,23 @@ func TestInteractionTables(t *testing.T) {
 	}
 }
 
-func TestUnreadForTargetCalculatesThreeTypesAndDefaultState(t *testing.T) {
+func TestUnreadForTargetCalculatesAllTypesAndDefaultState(t *testing.T) {
 	db := openCaptureDB(t)
 	defer db.Close()
 	repo := NewInteractionRepository(sqlx.NewDb(db, "capture_user_repo"))
-	setCapturedQuery([]string{"like_count", "favorite_count", "share_count"}, [][]driver.Value{{int64(2), int64(1), int64(3)}})
+	setCapturedQuery([]string{"like_count", "favorite_count", "share_count", "visit_count"}, [][]driver.Value{{int64(2), int64(1), int64(3), int64(4)}})
 
 	got, err := repo.UnreadForTarget(context.Background(), InteractionProject, 42, 7)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.LikeCount != 2 || got.FavoriteCount != 1 || got.ShareCount != 3 || got.TotalCount != 6 {
+	if got.LikeCount != 2 || got.FavoriteCount != 1 || got.ShareCount != 3 || got.VisitCount != 4 || got.TotalCount != 10 {
 		t.Fatalf("unexpected unread: %#v", got)
 	}
 	capturedQuery.Lock()
 	query := normalizeSQL(capturedQuery.query)
 	capturedQuery.Unlock()
-	for _, want := range []string{"project_like", "project_favorite", "project_share", "interaction_dashboard_view_state", "created_at>COALESCE", "1970-01-01 00:00:01"} {
+	for _, want := range []string{"project_like", "project_favorite", "project_share", "project_view_log", "duration_ms IS NULL", "interaction_type='visit'", "interaction_dashboard_view_state", "created_at>COALESCE", "viewed_at>COALESCE", "1970-01-01 00:00:01"} {
 		if !strings.Contains(query, want) {
 			t.Fatalf("query missing %q: %s", want, query)
 		}
@@ -157,8 +157,8 @@ func TestBatchProjectUnreadUsesOneAggregateQuery(t *testing.T) {
 	capturedQuery.Lock()
 	query := normalizeSQL(capturedQuery.query)
 	capturedQuery.Unlock()
-	if strings.Count(query, "UNION ALL") != 2 || !strings.Contains(query, "GROUP BY x.project_id") {
-		t.Fatalf("expected one three-type aggregate query: %s", query)
+	if strings.Count(query, "UNION ALL") != 3 || !strings.Contains(query, "GROUP BY x.project_id") || !strings.Contains(query, "project_view_log") || !strings.Contains(query, "interaction_type='visit'") {
+		t.Fatalf("expected one four-type aggregate query: %s", query)
 	}
 }
 
@@ -296,10 +296,10 @@ func TestMarkDashboardViewedAllTypes(t *testing.T) {
 	args := append([]driver.NamedValue(nil), capturedExec.args...)
 	capturedExec.Unlock()
 
-	if len(args) != 12 {
-		t.Fatalf("args count = %d, want 12", len(args))
+	if len(args) != 16 {
+		t.Fatalf("args count = %d, want 16", len(args))
 	}
-	if args[3].Value != "like" || args[7].Value != "favorite" || args[11].Value != "share" {
+	if args[3].Value != "like" || args[7].Value != "favorite" || args[11].Value != "share" || args[15].Value != "visit" {
 		t.Fatalf("interaction type args = %#v", args)
 	}
 	if want := "ON DUPLICATE KEY UPDATE last_viewed_at=VALUES(last_viewed_at),updated_at=NOW()"; !containsNormalized(query, want) {

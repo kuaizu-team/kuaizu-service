@@ -6,7 +6,7 @@ parameters:
   - name: type
     in: query
     required: true
-    schema: { type: string, enum: [like, favorite, share] }
+    schema: { type: string, enum: [like, favorite, share, visit] }
   - name: page
     in: query
     schema: { type: integer, default: 1 }
