@@ -65,10 +65,32 @@ type SmsNoticeResponse struct {
 	Accepted      *bool  `json:"accepted,omitempty"`
 }
 
+type RegisterInviteSmsRequest struct {
+	TraceID      string `json:"traceId"`
+	RecordID     int    `json:"recordId"`
+	Phone        string `json:"phone"`
+	ProjectID    int    `json:"projectId"`
+	ProjectTitle string `json:"projectTitle"`
+	TeamRole     string `json:"teamrole"`
+}
+
+type RegisterInviteSmsResponse struct {
+	Provider      string `json:"provider,omitempty"`
+	ProviderBizID string `json:"providerBizId,omitempty"`
+	TaskID        string `json:"taskId,omitempty"`
+	Accepted      *bool  `json:"accepted,omitempty"`
+}
+
 type smsNoticeEnvelope struct {
 	Code    int                `json:"code"`
 	Message string             `json:"message"`
 	Data    *SmsNoticeResponse `json:"data"`
+}
+
+type registerInviteSmsEnvelope struct {
+	Code    int                        `json:"code"`
+	Message string                     `json:"message"`
+	Data    *RegisterInviteSmsResponse `json:"data"`
 }
 
 type AdminSmsSendRequest struct {
@@ -268,6 +290,67 @@ func (c *Client) SubmitSmsNotice(ctx context.Context, req SmsNoticeRequest) (*Sm
 	}
 	if envelope.Data == nil {
 		return &SmsNoticeResponse{}, nil
+	}
+	return envelope.Data, nil
+}
+
+func (c *Client) SendRegisterInviteSms(ctx context.Context, req RegisterInviteSmsRequest) (*RegisterInviteSmsResponse, error) {
+	if c == nil {
+		return nil, fmt.Errorf("message center client is nil")
+	}
+	if req.TraceID == "" {
+		return nil, fmt.Errorf("traceId is required")
+	}
+	if req.RecordID <= 0 {
+		return nil, fmt.Errorf("recordId is required")
+	}
+	if strings.TrimSpace(req.Phone) == "" {
+		return nil, fmt.Errorf("phone is required")
+	}
+	if req.ProjectID <= 0 {
+		return nil, fmt.Errorf("projectId is required")
+	}
+
+	body, err := json.Marshal(req)
+	if err != nil {
+		return nil, fmt.Errorf("marshal request: %w", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(
+		ctx,
+		http.MethodPost,
+		c.baseURL+"/api/v2/sms/register-invite",
+		bytes.NewReader(body),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("create request: %w", err)
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Authorization", "Bearer "+c.apiToken)
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("post register invite sms: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read response: %w", err)
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("unexpected status %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	var envelope registerInviteSmsEnvelope
+	if err := json.Unmarshal(respBody, &envelope); err != nil {
+		return nil, fmt.Errorf("decode response: %w", err)
+	}
+	if envelope.Code != http.StatusOK {
+		return nil, fmt.Errorf("message center code %d: %s", envelope.Code, envelope.Message)
+	}
+	if envelope.Data == nil {
+		return &RegisterInviteSmsResponse{}, nil
 	}
 	return envelope.Data, nil
 }

@@ -1,7 +1,10 @@
 package handler
 
 import (
+	"strconv"
+
 	"github.com/kuaizu-team/kuaizu-service/api"
+	"github.com/kuaizu-team/kuaizu-service/internal/service"
 	"github.com/labstack/echo/v4"
 )
 
@@ -55,6 +58,76 @@ func (s *Server) SearchUserByPhone(ctx echo.Context, params api.SearchUserByPhon
 	vo.Skills = nil
 	vo.Wechat = nil
 	return Success(ctx, vo)
+}
+
+// CheckUserByPhone handles GET /user/check-by-phone.
+func (s *Server) CheckUserByPhone(ctx echo.Context) error {
+	phone := ctx.QueryParam("phone")
+	projectID := 0
+	if raw := ctx.QueryParam("projectId"); raw != "" {
+		id, err := strconv.Atoi(raw)
+		if err != nil {
+			return BadRequest(ctx, "项目ID格式错误")
+		}
+		projectID = id
+	}
+
+	result, err := s.svc.RegisterInvitation.CheckByPhone(ctx.Request().Context(), phone, projectID)
+	if err != nil {
+		return mapServiceError(ctx, err)
+	}
+
+	data := map[string]interface{}{
+		"exists":  result.Exists,
+		"invited": result.Invited,
+	}
+	if result.User != nil {
+		vo := result.User.ToVO()
+		vo.Phone = nil
+		vo.Email = nil
+		vo.AuthImgUrl = nil
+		vo.CoverImage = nil
+		vo.CreatedAt = nil
+		vo.Grade = nil
+		vo.OliveBranchCount = nil
+		vo.FreeBranchUsedToday = nil
+		vo.LastActiveDate = nil
+		vo.School = nil
+		vo.Major = nil
+		vo.Skills = nil
+		vo.Wechat = nil
+		data["user"] = vo
+	}
+	return Success(ctx, data)
+}
+
+type registerInviteRequest struct {
+	Phone     string `json:"phone"`
+	ProjectID int    `json:"projectId"`
+	Role      string `json:"role"`
+}
+
+// InviteRegister handles POST /invite/register.
+func (s *Server) InviteRegister(ctx echo.Context) error {
+	var req registerInviteRequest
+	if err := ctx.Bind(&req); err != nil {
+		return BadRequest(ctx, "请求参数错误")
+	}
+	record, err := s.svc.RegisterInvitation.Invite(ctx.Request().Context(), GetUserID(ctx), service.RegisterInviteInput{
+		Phone:     req.Phone,
+		ProjectID: req.ProjectID,
+		Role:      req.Role,
+	})
+	if err != nil {
+		return mapServiceError(ctx, err)
+	}
+	return Success(ctx, map[string]interface{}{
+		"id":        record.ID,
+		"phone":     record.Phone,
+		"projectId": record.ProjectID,
+		"role":      record.Role,
+		"status":    record.Status,
+	})
 }
 
 // UpdateCurrentUser handles PUT /users/me
