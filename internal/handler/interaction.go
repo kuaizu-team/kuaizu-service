@@ -86,7 +86,7 @@ func (s *Server) ListInteractionUsers(ctx echo.Context, target string) error {
 		return BadRequest(ctx, "invalid target id")
 	}
 	page, size, days := interactionParams(ctx)
-	result, svcErr := s.svc.Interaction.ListUsers(ctx.Request().Context(), target, ctx.QueryParam("type"), id, page, size, days)
+	result, svcErr := s.svc.Interaction.ListUsers(ctx.Request().Context(), target, ctx.QueryParam("type"), id, GetUserID(ctx), page, size, days)
 	if svcErr != nil {
 		return mapServiceError(ctx, svcErr)
 	}

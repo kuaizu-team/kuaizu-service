@@ -219,15 +219,25 @@ func (s *TalentProfileService) GetTalentProfileWithView(ctx context.Context, id,
 
 // TalentDashboardResult is the response payload for GET /talent-profiles/{id}/dashboard.
 type TalentDashboardResult struct {
-	TotalViews         int                          `json:"total_views"`
-	TodayViews         int                          `json:"today_views"`
-	AvgDurationSeconds int                          `json:"avg_duration_seconds"`
-	HourlyViews        []repository.HourlyViewItem  `json:"hourly_views"`
-	LikeCount          int                          `json:"like_count"`
-	FavoriteCount      int                          `json:"favorite_count"`
-	ShareCount         int                          `json:"share_count"`
-	InteractionUnread  repository.InteractionUnread `json:"interaction_unread"`
-	SourceStats        struct {
+	TotalViews                int                          `json:"total_views"`
+	TodayViews                int                          `json:"today_views"`
+	AvgDurationSeconds        int                          `json:"avg_duration_seconds"`
+	HourlyViews               []repository.HourlyViewItem  `json:"hourly_views"`
+	LikeCount                 int                          `json:"like_count"`
+	FavoriteCount             int                          `json:"favorite_count"`
+	ShareCount                int                          `json:"share_count"`
+	VisitCount                int                          `json:"visit_count"`
+	InteractionUnread         repository.InteractionUnread `json:"interaction_unread"`
+	VisitUnreadCount          int                          `json:"visit_unread_count"`
+	AppliedProjectTotal       int                          `json:"applied_project_total"`
+	ApplicationReadRate       float64                      `json:"application_read_rate"`
+	ApplicationAgreeRate      float64                      `json:"application_agree_rate"`
+	ReceivedOliveTotal        int                          `json:"received_olive_total"`
+	ReceivedOliveReadCount    int                          `json:"received_olive_read_count"`
+	ReceivedOliveHandledCount int                          `json:"received_olive_handled_count"`
+	ReceivedOliveReadRate     float64                      `json:"received_olive_read_rate"`
+	ReceivedOliveHandleRate   float64                      `json:"received_olive_handle_rate"`
+	SourceStats               struct {
 		FromList  int `json:"from_list"`
 		FromShare int `json:"from_share"`
 		Unknown   int `json:"unknown"`
@@ -256,6 +266,7 @@ func (s *TalentProfileService) GetTalentDashboard(ctx context.Context, talentID,
 		TodayViews:         raw.TodayViews,
 		AvgDurationSeconds: raw.AvgDurationSeconds,
 		HourlyViews:        raw.HourlyViews,
+		VisitCount:         raw.TotalViews,
 	}
 	result.SourceStats.FromList = raw.FromList
 	result.SourceStats.FromShare = raw.FromShare
@@ -270,6 +281,30 @@ func (s *TalentProfileService) GetTalentDashboard(ctx context.Context, talentID,
 		return nil, ErrInternal("get interaction unread failed")
 	}
 	result.InteractionUnread = unread
+	visitUnread, err := s.repo.TalentViewLog.CountUnreadVisits(ctx, talentID, requesterUserID)
+	if err != nil {
+		return nil, ErrInternal("get visit unread failed")
+	}
+	result.VisitUnreadCount = visitUnread
+	result.InteractionUnread.VisitCount = visitUnread
+
+	applicationStats, err := s.repo.Application.GetUserDashboardStats(ctx, raw.OwnerUserID)
+	if err != nil {
+		return nil, ErrInternal("get application dashboard failed")
+	}
+	result.AppliedProjectTotal = applicationStats.Total
+	result.ApplicationReadRate = dashboardRate(applicationStats.Read, applicationStats.Total)
+	result.ApplicationAgreeRate = dashboardRate(applicationStats.Approved, applicationStats.Read)
+
+	oliveStats, err := s.repo.OliveBranch.GetUserReceivedDashboardStats(ctx, raw.OwnerUserID)
+	if err != nil {
+		return nil, ErrInternal("get received olive dashboard failed")
+	}
+	result.ReceivedOliveTotal = oliveStats.Total
+	result.ReceivedOliveReadCount = oliveStats.Read
+	result.ReceivedOliveHandledCount = oliveStats.Handled
+	result.ReceivedOliveReadRate = dashboardRate(oliveStats.Read, oliveStats.Total)
+	result.ReceivedOliveHandleRate = dashboardRate(oliveStats.Handled, oliveStats.Total)
 	return result, nil
 }
 

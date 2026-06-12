@@ -21,6 +21,14 @@ type ApplicationRepository struct {
 	db *sqlx.DB
 }
 
+// ApplicationDashboardStats contains compact application metrics for dashboards.
+type ApplicationDashboardStats struct {
+	Total     int
+	Read      int
+	Approved  int
+	Processed int
+}
+
 // NewApplicationRepository creates a new ApplicationRepository
 func NewApplicationRepository(db *sqlx.DB) *ApplicationRepository {
 	return &ApplicationRepository{db: db}
@@ -344,6 +352,50 @@ func (r *ApplicationRepository) MarkReviewerRead(ctx context.Context, projectID,
 	}
 	log.Printf("mark reviewer application read updated: projectID=%d reviewerID=%d ids=%v rowsAffected=%d", projectID, reviewerID, ids, rowsAffected)
 	return nil
+}
+
+func (r *ApplicationRepository) GetProjectDashboardStats(ctx context.Context, projectID int) (ApplicationDashboardStats, error) {
+	var stats ApplicationDashboardStats
+	err := r.db.QueryRowxContext(ctx, `
+		SELECT
+			COUNT(DISTINCT user_id) AS total,
+			COALESCE(SUM(CASE WHEN is_read = TRUE THEN 1 ELSE 0 END), 0) AS read_count,
+			COALESCE(SUM(CASE WHEN status = ? THEN 1 ELSE 0 END), 0) AS approved,
+			COALESCE(SUM(CASE WHEN status <> ? THEN 1 ELSE 0 END), 0) AS processed
+		FROM project_application
+		WHERE project_id = ?
+	`, models.ApplicationStatusApproved, models.ApplicationStatusPending, projectID).Scan(
+		&stats.Total,
+		&stats.Read,
+		&stats.Approved,
+		&stats.Processed,
+	)
+	if err != nil {
+		return stats, fmt.Errorf("get project application dashboard stats: %w", err)
+	}
+	return stats, nil
+}
+
+func (r *ApplicationRepository) GetUserDashboardStats(ctx context.Context, userID int) (ApplicationDashboardStats, error) {
+	var stats ApplicationDashboardStats
+	err := r.db.QueryRowxContext(ctx, `
+		SELECT
+			COUNT(*) AS total,
+			COALESCE(SUM(CASE WHEN is_read = TRUE THEN 1 ELSE 0 END), 0) AS read_count,
+			COALESCE(SUM(CASE WHEN status = ? THEN 1 ELSE 0 END), 0) AS approved,
+			COALESCE(SUM(CASE WHEN status <> ? THEN 1 ELSE 0 END), 0) AS processed
+		FROM project_application
+		WHERE user_id = ?
+	`, models.ApplicationStatusApproved, models.ApplicationStatusPending, userID).Scan(
+		&stats.Total,
+		&stats.Read,
+		&stats.Approved,
+		&stats.Processed,
+	)
+	if err != nil {
+		return stats, fmt.Errorf("get user application dashboard stats: %w", err)
+	}
+	return stats, nil
 }
 
 // UpdateStatus updates the status and reply message of an application

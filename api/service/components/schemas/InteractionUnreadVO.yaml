@@ -1,7 +1,8 @@
 type: object
-required: [like_count, favorite_count, share_count, total_count]
+required: [like_count, favorite_count, share_count, visit_count, total_count]
 properties:
   like_count: { type: integer, minimum: 0 }
   favorite_count: { type: integer, minimum: 0 }
   share_count: { type: integer, minimum: 0 }
+  visit_count: { type: integer, minimum: 0 }
   total_count: { type: integer, minimum: 0 }

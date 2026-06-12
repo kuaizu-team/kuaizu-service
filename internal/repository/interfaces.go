@@ -128,6 +128,8 @@ type ApplicationRepo interface {
 	UpdateStatusWithReviewer(ctx context.Context, id int, status int, reviewerID int, reviewerRole *string) error
 	GetUnreadApplicationCount(ctx context.Context, userID int) (int, error)
 	MarkReviewerRead(ctx context.Context, projectID, ownerID int, ids []int) error
+	GetProjectDashboardStats(ctx context.Context, projectID int) (ApplicationDashboardStats, error)
+	GetUserDashboardStats(ctx context.Context, userID int) (ApplicationDashboardStats, error)
 }
 
 // OliveBranchRepo defines the interface for olive branch repository operations.
@@ -142,6 +144,8 @@ type OliveBranchRepo interface {
 	GetBadgeCounts(ctx context.Context, userID int) (OliveBranchBadgeCounts, error)
 	ListByRelatedProjectID(ctx context.Context, params OliveBranchByProjectParams) ([]models.OliveBranch, int64, error)
 	MarkReceiverRead(ctx context.Context, receiverID int, ids []int) error
+	GetProjectDashboardStats(ctx context.Context, projectID int) (OliveBranchDashboardStats, error)
+	GetUserReceivedDashboardStats(ctx context.Context, userID int) (OliveBranchDashboardStats, error)
 }
 
 // SchoolRepo defines the interface for school repository operations.
@@ -231,6 +235,7 @@ type ProjectViewLogRepo interface {
 	GetDashboardStats(ctx context.Context, projectID int) (*ProjectDashboardStats, error)
 	InsertDurationLog(ctx context.Context, projectID int, userID *int, durationMs int) error
 	GetViewers(ctx context.Context, projectID int, limit int) ([]ProjectViewer, int, error)
+	CountUnreadVisits(ctx context.Context, projectID, ownerUserID int) (int, error)
 }
 
 // TalentViewLogRepo defines the interface for talent view log operations.
@@ -240,6 +245,7 @@ type TalentViewLogRepo interface {
 	InsertDurationLog(ctx context.Context, talentID int, userID *int, durationMs int) error
 	GetViewers(ctx context.Context, talentID int, limit int) ([]TalentViewer, int, error)
 	GetTopViewersToday(ctx context.Context, talentID int, limit int) ([]TopTalentViewer, error)
+	CountUnreadVisits(ctx context.Context, talentID, ownerUserID int) (int, error)
 }
 
 // Compile-time interface satisfaction checks

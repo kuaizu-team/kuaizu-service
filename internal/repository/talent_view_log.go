@@ -19,6 +19,8 @@ type TalentDashboardStats struct {
 	Unknown            int
 	AvgDurationSeconds int
 	HourlyViews        []HourlyViewItem
+	OwnerUserID        int
+	VisitUnread        int
 }
 
 // TalentViewer is one row in the GET /talent-profiles/{id}/viewers response.
@@ -71,9 +73,10 @@ func (r *TalentViewLogRepository) InsertDurationLog(ctx context.Context, talentI
 // GetDashboardStats returns aggregated dashboard data for a single talent profile.
 func (r *TalentViewLogRepository) GetDashboardStats(ctx context.Context, talentID int) (*TalentDashboardStats, error) {
 	var totalViews int
+	var ownerUserID int
 	if err := r.db.QueryRowxContext(ctx,
-		`SELECT view_count FROM talent_profile WHERE id = ?`, talentID,
-	).Scan(&totalViews); err != nil {
+		`SELECT view_count, user_id FROM talent_profile WHERE id = ?`, talentID,
+	).Scan(&totalViews, &ownerUserID); err != nil {
 		return nil, fmt.Errorf("get talent total_views: %w", err)
 	}
 
@@ -140,6 +143,7 @@ func (r *TalentViewLogRepository) GetDashboardStats(ctx context.Context, talentI
 		TodayViews:         todayViews,
 		AvgDurationSeconds: int(avgDurationMs / 1000),
 		HourlyViews:        hourlyViews,
+		OwnerUserID:        ownerUserID,
 	}
 
 	for _, row := range srcRows {
@@ -215,4 +219,25 @@ func (r *TalentViewLogRepository) GetTopViewersToday(ctx context.Context, talent
 		}
 	}
 	return viewers, nil
+}
+
+func (r *TalentViewLogRepository) CountUnreadVisits(ctx context.Context, talentID, ownerUserID int) (int, error) {
+	var count int
+	err := r.db.QueryRowxContext(ctx, `
+		SELECT COUNT(*)
+		FROM talent_view_log vl
+		WHERE vl.talent_id = ?
+		  AND vl.duration_ms IS NULL
+		  AND vl.viewed_at > COALESCE(
+			(SELECT s.last_viewed_at
+			 FROM interaction_dashboard_view_state s
+			 WHERE s.user_id = ? AND s.target_type = 'talent-profiles'
+			   AND s.target_id = ? AND s.interaction_type = 'visit'),
+			'1970-01-01 00:00:01'
+		  )
+	`, talentID, ownerUserID, talentID).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("count unread talent visits: %w", err)
+	}
+	return count, nil
 }

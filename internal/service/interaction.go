@@ -49,7 +49,7 @@ func (s *InteractionService) ensureTarget(ctx context.Context, target string, id
 }
 
 func validInteractionType(kind string) bool {
-	return kind == "like" || kind == "favorite" || kind == "share"
+	return kind == "like" || kind == "favorite" || kind == "share" || kind == "visit"
 }
 
 func (s *InteractionService) ensureTargetOwner(ctx context.Context, target string, id, userID int) error {
@@ -62,7 +62,7 @@ func (s *InteractionService) ensureTargetOwner(ctx context.Context, target strin
 	)
 	switch target {
 	case repository.InteractionProject:
-		owned, err = s.repo.Project.IsOwner(ctx, id, userID)
+		owned, err = s.repo.Project.IsOwnerOrMember(ctx, id, userID)
 	case repository.InteractionTalent:
 		owned, err = s.repo.TalentProfile.IsOwner(ctx, id, userID)
 	}
@@ -118,11 +118,15 @@ func (s *InteractionService) Share(ctx context.Context, target string, id, userI
 	return result, nil
 }
 
-func (s *InteractionService) ListUsers(ctx context.Context, target, kind string, id, page, size, days int) (map[string]interface{}, error) {
-	if kind != "like" && kind != "favorite" && kind != "share" {
+func (s *InteractionService) ListUsers(ctx context.Context, target, kind string, id, userID, page, size, days int) (map[string]interface{}, error) {
+	if !validInteractionType(kind) {
 		return nil, ErrBadRequest("invalid interaction type")
 	}
-	if err := s.ensureTarget(ctx, target, id); err != nil {
+	if kind == "visit" {
+		if err := s.ensureTargetOwner(ctx, target, id, userID); err != nil {
+			return nil, err
+		}
+	} else if err := s.ensureTarget(ctx, target, id); err != nil {
 		return nil, err
 	}
 	page, size = normalizePageParams(page, size)

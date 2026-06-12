@@ -25,6 +25,7 @@ type InteractionUnread struct {
 	LikeCount     int `db:"like_count" json:"like_count"`
 	FavoriteCount int `db:"favorite_count" json:"favorite_count"`
 	ShareCount    int `db:"share_count" json:"share_count"`
+	VisitCount    int `db:"visit_count" json:"visit_count"`
 	TotalCount    int `db:"total_count" json:"total_count"`
 }
 
@@ -199,6 +200,9 @@ func (r *InteractionRepository) ListUsers(ctx context.Context, target, kind stri
 	if err != nil {
 		return nil, 0, err
 	}
+	if kind == "visit" {
+		return r.listVisitUsers(ctx, target, targetID, page, size, days)
+	}
 	table := map[string]string{"like": like, "favorite": favorite, "share": share}[kind]
 	if table == "" {
 		return nil, 0, fmt.Errorf("invalid interaction kind")
@@ -230,6 +234,54 @@ func (r *InteractionRepository) ListUsers(ctx context.Context, target, kind stri
 	return users, total, err
 }
 
+func (r *InteractionRepository) listVisitUsers(ctx context.Context, target string, targetID, page, size, days int) ([]models.InteractionUser, int64, error) {
+	var (
+		table    string
+		idColumn string
+	)
+	switch target {
+	case InteractionProject:
+		table = "project_view_log"
+		idColumn = "project_id"
+	case InteractionTalent:
+		table = "talent_view_log"
+		idColumn = "talent_id"
+	default:
+		return nil, 0, fmt.Errorf("invalid interaction target")
+	}
+
+	where, args := "vl."+idColumn+"=? AND vl.user_id IS NOT NULL AND vl.duration_ms IS NULL", []interface{}{targetID}
+	if days > 0 {
+		where += " AND vl.viewed_at>=DATE_SUB(NOW(),INTERVAL ? DAY)"
+		args = append(args, days)
+	}
+
+	var total int64
+	countQuery := fmt.Sprintf("SELECT COUNT(DISTINCT vl.user_id) FROM %s vl WHERE %s", table, where)
+	if err := r.db.QueryRowxContext(ctx, countQuery, args...).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+
+	query := fmt.Sprintf(`SELECT vl.user_id,tp.id talent_profile_id,u.nickname,u.avatar_url,MAX(vl.viewed_at) operated_at
+		FROM %s vl JOIN `+"`user`"+` u ON u.id=vl.user_id LEFT JOIN talent_profile tp ON tp.user_id=u.id
+		WHERE %s
+		GROUP BY vl.user_id,tp.id,u.nickname,u.avatar_url
+		ORDER BY operated_at DESC LIMIT ? OFFSET ?`, table, where)
+	queryArgs := append(append([]interface{}{}, args...), size, (page-1)*size)
+
+	var users []models.InteractionUser
+	if err := r.db.SelectContext(ctx, &users, query, queryArgs...); err != nil {
+		return nil, 0, err
+	}
+	for i := range users {
+		if users[i].AvatarURL != nil && *users[i].AvatarURL != "" {
+			fullURL := oss.FullURL(*users[i].AvatarURL)
+			users[i].AvatarURL = &fullURL
+		}
+	}
+	return users, total, nil
+}
+
 func (r *InteractionRepository) UnreadFavorites(ctx context.Context, userID int) (models.FavoriteViewState, error) {
 	var state models.FavoriteViewState
 	query := `SELECT
@@ -257,6 +309,10 @@ func (r *InteractionRepository) UnreadForTarget(ctx context.Context, target stri
 	if err != nil {
 		return InteractionUnread{}, err
 	}
+	visitTable, visitIDCol := "project_view_log", "project_id"
+	if target == InteractionTalent {
+		visitTable, visitIDCol = "talent_view_log", "talent_id"
+	}
 	query := fmt.Sprintf(`SELECT
 		(SELECT COUNT(*) FROM %s i WHERE i.%s=? AND i.created_at>COALESCE(
 			(SELECT s.last_viewed_at FROM interaction_dashboard_view_state s WHERE s.user_id=? AND s.target_type=? AND s.target_id=? AND s.interaction_type='like'),
@@ -266,9 +322,13 @@ func (r *InteractionRepository) UnreadForTarget(ctx context.Context, target stri
 			'1970-01-01 00:00:01')) favorite_count,
 		(SELECT COUNT(*) FROM %s i WHERE i.%s=? AND i.created_at>COALESCE(
 			(SELECT s.last_viewed_at FROM interaction_dashboard_view_state s WHERE s.user_id=? AND s.target_type=? AND s.target_id=? AND s.interaction_type='share'),
-			'1970-01-01 00:00:01')) share_count`,
-		like, idCol, favorite, idCol, share, idCol)
+			'1970-01-01 00:00:01')) share_count,
+		(SELECT COUNT(*) FROM %s i WHERE i.%s=? AND i.duration_ms IS NULL AND i.viewed_at>COALESCE(
+			(SELECT s.last_viewed_at FROM interaction_dashboard_view_state s WHERE s.user_id=? AND s.target_type=? AND s.target_id=? AND s.interaction_type='visit'),
+			'1970-01-01 00:00:01')) visit_count`,
+		like, idCol, favorite, idCol, share, idCol, visitTable, visitIDCol)
 	args := []interface{}{
+		targetID, ownerUserID, target, targetID,
 		targetID, ownerUserID, target, targetID,
 		targetID, ownerUserID, target, targetID,
 		targetID, ownerUserID, target, targetID,
@@ -277,19 +337,29 @@ func (r *InteractionRepository) UnreadForTarget(ctx context.Context, target stri
 	if err := r.db.QueryRowxContext(ctx, query, args...).StructScan(&unread); err != nil {
 		return InteractionUnread{}, err
 	}
-	unread.TotalCount = unread.LikeCount + unread.FavoriteCount + unread.ShareCount
+	unread.TotalCount = unread.LikeCount + unread.FavoriteCount + unread.ShareCount + unread.VisitCount
 	return unread, nil
 }
 
 func (r *InteractionRepository) UnreadDashboardTotals(ctx context.Context, ownerUserID int) (DashboardUnreadTotals, error) {
 	query := `SELECT
 		(
-			(SELECT COUNT(*) FROM project_like i JOIN project p ON p.id=i.project_id WHERE p.creator_id=? AND i.created_at>COALESCE(
+			(SELECT COUNT(*) FROM project_like i JOIN project p ON p.id=i.project_id WHERE (p.creator_id=? OR EXISTS (
+				SELECT 1 FROM project_members pm WHERE pm.project_id=i.project_id AND pm.user_id=?
+			)) AND i.created_at>COALESCE(
 				(SELECT s.last_viewed_at FROM interaction_dashboard_view_state s WHERE s.user_id=? AND s.target_type='projects' AND s.target_id=i.project_id AND s.interaction_type='like'),'1970-01-01 00:00:01'))
-			+(SELECT COUNT(*) FROM project_favorite i JOIN project p ON p.id=i.project_id WHERE p.creator_id=? AND i.created_at>COALESCE(
+			+(SELECT COUNT(*) FROM project_favorite i JOIN project p ON p.id=i.project_id WHERE (p.creator_id=? OR EXISTS (
+				SELECT 1 FROM project_members pm WHERE pm.project_id=i.project_id AND pm.user_id=?
+			)) AND i.created_at>COALESCE(
 				(SELECT s.last_viewed_at FROM interaction_dashboard_view_state s WHERE s.user_id=? AND s.target_type='projects' AND s.target_id=i.project_id AND s.interaction_type='favorite'),'1970-01-01 00:00:01'))
-			+(SELECT COUNT(*) FROM project_share i JOIN project p ON p.id=i.project_id WHERE p.creator_id=? AND i.created_at>COALESCE(
+			+(SELECT COUNT(*) FROM project_share i JOIN project p ON p.id=i.project_id WHERE (p.creator_id=? OR EXISTS (
+				SELECT 1 FROM project_members pm WHERE pm.project_id=i.project_id AND pm.user_id=?
+			)) AND i.created_at>COALESCE(
 				(SELECT s.last_viewed_at FROM interaction_dashboard_view_state s WHERE s.user_id=? AND s.target_type='projects' AND s.target_id=i.project_id AND s.interaction_type='share'),'1970-01-01 00:00:01'))
+			+(SELECT COUNT(*) FROM project_view_log i JOIN project p ON p.id=i.project_id WHERE (p.creator_id=? OR EXISTS (
+				SELECT 1 FROM project_members pm WHERE pm.project_id=i.project_id AND pm.user_id=?
+			)) AND i.duration_ms IS NULL AND i.viewed_at>COALESCE(
+				(SELECT s.last_viewed_at FROM interaction_dashboard_view_state s WHERE s.user_id=? AND s.target_type='projects' AND s.target_id=i.project_id AND s.interaction_type='visit'),'1970-01-01 00:00:01'))
 		) project_count,
 		(
 			(SELECT COUNT(*) FROM talent_like i JOIN talent_profile tp ON tp.id=i.talent_profile_id WHERE tp.user_id=? AND i.created_at>COALESCE(
@@ -298,9 +368,11 @@ func (r *InteractionRepository) UnreadDashboardTotals(ctx context.Context, owner
 				(SELECT s.last_viewed_at FROM interaction_dashboard_view_state s WHERE s.user_id=? AND s.target_type='talent-profiles' AND s.target_id=i.talent_profile_id AND s.interaction_type='favorite'),'1970-01-01 00:00:01'))
 			+(SELECT COUNT(*) FROM talent_share i JOIN talent_profile tp ON tp.id=i.talent_profile_id WHERE tp.user_id=? AND i.created_at>COALESCE(
 				(SELECT s.last_viewed_at FROM interaction_dashboard_view_state s WHERE s.user_id=? AND s.target_type='talent-profiles' AND s.target_id=i.talent_profile_id AND s.interaction_type='share'),'1970-01-01 00:00:01'))
+			+(SELECT COUNT(*) FROM talent_view_log i JOIN talent_profile tp ON tp.id=i.talent_id WHERE tp.user_id=? AND i.duration_ms IS NULL AND i.viewed_at>COALESCE(
+				(SELECT s.last_viewed_at FROM interaction_dashboard_view_state s WHERE s.user_id=? AND s.target_type='talent-profiles' AND s.target_id=i.talent_id AND s.interaction_type='visit'),'1970-01-01 00:00:01'))
 		) talent_count`
-	args := make([]interface{}, 0, 12)
-	for i := 0; i < 12; i++ {
+	args := make([]interface{}, 0, 20)
+	for i := 0; i < 20; i++ {
 		args = append(args, ownerUserID)
 	}
 	var totals DashboardUnreadTotals
@@ -318,17 +390,29 @@ func (r *InteractionRepository) BatchProjectUnread(ctx context.Context, ownerUse
 	}
 	query, args, err := sqlx.In(`SELECT x.project_id,SUM(x.cnt) unread_count FROM (
 		SELECT i.project_id,COUNT(*) cnt FROM project_like i JOIN project p ON p.id=i.project_id
-		WHERE p.creator_id=? AND i.project_id IN (?) AND i.created_at>COALESCE(
+		WHERE (p.creator_id=? OR EXISTS (SELECT 1 FROM project_members pm WHERE pm.project_id=i.project_id AND pm.user_id=?))
+		  AND i.project_id IN (?) AND i.created_at>COALESCE(
 			(SELECT s.last_viewed_at FROM interaction_dashboard_view_state s WHERE s.user_id=? AND s.target_type='projects' AND s.target_id=i.project_id AND s.interaction_type='like'),'1970-01-01 00:00:01') GROUP BY i.project_id
 		UNION ALL
 		SELECT i.project_id,COUNT(*) cnt FROM project_favorite i JOIN project p ON p.id=i.project_id
-		WHERE p.creator_id=? AND i.project_id IN (?) AND i.created_at>COALESCE(
+		WHERE (p.creator_id=? OR EXISTS (SELECT 1 FROM project_members pm WHERE pm.project_id=i.project_id AND pm.user_id=?))
+		  AND i.project_id IN (?) AND i.created_at>COALESCE(
 			(SELECT s.last_viewed_at FROM interaction_dashboard_view_state s WHERE s.user_id=? AND s.target_type='projects' AND s.target_id=i.project_id AND s.interaction_type='favorite'),'1970-01-01 00:00:01') GROUP BY i.project_id
 		UNION ALL
 		SELECT i.project_id,COUNT(*) cnt FROM project_share i JOIN project p ON p.id=i.project_id
-		WHERE p.creator_id=? AND i.project_id IN (?) AND i.created_at>COALESCE(
+		WHERE (p.creator_id=? OR EXISTS (SELECT 1 FROM project_members pm WHERE pm.project_id=i.project_id AND pm.user_id=?))
+		  AND i.project_id IN (?) AND i.created_at>COALESCE(
 			(SELECT s.last_viewed_at FROM interaction_dashboard_view_state s WHERE s.user_id=? AND s.target_type='projects' AND s.target_id=i.project_id AND s.interaction_type='share'),'1970-01-01 00:00:01') GROUP BY i.project_id
-	) x GROUP BY x.project_id`, ownerUserID, projectIDs, ownerUserID, ownerUserID, projectIDs, ownerUserID, ownerUserID, projectIDs, ownerUserID)
+		UNION ALL
+		SELECT i.project_id,COUNT(*) cnt FROM project_view_log i JOIN project p ON p.id=i.project_id
+		WHERE (p.creator_id=? OR EXISTS (SELECT 1 FROM project_members pm WHERE pm.project_id=i.project_id AND pm.user_id=?))
+		  AND i.project_id IN (?) AND i.duration_ms IS NULL AND i.viewed_at>COALESCE(
+			(SELECT s.last_viewed_at FROM interaction_dashboard_view_state s WHERE s.user_id=? AND s.target_type='projects' AND s.target_id=i.project_id AND s.interaction_type='visit'),'1970-01-01 00:00:01') GROUP BY i.project_id
+	) x GROUP BY x.project_id`,
+		ownerUserID, ownerUserID, projectIDs, ownerUserID,
+		ownerUserID, ownerUserID, projectIDs, ownerUserID,
+		ownerUserID, ownerUserID, projectIDs, ownerUserID,
+		ownerUserID, ownerUserID, projectIDs, ownerUserID)
 	if err != nil {
 		return nil, err
 	}
@@ -350,7 +434,7 @@ func (r *InteractionRepository) MarkDashboardViewed(ctx context.Context, ownerUs
 	if _, _, _, _, err := interactionTables(target); err != nil {
 		return err
 	}
-	kinds := []string{"like", "favorite", "share"}
+	kinds := []string{"like", "favorite", "share", "visit"}
 	if kind != nil {
 		kinds = []string{*kind}
 	}

@@ -13,7 +13,7 @@ import (
 func TestMarkDashboardViewedRejectsNonOwner(t *testing.T) {
 	projectRepo := new(MockProjectRepo)
 	projectRepo.On("GetByID", mock.Anything, 42).Return(&models.Project{ID: 42}, nil)
-	projectRepo.On("IsOwner", mock.Anything, 42, 7).Return(false, nil)
+	projectRepo.On("IsOwnerOrMember", mock.Anything, 42, 7).Return(false, nil)
 	svc := NewInteractionService(&repository.Repository{Project: projectRepo})
 
 	err := svc.MarkDashboardViewed(context.Background(), repository.InteractionProject, 42, 7, nil)
@@ -26,10 +26,23 @@ func TestMarkDashboardViewedRejectsNonOwner(t *testing.T) {
 func TestTargetUnreadRejectsNonOwner(t *testing.T) {
 	projectRepo := new(MockProjectRepo)
 	projectRepo.On("GetByID", mock.Anything, 42).Return(&models.Project{ID: 42}, nil)
-	projectRepo.On("IsOwner", mock.Anything, 42, 7).Return(false, nil)
+	projectRepo.On("IsOwnerOrMember", mock.Anything, 42, 7).Return(false, nil)
 	svc := NewInteractionService(&repository.Repository{Project: projectRepo})
 
 	_, err := svc.TargetUnread(context.Background(), repository.InteractionProject, 42, 7)
+	var serviceErr *ServiceError
+	if !errors.As(err, &serviceErr) || serviceErr.Code != ErrCodeForbidden {
+		t.Fatalf("err = %#v, want forbidden", err)
+	}
+}
+
+func TestListVisitUsersRejectsNonOwner(t *testing.T) {
+	projectRepo := new(MockProjectRepo)
+	projectRepo.On("GetByID", mock.Anything, 42).Return(&models.Project{ID: 42}, nil)
+	projectRepo.On("IsOwnerOrMember", mock.Anything, 42, 7).Return(false, nil)
+	svc := NewInteractionService(&repository.Repository{Project: projectRepo})
+
+	_, err := svc.ListUsers(context.Background(), repository.InteractionProject, "visit", 42, 7, 1, 10, 7)
 	var serviceErr *ServiceError
 	if !errors.As(err, &serviceErr) || serviceErr.Code != ErrCodeForbidden {
 		t.Fatalf("err = %#v, want forbidden", err)
