@@ -116,6 +116,12 @@ func TestUnreadDashboardTotals(t *testing.T) {
 	if got.ProjectCount != 6 || got.TalentCount != 2 || got.TotalCount != 8 {
 		t.Fatalf("unexpected totals: %#v", got)
 	}
+	capturedQuery.Lock()
+	query := normalizeSQL(capturedQuery.query)
+	capturedQuery.Unlock()
+	if !strings.Contains(query, "project_members") {
+		t.Fatalf("project unread totals should include project members: %s", query)
+	}
 }
 
 func TestBatchUsesRequestedTargetsAsBaseSet(t *testing.T) {
@@ -157,7 +163,7 @@ func TestBatchProjectUnreadUsesOneAggregateQuery(t *testing.T) {
 	capturedQuery.Lock()
 	query := normalizeSQL(capturedQuery.query)
 	capturedQuery.Unlock()
-	if strings.Count(query, "UNION ALL") != 3 || !strings.Contains(query, "GROUP BY x.project_id") || !strings.Contains(query, "project_view_log") || !strings.Contains(query, "interaction_type='visit'") {
+	if strings.Count(query, "UNION ALL") != 3 || !strings.Contains(query, "GROUP BY x.project_id") || !strings.Contains(query, "project_view_log") || !strings.Contains(query, "interaction_type='visit'") || !strings.Contains(query, "project_members") {
 		t.Fatalf("expected one four-type aggregate query: %s", query)
 	}
 }

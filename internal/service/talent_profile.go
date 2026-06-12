@@ -287,7 +287,6 @@ func (s *TalentProfileService) GetTalentDashboard(ctx context.Context, talentID,
 	}
 	result.VisitUnreadCount = visitUnread
 	result.InteractionUnread.VisitCount = visitUnread
-	result.InteractionUnread.TotalCount += visitUnread
 
 	applicationStats, err := s.repo.Application.GetUserDashboardStats(ctx, raw.OwnerUserID)
 	if err != nil {

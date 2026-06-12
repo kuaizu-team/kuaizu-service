@@ -374,7 +374,6 @@ func (s *ProjectService) GetProjectDashboard(ctx context.Context, projectID, req
 	}
 	result.VisitUnreadCount = visitUnread
 	result.InteractionUnread.VisitCount = visitUnread
-	result.InteractionUnread.TotalCount += visitUnread
 
 	oliveStats, err := s.repo.OliveBranch.GetProjectDashboardStats(ctx, projectID)
 	if err != nil {

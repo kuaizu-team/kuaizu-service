@@ -344,13 +344,21 @@ func (r *InteractionRepository) UnreadForTarget(ctx context.Context, target stri
 func (r *InteractionRepository) UnreadDashboardTotals(ctx context.Context, ownerUserID int) (DashboardUnreadTotals, error) {
 	query := `SELECT
 		(
-			(SELECT COUNT(*) FROM project_like i JOIN project p ON p.id=i.project_id WHERE p.creator_id=? AND i.created_at>COALESCE(
+			(SELECT COUNT(*) FROM project_like i JOIN project p ON p.id=i.project_id WHERE (p.creator_id=? OR EXISTS (
+				SELECT 1 FROM project_members pm WHERE pm.project_id=i.project_id AND pm.user_id=?
+			)) AND i.created_at>COALESCE(
 				(SELECT s.last_viewed_at FROM interaction_dashboard_view_state s WHERE s.user_id=? AND s.target_type='projects' AND s.target_id=i.project_id AND s.interaction_type='like'),'1970-01-01 00:00:01'))
-			+(SELECT COUNT(*) FROM project_favorite i JOIN project p ON p.id=i.project_id WHERE p.creator_id=? AND i.created_at>COALESCE(
+			+(SELECT COUNT(*) FROM project_favorite i JOIN project p ON p.id=i.project_id WHERE (p.creator_id=? OR EXISTS (
+				SELECT 1 FROM project_members pm WHERE pm.project_id=i.project_id AND pm.user_id=?
+			)) AND i.created_at>COALESCE(
 				(SELECT s.last_viewed_at FROM interaction_dashboard_view_state s WHERE s.user_id=? AND s.target_type='projects' AND s.target_id=i.project_id AND s.interaction_type='favorite'),'1970-01-01 00:00:01'))
-			+(SELECT COUNT(*) FROM project_share i JOIN project p ON p.id=i.project_id WHERE p.creator_id=? AND i.created_at>COALESCE(
+			+(SELECT COUNT(*) FROM project_share i JOIN project p ON p.id=i.project_id WHERE (p.creator_id=? OR EXISTS (
+				SELECT 1 FROM project_members pm WHERE pm.project_id=i.project_id AND pm.user_id=?
+			)) AND i.created_at>COALESCE(
 				(SELECT s.last_viewed_at FROM interaction_dashboard_view_state s WHERE s.user_id=? AND s.target_type='projects' AND s.target_id=i.project_id AND s.interaction_type='share'),'1970-01-01 00:00:01'))
-			+(SELECT COUNT(*) FROM project_view_log i JOIN project p ON p.id=i.project_id WHERE p.creator_id=? AND i.duration_ms IS NULL AND i.viewed_at>COALESCE(
+			+(SELECT COUNT(*) FROM project_view_log i JOIN project p ON p.id=i.project_id WHERE (p.creator_id=? OR EXISTS (
+				SELECT 1 FROM project_members pm WHERE pm.project_id=i.project_id AND pm.user_id=?
+			)) AND i.duration_ms IS NULL AND i.viewed_at>COALESCE(
 				(SELECT s.last_viewed_at FROM interaction_dashboard_view_state s WHERE s.user_id=? AND s.target_type='projects' AND s.target_id=i.project_id AND s.interaction_type='visit'),'1970-01-01 00:00:01'))
 		) project_count,
 		(
@@ -363,8 +371,8 @@ func (r *InteractionRepository) UnreadDashboardTotals(ctx context.Context, owner
 			+(SELECT COUNT(*) FROM talent_view_log i JOIN talent_profile tp ON tp.id=i.talent_id WHERE tp.user_id=? AND i.duration_ms IS NULL AND i.viewed_at>COALESCE(
 				(SELECT s.last_viewed_at FROM interaction_dashboard_view_state s WHERE s.user_id=? AND s.target_type='talent-profiles' AND s.target_id=i.talent_id AND s.interaction_type='visit'),'1970-01-01 00:00:01'))
 		) talent_count`
-	args := make([]interface{}, 0, 16)
-	for i := 0; i < 16; i++ {
+	args := make([]interface{}, 0, 20)
+	for i := 0; i < 20; i++ {
 		args = append(args, ownerUserID)
 	}
 	var totals DashboardUnreadTotals
@@ -382,21 +390,29 @@ func (r *InteractionRepository) BatchProjectUnread(ctx context.Context, ownerUse
 	}
 	query, args, err := sqlx.In(`SELECT x.project_id,SUM(x.cnt) unread_count FROM (
 		SELECT i.project_id,COUNT(*) cnt FROM project_like i JOIN project p ON p.id=i.project_id
-		WHERE p.creator_id=? AND i.project_id IN (?) AND i.created_at>COALESCE(
+		WHERE (p.creator_id=? OR EXISTS (SELECT 1 FROM project_members pm WHERE pm.project_id=i.project_id AND pm.user_id=?))
+		  AND i.project_id IN (?) AND i.created_at>COALESCE(
 			(SELECT s.last_viewed_at FROM interaction_dashboard_view_state s WHERE s.user_id=? AND s.target_type='projects' AND s.target_id=i.project_id AND s.interaction_type='like'),'1970-01-01 00:00:01') GROUP BY i.project_id
 		UNION ALL
 		SELECT i.project_id,COUNT(*) cnt FROM project_favorite i JOIN project p ON p.id=i.project_id
-		WHERE p.creator_id=? AND i.project_id IN (?) AND i.created_at>COALESCE(
+		WHERE (p.creator_id=? OR EXISTS (SELECT 1 FROM project_members pm WHERE pm.project_id=i.project_id AND pm.user_id=?))
+		  AND i.project_id IN (?) AND i.created_at>COALESCE(
 			(SELECT s.last_viewed_at FROM interaction_dashboard_view_state s WHERE s.user_id=? AND s.target_type='projects' AND s.target_id=i.project_id AND s.interaction_type='favorite'),'1970-01-01 00:00:01') GROUP BY i.project_id
 		UNION ALL
 		SELECT i.project_id,COUNT(*) cnt FROM project_share i JOIN project p ON p.id=i.project_id
-		WHERE p.creator_id=? AND i.project_id IN (?) AND i.created_at>COALESCE(
+		WHERE (p.creator_id=? OR EXISTS (SELECT 1 FROM project_members pm WHERE pm.project_id=i.project_id AND pm.user_id=?))
+		  AND i.project_id IN (?) AND i.created_at>COALESCE(
 			(SELECT s.last_viewed_at FROM interaction_dashboard_view_state s WHERE s.user_id=? AND s.target_type='projects' AND s.target_id=i.project_id AND s.interaction_type='share'),'1970-01-01 00:00:01') GROUP BY i.project_id
 		UNION ALL
 		SELECT i.project_id,COUNT(*) cnt FROM project_view_log i JOIN project p ON p.id=i.project_id
-		WHERE p.creator_id=? AND i.project_id IN (?) AND i.duration_ms IS NULL AND i.viewed_at>COALESCE(
+		WHERE (p.creator_id=? OR EXISTS (SELECT 1 FROM project_members pm WHERE pm.project_id=i.project_id AND pm.user_id=?))
+		  AND i.project_id IN (?) AND i.duration_ms IS NULL AND i.viewed_at>COALESCE(
 			(SELECT s.last_viewed_at FROM interaction_dashboard_view_state s WHERE s.user_id=? AND s.target_type='projects' AND s.target_id=i.project_id AND s.interaction_type='visit'),'1970-01-01 00:00:01') GROUP BY i.project_id
-	) x GROUP BY x.project_id`, ownerUserID, projectIDs, ownerUserID, ownerUserID, projectIDs, ownerUserID, ownerUserID, projectIDs, ownerUserID, ownerUserID, projectIDs, ownerUserID)
+	) x GROUP BY x.project_id`,
+		ownerUserID, ownerUserID, projectIDs, ownerUserID,
+		ownerUserID, ownerUserID, projectIDs, ownerUserID,
+		ownerUserID, ownerUserID, projectIDs, ownerUserID,
+		ownerUserID, ownerUserID, projectIDs, ownerUserID)
 	if err != nil {
 		return nil, err
 	}

@@ -118,11 +118,15 @@ func (s *InteractionService) Share(ctx context.Context, target string, id, userI
 	return result, nil
 }
 
-func (s *InteractionService) ListUsers(ctx context.Context, target, kind string, id, page, size, days int) (map[string]interface{}, error) {
+func (s *InteractionService) ListUsers(ctx context.Context, target, kind string, id, userID, page, size, days int) (map[string]interface{}, error) {
 	if !validInteractionType(kind) {
 		return nil, ErrBadRequest("invalid interaction type")
 	}
-	if err := s.ensureTarget(ctx, target, id); err != nil {
+	if kind == "visit" {
+		if err := s.ensureTargetOwner(ctx, target, id, userID); err != nil {
+			return nil, err
+		}
+	} else if err := s.ensureTarget(ctx, target, id); err != nil {
 		return nil, err
 	}
 	page, size = normalizePageParams(page, size)

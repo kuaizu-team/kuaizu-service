@@ -12,7 +12,7 @@ get:
   tags:
     - Projects
   summary: Get project dashboard
-  description: Only the project creator can view these metrics.
+  description: Project creators and project members can view these metrics.
   operationId: getProjectDashboard
   responses:
     '200':
