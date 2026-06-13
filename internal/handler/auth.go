@@ -54,6 +54,32 @@ func (s *Server) LoginWithWechat(ctx echo.Context) error {
 	})
 }
 
+// PrecheckWechatAuth handles POST /auth/precheck/wechat.
+// It checks registration state without issuing a login token or touching login activity.
+func (s *Server) PrecheckWechatAuth(ctx echo.Context) error {
+	var req api.PrecheckWechatAuthJSONRequestBody
+	if err := ctx.Bind(&req); err != nil {
+		return BadRequest(ctx, "请求参数错误")
+	}
+
+	if req.Code == "" {
+		return BadRequest(ctx, "微信登录code不能为空")
+	}
+
+	result, err := s.svc.Auth.PrecheckWechatAuth(ctx.Request().Context(), req.Code)
+	if err != nil {
+		log.Printf("PrecheckWechatAuth error: %v", err)
+		return Error(ctx, 4001, "微信登录预检查失败: "+err.Error())
+	}
+
+	return Success(ctx, api.WechatPrecheckResponse{
+		Registered:        result.Registered,
+		NeedsPhoneBinding: result.NeedsPhoneBinding,
+		RegisterToken:     result.RegisterToken,
+		ExpiresIn:         result.ExpiresIn,
+	})
+}
+
 // RegisterWithPhone handles POST /auth/register/phone
 // This endpoint completes registration by binding phone number and issuing a token
 func (s *Server) RegisterWithPhone(ctx echo.Context) error {

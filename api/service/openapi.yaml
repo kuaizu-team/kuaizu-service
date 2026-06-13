@@ -50,6 +50,8 @@ tags:
   - name: Feedbacks
     description: 用户反馈接口
 paths:
+  /auth/precheck/wechat:
+    $ref: paths/auth_precheck_wechat.yaml
   /auth/login/wechat:
     $ref: paths/auth_login_wechat.yaml
   /auth/register/phone:
