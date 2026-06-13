@@ -66,7 +66,7 @@ func (s *AuthService) PrecheckWechatAuth(ctx context.Context, code string) (*Wec
 		}
 
 		return &WechatPrecheckResult{
-			Registered:        false,
+			Registered:        user != nil,
 			NeedsPhoneBinding: true,
 			RegisterToken:     &registerToken,
 			ExpiresIn:         &expiresIn,
