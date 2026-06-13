@@ -138,6 +138,8 @@ func main() {
 	apiGroup.GET("/users/me/pending-invitation", server.GetMyPendingInvitation)
 	apiGroup.POST("/users/me/pending-invitation/clear", server.ClearMyPendingInvitation)
 	apiGroup.GET("/roadmap", server.ListRoadmap)
+	apiGroup.GET("/roadmap/has-new", server.HasNewRoadmap)
+	apiGroup.POST("/roadmark-read", server.MarkRoadmapRead)
 
 	api.RegisterHandlers(apiGroup, server)
 

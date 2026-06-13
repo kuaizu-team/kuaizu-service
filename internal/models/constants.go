@@ -148,4 +148,5 @@ const (
 	MsgBizKeyTalentFavorite     = "MSG_TALENT_FAVORITE"      // 名片收藏提醒
 	MsgBizKeyTalentShare        = "MSG_TALENT_SHARE"         // 名片转发提醒
 	MsgBizKeyTalentVisit        = "MSG_TALENT_VISIT"         // 名片被访提醒
+	MsgBizKeyVersionUpdate      = "MSG_VERSION_UPDATE"       // 版本更新通知
 )

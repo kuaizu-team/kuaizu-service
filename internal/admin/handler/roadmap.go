@@ -22,6 +22,10 @@ type roadmapRequest struct {
 	Link    string `json:"link"`
 }
 
+type sendVersionUpdateRequest struct {
+	RoadmapID int `json:"roadmap_id"`
+}
+
 // ListRoadmaps handles GET /admin/roadmap.
 func (s *AdminServer) ListRoadmaps(ctx echo.Context) error {
 	if err := requireSuperAdmin(ctx); err != nil {
@@ -154,6 +158,24 @@ func (s *AdminServer) DeleteRoadmap(ctx echo.Context) error {
 		return response.InternalError(ctx, "delete roadmap failed")
 	}
 	return response.SuccessMessage(ctx, "operation succeeded")
+}
+
+// SendVersionUpdate handles POST /admin/send-version-update.
+func (s *AdminServer) SendVersionUpdate(ctx echo.Context) error {
+	if err := requireSuperAdmin(ctx); err != nil {
+		return err
+	}
+
+	var req sendVersionUpdateRequest
+	if err := ctx.Bind(&req); err != nil {
+		return response.BadRequest(ctx, "invalid request body")
+	}
+
+	result, err := s.svc.Message.StartVersionUpdateBroadcast(ctx.Request().Context(), req.RoadmapID)
+	if err != nil {
+		return mapServiceError(ctx, err)
+	}
+	return response.Success(ctx, result)
 }
 
 func buildRoadmap(req roadmapRequest) (*models.Roadmap, error) {

@@ -21,6 +21,12 @@ type roadmapListResponse struct {
 	Data    []roadmapItemVO `json:"data"`
 }
 
+type roadmapHasNewResponse struct {
+	Code    int                    `json:"code"`
+	Message string                 `json:"message"`
+	Data    map[string]interface{} `json:"data"`
+}
+
 // ListRoadmap handles GET /roadmap.
 func (s *Server) ListRoadmap(ctx echo.Context) error {
 	items, err := s.repo.Roadmap.List(ctx.Request().Context())
@@ -39,6 +45,27 @@ func (s *Server) ListRoadmap(ctx echo.Context) error {
 		Message: "success",
 		Data:    data,
 	})
+}
+
+func (s *Server) HasNewRoadmap(ctx echo.Context) error {
+	hasNew, err := s.repo.Roadmap.HasNewForUser(ctx.Request().Context(), GetUserID(ctx))
+	if err != nil {
+		log.Printf("HasNewRoadmap error: %v", err)
+		return InternalError(ctx, "get roadmap unread status failed")
+	}
+	return ctx.JSON(http.StatusOK, roadmapHasNewResponse{
+		Code:    0,
+		Message: "success",
+		Data:    map[string]interface{}{"hasNew": hasNew},
+	})
+}
+
+func (s *Server) MarkRoadmapRead(ctx echo.Context) error {
+	if err := s.repo.Roadmap.MarkViewed(ctx.Request().Context(), GetUserID(ctx)); err != nil {
+		log.Printf("MarkRoadmapRead error: %v", err)
+		return InternalError(ctx, "mark roadmap read failed")
+	}
+	return SuccessMessage(ctx, "success")
 }
 
 func newRoadmapItemVO(item models.Roadmap) roadmapItemVO {

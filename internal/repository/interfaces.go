@@ -56,6 +56,9 @@ type ProductRepo interface {
 // RoadmapRepo defines the interface for platform roadmap operations.
 type RoadmapRepo interface {
 	List(ctx context.Context) ([]models.Roadmap, error)
+	Latest(ctx context.Context) (*models.Roadmap, error)
+	HasNewForUser(ctx context.Context, userID int) (bool, error)
+	MarkViewed(ctx context.Context, userID int) error
 	AdminList(ctx context.Context, params RoadmapListParams) ([]models.Roadmap, int64, error)
 	AdminGetByID(ctx context.Context, id int) (*models.Roadmap, error)
 	AdminCreate(ctx context.Context, item *models.Roadmap) error
@@ -237,6 +240,7 @@ type PendingInvitationRepo interface {
 type SubscribeConfigRepo interface {
 	GetByUserIDAndBizKey(ctx context.Context, userID int, bizKey string) (*models.SubscribeConfig, error)
 	ListByUserID(ctx context.Context, userID int) ([]models.SubscribeConfig, error)
+	ListAcceptedUserIDsByBizKey(ctx context.Context, bizKey string, limit int, offset int) ([]int, error)
 	Upsert(ctx context.Context, config *models.SubscribeConfig) error
 	UpdateStatus(ctx context.Context, userID int, bizKey string, status models.SubscribeStatus) error
 	DecrementCount(ctx context.Context, userID int, bizKey string) error

@@ -37,6 +37,52 @@ func (r *RoadmapRepository) List(ctx context.Context) ([]models.Roadmap, error) 
 	return items, nil
 }
 
+func (r *RoadmapRepository) Latest(ctx context.Context) (*models.Roadmap, error) {
+	query := `
+		SELECT id, date, title, content, link, created_at, updated_at
+		FROM roadmap
+		ORDER BY COALESCE(updated_at, created_at) DESC, id DESC
+		LIMIT 1
+	`
+	var item models.Roadmap
+	if err := r.db.QueryRowxContext(ctx, query).StructScan(&item); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("query latest roadmap: %w", err)
+	}
+	return &item, nil
+}
+
+func (r *RoadmapRepository) HasNewForUser(ctx context.Context, userID int) (bool, error) {
+	query := `
+		SELECT EXISTS(
+			SELECT 1
+			FROM roadmap r
+			LEFT JOIN user_roadmap_view v ON v.user_id = ?
+			WHERE COALESCE(r.updated_at, r.created_at) > COALESCE(v.last_viewed_at, CAST('1970-01-01 00:00:01' AS DATETIME))
+			LIMIT 1
+		)
+	`
+	var hasNew bool
+	if err := r.db.QueryRowxContext(ctx, query, userID).Scan(&hasNew); err != nil {
+		return false, fmt.Errorf("query roadmap has-new: %w", err)
+	}
+	return hasNew, nil
+}
+
+func (r *RoadmapRepository) MarkViewed(ctx context.Context, userID int) error {
+	query := `
+		INSERT INTO user_roadmap_view (user_id, last_viewed_at)
+		VALUES (?, CURRENT_TIMESTAMP)
+		ON DUPLICATE KEY UPDATE last_viewed_at = VALUES(last_viewed_at)
+	`
+	if _, err := r.db.ExecContext(ctx, query, userID); err != nil {
+		return fmt.Errorf("mark roadmap viewed: %w", err)
+	}
+	return nil
+}
+
 func (r *RoadmapRepository) AdminList(ctx context.Context, params RoadmapListParams) ([]models.Roadmap, int64, error) {
 	if params.Page < 1 {
 		params.Page = 1

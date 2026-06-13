@@ -108,6 +108,7 @@ func main() {
 	adminGroup.POST("/roadmap", server.CreateRoadmap)
 	adminGroup.PUT("/roadmap/:id", server.UpdateRoadmap)
 	adminGroup.DELETE("/roadmap/:id", server.DeleteRoadmap)
+	adminGroup.POST("/send-version-update", server.SendVersionUpdate)
 
 	adminGroup.GET("/orders", server.ListOrders)
 	adminGroup.POST("/orders/:id/refund/apply", server.ApplyOrderRefund)

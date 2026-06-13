@@ -5,6 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"sync"
+	"sync/atomic"
+	"time"
 
 	"github.com/kuaizu-team/kuaizu-service/internal/models"
 	"github.com/kuaizu-team/kuaizu-service/internal/repository"
@@ -15,6 +18,14 @@ import (
 type MessageService struct {
 	repo     *repository.Repository
 	wxClient *wechat.Client
+}
+
+type VersionUpdateBroadcastResult struct {
+	RoadmapID int   `json:"roadmapId"`
+	Queued    int32 `json:"queued"`
+	Sent      int32 `json:"sent"`
+	Failed    int32 `json:"failed"`
+	Skipped   int32 `json:"skipped"`
 }
 
 func NewMessageService(repo *repository.Repository, wxClient *wechat.Client) *MessageService {
@@ -133,4 +144,89 @@ func (s *MessageService) SyncSubscribeStatus(ctx context.Context, userID int, sy
 		}
 	}
 	return nil
+}
+
+func (s *MessageService) StartVersionUpdateBroadcast(ctx context.Context, roadmapID int) (*VersionUpdateBroadcastResult, error) {
+	item, err := s.resolveVersionUpdateRoadmap(ctx, roadmapID)
+	if err != nil {
+		return nil, err
+	}
+	if item == nil {
+		return nil, ErrNotFound("roadmap item not found")
+	}
+
+	result := &VersionUpdateBroadcastResult{RoadmapID: item.ID}
+	title := truncateSubscribeThing(item.Title)
+	content := truncateSubscribeThing(item.Content)
+
+	go s.broadcastVersionUpdate(context.Background(), item.ID, title, content)
+	return result, nil
+}
+
+func (s *MessageService) resolveVersionUpdateRoadmap(ctx context.Context, roadmapID int) (*models.Roadmap, error) {
+	if roadmapID > 0 {
+		return s.repo.Roadmap.AdminGetByID(ctx, roadmapID)
+	}
+	return s.repo.Roadmap.Latest(ctx)
+}
+
+func (s *MessageService) broadcastVersionUpdate(ctx context.Context, roadmapID int, title string, content string) {
+	const pageSize = 500
+	const concurrency = 5
+
+	log.Printf("[VersionUpdateBroadcast] start roadmap_id=%d", roadmapID)
+	sem := make(chan struct{}, concurrency)
+	var wg sync.WaitGroup
+	var queued int32
+	var sent int32
+	var failed int32
+	var skipped int32
+
+	for offset := 0; ; offset += pageSize {
+		userIDs, err := s.repo.SubscribeConfig.ListAcceptedUserIDsByBizKey(ctx, models.MsgBizKeyVersionUpdate, pageSize, offset)
+		if err != nil {
+			log.Printf("[VersionUpdateBroadcast] list users failed roadmap_id=%d offset=%d: %v", roadmapID, offset, err)
+			break
+		}
+		if len(userIDs) == 0 {
+			break
+		}
+
+		atomic.AddInt32(&queued, int32(len(userIDs)))
+		for _, userID := range userIDs {
+			uid := userID
+			sem <- struct{}{}
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				defer func() { <-sem }()
+
+				callCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
+				defer cancel()
+				err := s.SendSubscribeMsgByBizKeyWithPage(callCtx, uid, models.MsgBizKeyVersionUpdate, map[string]string{
+					"title":   title,
+					"content": content,
+					"remark":  "点击查看详情",
+				}, "pages/roadmap/roadmap")
+				if err != nil {
+					log.Printf("[VersionUpdateBroadcast] send failed roadmap_id=%d user_id=%d: %v", roadmapID, uid, err)
+					atomic.AddInt32(&failed, 1)
+					return
+				}
+				atomic.AddInt32(&sent, 1)
+			}()
+		}
+	}
+
+	wg.Wait()
+	log.Printf("[VersionUpdateBroadcast] done roadmap_id=%d queued=%d sent=%d failed=%d skipped=%d",
+		roadmapID, queued, sent, failed, skipped)
+}
+
+func truncateSubscribeThing(s string) string {
+	runes := []rune(s)
+	if len(runes) <= 20 {
+		return s
+	}
+	return string(runes[:17]) + "..."
 }
