@@ -85,11 +85,23 @@ type AdminFeedbackVO struct {
 	UserID       int       `json:"userId"`
 	Content      string    `json:"content"`
 	Email        *string   `json:"email"`
+	NeedReceipt  int       `json:"needReceipt"`
 	Status       int       `json:"status"`
 	AdminReply   *string   `json:"adminReply"`
 	CreatedAt    time.Time `json:"createdAt"`
 	UpdatedAt    time.Time `json:"updatedAt"`
 	UserNickname *string   `json:"userNickname"`
+}
+
+// AdminRoadmapVO is the admin-facing roadmap response model.
+type AdminRoadmapVO struct {
+	ID        int       `json:"id"`
+	Date      string    `json:"date"`
+	Title     string    `json:"title"`
+	Content   string    `json:"content"`
+	Link      *string   `json:"link"`
+	CreatedAt time.Time `json:"createdAt"`
+	UpdatedAt time.Time `json:"updatedAt"`
 }
 
 // AdminInformationContentVO is the admin-facing information-center response model.
@@ -188,11 +200,29 @@ func NewAdminFeedbackVO(f *models.Feedback) *AdminFeedbackVO {
 		UserID:       f.UserID,
 		Content:      f.Content,
 		Email:        f.Email,
+		NeedReceipt:  f.NeedReceipt,
 		Status:       f.Status,
 		AdminReply:   f.AdminReply,
 		CreatedAt:    f.CreatedAt,
 		UpdatedAt:    f.UpdatedAt,
 		UserNickname: f.UserNickname,
+	}
+}
+
+// NewAdminRoadmapVO converts a Roadmap model to AdminRoadmapVO.
+func NewAdminRoadmapVO(r *models.Roadmap) *AdminRoadmapVO {
+	if r == nil {
+		return nil
+	}
+
+	return &AdminRoadmapVO{
+		ID:        r.ID,
+		Date:      r.Date.Format("2006-01-02"),
+		Title:     r.Title,
+		Content:   r.Content,
+		Link:      r.Link,
+		CreatedAt: r.CreatedAt,
+		UpdatedAt: r.UpdatedAt,
 	}
 }
 

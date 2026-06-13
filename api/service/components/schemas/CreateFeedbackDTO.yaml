@@ -10,3 +10,6 @@ properties:
   email:
     type: string
     description: 用户联系邮箱（选填）
+  needReceipt:
+    type: boolean
+    description: 是否接收回执/允许联系
