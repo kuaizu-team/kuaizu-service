@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"log"
 
 	"github.com/kuaizu-team/kuaizu-service/internal/auth"
 	"github.com/kuaizu-team/kuaizu-service/internal/models"
@@ -148,6 +149,10 @@ func (s *AuthService) RegisterWithPhone(ctx context.Context, registerToken, phon
 		}
 	}
 
+	if err := s.attachRegisterInvitations(ctx, user.ID, phone); err != nil {
+		log.Printf("[AuthService.RegisterWithPhone] attach register invitations failed, user_id=%d phone=%s: %v", user.ID, phone, err)
+	}
+
 	// Generate JWT token
 	jwtConfig := auth.DefaultConfig()
 	token, expiresIn, err := auth.GenerateToken(jwtConfig, user.ID, claims.OpenID)
@@ -167,4 +172,11 @@ func (s *AuthService) RegisterWithPhone(ctx context.Context, registerToken, phon
 		IsNewUser:    isNewUser,
 		User:         user,
 	}, nil
+}
+
+func (s *AuthService) attachRegisterInvitations(ctx context.Context, userID int, phone string) error {
+	if userID <= 0 || phone == "" {
+		return nil
+	}
+	return s.repo.InvitationRecord.AttachPendingJoinsByPhone(ctx, userID, phone)
 }

@@ -206,6 +206,16 @@ type InvitationFeedbackRepo interface {
 	UpsertConversationStatus(ctx context.Context, userID int, conversationStatus string) (*models.InvitationFeedback, error)
 }
 
+// InvitationRecordRepo defines register invite SMS record operations.
+type InvitationRecordRepo interface {
+	GetByPhoneProject(ctx context.Context, phone string, projectID int) (*models.InvitationRecord, error)
+	ListPendingJoinByPhone(ctx context.Context, phone string) ([]models.InvitationRecord, error)
+	AttachPendingJoinsByPhone(ctx context.Context, userID int, phone string) error
+	Create(ctx context.Context, record *models.InvitationRecord) error
+	Update(ctx context.Context, record *models.InvitationRecord) error
+	MarkJoined(ctx context.Context, id int) error
+}
+
 // PendingInvitationRepo defines pending invitation display flag operations.
 type PendingInvitationRepo interface {
 	Upsert(ctx context.Context, userID int, inviteType string, expireAt time.Time) error
@@ -264,6 +274,7 @@ var _ TalentProfileRepo = (*TalentProfileRepository)(nil)
 var _ AdminUserRepo = (*AdminUserRepository)(nil)
 var _ FeedbackRepo = (*FeedbackRepository)(nil)
 var _ InvitationFeedbackRepo = (*InvitationFeedbackRepository)(nil)
+var _ InvitationRecordRepo = (*InvitationRecordRepository)(nil)
 var _ PendingInvitationRepo = (*PendingInvitationRepository)(nil)
 var _ SubscribeConfigRepo = (*SubscribeConfigRepository)(nil)
 var _ MsgTemplateConfigRepo = (*MsgTemplateConfigRepository)(nil)

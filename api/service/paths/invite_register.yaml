@@ -1,0 +1,23 @@
+post:
+  tags:
+    - Users
+  summary: 邀请未注册手机号加入项目
+  operationId: inviteRegister
+  requestBody:
+    required: true
+    content:
+      application/json:
+        schema:
+          $ref: ../components/schemas/RegisterInviteDTO.yaml
+  responses:
+    '200':
+      description: 成功
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/BaseResponse.yaml
+              - type: object
+                properties:
+                  data:
+                    $ref: ../components/schemas/RegisterInviteResponse.yaml

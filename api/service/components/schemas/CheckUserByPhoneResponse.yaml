@@ -1,0 +1,11 @@
+type: object
+properties:
+  exists:
+    type: boolean
+  invited:
+    type: boolean
+  user:
+    $ref: ./UserVO.yaml
+required:
+  - exists
+  - invited

@@ -52,6 +52,55 @@ func TestSendAdminSms(t *testing.T) {
 	}
 }
 
+func TestSendRegisterInviteSmsUsesTemplateVariables(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v2/sms/register-invite" {
+			t.Fatalf("path = %s, want /api/v2/sms/register-invite", r.URL.Path)
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer test-token" {
+			t.Fatalf("Authorization = %q", got)
+		}
+		var req map[string]interface{}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		if _, ok := req["teamRole"]; !ok {
+			t.Fatalf("teamRole missing from request: %+v", req)
+		}
+		if _, ok := req["teamrole"]; ok {
+			t.Fatalf("unexpected teamrole key in request: %+v", req)
+		}
+		if req["projectTitle"] != "项目名称" || req["teamRole"] != "团队成员" {
+			t.Fatalf("request = %+v", req)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"code":    200,
+			"message": "success",
+			"data": map[string]interface{}{
+				"provider":      "aliyun_sms",
+				"providerBizId": "biz-1",
+			},
+		})
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, "test-token", 0)
+	resp, err := client.SendRegisterInviteSms(context.Background(), RegisterInviteSmsRequest{
+		TraceID:      "REGISTER_INVITE:1",
+		RecordID:     1,
+		Phone:        "13800138000",
+		ProjectID:    2,
+		ProjectTitle: "项目名称",
+		TeamRole:     "团队成员",
+	})
+	if err != nil {
+		t.Fatalf("SendRegisterInviteSms returned error: %v", err)
+	}
+	if resp.Provider != "aliyun_sms" || resp.ProviderBizID != "biz-1" {
+		t.Fatalf("response = %+v", resp)
+	}
+}
+
 func TestCountAdminSms(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/v2/admin/sms/send-count" {

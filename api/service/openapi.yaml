@@ -66,6 +66,10 @@ paths:
     $ref: paths/users_me_olive-branch-quota.yaml
   /users/search-by-phone:
     $ref: paths/users_search-by-phone.yaml
+  /user/check-by-phone:
+    $ref: paths/user_check-by-phone.yaml
+  /invite/register:
+    $ref: paths/invite_register.yaml
   /user/subscribe:
     $ref: paths/user_subscribe.yaml
   /projects:
