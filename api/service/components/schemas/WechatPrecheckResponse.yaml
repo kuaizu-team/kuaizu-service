@@ -1,0 +1,17 @@
+type: object
+required:
+  - registered
+  - needsPhoneBinding
+properties:
+  registered:
+    type: boolean
+    description: Whether the WeChat openid is already associated with a registered user.
+  needsPhoneBinding:
+    type: boolean
+    description: Whether the client should request WeChat phone authorization.
+  registerToken:
+    type: string
+    description: Temporary registration token, returned only when phone binding is required.
+  expiresIn:
+    type: integer
+    description: Register token expiration time in seconds.

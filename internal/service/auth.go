@@ -34,6 +34,51 @@ type LoginWithWechatResult struct {
 	User              *models.User // raw user; handler builds the VO to include userStatus/banReason
 }
 
+// WechatPrecheckResult represents a side-effect-free WeChat auth precheck result.
+type WechatPrecheckResult struct {
+	Registered        bool
+	NeedsPhoneBinding bool
+	RegisterToken     *string
+	ExpiresIn         *int
+}
+
+// PrecheckWechatAuth checks whether a WeChat user can log in without issuing a login token.
+func (s *AuthService) PrecheckWechatAuth(ctx context.Context, code string) (*WechatPrecheckResult, error) {
+	if code == "" {
+		return nil, fmt.Errorf("code is required")
+	}
+
+	wxResp, err := s.wxClient.Code2Session(code)
+	if err != nil {
+		return nil, fmt.Errorf("wechat code2session failed: %w", err)
+	}
+
+	user, err := s.repo.User.GetByOpenID(ctx, wxResp.OpenID)
+	if err != nil {
+		return nil, fmt.Errorf("get user by openid failed: %w", err)
+	}
+
+	if user == nil || user.Phone == nil {
+		registerConfig := auth.RegisterConfig()
+		registerToken, expiresIn, err := auth.GenerateRegisterToken(registerConfig, wxResp.OpenID)
+		if err != nil {
+			return nil, fmt.Errorf("generate register token failed: %w", err)
+		}
+
+		return &WechatPrecheckResult{
+			Registered:        false,
+			NeedsPhoneBinding: true,
+			RegisterToken:     &registerToken,
+			ExpiresIn:         &expiresIn,
+		}, nil
+	}
+
+	return &WechatPrecheckResult{
+		Registered:        true,
+		NeedsPhoneBinding: false,
+	}, nil
+}
+
 // LoginWithWechat handles WeChat login logic
 func (s *AuthService) LoginWithWechat(ctx context.Context, code string) (*LoginWithWechatResult, error) {
 	if code == "" {
