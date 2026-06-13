@@ -135,6 +135,7 @@ func (s *RegisterInvitationService) Invite(ctx context.Context, inviterUserID in
 	}
 	if existing != nil {
 		record = existing
+		record.InviterUserID = inviterUserID
 		record.Role = role
 		record.Status = models.InvitationRecordStatusFailed
 		record.ErrorMessage = nil

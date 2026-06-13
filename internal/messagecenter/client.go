@@ -71,7 +71,7 @@ type RegisterInviteSmsRequest struct {
 	Phone        string `json:"phone"`
 	ProjectID    int    `json:"projectId"`
 	ProjectTitle string `json:"projectTitle"`
-	TeamRole     string `json:"teamrole"`
+	TeamRole     string `json:"teamRole"`
 }
 
 type RegisterInviteSmsResponse struct {

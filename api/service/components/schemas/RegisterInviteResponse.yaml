@@ -1,0 +1,18 @@
+type: object
+properties:
+  id:
+    type: integer
+  phone:
+    type: string
+  projectId:
+    type: integer
+  role:
+    type: string
+  status:
+    type: string
+required:
+  - id
+  - phone
+  - projectId
+  - role
+  - status

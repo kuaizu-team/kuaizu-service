@@ -178,28 +178,5 @@ func (s *AuthService) attachRegisterInvitations(ctx context.Context, userID int,
 	if userID <= 0 || phone == "" {
 		return nil
 	}
-
-	records, err := s.repo.InvitationRecord.ListPendingJoinByPhone(ctx, phone)
-	if err != nil {
-		return fmt.Errorf("list pending invitations: %w", err)
-	}
-
-	for _, record := range records {
-		role := record.Role
-		if role == "" {
-			role = models.ProjectRoleTeamMember
-		}
-		if err := s.repo.Project.AddMembers(ctx, record.ProjectID, []models.ProjectMember{{
-			ProjectID: record.ProjectID,
-			UserID:    userID,
-			Role:      role,
-		}}); err != nil {
-			return fmt.Errorf("add project member for invitation %d: %w", record.ID, err)
-		}
-		if err := s.repo.InvitationRecord.MarkJoined(ctx, record.ID); err != nil {
-			return fmt.Errorf("mark invitation %d joined: %w", record.ID, err)
-		}
-	}
-
-	return nil
+	return s.repo.InvitationRecord.AttachPendingJoinsByPhone(ctx, userID, phone)
 }

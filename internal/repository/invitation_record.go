@@ -42,6 +42,54 @@ func (r *InvitationRecordRepository) ListPendingJoinByPhone(ctx context.Context,
 	return records, nil
 }
 
+func (r *InvitationRecordRepository) AttachPendingJoinsByPhone(ctx context.Context, userID int, phone string) error {
+	if userID <= 0 || phone == "" {
+		return nil
+	}
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	var records []models.InvitationRecord
+	query := `
+		SELECT ` + invitationRecordSelectColumns + `
+		FROM invitation_record
+		WHERE phone = ?
+		  AND status = ?
+		  AND joined_at IS NULL
+		ORDER BY id ASC
+		FOR UPDATE
+	`
+	if err := tx.SelectContext(ctx, &records, query, phone, models.InvitationRecordStatusSent); err != nil {
+		return fmt.Errorf("query pending invitation records: %w", err)
+	}
+	for _, record := range records {
+		role := record.Role
+		if role == "" {
+			role = models.ProjectRoleTeamMember
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO project_members(project_id,user_id,role)
+			VALUES(?,?,?)
+			ON DUPLICATE KEY UPDATE role=role`, record.ProjectID, userID, role); err != nil {
+			return fmt.Errorf("add project member for invitation %d: %w", record.ID, err)
+		}
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE invitation_record
+			SET status = ?,
+				registered_at = COALESCE(registered_at, NOW()),
+				joined_at = COALESCE(joined_at, NOW()),
+				error_message = NULL,
+				updated_at = NOW()
+			WHERE id = ?
+		`, models.InvitationRecordStatusJoined, record.ID); err != nil {
+			return fmt.Errorf("mark invitation %d joined: %w", record.ID, err)
+		}
+	}
+	return tx.Commit()
+}
+
 func (r *InvitationRecordRepository) Create(ctx context.Context, record *models.InvitationRecord) error {
 	query := `
 		INSERT INTO invitation_record (

@@ -1,0 +1,28 @@
+get:
+  tags:
+    - Users
+  summary: 检查手机号注册和注册邀请状态
+  operationId: checkUserByPhone
+  parameters:
+    - name: phone
+      in: query
+      required: true
+      schema:
+        type: string
+    - name: projectId
+      in: query
+      required: false
+      schema:
+        type: integer
+  responses:
+    '200':
+      description: 成功
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/BaseResponse.yaml
+              - type: object
+                properties:
+                  data:
+                    $ref: ../components/schemas/CheckUserByPhoneResponse.yaml

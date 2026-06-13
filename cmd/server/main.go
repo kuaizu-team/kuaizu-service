@@ -136,8 +136,6 @@ func main() {
 	apiGroup.POST("/invitation/feedback", server.SubmitInvitationFeedback)
 	apiGroup.GET("/users/me/pending-invitation", server.GetMyPendingInvitation)
 	apiGroup.POST("/users/me/pending-invitation/clear", server.ClearMyPendingInvitation)
-	apiGroup.GET("/user/check-by-phone", server.CheckUserByPhone)
-	apiGroup.POST("/invite/register", server.InviteRegister)
 
 	api.RegisterHandlers(apiGroup, server)
 

@@ -1,8 +1,6 @@
 package handler
 
 import (
-	"strconv"
-
 	"github.com/kuaizu-team/kuaizu-service/api"
 	"github.com/kuaizu-team/kuaizu-service/internal/service"
 	"github.com/labstack/echo/v4"
@@ -61,18 +59,13 @@ func (s *Server) SearchUserByPhone(ctx echo.Context, params api.SearchUserByPhon
 }
 
 // CheckUserByPhone handles GET /user/check-by-phone.
-func (s *Server) CheckUserByPhone(ctx echo.Context) error {
-	phone := ctx.QueryParam("phone")
+func (s *Server) CheckUserByPhone(ctx echo.Context, params api.CheckUserByPhoneParams) error {
 	projectID := 0
-	if raw := ctx.QueryParam("projectId"); raw != "" {
-		id, err := strconv.Atoi(raw)
-		if err != nil {
-			return BadRequest(ctx, "项目ID格式错误")
-		}
-		projectID = id
+	if params.ProjectId != nil {
+		projectID = *params.ProjectId
 	}
 
-	result, err := s.svc.RegisterInvitation.CheckByPhone(ctx.Request().Context(), phone, projectID)
+	result, err := s.svc.RegisterInvitation.CheckByPhone(ctx.Request().Context(), params.Phone, projectID)
 	if err != nil {
 		return mapServiceError(ctx, err)
 	}
@@ -101,22 +94,20 @@ func (s *Server) CheckUserByPhone(ctx echo.Context) error {
 	return Success(ctx, data)
 }
 
-type registerInviteRequest struct {
-	Phone     string `json:"phone"`
-	ProjectID int    `json:"projectId"`
-	Role      string `json:"role"`
-}
-
 // InviteRegister handles POST /invite/register.
 func (s *Server) InviteRegister(ctx echo.Context) error {
-	var req registerInviteRequest
+	var req api.InviteRegisterJSONRequestBody
 	if err := ctx.Bind(&req); err != nil {
 		return BadRequest(ctx, "请求参数错误")
 	}
+	role := ""
+	if req.Role != nil {
+		role = *req.Role
+	}
 	record, err := s.svc.RegisterInvitation.Invite(ctx.Request().Context(), GetUserID(ctx), service.RegisterInviteInput{
 		Phone:     req.Phone,
-		ProjectID: req.ProjectID,
-		Role:      req.Role,
+		ProjectID: req.ProjectId,
+		Role:      role,
 	})
 	if err != nil {
 		return mapServiceError(ctx, err)
