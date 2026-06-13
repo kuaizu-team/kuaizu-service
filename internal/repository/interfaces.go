@@ -209,8 +209,10 @@ type InvitationFeedbackRepo interface {
 // InvitationRecordRepo defines register invite SMS record operations.
 type InvitationRecordRepo interface {
 	GetByPhoneProject(ctx context.Context, phone string, projectID int) (*models.InvitationRecord, error)
+	ListPendingJoinByPhone(ctx context.Context, phone string) ([]models.InvitationRecord, error)
 	Create(ctx context.Context, record *models.InvitationRecord) error
 	Update(ctx context.Context, record *models.InvitationRecord) error
+	MarkJoined(ctx context.Context, id int) error
 }
 
 // PendingInvitationRepo defines pending invitation display flag operations.

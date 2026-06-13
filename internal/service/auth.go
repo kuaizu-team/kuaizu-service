@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"log"
 
 	"github.com/kuaizu-team/kuaizu-service/internal/auth"
 	"github.com/kuaizu-team/kuaizu-service/internal/models"
@@ -148,6 +149,10 @@ func (s *AuthService) RegisterWithPhone(ctx context.Context, registerToken, phon
 		}
 	}
 
+	if err := s.attachRegisterInvitations(ctx, user.ID, phone); err != nil {
+		log.Printf("[AuthService.RegisterWithPhone] attach register invitations failed, user_id=%d phone=%s: %v", user.ID, phone, err)
+	}
+
 	// Generate JWT token
 	jwtConfig := auth.DefaultConfig()
 	token, expiresIn, err := auth.GenerateToken(jwtConfig, user.ID, claims.OpenID)
@@ -167,4 +172,34 @@ func (s *AuthService) RegisterWithPhone(ctx context.Context, registerToken, phon
 		IsNewUser:    isNewUser,
 		User:         user,
 	}, nil
+}
+
+func (s *AuthService) attachRegisterInvitations(ctx context.Context, userID int, phone string) error {
+	if userID <= 0 || phone == "" {
+		return nil
+	}
+
+	records, err := s.repo.InvitationRecord.ListPendingJoinByPhone(ctx, phone)
+	if err != nil {
+		return fmt.Errorf("list pending invitations: %w", err)
+	}
+
+	for _, record := range records {
+		role := record.Role
+		if role == "" {
+			role = models.ProjectRoleTeamMember
+		}
+		if err := s.repo.Project.AddMembers(ctx, record.ProjectID, []models.ProjectMember{{
+			ProjectID: record.ProjectID,
+			UserID:    userID,
+			Role:      role,
+		}}); err != nil {
+			return fmt.Errorf("add project member for invitation %d: %w", record.ID, err)
+		}
+		if err := s.repo.InvitationRecord.MarkJoined(ctx, record.ID); err != nil {
+			return fmt.Errorf("mark invitation %d joined: %w", record.ID, err)
+		}
+	}
+
+	return nil
 }

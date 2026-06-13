@@ -5,6 +5,7 @@ import "time"
 const (
 	InvitationRecordStatusSent   = "SENT"
 	InvitationRecordStatusFailed = "FAILED"
+	InvitationRecordStatusJoined = "JOINED"
 )
 
 type InvitationRecord struct {

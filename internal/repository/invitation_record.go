@@ -26,6 +26,22 @@ func (r *InvitationRecordRepository) GetByPhoneProject(ctx context.Context, phon
 	return r.getOne(ctx, `SELECT `+invitationRecordSelectColumns+` FROM invitation_record WHERE phone = ? AND project_id = ? LIMIT 1`, phone, projectID)
 }
 
+func (r *InvitationRecordRepository) ListPendingJoinByPhone(ctx context.Context, phone string) ([]models.InvitationRecord, error) {
+	var records []models.InvitationRecord
+	query := `
+		SELECT ` + invitationRecordSelectColumns + `
+		FROM invitation_record
+		WHERE phone = ?
+		  AND status = ?
+		  AND joined_at IS NULL
+		ORDER BY id ASC
+	`
+	if err := r.db.SelectContext(ctx, &records, query, phone, models.InvitationRecordStatusSent); err != nil {
+		return nil, fmt.Errorf("query pending invitation records: %w", err)
+	}
+	return records, nil
+}
+
 func (r *InvitationRecordRepository) Create(ctx context.Context, record *models.InvitationRecord) error {
 	query := `
 		INSERT INTO invitation_record (
@@ -74,6 +90,22 @@ func (r *InvitationRecordRepository) Update(ctx context.Context, record *models.
 	`
 	if _, err := r.db.NamedExecContext(ctx, query, record); err != nil {
 		return fmt.Errorf("update invitation record: %w", err)
+	}
+	return nil
+}
+
+func (r *InvitationRecordRepository) MarkJoined(ctx context.Context, id int) error {
+	query := `
+		UPDATE invitation_record
+		SET status = ?,
+			registered_at = COALESCE(registered_at, NOW()),
+			joined_at = COALESCE(joined_at, NOW()),
+			error_message = NULL,
+			updated_at = NOW()
+		WHERE id = ?
+	`
+	if _, err := r.db.ExecContext(ctx, query, models.InvitationRecordStatusJoined, id); err != nil {
+		return fmt.Errorf("mark invitation joined: %w", err)
 	}
 	return nil
 }
