@@ -103,6 +103,13 @@ func main() {
 	adminGroup.PUT("/information/:id", server.UpdateInformation)
 	adminGroup.DELETE("/information/:id", server.DeleteInformation)
 
+	adminGroup.GET("/roadmap", server.ListRoadmaps)
+	adminGroup.GET("/roadmap/:id", server.GetRoadmap)
+	adminGroup.POST("/roadmap", server.CreateRoadmap)
+	adminGroup.PUT("/roadmap/:id", server.UpdateRoadmap)
+	adminGroup.DELETE("/roadmap/:id", server.DeleteRoadmap)
+	adminGroup.POST("/send-version-update", server.SendVersionUpdate)
+
 	adminGroup.GET("/orders", server.ListOrders)
 	adminGroup.POST("/orders/:id/refund/apply", server.ApplyOrderRefund)
 	adminGroup.PATCH("/orders/:id/refund/reject", server.RejectOrderRefund)

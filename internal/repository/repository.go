@@ -10,6 +10,7 @@ type Repository struct {
 	User               UserRepo
 	Project            ProjectRepo
 	Product            ProductRepo
+	Roadmap            RoadmapRepo
 	InformationContent InformationContentRepo
 	Application        ApplicationRepo
 	OliveBranch        OliveBranchRepo
@@ -43,6 +44,7 @@ func New(db *sqlx.DB) *Repository {
 		User:               NewUserRepository(db),
 		Project:            NewProjectRepository(db),
 		Product:            NewProductRepository(db),
+		Roadmap:            NewRoadmapRepository(db),
 		InformationContent: NewInformationContentRepository(db),
 		Application:        NewApplicationRepository(db),
 		OliveBranch:        NewOliveBranchRepository(db),

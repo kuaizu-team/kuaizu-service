@@ -9,10 +9,9 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
-// emailRegex 邮箱格式校验（宽松匹配，与接口文档保持一致）
 var emailRegex = regexp.MustCompile(`^[^\s@]+@[^\s@]+\.[^\s@]+$`)
 
-// CreateFeedback handles POST /feedbacks
+// CreateFeedback handles POST /feedbacks.
 func (s *Server) CreateFeedback(ctx echo.Context) error {
 	userID := GetUserID(ctx)
 
@@ -21,7 +20,6 @@ func (s *Server) CreateFeedback(ctx echo.Context) error {
 		return BadRequest(ctx, "请求参数错误")
 	}
 
-	// 校验 content：不能为空，不能超过 1000 字符
 	if req.Content == "" {
 		return Error(ctx, 422, "反馈内容不能为空")
 	}
@@ -29,7 +27,6 @@ func (s *Server) CreateFeedback(ctx echo.Context) error {
 		return Error(ctx, 422, "反馈内容不能超过1000字符")
 	}
 
-	// 校验 email 格式（仅在提供时校验）
 	if req.Email != nil && *req.Email != "" {
 		if !emailRegex.MatchString(*req.Email) {
 			return Error(ctx, 422, "邮箱格式不正确")
@@ -37,10 +34,11 @@ func (s *Server) CreateFeedback(ctx echo.Context) error {
 	}
 
 	feedback := &models.Feedback{
-		UserID:  userID,
-		Content: req.Content,
-		Email:   req.Email,
-		Status:  0, // 0 = 待处理
+		UserID:      userID,
+		Content:     req.Content,
+		Email:       req.Email,
+		NeedReceipt: boolToTinyInt(req.NeedReceipt),
+		Status:      0,
 	}
 
 	if err := s.repo.Feedback.Create(ctx.Request().Context(), feedback); err != nil {
@@ -49,4 +47,11 @@ func (s *Server) CreateFeedback(ctx echo.Context) error {
 	}
 
 	return SuccessMessage(ctx, "提交成功")
+}
+
+func boolToTinyInt(v *bool) int {
+	if v != nil && *v {
+		return 1
+	}
+	return 0
 }

@@ -1,0 +1,8 @@
+type: object
+properties:
+  roadmapId:
+    type: integer
+  status:
+    type: string
+    enum:
+      - started

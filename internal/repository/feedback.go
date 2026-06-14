@@ -66,7 +66,7 @@ func (r *FeedbackRepository) List(ctx context.Context, params FeedbackListParams
 	query := fmt.Sprintf(`
 		SELECT
 			f.id, f.user_id, f.content,
-			f.email, f.status, f.admin_reply, f.created_at, f.updated_at,
+			f.email, f.need_receipt, f.status, f.admin_reply, f.created_at, f.updated_at,
 			u.nickname, u.school_id AS user_school_id
 		%s
 		WHERE %s
@@ -88,7 +88,7 @@ func (r *FeedbackRepository) GetByID(ctx context.Context, id int) (*models.Feedb
 	query := `
 		SELECT
 			f.id, f.user_id, f.content,
-			f.email, f.status, f.admin_reply, f.created_at, f.updated_at,
+			f.email, f.need_receipt, f.status, f.admin_reply, f.created_at, f.updated_at,
 			u.nickname, u.school_id AS user_school_id
 		FROM feedback f
 		LEFT JOIN ` + "`user`" + ` u ON f.user_id = u.id
@@ -109,8 +109,8 @@ func (r *FeedbackRepository) GetByID(ctx context.Context, id int) (*models.Feedb
 // Create inserts a new feedback record submitted by a user.
 func (r *FeedbackRepository) Create(ctx context.Context, f *models.Feedback) error {
 	query := `
-		INSERT INTO feedback (user_id, content, email, status)
-		VALUES (:user_id, :content, :email, :status)
+		INSERT INTO feedback (user_id, content, email, need_receipt, status)
+		VALUES (:user_id, :content, :email, :need_receipt, :status)
 	`
 	result, err := r.db.NamedExecContext(ctx, query, f)
 	if err != nil {

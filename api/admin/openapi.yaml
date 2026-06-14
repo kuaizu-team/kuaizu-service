@@ -35,6 +35,8 @@ tags:
     description: Information content management APIs
   - name: Feedbacks
     description: 反馈管理接口
+  - name: Roadmap
+    description: Platform roadmap management APIs
 security:
   - bearerAuth: []
 paths:
@@ -90,6 +92,12 @@ paths:
     $ref: paths/information.yaml
   /information/{id}:
     $ref: paths/information_{id}.yaml
+  /roadmap:
+    $ref: paths/roadmap.yaml
+  /roadmap/{id}:
+    $ref: paths/roadmap_{id}.yaml
+  /send-version-update:
+    $ref: paths/send-version-update.yaml
 components:
   securitySchemes:
     bearerAuth:

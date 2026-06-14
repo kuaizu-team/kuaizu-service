@@ -84,6 +84,7 @@ func main() {
 			"/api/v2/dictionaries/majors",            // Major list
 			"/api/v2/email/unsubscribe",              // Email unsubscribe
 			"/api/v2/information/list",               // Information center list
+			"/api/v2/roadmap",                        // Platform roadmap
 		}
 
 		// Check exact matches
@@ -136,6 +137,10 @@ func main() {
 	apiGroup.POST("/invitation/feedback", server.SubmitInvitationFeedback)
 	apiGroup.GET("/users/me/pending-invitation", server.GetMyPendingInvitation)
 	apiGroup.POST("/users/me/pending-invitation/clear", server.ClearMyPendingInvitation)
+	apiGroup.GET("/roadmap", server.ListRoadmap)
+	apiGroup.GET("/roadmap/has-new", server.HasNewRoadmap)
+	apiGroup.POST("/roadmap/mark-read", server.MarkRoadmapRead)
+	apiGroup.POST("/roadmark-read", server.MarkRoadmapRead)
 
 	api.RegisterHandlers(apiGroup, server)
 

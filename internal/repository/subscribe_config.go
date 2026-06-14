@@ -55,6 +55,27 @@ func (r *SubscribeConfigRepository) ListByUserID(ctx context.Context, userID int
 	return configs, nil
 }
 
+func (r *SubscribeConfigRepository) ListAcceptedUserIDsByBizKey(ctx context.Context, bizKey string, limit int, offset int) ([]int, error) {
+	if limit <= 0 || limit > 1000 {
+		limit = 500
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	query := `
+		SELECT user_id
+		FROM subscribe
+		WHERE biz_key = ? AND status IN (?, ?)
+		ORDER BY user_id ASC
+		LIMIT ? OFFSET ?
+	`
+	var ids []int
+	if err := r.db.SelectContext(ctx, &ids, query, bizKey, models.SubscribeStatusAccept, models.SubscribeStatusAlways, limit, offset); err != nil {
+		return nil, fmt.Errorf("list accepted subscribe users: %w", err)
+	}
+	return ids, nil
+}
+
 // Upsert creates or updates a subscribe config
 func (r *SubscribeConfigRepository) Upsert(ctx context.Context, config *models.SubscribeConfig) error {
 	query := `

@@ -1,0 +1,20 @@
+get:
+  tags:
+    - Roadmap
+  summary: List platform roadmap items
+  operationId: listRoadmap
+  security: []
+  responses:
+    '200':
+      description: Success
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/BaseResponse.yaml
+              - type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: ../components/schemas/RoadmapItemVO.yaml

@@ -1,0 +1,5 @@
+type: object
+properties:
+  roadmap_id:
+    type: integer
+    description: Roadmap item id. When omitted, the latest roadmap item is used.

@@ -1,0 +1,20 @@
+type: object
+properties:
+  id:
+    type: integer
+  date:
+    type: string
+    format: date
+  title:
+    type: string
+  content:
+    type: string
+  link:
+    type: string
+    nullable: true
+  createdAt:
+    type: string
+    format: date-time
+  updatedAt:
+    type: string
+    format: date-time

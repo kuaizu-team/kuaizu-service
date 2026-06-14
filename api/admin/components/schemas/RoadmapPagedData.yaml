@@ -1,0 +1,13 @@
+type: object
+properties:
+  list:
+    type: array
+    items:
+      $ref: ./AdminRoadmap.yaml
+  total:
+    type: integer
+    format: int64
+  page:
+    type: integer
+  size:
+    type: integer

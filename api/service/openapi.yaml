@@ -49,6 +49,8 @@ tags:
     description: 橄榄枝短信通知接口
   - name: Feedbacks
     description: 用户反馈接口
+  - name: Roadmap
+    description: Platform roadmap APIs
 paths:
   /auth/precheck/wechat:
     $ref: paths/auth_precheck_wechat.yaml
@@ -180,6 +182,14 @@ paths:
     $ref: paths/dictionaries_majors.yaml
   /feedbacks:
     $ref: paths/feedbacks.yaml
+  /roadmap:
+    $ref: paths/roadmap.yaml
+  /roadmap/has-new:
+    $ref: paths/roadmap_has-new.yaml
+  /roadmap/mark-read:
+    $ref: paths/roadmap_mark-read.yaml
+  /roadmark-read:
+    $ref: paths/roadmark-read.yaml
   /interactions/favorites/unread-count:
     $ref: paths/interactions_favorites_unread-count.yaml
   /interactions/favorites/mark-viewed:

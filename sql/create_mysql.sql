@@ -158,6 +158,8 @@ CREATE TABLE `feedback` (
   `id` int(11) NOT NULL AUTO_INCREMENT COMMENT 'ID',
   `user_id` int(11) NOT NULL COMMENT '用户ID',
   `content` text NOT NULL COMMENT '反馈内容',
+  `email` varchar(100) DEFAULT NULL COMMENT '用户联系邮箱',
+  `need_receipt` tinyint(1) NOT NULL DEFAULT '0' COMMENT '是否接收回执/允许联系',
   `contact_image` text COMMENT '图片凭证',
   `status` int(11) DEFAULT '0' COMMENT '处理状态:0-待处理,1-已处理',
   `admin_reply` text COMMENT '管理员回复',
@@ -456,10 +458,45 @@ CREATE TABLE `msg_template_config` (
   `template_id` varchar(100) NOT NULL COMMENT '微信模板ID',
   `template_title` varchar(100) DEFAULT NULL COMMENT '模板标题',
   `content_json` json NOT NULL COMMENT '字段映射配置',
+  `page_path` varchar(255) DEFAULT NULL COMMENT '点击订阅消息卡片后跳转的小程序页面路径',
   `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`biz_key`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='订阅消息模板配置表';
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `roadmap`
+--
+
+DROP TABLE IF EXISTS `roadmap`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `roadmap` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `date` date NOT NULL COMMENT '发布日期',
+  `title` varchar(100) NOT NULL COMMENT '标题',
+  `content` text NOT NULL COMMENT '详细内容',
+  `link` varchar(500) DEFAULT NULL COMMENT '公众号链接',
+  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_roadmap_date` (`date`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='平台进度看板';
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `user_roadmap_view`
+--
+
+DROP TABLE IF EXISTS `user_roadmap_view`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `user_roadmap_view` (
+  `user_id` int(10) unsigned NOT NULL,
+  `last_viewed_at` timestamp NULL DEFAULT NULL COMMENT '最后查看时间，NULL代表从未查看',
+  PRIMARY KEY (`user_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='用户进度看板已读时间';
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
