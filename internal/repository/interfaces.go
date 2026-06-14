@@ -37,6 +37,7 @@ type ProjectRepo interface {
 	Delete(ctx context.Context, id int) error
 	IsOwner(ctx context.Context, projectID, userID int) (bool, error)
 	IsOwnerOrMember(ctx context.Context, projectID, userID int) (bool, error)
+	HasUnreadPassiveStatusChange(ctx context.Context, userID int) (bool, error)
 	RoleExists(ctx context.Context, role string) (bool, error)
 	GetMemberRole(ctx context.Context, projectID, userID int) (*string, error)
 	ListMilestones(ctx context.Context, projectID int) ([]models.ProjectMilestone, error)
@@ -128,6 +129,7 @@ type UserRepo interface {
 	GetEduCertInfoByID(ctx context.Context, userID int) (CertInfo, error)
 	UpdateSentOliveViewedAt(ctx context.Context, userID int) error
 	UpdateApplicationsLastViewedAt(ctx context.Context, userID int) error
+	UpdateLastViewedMyProjectsAt(ctx context.Context, userID int) error
 	UpdateUserStatus(ctx context.Context, userID int, status int, banReason *string) error
 	TouchLastActiveDate(ctx context.Context, userID int) error
 }

@@ -158,6 +158,10 @@ func (m *MockProjectRepo) IsOwnerOrMember(ctx context.Context, projectID, userID
 	return args.Bool(0), args.Error(1)
 }
 
+func (m *MockProjectRepo) HasUnreadPassiveStatusChange(ctx context.Context, userID int) (bool, error) {
+	return false, nil
+}
+
 func (m *MockProjectRepo) RoleExists(ctx context.Context, role string) (bool, error) {
 	args := m.Called(ctx, role)
 	return args.Bool(0), args.Error(1)

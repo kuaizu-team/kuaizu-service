@@ -29,6 +29,7 @@ type User struct {
 	WechatID                 *string    `db:"wechat_id"`                   // 微信号
 	SentOliveViewedAt        *time.Time `db:"sent_olive_viewed_at"`        // 最后查看已发送橄榄枝的时间
 	ApplicationsLastViewedAt *time.Time `db:"applications_last_viewed_at"` // 最后查看投递管理页的时间
+	LastViewedMyProjectsAt   *time.Time `db:"last_viewed_my_projects_at"`  // 最后查看我的项目页的时间
 	UserStatus               int        `db:"user_status"`                 // 0=正常, 1=封禁, 2=已毕业
 	BanReason                *string    `db:"ban_reason"`                  // 封禁原因（仅 user_status=1 时有意义）
 	CreatedAt                *time.Time `db:"created_at"`

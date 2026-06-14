@@ -700,6 +700,30 @@ func (r *ProjectRepository) IsOwnerOrMember(ctx context.Context, projectID, user
 	return exists, nil
 }
 
+// HasUnreadPassiveStatusChange reports whether the user's own/member projects have
+// a passive review status change after they last visited the "my projects" page.
+func (r *ProjectRepository) HasUnreadPassiveStatusChange(ctx context.Context, userID int) (bool, error) {
+	var exists bool
+	err := r.db.QueryRowxContext(ctx, `
+		SELECT EXISTS(
+			SELECT 1
+			FROM project p
+			LEFT JOIN `+"`user`"+` u ON u.id = ?
+			WHERE
+				(p.creator_id = ? OR EXISTS (
+					SELECT 1 FROM project_members pm
+					WHERE pm.project_id = p.id AND pm.user_id = ?
+				))
+				AND p.status IN (?, ?)
+				AND p.updated_at > COALESCE(u.last_viewed_my_projects_at, CAST('1970-01-01 00:00:01' AS DATETIME))
+		)
+	`, userID, userID, userID, models.ProjectStatusApproved, models.ProjectStatusRejected).Scan(&exists)
+	if err != nil {
+		return false, fmt.Errorf("check unread passive project status change: %w", err)
+	}
+	return exists, nil
+}
+
 func (r *ProjectRepository) RoleExists(ctx context.Context, role string) (bool, error) {
 	var exists bool
 	if err := r.db.QueryRowxContext(ctx, `SELECT EXISTS(SELECT 1 FROM project_role WHERE code=? AND status=1)`, role).Scan(&exists); err != nil {

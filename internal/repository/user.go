@@ -28,7 +28,7 @@ func (r *UserRepository) GetByID(ctx context.Context, id int) (*models.User, err
 			u.school_id, u.major_id, u.grade, u.olive_branch_count,
 			u.free_branch_used_today, u.last_active_date,
 			u.auth_status, u.auth_img_url, u.avatar_url, u.cover_image,
-			u.wechat_id, u.sent_olive_viewed_at, u.applications_last_viewed_at,
+			u.wechat_id, u.sent_olive_viewed_at, u.applications_last_viewed_at, u.last_viewed_my_projects_at,
 			u.user_status, u.ban_reason, u.created_at,
 			s.school_name, s.school_code,
 			m.major_name, m.class_id
@@ -86,7 +86,7 @@ func (r *UserRepository) GetByIDForUpdateTx(ctx context.Context, tx *sqlx.Tx, id
 			u.school_id, u.major_id, u.grade, u.olive_branch_count,
 			u.free_branch_used_today, u.last_active_date,
 			u.auth_status, u.auth_img_url, u.avatar_url, u.cover_image,
-			u.wechat_id, u.sent_olive_viewed_at, u.applications_last_viewed_at,
+			u.wechat_id, u.sent_olive_viewed_at, u.applications_last_viewed_at, u.last_viewed_my_projects_at,
 			u.user_status, u.ban_reason, u.created_at,
 			s.school_name, s.school_code,
 			m.major_name, m.class_id
@@ -116,7 +116,7 @@ func (r *UserRepository) GetByOpenID(ctx context.Context, openid string) (*model
 			u.school_id, u.major_id, u.grade, u.olive_branch_count,
 			u.free_branch_used_today, u.last_active_date,
 			u.auth_status, u.auth_img_url, u.avatar_url, u.cover_image,
-			u.wechat_id, u.sent_olive_viewed_at, u.applications_last_viewed_at,
+			u.wechat_id, u.sent_olive_viewed_at, u.applications_last_viewed_at, u.last_viewed_my_projects_at,
 			u.user_status, u.ban_reason, u.created_at,
 			s.school_name, s.school_code,
 			m.major_name, m.class_id
@@ -568,6 +568,16 @@ func (r *UserRepository) UpdateApplicationsLastViewedAt(ctx context.Context, use
 	_, err := r.db.ExecContext(ctx, query, userID)
 	if err != nil {
 		return fmt.Errorf("update applications_last_viewed_at: %w", err)
+	}
+	return nil
+}
+
+// UpdateLastViewedMyProjectsAt sets last_viewed_my_projects_at to NOW() for the given user.
+func (r *UserRepository) UpdateLastViewedMyProjectsAt(ctx context.Context, userID int) error {
+	query := `UPDATE ` + "`user`" + ` SET last_viewed_my_projects_at = NOW() WHERE id = ?`
+	_, err := r.db.ExecContext(ctx, query, userID)
+	if err != nil {
+		return fmt.Errorf("update last_viewed_my_projects_at: %w", err)
 	}
 	return nil
 }
