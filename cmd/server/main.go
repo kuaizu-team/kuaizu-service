@@ -132,6 +132,11 @@ func main() {
 
 	// Project-application reviewer read status
 	apiGroup.POST("/project-applications/mark-read", server.MarkReviewerApplicationRead)
+	apiGroup.POST("/projects/delete", server.DeleteProjectPost)
+	apiGroup.POST("/projects/restore", server.RestoreProjectPost)
+	apiGroup.POST("/projects/:id/complete-recruit", server.CompleteRecruit)
+	apiGroup.POST("/projects/:id/restart-recruit", server.RestartRecruit)
+	apiGroup.POST("/projects/:id/end", server.EndProject)
 
 	// Super-admin invitation feedback
 	apiGroup.POST("/invitation/feedback", server.SubmitInvitationFeedback)

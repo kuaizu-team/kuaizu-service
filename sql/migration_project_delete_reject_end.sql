@@ -1,0 +1,8 @@
+ALTER TABLE project
+  MODIFY COLUMN status TINYINT NOT NULL COMMENT '0待审核,1已通过,2已驳回,3完成招募,4删除中,5已结束';
+
+ALTER TABLE project
+  ADD COLUMN reject_reason VARCHAR(255) DEFAULT NULL COMMENT '驳回原因';
+
+ALTER TABLE project
+  ADD COLUMN deleted_at TIMESTAMP NULL DEFAULT NULL COMMENT '删除时间';

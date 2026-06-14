@@ -22,6 +22,8 @@ type Project struct {
 	ViewCount            int        `db:"view_count"`            // 浏览量
 	CreatedAt            time.Time  `db:"created_at"`
 	UpdatedAt            time.Time  `db:"updated_at"`
+	RejectReason         *string    `db:"reject_reason"`
+	DeletedAt            *time.Time `db:"deleted_at"`
 	IsCrossSchool        *int       `db:"is_cross_school"`
 	EducationRequirement *int       `db:"education_requirement"`
 	SkillRequirement     *string    `db:"skill_requirement"`
@@ -112,6 +114,8 @@ func (p *Project) ToVO() *api.ProjectVO {
 		ViewCount:               &p.ViewCount,
 		PendingApplicationCount: &p.PendingApplicationCount,
 		UpdatedAt:               &p.UpdatedAt,
+		RejectReason:            p.RejectReason,
+		DeletedAt:               p.DeletedAt,
 		PublisherRole:           p.PublisherRole,
 		PublisherRoleName:       p.PublisherRoleName,
 		InitiatingSchoolId:      p.InitiatingSchoolID,
@@ -152,6 +156,8 @@ func (p *Project) ToDetailVO() *api.ProjectDetailVO {
 		PromotionStatus:        &p.PromotionStatus,
 		ViewCount:              &p.ViewCount,
 		CreatedAt:              &p.CreatedAt,
+		RejectReason:           p.RejectReason,
+		DeletedAt:              p.DeletedAt,
 		IsCrossSchool:          p.IsCrossSchool,
 		EducationRequirement:   p.EducationRequirement,
 		SkillRequirement:       p.SkillRequirement,

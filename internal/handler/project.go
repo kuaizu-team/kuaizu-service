@@ -373,6 +373,70 @@ func (s *Server) DeleteProject(ctx echo.Context, id int) error {
 	return SuccessMessage(ctx, "项目已删除")
 }
 
+func (s *Server) DeleteProjectPost(ctx echo.Context) error {
+	userID := GetUserID(ctx)
+	var req struct {
+		Id int `json:"id"`
+	}
+	if err := ctx.Bind(&req); err != nil || req.Id <= 0 {
+		return BadRequest(ctx, "invalid project id")
+	}
+	if err := s.svc.Project.DeleteProject(ctx.Request().Context(), req.Id, userID); err != nil {
+		return mapServiceError(ctx, err)
+	}
+	return Success(ctx, nil)
+}
+
+func (s *Server) RestoreProjectPost(ctx echo.Context) error {
+	userID := GetUserID(ctx)
+	var req struct {
+		Id int `json:"id"`
+	}
+	if err := ctx.Bind(&req); err != nil || req.Id <= 0 {
+		return BadRequest(ctx, "invalid project id")
+	}
+	if err := s.svc.Project.RestoreProjectByUser(ctx.Request().Context(), req.Id, userID); err != nil {
+		return mapServiceError(ctx, err)
+	}
+	return Success(ctx, nil)
+}
+
+func (s *Server) CompleteRecruit(ctx echo.Context) error {
+	userID := GetUserID(ctx)
+	id, err := strconv.Atoi(ctx.Param("id"))
+	if err != nil || id <= 0 {
+		return BadRequest(ctx, "invalid project id")
+	}
+	if err := s.svc.Project.CompleteRecruit(ctx.Request().Context(), id, userID); err != nil {
+		return mapServiceError(ctx, err)
+	}
+	return Success(ctx, nil)
+}
+
+func (s *Server) RestartRecruit(ctx echo.Context) error {
+	userID := GetUserID(ctx)
+	id, err := strconv.Atoi(ctx.Param("id"))
+	if err != nil || id <= 0 {
+		return BadRequest(ctx, "invalid project id")
+	}
+	if err := s.svc.Project.RestartRecruit(ctx.Request().Context(), id, userID); err != nil {
+		return mapServiceError(ctx, err)
+	}
+	return Success(ctx, nil)
+}
+
+func (s *Server) EndProject(ctx echo.Context) error {
+	userID := GetUserID(ctx)
+	id, err := strconv.Atoi(ctx.Param("id"))
+	if err != nil || id <= 0 {
+		return BadRequest(ctx, "invalid project id")
+	}
+	if err := s.svc.Project.EndProject(ctx.Request().Context(), id, userID); err != nil {
+		return mapServiceError(ctx, err)
+	}
+	return Success(ctx, nil)
+}
+
 // ListProjectApplications handles GET /projects/{id}/applications
 func (s *Server) ListProjectApplications(ctx echo.Context, id int, params api.ListProjectApplicationsParams) error {
 	userID := GetUserID(ctx)

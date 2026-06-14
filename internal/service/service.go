@@ -61,6 +61,14 @@ func truncate20(s string) string {
 	return s
 }
 
+func truncate20WithEllipsis(s string) string {
+	r := []rune(s)
+	if len(r) > 20 {
+		return string(r[:19]) + "…"
+	}
+	return s
+}
+
 // normalizePageParams enforces sane defaults for page/size.
 func normalizePageParams(page, size int) (int, int) {
 	if page < 1 {

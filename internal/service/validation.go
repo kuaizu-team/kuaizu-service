@@ -31,7 +31,7 @@ func IsValidStatus(field string, status int) error {
 		}
 	case "project.status":
 		// 审核状态:0-待审核,1-已通过,2-已驳回,3-已关闭
-		if status < models.ProjectStatusPending || status > models.ProjectStatusClosed {
+		if status < models.ProjectStatusPending || status > models.ProjectStatusEnded {
 			return ErrBadRequest(fmt.Sprintf("无效的项目状态: %d", status))
 		}
 	case "project.promotion_status":

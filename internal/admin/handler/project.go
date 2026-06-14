@@ -3,6 +3,7 @@ package handler
 import (
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/jmoiron/sqlx"
 	adminvo "github.com/kuaizu-team/kuaizu-service/internal/admin/vo"
@@ -114,7 +115,13 @@ func (s *AdminServer) TakedownProject(ctx echo.Context) error {
 		}
 	}
 
-	if err := s.svc.Project.TakedownProject(ctx.Request().Context(), id); err != nil {
+	var req reviewProjectRequest
+	_ = ctx.Bind(&req)
+	reason := strings.TrimSpace(req.RejectReason)
+	if reason == "" {
+		return response.BadRequest(ctx, "rejectReason is required")
+	}
+	if err := s.svc.Project.TakedownProject(ctx.Request().Context(), id, &reason); err != nil {
 		return mapServiceError(ctx, err)
 	}
 
@@ -262,7 +269,8 @@ func (s *AdminServer) ListProjectOliveBranches(ctx echo.Context) error {
 }
 
 type reviewProjectRequest struct {
-	Status int `json:"status"`
+	Status       int    `json:"status"`
+	RejectReason string `json:"rejectReason"`
 }
 
 // ReviewProject handles PATCH /admin/projects/:id
@@ -292,9 +300,39 @@ func (s *AdminServer) ReviewProject(ctx echo.Context) error {
 		return response.BadRequest(ctx, fmt.Sprintf("invalid status %d, must be %d (approve) or %d (reject)", req.Status, models.ProjectStatusApproved, models.ProjectStatusRejected))
 	}
 
-	if err := s.svc.Project.ReviewProject(ctx.Request().Context(), id, req.Status); err != nil {
+	reason := strings.TrimSpace(req.RejectReason)
+	if req.Status == models.ProjectStatusRejected && reason == "" {
+		return response.BadRequest(ctx, "rejectReason is required")
+	}
+	var reasonPtr *string
+	if reason != "" {
+		reasonPtr = &reason
+	}
+	if err := s.svc.Project.ReviewProject(ctx.Request().Context(), id, req.Status, reasonPtr); err != nil {
 		return mapServiceError(ctx, err)
 	}
 
+	return response.SuccessMessage(ctx, "操作成功")
+}
+
+func (s *AdminServer) RestoreProject(ctx echo.Context) error {
+	id, err := strconv.Atoi(ctx.Param("id"))
+	if err != nil {
+		return response.BadRequest(ctx, "invalid project id")
+	}
+
+	if sid := adminSchoolID(ctx); sid != nil {
+		project, err := s.svc.Project.GetProject(ctx.Request().Context(), id)
+		if err != nil {
+			return mapServiceError(ctx, err)
+		}
+		if project == nil || project.SchoolID == nil || *project.SchoolID != *sid {
+			return response.Forbidden(ctx, "权限不足")
+		}
+	}
+
+	if err := s.svc.Project.RestoreProject(ctx.Request().Context(), id); err != nil {
+		return mapServiceError(ctx, err)
+	}
 	return response.SuccessMessage(ctx, "操作成功")
 }

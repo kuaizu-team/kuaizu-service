@@ -221,7 +221,7 @@ func (r *ProjectRepository) List(ctx context.Context, params ListParams) ([]mode
 			p.id, p.creator_id, p.name, p.description, p.school_id,
 			p.direction, p.member_count, p.status,
 			p.promotion_status, p.promotion_expire_time, p.view_count,
-			p.created_at, p.updated_at, p.is_cross_school,
+			p.created_at, p.updated_at, p.reject_reason, p.deleted_at, p.is_cross_school,
 			p.education_requirement, p.skill_requirement,
 			p.publisher_role, p.initiating_school_id,
 			s.school_name, pr.name AS publisher_role_name, ins.school_name AS initiating_school_name,
@@ -321,7 +321,7 @@ func (r *ProjectRepository) GetByID(ctx context.Context, id int) (*models.Projec
 			p.id, p.creator_id, p.name, p.description, p.school_id,
 			p.direction, p.member_count, p.status,
 			p.promotion_status, p.promotion_expire_time, p.view_count,
-			p.created_at, p.updated_at, p.is_cross_school,
+			p.created_at, p.updated_at, p.reject_reason, p.deleted_at, p.is_cross_school,
 			p.education_requirement, p.skill_requirement,
 			p.publisher_role, p.initiating_school_id,
 			s.school_name, pr.name AS publisher_role_name, ins.school_name AS initiating_school_name,
@@ -708,11 +708,11 @@ func (r *ProjectRepository) RoleExists(ctx context.Context, role string) (bool, 
 	return exists, nil
 }
 
-// Delete performs a logical delete (sets status to CLOSED)
+// Delete performs a logical delete (sets status to DELETING).
 func (r *ProjectRepository) Delete(ctx context.Context, id int) error {
-	query := `UPDATE project SET status = 3, updated_at = CURRENT_TIMESTAMP WHERE id = ?`
+	query := `UPDATE project SET status = ?, deleted_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?`
 
-	result, err := r.db.ExecContext(ctx, query, id)
+	result, err := r.db.ExecContext(ctx, query, models.ProjectStatusDeleting, id)
 	if err != nil {
 		return fmt.Errorf("delete project: %w", err)
 	}
@@ -736,11 +736,26 @@ func (r *ProjectRepository) IsOwner(ctx context.Context, projectID, userID int) 
 
 // UpdateStatus updates the review status of a project
 func (r *ProjectRepository) UpdateStatus(ctx context.Context, id int, status int) error {
-	query := `UPDATE project SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`
+	query := `UPDATE project SET status = ?, reject_reason = CASE WHEN ? = ? THEN reject_reason ELSE NULL END, deleted_at = CASE WHEN ? = ? THEN deleted_at ELSE NULL END, updated_at = CURRENT_TIMESTAMP WHERE id = ?`
 
-	result, err := r.db.ExecContext(ctx, query, status, id)
+	result, err := r.db.ExecContext(ctx, query, status, status, models.ProjectStatusRejected, status, models.ProjectStatusDeleting, id)
 	if err != nil {
 		return fmt.Errorf("update project status: %w", err)
+	}
+
+	rowsAffected, _ := result.RowsAffected()
+	if rowsAffected == 0 {
+		return fmt.Errorf("project not found")
+	}
+	return nil
+}
+
+func (r *ProjectRepository) UpdateStatusWithRejectReason(ctx context.Context, id int, status int, rejectReason *string) error {
+	query := `UPDATE project SET status = ?, reject_reason = ?, deleted_at = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?`
+
+	result, err := r.db.ExecContext(ctx, query, status, rejectReason, id)
+	if err != nil {
+		return fmt.Errorf("update project status with reject reason: %w", err)
 	}
 
 	rowsAffected, _ := result.RowsAffected()

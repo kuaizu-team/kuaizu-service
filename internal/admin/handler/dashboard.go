@@ -12,6 +12,7 @@ type DashboradStatsResponse struct {
 	UserCount                 int64 `json:"userCount"`
 	ProjectCount              int64 `json:"projectCount"`
 	PendingProjectCount       int64 `json:"pendingProjectCount"`
+	DeletingProjectCount      int64 `json:"deletingProjectCount"`
 	PendingAuthCount          int64 `json:"pendingAuthCount"`
 	PendingFeedbackCount      int64 `json:"pendingFeedbackCount"`
 	PendingTalentProfileCount int64 `json:"pendingTalentProfileCount"`
@@ -23,7 +24,7 @@ func (s *AdminServer) GetDashboardStats(ctx echo.Context) error {
 	rctx := ctx.Request().Context()
 	sid := adminSchoolID(ctx) // nil for super admin
 
-	var userCount, projectCount, pendingProjectCount, pendingAuthCount, pendingFeedbackCount, pendingTalentProfileCount int64
+	var userCount, projectCount, pendingProjectCount, deletingProjectCount, pendingAuthCount, pendingFeedbackCount, pendingTalentProfileCount int64
 
 	if sid == nil {
 		// Super admin — global counts
@@ -35,6 +36,9 @@ func (s *AdminServer) GetDashboardStats(ctx echo.Context) error {
 		}
 		if err := db.QueryRowxContext(rctx, "SELECT COUNT(*) FROM project WHERE status = 0").Scan(&pendingProjectCount); err != nil {
 			return response.InternalError(ctx, "failed to count pending projects")
+		}
+		if err := db.QueryRowxContext(rctx, "SELECT COUNT(*) FROM project WHERE status = 4").Scan(&deletingProjectCount); err != nil {
+			return response.InternalError(ctx, "failed to count deleting projects")
 		}
 		if err := db.QueryRowxContext(rctx, "SELECT COUNT(*) FROM `user` WHERE auth_status = 0 AND auth_img_url IS NOT NULL").Scan(&pendingAuthCount); err != nil {
 			return response.InternalError(ctx, "failed to count pending auths")
@@ -59,6 +63,10 @@ func (s *AdminServer) GetDashboardStats(ctx echo.Context) error {
 		if err := db.QueryRowxContext(rctx,
 			"SELECT COUNT(*) FROM project WHERE status = 0 AND school_id = ?", schoolID).Scan(&pendingProjectCount); err != nil {
 			return response.InternalError(ctx, "failed to count pending projects")
+		}
+		if err := db.QueryRowxContext(rctx,
+			"SELECT COUNT(*) FROM project WHERE status = 4 AND school_id = ?", schoolID).Scan(&deletingProjectCount); err != nil {
+			return response.InternalError(ctx, "failed to count deleting projects")
 		}
 		if err := db.QueryRowxContext(rctx, `
 			SELECT COUNT(*) FROM `+"`user`"+`
@@ -86,6 +94,7 @@ func (s *AdminServer) GetDashboardStats(ctx echo.Context) error {
 		UserCount:                 userCount,
 		ProjectCount:              projectCount,
 		PendingProjectCount:       pendingProjectCount,
+		DeletingProjectCount:      deletingProjectCount,
 		PendingAuthCount:          pendingAuthCount,
 		PendingFeedbackCount:      pendingFeedbackCount,
 		PendingTalentProfileCount: pendingTalentProfileCount,

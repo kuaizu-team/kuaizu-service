@@ -86,6 +86,15 @@ func (s *ProjectService) ListMyProjects(ctx context.Context, userID int, params 
 	params.MemberUserID = &userID
 	sortBy := "updated_at"
 	params.SortBy = &sortBy
+	if params.Status == nil && len(params.Statuses) == 0 {
+		params.Statuses = []int{
+			models.ProjectStatusPending,
+			models.ProjectStatusApproved,
+			models.ProjectStatusRejected,
+			models.ProjectStatusRecruitCompleted,
+			models.ProjectStatusEnded,
+		}
+	}
 
 	if err := validateProjectListStatuses(params); err != nil {
 		return nil, err
@@ -871,24 +880,31 @@ func (s *ProjectService) UpdateProject(ctx context.Context, id, userID int, inpu
 	return updated, nil
 }
 
-// DeleteProject checks ownership and deletes the project.
-func (s *ProjectService) DeleteProject(ctx context.Context, id, userID int) error {
+func (s *ProjectService) assertProjectOperator(ctx context.Context, id, userID int, action string) (*models.Project, error) {
 	project, err := s.repo.Project.GetByID(ctx, id)
 	if err != nil {
-		log.Printf("[ProjectService.DeleteProject] repository error getting project: %v", err)
-		return ErrInternal("获取项目信息失败")
+		log.Printf("[ProjectService.%s] repository error getting project: %v", action, err)
+		return nil, ErrInternal("获取项目信息失败")
 	}
 	if project == nil {
-		return ErrNotFound("项目不存在")
+		return nil, ErrNotFound("项目不存在")
 	}
 	members, err := s.repo.Project.ListMembers(ctx, id)
 	if err != nil {
-		log.Printf("[ProjectService.DeleteProject] repository error listing members: %v", err)
-		return ErrInternal("检查权限失败")
+		log.Printf("[ProjectService.%s] repository error listing members: %v", action, err)
+		return nil, ErrInternal("检查权限失败")
 	}
 	currentRole, _ := currentUserProjectRole(project, userID, members)
 	if !canOperateAsHighestRole(currentRole, members) {
-		return ErrForbidden("当前角色无权完成招募")
+		return nil, ErrForbidden("当前角色无权操作项目")
+	}
+	return project, nil
+}
+
+// DeleteProject checks ownership and soft-deletes the project.
+func (s *ProjectService) DeleteProject(ctx context.Context, id, userID int) error {
+	if _, err := s.assertProjectOperator(ctx, id, userID, "DeleteProject"); err != nil {
+		return err
 	}
 
 	if err := s.repo.Project.Delete(ctx, id); err != nil {
@@ -896,6 +912,58 @@ func (s *ProjectService) DeleteProject(ctx context.Context, id, userID int) erro
 		return ErrInternal("删除项目失败")
 	}
 
+	return nil
+}
+
+func (s *ProjectService) RestoreProjectByUser(ctx context.Context, id, userID int) error {
+	if _, err := s.assertProjectOperator(ctx, id, userID, "RestoreProjectByUser"); err != nil {
+		return err
+	}
+	return s.RestoreProject(ctx, id)
+}
+
+func (s *ProjectService) CompleteRecruit(ctx context.Context, id, userID int) error {
+	if _, err := s.assertProjectOperator(ctx, id, userID, "CompleteRecruit"); err != nil {
+		return err
+	}
+	if err := s.repo.Project.UpdateStatus(ctx, id, models.ProjectStatusRecruitCompleted); err != nil {
+		log.Printf("[ProjectService.CompleteRecruit] repository error updating status: %v", err)
+		return ErrInternal("完成招募失败")
+	}
+	if _, err := s.repo.Application.DeletePendingByProjectID(ctx, id); err != nil {
+		log.Printf("[ProjectService.CompleteRecruit] repository error deleting pending applications: %v", err)
+		return ErrInternal("清理待审核投递记录失败")
+	}
+	return nil
+}
+
+func (s *ProjectService) RestartRecruit(ctx context.Context, id, userID int) error {
+	if _, err := s.assertProjectOperator(ctx, id, userID, "RestartRecruit"); err != nil {
+		return err
+	}
+	if err := s.repo.Project.UpdateStatus(ctx, id, models.ProjectStatusPending); err != nil {
+		log.Printf("[ProjectService.RestartRecruit] repository error: %v", err)
+		return ErrInternal("重启招募失败")
+	}
+	return nil
+}
+
+func (s *ProjectService) EndProject(ctx context.Context, id, userID int) error {
+	if _, err := s.assertProjectOperator(ctx, id, userID, "EndProject"); err != nil {
+		return err
+	}
+	if err := s.repo.Project.UpdateStatus(ctx, id, models.ProjectStatusEnded); err != nil {
+		log.Printf("[ProjectService.EndProject] repository error: %v", err)
+		return ErrInternal("结束项目失败")
+	}
+	return nil
+}
+
+func (s *ProjectService) RestoreProject(ctx context.Context, id int) error {
+	if err := s.repo.Project.UpdateStatus(ctx, id, models.ProjectStatusPending); err != nil {
+		log.Printf("[ProjectService.RestoreProject] repository error: %v", err)
+		return ErrInternal("恢复项目失败")
+	}
 	return nil
 }
 
@@ -1105,7 +1173,7 @@ func (s *ProjectService) ReviewApplication(ctx context.Context, applicationID, u
 }
 
 // TakedownProject (admin only) sets an approved project to closed/taken-down.
-func (s *ProjectService) TakedownProject(ctx context.Context, id int) error {
+func (s *ProjectService) TakedownProject(ctx context.Context, id int, rejectReason *string) error {
 	project, err := s.repo.Project.GetByID(ctx, id)
 	if err != nil {
 		log.Printf("[ProjectService.TakedownProject] repository error: %v", err)
@@ -1118,16 +1186,31 @@ func (s *ProjectService) TakedownProject(ctx context.Context, id int) error {
 		return ErrBadRequest("只有上线中的项目可以下架")
 	}
 
-	if err := s.repo.Project.UpdateStatus(ctx, id, models.ProjectStatusRejected); err != nil {
+	if err := s.repo.Project.UpdateStatusWithRejectReason(ctx, id, models.ProjectStatusRejected, rejectReason); err != nil {
 		log.Printf("[ProjectService.TakedownProject] repository error updating status: %v", err)
 		return ErrInternal("下架失败")
 	}
+
+	go func(asyncCtx context.Context) {
+		remark := "请按照审核意见重新提交项目。"
+		if rejectReason != nil && strings.TrimSpace(*rejectReason) != "" {
+			remark = truncate20WithEllipsis(strings.TrimSpace(*rejectReason))
+		}
+		data := map[string]string{
+			"project_name": truncate20(project.Name),
+			"status":       "审核拒绝",
+			"remark":       remark,
+		}
+		if err := s.message.SendSubscribeMsgByBizKey(asyncCtx, project.CreatorID, models.MsgBizKeyAuditResultProj, data); err != nil {
+			log.Printf("[ProjectService.TakedownProject] notification error: %v", err)
+		}
+	}(context.WithoutCancel(ctx))
 
 	return nil
 }
 
 // ReviewProject (admin only) updates project status and notifies creator.
-func (s *ProjectService) ReviewProject(ctx context.Context, id, status int) error {
+func (s *ProjectService) ReviewProject(ctx context.Context, id, status int, rejectReason *string) error {
 	project, err := s.repo.Project.GetByID(ctx, id)
 	if err != nil {
 		log.Printf("[ProjectService.ReviewProject] repository error: %v", err)
@@ -1137,7 +1220,12 @@ func (s *ProjectService) ReviewProject(ctx context.Context, id, status int) erro
 		return ErrNotFound("项目不存在")
 	}
 
-	if err := s.repo.Project.UpdateStatus(ctx, id, status); err != nil {
+	if status == models.ProjectStatusRejected {
+		if err := s.repo.Project.UpdateStatusWithRejectReason(ctx, id, status, rejectReason); err != nil {
+			log.Printf("[ProjectService.ReviewProject] repository error updating status: %v", err)
+			return ErrInternal("审核失败")
+		}
+	} else if err := s.repo.Project.UpdateStatus(ctx, id, status); err != nil {
 		log.Printf("[ProjectService.ReviewProject] repository error updating status: %v", err)
 		return ErrInternal("审核失败")
 	}
@@ -1148,7 +1236,11 @@ func (s *ProjectService) ReviewProject(ctx context.Context, id, status int) erro
 		remark := "项目已上线，快去查看吧！" // 12 字 ≤ thing7 上限 20 字
 		if status == models.ProjectStatusRejected {
 			statusStr = "审核拒绝"
-			remark = "请按照审核意见重新提交项目。" // 14 字 ≤ thing7 上限 20 字
+			if rejectReason != nil && strings.TrimSpace(*rejectReason) != "" {
+				remark = truncate20WithEllipsis(strings.TrimSpace(*rejectReason))
+			} else {
+				remark = "请按照审核意见重新提交项目。" // 14 字 ≤ thing7 上限 20 字
+			}
 		}
 
 		data := map[string]string{
