@@ -10,6 +10,17 @@ CREATE TABLE IF NOT EXISTS `roadmap` (
   KEY `idx_roadmap_date` (`date`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='平台进度看板';
 
-ALTER TABLE `feedback`
-  ADD COLUMN `need_receipt` tinyint(1) NOT NULL DEFAULT '0' COMMENT '是否接收回执/允许联系' AFTER `email`;
-
+SET @sql := (
+  SELECT IF(
+    COUNT(*) = 0,
+    'ALTER TABLE `feedback` ADD COLUMN `need_receipt` tinyint(1) NOT NULL DEFAULT ''0'' COMMENT ''是否接收回执/允许联系'' AFTER `email`',
+    'SELECT 1'
+  )
+  FROM INFORMATION_SCHEMA.COLUMNS
+  WHERE TABLE_SCHEMA = DATABASE()
+    AND TABLE_NAME = 'feedback'
+    AND COLUMN_NAME = 'need_receipt'
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;

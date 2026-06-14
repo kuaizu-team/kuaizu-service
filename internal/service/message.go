@@ -21,11 +21,8 @@ type MessageService struct {
 }
 
 type VersionUpdateBroadcastResult struct {
-	RoadmapID int   `json:"roadmapId"`
-	Queued    int32 `json:"queued"`
-	Sent      int32 `json:"sent"`
-	Failed    int32 `json:"failed"`
-	Skipped   int32 `json:"skipped"`
+	RoadmapID int    `json:"roadmapId"`
+	Status    string `json:"status"`
 }
 
 func NewMessageService(repo *repository.Repository, wxClient *wechat.Client) *MessageService {
@@ -155,7 +152,7 @@ func (s *MessageService) StartVersionUpdateBroadcast(ctx context.Context, roadma
 		return nil, ErrNotFound("roadmap item not found")
 	}
 
-	result := &VersionUpdateBroadcastResult{RoadmapID: item.ID}
+	result := &VersionUpdateBroadcastResult{RoadmapID: item.ID, Status: "started"}
 	title := truncateSubscribeThing(item.Title)
 	content := truncateSubscribeThing(item.Content)
 

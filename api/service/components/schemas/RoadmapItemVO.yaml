@@ -1,0 +1,16 @@
+type: object
+required:
+  - date
+  - title
+  - content
+properties:
+  date:
+    type: string
+    example: 2026年6月13日
+  title:
+    type: string
+  content:
+    type: string
+  link:
+    type: string
+    nullable: true

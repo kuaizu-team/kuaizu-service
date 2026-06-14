@@ -1,0 +1,13 @@
+post:
+  tags:
+    - Roadmap
+  summary: Mark roadmap updates as read (legacy typo path)
+  operationId: markRoadmapReadLegacy
+  deprecated: true
+  responses:
+    '200':
+      description: Success
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/BaseResponse.yaml

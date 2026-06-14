@@ -1,0 +1,18 @@
+type: object
+required:
+  - date
+  - title
+  - content
+properties:
+  date:
+    type: string
+    format: date
+  title:
+    type: string
+    maxLength: 100
+  content:
+    type: string
+    maxLength: 2000
+  link:
+    type: string
+    nullable: true

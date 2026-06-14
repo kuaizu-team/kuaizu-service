@@ -1,0 +1,20 @@
+get:
+  tags:
+    - Roadmap
+  summary: Check whether current user has unread roadmap updates
+  operationId: hasNewRoadmap
+  responses:
+    '200':
+      description: Success
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/BaseResponse.yaml
+              - type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      hasNew:
+                        type: boolean

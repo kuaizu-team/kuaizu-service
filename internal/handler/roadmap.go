@@ -68,6 +68,10 @@ func (s *Server) MarkRoadmapRead(ctx echo.Context) error {
 	return SuccessMessage(ctx, "success")
 }
 
+func (s *Server) MarkRoadmapReadLegacy(ctx echo.Context) error {
+	return s.MarkRoadmapRead(ctx)
+}
+
 func newRoadmapItemVO(item models.Roadmap) roadmapItemVO {
 	return roadmapItemVO{
 		Date:    item.Date.Format("2006年1月2日"),
