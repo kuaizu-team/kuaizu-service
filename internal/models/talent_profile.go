@@ -63,6 +63,7 @@ type TalentProfile struct {
 	ProjectExperience *string         `db:"project_experience"`
 	MBTI              *string         `db:"mbti"`
 	Status            *int            `db:"status"` // 0: 隐私/下架, 1: 上架, 2: 审核中
+	RejectReason      *string         `db:"reject_reason"`
 	CreatedAt         *time.Time      `db:"created_at"`
 	ViewCount         int             `db:"view_count"`
 	UpdatedAt         *time.Time      `db:"updated_at"`
@@ -96,18 +97,19 @@ func (t *TalentProfile) skills() *[]string {
 // ToVO converts TalentProfile to API TalentProfileVO (list view)
 func (t *TalentProfile) ToVO() *api.TalentProfileVO {
 	return &api.TalentProfileVO{
-		Id:          &t.ID,
-		UserId:      &t.UserID,
-		Nickname:    t.Nickname,
-		SchoolName:  t.SchoolName,
-		MajorName:   t.MajorName,
-		Mbti:        t.MBTI,
-		Skills:      t.skills(),
-		Status:      (*api.TalentStatus)(t.Status),
-		AvatarUrl:   ptrFullURL(t.AvatarUrl),
-		AuthStatus:  t.AuthStatus,
-		Grade:       t.Grade,
-		Interaction: t.Interaction.ToVO(),
+		Id:           &t.ID,
+		UserId:       &t.UserID,
+		Nickname:     t.Nickname,
+		SchoolName:   t.SchoolName,
+		MajorName:    t.MajorName,
+		Mbti:         t.MBTI,
+		Skills:       t.skills(),
+		Status:       (*api.TalentStatus)(t.Status),
+		RejectReason: t.RejectReason,
+		AvatarUrl:    ptrFullURL(t.AvatarUrl),
+		AuthStatus:   t.AuthStatus,
+		Grade:        t.Grade,
+		Interaction:  t.Interaction.ToVO(),
 	}
 }
 
@@ -124,6 +126,7 @@ func (t *TalentProfile) ToDetailVO() *api.TalentProfileDetailVO {
 		SelfEvaluation:    t.SelfEvaluation,
 		ProjectExperience: t.ProjectExperience,
 		Status:            (*api.TalentStatus)(t.Status),
+		RejectReason:      t.RejectReason,
 		AvatarUrl:         ptrFullURL(t.AvatarUrl),
 		Email:             t.Email,
 		Phone:             t.Phone,

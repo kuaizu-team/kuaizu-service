@@ -23,6 +23,14 @@ patch:
               enum:
                 - 1
                 - 0
+            rejectReason:
+              type: string
+              maxLength: 25
+              description: 驳回原因，status=0 时必填
+            reason:
+              type: string
+              maxLength: 25
+              description: 驳回原因，兼容字段
   responses:
     '200':
       description: 审核成功

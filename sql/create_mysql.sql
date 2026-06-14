@@ -514,6 +514,7 @@ CREATE TABLE `talent_profile` (
   `project_experience` text COMMENT '项目经历',
   `mbti` varchar(10) DEFAULT NULL COMMENT 'MBTI性格类型',
   `status` int(11) DEFAULT '1' COMMENT '状态:1-上架,0-下架',
+  `reject_reason` varchar(500) DEFAULT NULL COMMENT '驳回/下架原因',
   `is_public_contact` tinyint(1) DEFAULT '0' COMMENT '是否公开联系方式',
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',

@@ -69,6 +69,7 @@ type AdminTalentProfileVO struct {
 	Status            *int     `json:"status"`
 	SelfEvaluation    *string  `json:"selfEvaluation"`
 	ProjectExperience *string  `json:"projectExperience"`
+	RejectReason      *string  `json:"rejectReason"`
 	Skills            []string `json:"skills"`
 	MBTI              *string  `json:"mbti"`
 }
@@ -262,6 +263,7 @@ func NewAdminTalentProfileVO(p *models.TalentProfile) *AdminTalentProfileVO {
 		Status:            p.Status,
 		SelfEvaluation:    p.SelfEvaluation,
 		ProjectExperience: p.ProjectExperience,
+		RejectReason:      p.RejectReason,
 		Skills:            skills,
 		MBTI:              p.MBTI,
 	}

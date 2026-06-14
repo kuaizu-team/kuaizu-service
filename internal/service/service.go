@@ -64,7 +64,7 @@ func truncate20(s string) string {
 func truncate20WithEllipsis(s string) string {
 	r := []rune(s)
 	if len(r) > 20 {
-		return string(r[:19]) + "…"
+		return string(r[:17]) + "..."
 	}
 	return s
 }

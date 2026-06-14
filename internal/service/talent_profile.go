@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"log"
+	"strings"
 
 	"github.com/kuaizu-team/kuaizu-service/api"
 	"github.com/kuaizu-team/kuaizu-service/internal/models"
@@ -376,7 +377,12 @@ func (s *TalentProfileService) GetTopTalentViewers(ctx context.Context, talentID
 }
 
 // TakedownTalentProfile (admin only) forces an online profile offline (status: 1 → 0).
-func (s *TalentProfileService) TakedownTalentProfile(ctx context.Context, id int) error {
+func (s *TalentProfileService) TakedownTalentProfile(ctx context.Context, id int, reason string) error {
+	reason = strings.TrimSpace(reason)
+	if reason == "" {
+		return ErrBadRequest("下架原因不能为空")
+	}
+
 	profile, err := s.repo.TalentProfile.GetByID(ctx, id)
 	if err != nil {
 		log.Printf("[TalentProfileService.TakedownTalentProfile] repository error getting profile: %v", err)
@@ -389,16 +395,29 @@ func (s *TalentProfileService) TakedownTalentProfile(ctx context.Context, id int
 		return ErrBadRequest("当前名片状态不是已上架，无法下架")
 	}
 
-	if err := s.repo.TalentProfile.UpdateStatus(ctx, id, models.TalentStatusPrivate); err != nil {
+	if err := s.repo.TalentProfile.UpdateStatus(ctx, id, models.TalentStatusPrivate, &reason); err != nil {
 		log.Printf("[TalentProfileService.TakedownTalentProfile] repository error updating status: %v", err)
 		return ErrInternal("下架失败")
 	}
+
+	s.notifyTalentReviewResult(ctx, profile.UserID, "名片下架", truncate20WithEllipsis(reason))
 
 	return nil
 }
 
 // ReviewTalentProfile reviews a talent profile from reviewing to approved or private.
-func (s *TalentProfileService) ReviewTalentProfile(ctx context.Context, id, status int) error {
+func (s *TalentProfileService) ReviewTalentProfile(ctx context.Context, id, status int, rejectReason *string) error {
+	var cleanedReason *string
+	if rejectReason != nil {
+		reason := strings.TrimSpace(*rejectReason)
+		if reason != "" {
+			cleanedReason = &reason
+		}
+	}
+	if status == models.TalentStatusPrivate && cleanedReason == nil {
+		return ErrBadRequest("驳回原因不能为空")
+	}
+
 	if status != models.TalentStatusPrivate && status != models.TalentStatusOnline {
 		return ErrBadRequest("无效的人才档案状态")
 	}
@@ -415,7 +434,7 @@ func (s *TalentProfileService) ReviewTalentProfile(ctx context.Context, id, stat
 		return ErrBadRequest("当前人才档案状态不允许审核")
 	}
 
-	if err := s.repo.TalentProfile.UpdateStatus(ctx, id, status); err != nil {
+	if err := s.repo.TalentProfile.UpdateStatus(ctx, id, status, cleanedReason); err != nil {
 		log.Printf("[TalentProfileService.ReviewTalentProfile] repository error updating status: %v", err)
 		return ErrInternal("审核失败")
 	}
@@ -432,7 +451,7 @@ func (s *TalentProfileService) ReviewTalentProfile(ctx context.Context, id, stat
 		remark := "名片已上架人才库，快去看看吧！"
 		if status == models.TalentStatusPrivate {
 			resultStr = "审核拒绝"
-			remark = "请完善名片资料后重新提交。"
+			remark = truncate20WithEllipsis(*cleanedReason)
 		}
 
 		userName := "同学"
@@ -452,4 +471,29 @@ func (s *TalentProfileService) ReviewTalentProfile(ctx context.Context, id, stat
 	}(context.WithoutCancel(ctx), profile.UserID)
 
 	return nil
+}
+
+func (s *TalentProfileService) notifyTalentReviewResult(ctx context.Context, userID int, resultStr string, remark string) {
+	go func(asyncCtx context.Context) {
+		user, err := s.repo.User.GetByID(asyncCtx, userID)
+		if err != nil || user == nil {
+			log.Printf("[TalentProfileService.notifyTalentReviewResult] get user for notification error: %v", err)
+			return
+		}
+
+		userName := "同学"
+		if user.Nickname != nil && *user.Nickname != "" {
+			userName = *user.Nickname
+		}
+
+		data := map[string]string{
+			"user_name": userName,
+			"result":    resultStr,
+			"remark":    remark,
+		}
+
+		if err := s.message.SendSubscribeMsgByBizKey(asyncCtx, userID, models.MsgBizKeyAuditResultUser, data); err != nil {
+			log.Printf("[TalentProfileService.notifyTalentReviewResult] notification error: %v", err)
+		}
+	}(context.WithoutCancel(ctx))
 }
