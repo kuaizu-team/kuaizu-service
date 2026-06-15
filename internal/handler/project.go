@@ -373,10 +373,9 @@ func (s *Server) DeleteProject(ctx echo.Context, id int) error {
 	return SuccessMessage(ctx, "项目已删除")
 }
 
-func (s *Server) RestoreProjectPost(ctx echo.Context) error {
+func (s *Server) RestoreProject(ctx echo.Context, id int) error {
 	userID := GetUserID(ctx)
-	id, err := strconv.Atoi(ctx.Param("id"))
-	if err != nil || id <= 0 {
+	if id <= 0 {
 		return BadRequest(ctx, "invalid project id")
 	}
 	if err := s.svc.Project.RestoreProjectByUser(ctx.Request().Context(), id, userID); err != nil {
@@ -385,10 +384,9 @@ func (s *Server) RestoreProjectPost(ctx echo.Context) error {
 	return Success(ctx, nil)
 }
 
-func (s *Server) CompleteRecruit(ctx echo.Context) error {
+func (s *Server) CompleteRecruit(ctx echo.Context, id int) error {
 	userID := GetUserID(ctx)
-	id, err := strconv.Atoi(ctx.Param("id"))
-	if err != nil || id <= 0 {
+	if id <= 0 {
 		return BadRequest(ctx, "invalid project id")
 	}
 	if err := s.svc.Project.CompleteRecruit(ctx.Request().Context(), id, userID); err != nil {
@@ -397,10 +395,9 @@ func (s *Server) CompleteRecruit(ctx echo.Context) error {
 	return Success(ctx, nil)
 }
 
-func (s *Server) RestartRecruit(ctx echo.Context) error {
+func (s *Server) RestartRecruit(ctx echo.Context, id int) error {
 	userID := GetUserID(ctx)
-	id, err := strconv.Atoi(ctx.Param("id"))
-	if err != nil || id <= 0 {
+	if id <= 0 {
 		return BadRequest(ctx, "invalid project id")
 	}
 	if err := s.svc.Project.RestartRecruit(ctx.Request().Context(), id, userID); err != nil {
@@ -409,10 +406,9 @@ func (s *Server) RestartRecruit(ctx echo.Context) error {
 	return Success(ctx, nil)
 }
 
-func (s *Server) EndProject(ctx echo.Context) error {
+func (s *Server) EndProject(ctx echo.Context, id int) error {
 	userID := GetUserID(ctx)
-	id, err := strconv.Atoi(ctx.Param("id"))
-	if err != nil || id <= 0 {
+	if id <= 0 {
 		return BadRequest(ctx, "invalid project id")
 	}
 	if err := s.svc.Project.EndProject(ctx.Request().Context(), id, userID); err != nil {

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strconv"
 
 	"github.com/joho/godotenv"
 	"github.com/kuaizu-team/kuaizu-service/api"
@@ -134,10 +135,10 @@ func main() {
 
 	// Project-application reviewer read status
 	apiGroup.POST("/project-applications/mark-read", server.MarkReviewerApplicationRead)
-	apiGroup.POST("/projects/:id/complete-recruit", server.CompleteRecruit)
-	apiGroup.POST("/projects/:id/restart-recruit", server.RestartRecruit)
-	apiGroup.POST("/projects/:id/end", server.EndProject)
-	apiGroup.POST("/projects/:id/restore", server.RestoreProjectPost)
+	apiGroup.POST("/projects/:id/complete-recruit", withProjectID(server.CompleteRecruit))
+	apiGroup.POST("/projects/:id/restart-recruit", withProjectID(server.RestartRecruit))
+	apiGroup.POST("/projects/:id/end", withProjectID(server.EndProject))
+	apiGroup.POST("/projects/:id/restore", withProjectID(server.RestoreProject))
 
 	// Super-admin invitation feedback
 	apiGroup.POST("/invitation/feedback", server.SubmitInvitationFeedback)
@@ -166,4 +167,14 @@ func main() {
 
 	log.Printf("Server starting on port %s", port)
 	log.Fatal(e.Start(":" + port))
+}
+
+func withProjectID(handler func(echo.Context, int) error) echo.HandlerFunc {
+	return func(ctx echo.Context) error {
+		id, err := strconv.Atoi(ctx.Param("id"))
+		if err != nil || id <= 0 {
+			id = 0
+		}
+		return handler(ctx, id)
+	}
 }
