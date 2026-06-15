@@ -16,7 +16,7 @@ type Project struct {
 	SchoolID             *int       `db:"school_id"`
 	Direction            *int       `db:"direction"`
 	MemberCount          *int       `db:"member_count"`
-	Status               int        `db:"status"`                // 0-待审核, 1-已通过, 2-已驳回, 3-已关闭
+	Status               int        `db:"status"`                // 0-待审核, 1-已通过, 2-已驳回, 3-已关闭, 4-删除中, 5-已结束
 	PromotionStatus      int        `db:"promotion_status"`      // 0-无, 1-推广中, 2-已结束
 	PromotionExpireTime  *time.Time `db:"promotion_expire_time"` // 推广结束时间
 	ViewCount            int        `db:"view_count"`            // 浏览量
