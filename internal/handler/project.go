@@ -373,6 +373,50 @@ func (s *Server) DeleteProject(ctx echo.Context, id int) error {
 	return SuccessMessage(ctx, "项目已删除")
 }
 
+func (s *Server) RestoreProject(ctx echo.Context, id int) error {
+	userID := GetUserID(ctx)
+	if id <= 0 {
+		return BadRequest(ctx, "invalid project id")
+	}
+	if err := s.svc.Project.RestoreProjectByUser(ctx.Request().Context(), id, userID); err != nil {
+		return mapServiceError(ctx, err)
+	}
+	return Success(ctx, nil)
+}
+
+func (s *Server) CompleteRecruit(ctx echo.Context, id int) error {
+	userID := GetUserID(ctx)
+	if id <= 0 {
+		return BadRequest(ctx, "invalid project id")
+	}
+	if err := s.svc.Project.CompleteRecruit(ctx.Request().Context(), id, userID); err != nil {
+		return mapServiceError(ctx, err)
+	}
+	return Success(ctx, nil)
+}
+
+func (s *Server) RestartRecruit(ctx echo.Context, id int) error {
+	userID := GetUserID(ctx)
+	if id <= 0 {
+		return BadRequest(ctx, "invalid project id")
+	}
+	if err := s.svc.Project.RestartRecruit(ctx.Request().Context(), id, userID); err != nil {
+		return mapServiceError(ctx, err)
+	}
+	return Success(ctx, nil)
+}
+
+func (s *Server) EndProject(ctx echo.Context, id int) error {
+	userID := GetUserID(ctx)
+	if id <= 0 {
+		return BadRequest(ctx, "invalid project id")
+	}
+	if err := s.svc.Project.EndProject(ctx.Request().Context(), id, userID); err != nil {
+		return mapServiceError(ctx, err)
+	}
+	return Success(ctx, nil)
+}
+
 // ListProjectApplications handles GET /projects/{id}/applications
 func (s *Server) ListProjectApplications(ctx echo.Context, id int, params api.ListProjectApplicationsParams) error {
 	userID := GetUserID(ctx)
@@ -496,6 +540,31 @@ func (s *Server) MarkMyApplicationsRead(ctx echo.Context) error {
 
 	if err := s.repo.User.UpdateApplicationsLastViewedAt(ctx.Request().Context(), userID); err != nil {
 		return InternalError(ctx, "标记已读失败")
+	}
+
+	return Success(ctx, nil)
+}
+
+// GetMyProjectStatusUnread handles GET /users/me/project-status-unread.
+// Returns whether any passive project review status changed since the user last viewed the page.
+func (s *Server) GetMyProjectStatusUnread(ctx echo.Context) error {
+	userID := GetUserID(ctx)
+
+	hasUnread, err := s.repo.Project.HasUnreadPassiveStatusChange(ctx.Request().Context(), userID)
+	if err != nil {
+		return InternalError(ctx, "获取项目状态未读失败")
+	}
+
+	return Success(ctx, map[string]bool{"hasUnread": hasUnread})
+}
+
+// MarkMyProjectStatusRead handles POST /users/me/project-status-read.
+// Sets last_viewed_my_projects_at = NOW() so that the passive status red dot resets.
+func (s *Server) MarkMyProjectStatusRead(ctx echo.Context) error {
+	userID := GetUserID(ctx)
+
+	if err := s.repo.User.UpdateLastViewedMyProjectsAt(ctx.Request().Context(), userID); err != nil {
+		return InternalError(ctx, "标记项目状态已读失败")
 	}
 
 	return Success(ctx, nil)

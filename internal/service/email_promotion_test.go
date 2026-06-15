@@ -158,6 +158,10 @@ func (m *MockProjectRepo) IsOwnerOrMember(ctx context.Context, projectID, userID
 	return args.Bool(0), args.Error(1)
 }
 
+func (m *MockProjectRepo) HasUnreadPassiveStatusChange(ctx context.Context, userID int) (bool, error) {
+	return false, nil
+}
+
 func (m *MockProjectRepo) RoleExists(ctx context.Context, role string) (bool, error) {
 	args := m.Called(ctx, role)
 	return args.Bool(0), args.Error(1)
@@ -201,6 +205,16 @@ func (m *MockProjectRepo) ReplaceMembers(ctx context.Context, projectID int, mem
 func (m *MockProjectRepo) UpdateStatus(ctx context.Context, id int, status int) error {
 	args := m.Called(ctx, id, status)
 	return args.Error(0)
+}
+
+func (m *MockProjectRepo) UpdateStatusWithRejectReason(ctx context.Context, id int, status int, rejectReason *string) error {
+	args := m.Called(ctx, id, status, rejectReason)
+	return args.Error(0)
+}
+
+func (m *MockProjectRepo) CompleteRecruit(ctx context.Context, id int) (int64, error) {
+	args := m.Called(ctx, id)
+	return int64(args.Int(0)), args.Error(1)
 }
 
 func (m *MockProjectRepo) IncrementViewCount(ctx context.Context, id int) error {

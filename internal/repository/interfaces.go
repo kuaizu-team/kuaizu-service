@@ -37,6 +37,7 @@ type ProjectRepo interface {
 	Delete(ctx context.Context, id int) error
 	IsOwner(ctx context.Context, projectID, userID int) (bool, error)
 	IsOwnerOrMember(ctx context.Context, projectID, userID int) (bool, error)
+	HasUnreadPassiveStatusChange(ctx context.Context, userID int) (bool, error)
 	RoleExists(ctx context.Context, role string) (bool, error)
 	GetMemberRole(ctx context.Context, projectID, userID int) (*string, error)
 	ListMilestones(ctx context.Context, projectID int) ([]models.ProjectMilestone, error)
@@ -44,6 +45,8 @@ type ProjectRepo interface {
 	AddMembers(ctx context.Context, projectID int, members []models.ProjectMember) error
 	ReplaceMembers(ctx context.Context, projectID int, members []models.ProjectMember) error
 	UpdateStatus(ctx context.Context, id int, status int) error
+	UpdateStatusWithRejectReason(ctx context.Context, id int, status int, rejectReason *string) error
+	CompleteRecruit(ctx context.Context, id int) (int64, error)
 	IncrementViewCount(ctx context.Context, id int) error
 }
 
@@ -127,6 +130,7 @@ type UserRepo interface {
 	GetEduCertInfoByID(ctx context.Context, userID int) (CertInfo, error)
 	UpdateSentOliveViewedAt(ctx context.Context, userID int) error
 	UpdateApplicationsLastViewedAt(ctx context.Context, userID int) error
+	UpdateLastViewedMyProjectsAt(ctx context.Context, userID int) error
 	UpdateUserStatus(ctx context.Context, userID int, status int, banReason *string) error
 	TouchLastActiveDate(ctx context.Context, userID int) error
 }
@@ -183,7 +187,7 @@ type TalentProfileRepo interface {
 	GetByID(ctx context.Context, id int) (*models.TalentProfile, error)
 	GetByUserID(ctx context.Context, userID int) (*models.TalentProfile, error)
 	Upsert(ctx context.Context, p *models.TalentProfile) error
-	UpdateStatus(ctx context.Context, id int, status int) error
+	UpdateStatus(ctx context.Context, id int, status int, rejectReason *string) error
 	DeleteByUserID(ctx context.Context, userID int) error
 	IsOwner(ctx context.Context, talentID, userID int) (bool, error)
 	IncrementViewCount(ctx context.Context, id int) error

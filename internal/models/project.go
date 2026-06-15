@@ -16,12 +16,14 @@ type Project struct {
 	SchoolID             *int       `db:"school_id"`
 	Direction            *int       `db:"direction"`
 	MemberCount          *int       `db:"member_count"`
-	Status               int        `db:"status"`                // 0-待审核, 1-已通过, 2-已驳回, 3-已关闭
+	Status               int        `db:"status"`                // 0-待审核, 1-已通过, 2-已驳回, 3-已关闭, 4-删除中, 5-已结束
 	PromotionStatus      int        `db:"promotion_status"`      // 0-无, 1-推广中, 2-已结束
 	PromotionExpireTime  *time.Time `db:"promotion_expire_time"` // 推广结束时间
 	ViewCount            int        `db:"view_count"`            // 浏览量
 	CreatedAt            time.Time  `db:"created_at"`
 	UpdatedAt            time.Time  `db:"updated_at"`
+	RejectReason         *string    `db:"reject_reason"`
+	DeletedAt            *time.Time `db:"deleted_at"`
 	IsCrossSchool        *int       `db:"is_cross_school"`
 	EducationRequirement *int       `db:"education_requirement"`
 	SkillRequirement     *string    `db:"skill_requirement"`
@@ -112,6 +114,8 @@ func (p *Project) ToVO() *api.ProjectVO {
 		ViewCount:               &p.ViewCount,
 		PendingApplicationCount: &p.PendingApplicationCount,
 		UpdatedAt:               &p.UpdatedAt,
+		RejectReason:            p.RejectReason,
+		DeletedAt:               p.DeletedAt,
 		PublisherRole:           p.PublisherRole,
 		PublisherRoleName:       p.PublisherRoleName,
 		InitiatingSchoolId:      p.InitiatingSchoolID,
@@ -152,6 +156,8 @@ func (p *Project) ToDetailVO() *api.ProjectDetailVO {
 		PromotionStatus:        &p.PromotionStatus,
 		ViewCount:              &p.ViewCount,
 		CreatedAt:              &p.CreatedAt,
+		RejectReason:           p.RejectReason,
+		DeletedAt:              p.DeletedAt,
 		IsCrossSchool:          p.IsCrossSchool,
 		EducationRequirement:   p.EducationRequirement,
 		SkillRequirement:       p.SkillRequirement,

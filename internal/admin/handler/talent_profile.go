@@ -2,6 +2,7 @@ package handler
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/kuaizu-team/kuaizu-service/internal/models"
 	"github.com/kuaizu-team/kuaizu-service/internal/response"
@@ -9,7 +10,31 @@ import (
 )
 
 type reviewTalentProfileRequest struct {
-	Status int `json:"status"`
+	Status       int     `json:"status"`
+	RejectReason *string `json:"rejectReason"`
+	Reason       *string `json:"reason"`
+}
+
+type talentProfileReasonRequest struct {
+	RejectReason *string `json:"rejectReason"`
+	Reason       *string `json:"reason"`
+}
+
+func normalizeTalentProfileReason(rejectReason *string, reason *string) (string, error) {
+	value := ""
+	if rejectReason != nil {
+		value = *rejectReason
+	} else if reason != nil {
+		value = *reason
+	}
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "", fmt.Errorf("reason is required")
+	}
+	if len([]rune(value)) > 25 {
+		return "", fmt.Errorf("reason must be within 25 characters")
+	}
+	return value, nil
 }
 
 // checkTalentProfileSchool returns 403 if the talent profile does not belong to the admin's school.
@@ -41,7 +66,16 @@ func (s *AdminServer) TakedownTalentProfile(ctx echo.Context) error {
 		return err
 	}
 
-	if err := s.svc.TalentProfile.TakedownTalentProfile(ctx.Request().Context(), id); err != nil {
+	var req talentProfileReasonRequest
+	if err := ctx.Bind(&req); err != nil {
+		return response.BadRequest(ctx, "invalid request body")
+	}
+	reason, err := normalizeTalentProfileReason(req.RejectReason, req.Reason)
+	if err != nil {
+		return response.BadRequest(ctx, err.Error())
+	}
+
+	if err := s.svc.TalentProfile.TakedownTalentProfile(ctx.Request().Context(), id, reason); err != nil {
 		return mapServiceError(ctx, err)
 	}
 
@@ -69,7 +103,16 @@ func (s *AdminServer) ReviewTalentProfile(ctx echo.Context) error {
 		return response.BadRequest(ctx, fmt.Sprintf("invalid status %d, must be %d (approve) or %d (reject)", req.Status, models.TalentStatusOnline, models.TalentStatusPrivate))
 	}
 
-	if err := s.svc.TalentProfile.ReviewTalentProfile(ctx.Request().Context(), id, req.Status); err != nil {
+	var reason *string
+	if req.Status == models.TalentStatusPrivate {
+		value, err := normalizeTalentProfileReason(req.RejectReason, req.Reason)
+		if err != nil {
+			return response.BadRequest(ctx, err.Error())
+		}
+		reason = &value
+	}
+
+	if err := s.svc.TalentProfile.ReviewTalentProfile(ctx.Request().Context(), id, req.Status, reason); err != nil {
 		return mapServiceError(ctx, err)
 	}
 

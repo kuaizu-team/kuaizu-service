@@ -26,6 +26,8 @@ type AdminProjectVO struct {
 	ViewCount            int          `json:"viewCount"`
 	CreatedAt            time.Time    `json:"createdAt"`
 	UpdatedAt            time.Time    `json:"updatedAt"`
+	RejectReason         *string      `json:"rejectReason"`
+	DeletedAt            *time.Time   `json:"deletedAt"`
 	SchoolName           *string      `json:"schoolName"`
 	IsCrossSchool        *int         `json:"isCrossSchool"`
 	EducationRequirement *int         `json:"educationRequirement"`
@@ -67,6 +69,7 @@ type AdminTalentProfileVO struct {
 	Status            *int     `json:"status"`
 	SelfEvaluation    *string  `json:"selfEvaluation"`
 	ProjectExperience *string  `json:"projectExperience"`
+	RejectReason      *string  `json:"rejectReason"`
 	Skills            []string `json:"skills"`
 	MBTI              *string  `json:"mbti"`
 }
@@ -137,6 +140,8 @@ func NewAdminProjectVO(p *models.Project) *AdminProjectVO {
 		ViewCount:            p.ViewCount,
 		CreatedAt:            p.CreatedAt,
 		UpdatedAt:            p.UpdatedAt,
+		RejectReason:         p.RejectReason,
+		DeletedAt:            p.DeletedAt,
 		SchoolName:           p.SchoolName,
 		IsCrossSchool:        p.IsCrossSchool,
 		EducationRequirement: p.EducationRequirement,
@@ -258,6 +263,7 @@ func NewAdminTalentProfileVO(p *models.TalentProfile) *AdminTalentProfileVO {
 		Status:            p.Status,
 		SelfEvaluation:    p.SelfEvaluation,
 		ProjectExperience: p.ProjectExperience,
+		RejectReason:      p.RejectReason,
 		Skills:            skills,
 		MBTI:              p.MBTI,
 	}

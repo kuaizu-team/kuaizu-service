@@ -334,7 +334,7 @@ func (r *TalentProfileRepository) List(ctx context.Context, params TalentProfile
 	query := fmt.Sprintf(`
 		SELECT
 			tp.id, tp.user_id, tp.self_evaluation, tp.skill_summary,
-			tp.project_experience, tp.mbti, tp.status, tp.view_count,
+			tp.project_experience, tp.mbti, tp.status, tp.reject_reason, tp.view_count,
 			tp.created_at, tp.updated_at,
 			u.nickname, u.phone, u.email, u.avatar_url,
 			u.school_id, u.major_id, u.grade, u.auth_status
@@ -372,7 +372,7 @@ func (r *TalentProfileRepository) GetByID(ctx context.Context, id int) (*models.
 	query := `
 		SELECT 
 			tp.id, tp.user_id, tp.self_evaluation, tp.skill_summary,
-			tp.project_experience, tp.mbti, tp.status, tp.view_count,
+			tp.project_experience, tp.mbti, tp.status, tp.reject_reason, tp.view_count,
 			tp.created_at, tp.updated_at,
 			u.nickname, u.phone, u.email, u.wechat_id, u.avatar_url,
 			u.school_id, u.major_id, u.grade, u.auth_status
@@ -403,7 +403,7 @@ func (r *TalentProfileRepository) GetByUserID(ctx context.Context, userID int) (
 	query := `
 		SELECT 
 			tp.id, tp.user_id, tp.self_evaluation, tp.skill_summary,
-			tp.project_experience, tp.mbti, tp.status, tp.view_count,
+			tp.project_experience, tp.mbti, tp.status, tp.reject_reason, tp.view_count,
 			tp.created_at, tp.updated_at,
 			u.nickname, u.phone, u.email, u.wechat_id, u.avatar_url,
 			u.school_id, u.major_id, u.grade, u.auth_status
@@ -464,6 +464,7 @@ func (r *TalentProfileRepository) Upsert(ctx context.Context, p *models.TalentPr
 				project_experience = :project_experience,
 				mbti = :mbti,
 				status = :status,
+				reject_reason = CASE WHEN :status = 2 THEN NULL ELSE reject_reason END,
 				updated_at = CURRENT_TIMESTAMP
 			WHERE user_id = :user_id
 		`
@@ -478,13 +479,13 @@ func (r *TalentProfileRepository) Upsert(ctx context.Context, p *models.TalentPr
 }
 
 // UpdateStatus updates the status of a talent profile by ID.
-func (r *TalentProfileRepository) UpdateStatus(ctx context.Context, id int, status int) error {
+func (r *TalentProfileRepository) UpdateStatus(ctx context.Context, id int, status int, rejectReason *string) error {
 	query := `
 		UPDATE talent_profile
-		SET status = ?, updated_at = CURRENT_TIMESTAMP
+		SET status = ?, reject_reason = ?, updated_at = CURRENT_TIMESTAMP
 		WHERE id = ?
 	`
-	_, err := r.db.ExecContext(ctx, query, status, id)
+	_, err := r.db.ExecContext(ctx, query, status, rejectReason, id)
 	if err != nil {
 		return fmt.Errorf("update talent profile status: %w", err)
 	}

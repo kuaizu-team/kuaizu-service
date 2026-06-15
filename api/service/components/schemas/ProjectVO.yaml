@@ -35,6 +35,13 @@ properties:
     type: string
   description:
     type: string
+  rejectReason:
+    type: string
+    nullable: true
+  deletedAt:
+    type: string
+    format: date-time
+    nullable: true
   schoolId:
     type: integer
     description: Project school ID.

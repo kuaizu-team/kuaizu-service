@@ -221,7 +221,7 @@ func (r *ProjectRepository) List(ctx context.Context, params ListParams) ([]mode
 			p.id, p.creator_id, p.name, p.description, p.school_id,
 			p.direction, p.member_count, p.status,
 			p.promotion_status, p.promotion_expire_time, p.view_count,
-			p.created_at, p.updated_at, p.is_cross_school,
+			p.created_at, p.updated_at, p.reject_reason, p.deleted_at, p.is_cross_school,
 			p.education_requirement, p.skill_requirement,
 			p.publisher_role, p.initiating_school_id,
 			s.school_name, pr.name AS publisher_role_name, ins.school_name AS initiating_school_name,
@@ -321,7 +321,7 @@ func (r *ProjectRepository) GetByID(ctx context.Context, id int) (*models.Projec
 			p.id, p.creator_id, p.name, p.description, p.school_id,
 			p.direction, p.member_count, p.status,
 			p.promotion_status, p.promotion_expire_time, p.view_count,
-			p.created_at, p.updated_at, p.is_cross_school,
+			p.created_at, p.updated_at, p.reject_reason, p.deleted_at, p.is_cross_school,
 			p.education_requirement, p.skill_requirement,
 			p.publisher_role, p.initiating_school_id,
 			s.school_name, pr.name AS publisher_role_name, ins.school_name AS initiating_school_name,
@@ -700,6 +700,30 @@ func (r *ProjectRepository) IsOwnerOrMember(ctx context.Context, projectID, user
 	return exists, nil
 }
 
+// HasUnreadPassiveStatusChange reports whether the user's own/member projects have
+// a passive review status change after they last visited the "my projects" page.
+func (r *ProjectRepository) HasUnreadPassiveStatusChange(ctx context.Context, userID int) (bool, error) {
+	var exists bool
+	err := r.db.QueryRowxContext(ctx, `
+		SELECT EXISTS(
+			SELECT 1
+			FROM project p
+			LEFT JOIN `+"`user`"+` u ON u.id = ?
+			WHERE
+				(p.creator_id = ? OR EXISTS (
+					SELECT 1 FROM project_members pm
+					WHERE pm.project_id = p.id AND pm.user_id = ?
+				))
+				AND p.status IN (?, ?)
+				AND p.updated_at > COALESCE(u.last_viewed_my_projects_at, CAST('1970-01-01 00:00:01' AS DATETIME))
+		)
+	`, userID, userID, userID, models.ProjectStatusApproved, models.ProjectStatusRejected).Scan(&exists)
+	if err != nil {
+		return false, fmt.Errorf("check unread passive project status change: %w", err)
+	}
+	return exists, nil
+}
+
 func (r *ProjectRepository) RoleExists(ctx context.Context, role string) (bool, error) {
 	var exists bool
 	if err := r.db.QueryRowxContext(ctx, `SELECT EXISTS(SELECT 1 FROM project_role WHERE code=? AND status=1)`, role).Scan(&exists); err != nil {
@@ -708,11 +732,11 @@ func (r *ProjectRepository) RoleExists(ctx context.Context, role string) (bool, 
 	return exists, nil
 }
 
-// Delete performs a logical delete (sets status to CLOSED)
+// Delete performs a logical delete (sets status to DELETING).
 func (r *ProjectRepository) Delete(ctx context.Context, id int) error {
-	query := `UPDATE project SET status = 3, updated_at = CURRENT_TIMESTAMP WHERE id = ?`
+	query := `UPDATE project SET status = ?, deleted_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?`
 
-	result, err := r.db.ExecContext(ctx, query, id)
+	result, err := r.db.ExecContext(ctx, query, models.ProjectStatusDeleting, id)
 	if err != nil {
 		return fmt.Errorf("delete project: %w", err)
 	}
@@ -736,9 +760,9 @@ func (r *ProjectRepository) IsOwner(ctx context.Context, projectID, userID int) 
 
 // UpdateStatus updates the review status of a project
 func (r *ProjectRepository) UpdateStatus(ctx context.Context, id int, status int) error {
-	query := `UPDATE project SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`
+	query := `UPDATE project SET status = ?, reject_reason = CASE WHEN ? = ? THEN reject_reason ELSE NULL END, deleted_at = CASE WHEN ? = ? THEN deleted_at ELSE NULL END, updated_at = CURRENT_TIMESTAMP WHERE id = ?`
 
-	result, err := r.db.ExecContext(ctx, query, status, id)
+	result, err := r.db.ExecContext(ctx, query, status, status, models.ProjectStatusRejected, status, models.ProjectStatusDeleting, id)
 	if err != nil {
 		return fmt.Errorf("update project status: %w", err)
 	}
@@ -748,6 +772,55 @@ func (r *ProjectRepository) UpdateStatus(ctx context.Context, id int, status int
 		return fmt.Errorf("project not found")
 	}
 	return nil
+}
+
+func (r *ProjectRepository) UpdateStatusWithRejectReason(ctx context.Context, id int, status int, rejectReason *string) error {
+	query := `UPDATE project SET status = ?, reject_reason = ?, deleted_at = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?`
+
+	result, err := r.db.ExecContext(ctx, query, status, rejectReason, id)
+	if err != nil {
+		return fmt.Errorf("update project status with reject reason: %w", err)
+	}
+
+	rowsAffected, _ := result.RowsAffected()
+	if rowsAffected == 0 {
+		return fmt.Errorf("project not found")
+	}
+	return nil
+}
+
+func (r *ProjectRepository) CompleteRecruit(ctx context.Context, id int) (int64, error) {
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+
+	result, err := tx.ExecContext(ctx,
+		`UPDATE project SET status = ?, reject_reason = NULL, deleted_at = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+		models.ProjectStatusRecruitCompleted, id,
+	)
+	if err != nil {
+		return 0, fmt.Errorf("complete recruit project status: %w", err)
+	}
+	rowsAffected, _ := result.RowsAffected()
+	if rowsAffected == 0 {
+		return 0, fmt.Errorf("project not found")
+	}
+
+	result, err = tx.ExecContext(ctx,
+		`UPDATE project_application SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE project_id = ? AND status = ?`,
+		models.ApplicationStatusRejected, id, models.ApplicationStatusPending,
+	)
+	if err != nil {
+		return 0, fmt.Errorf("reject pending applications after complete recruit: %w", err)
+	}
+	pendingRejected, _ := result.RowsAffected()
+
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+	return pendingRejected, nil
 }
 
 // IncrementViewCount increments the view count of a project

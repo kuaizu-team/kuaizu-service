@@ -77,10 +77,13 @@ const (
 
 // Project Status
 const (
-	ProjectStatusPending  = 0 // 待审核
-	ProjectStatusApproved = 1 // 已通过/进行中
-	ProjectStatusRejected = 2 // 已驳回
-	ProjectStatusClosed   = 3 // 已关闭
+	ProjectStatusPending          = 0 // 待审核
+	ProjectStatusApproved         = 1 // 已通过/进行中
+	ProjectStatusRejected         = 2 // 已驳回
+	ProjectStatusRecruitCompleted = 3 // 完成招募
+	ProjectStatusDeleting         = 4 // 删除中
+	ProjectStatusEnded            = 5 // 已结束
+	ProjectStatusClosed           = ProjectStatusRecruitCompleted
 )
 
 // Project Promotion Status
