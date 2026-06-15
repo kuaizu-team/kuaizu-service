@@ -1,0 +1,32 @@
+parameters:
+  - name: id
+    in: path
+    required: true
+    schema:
+      type: integer
+    description: 项目ID
+post:
+  tags:
+    - Projects
+  summary: 结束项目
+  description: 仅项目最高权限角色可操作，且项目必须为完成招募状态。
+  operationId: endProject
+  responses:
+    '200':
+      description: 操作成功
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/BaseResponse.yaml
+    '400':
+      description: 当前项目状态不允许操作
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/BaseResponse.yaml
+    '403':
+      description: 当前角色无权操作项目
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/BaseResponse.yaml

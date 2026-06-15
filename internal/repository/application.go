@@ -432,15 +432,3 @@ func (r *ApplicationRepository) UpdateStatusWithReviewer(ctx context.Context, id
 
 	return nil
 }
-
-func (r *ApplicationRepository) DeletePendingByProjectID(ctx context.Context, projectID int) (int64, error) {
-	result, err := r.db.ExecContext(ctx,
-		`DELETE FROM project_application WHERE project_id = ? AND status = ?`,
-		projectID, models.ApplicationStatusPending,
-	)
-	if err != nil {
-		return 0, fmt.Errorf("delete pending applications: %w", err)
-	}
-	rowsAffected, _ := result.RowsAffected()
-	return rowsAffected, nil
-}

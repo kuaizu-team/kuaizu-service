@@ -901,9 +901,28 @@ func (s *ProjectService) assertProjectOperator(ctx context.Context, id, userID i
 	return project, nil
 }
 
+func requireProjectStatus(project *models.Project, allowed map[int]struct{}, action string) error {
+	if project == nil {
+		return ErrNotFound("项目不存在")
+	}
+	if _, ok := allowed[project.Status]; ok {
+		return nil
+	}
+	return ErrBadRequest(action + "当前项目状态不允许操作")
+}
+
 // DeleteProject checks ownership and soft-deletes the project.
 func (s *ProjectService) DeleteProject(ctx context.Context, id, userID int) error {
-	if _, err := s.assertProjectOperator(ctx, id, userID, "DeleteProject"); err != nil {
+	project, err := s.assertProjectOperator(ctx, id, userID, "DeleteProject")
+	if err != nil {
+		return err
+	}
+	if err := requireProjectStatus(project, map[int]struct{}{
+		models.ProjectStatusPending:          {},
+		models.ProjectStatusApproved:         {},
+		models.ProjectStatusRejected:         {},
+		models.ProjectStatusRecruitCompleted: {},
+	}, "删除项目"); err != nil {
 		return err
 	}
 
@@ -916,29 +935,38 @@ func (s *ProjectService) DeleteProject(ctx context.Context, id, userID int) erro
 }
 
 func (s *ProjectService) RestoreProjectByUser(ctx context.Context, id, userID int) error {
-	if _, err := s.assertProjectOperator(ctx, id, userID, "RestoreProjectByUser"); err != nil {
+	project, err := s.assertProjectOperator(ctx, id, userID, "RestoreProjectByUser")
+	if err != nil {
 		return err
 	}
-	return s.RestoreProject(ctx, id)
+	return s.restoreProject(ctx, id, project)
 }
 
 func (s *ProjectService) CompleteRecruit(ctx context.Context, id, userID int) error {
-	if _, err := s.assertProjectOperator(ctx, id, userID, "CompleteRecruit"); err != nil {
+	project, err := s.assertProjectOperator(ctx, id, userID, "CompleteRecruit")
+	if err != nil {
 		return err
 	}
-	if err := s.repo.Project.UpdateStatus(ctx, id, models.ProjectStatusRecruitCompleted); err != nil {
-		log.Printf("[ProjectService.CompleteRecruit] repository error updating status: %v", err)
-		return ErrInternal("完成招募失败")
+	if err := requireProjectStatus(project, map[int]struct{}{
+		models.ProjectStatusApproved: {},
+	}, "完成招募"); err != nil {
+		return err
 	}
-	if _, err := s.repo.Application.DeletePendingByProjectID(ctx, id); err != nil {
-		log.Printf("[ProjectService.CompleteRecruit] repository error deleting pending applications: %v", err)
-		return ErrInternal("清理待审核投递记录失败")
+	if _, err := s.repo.Project.CompleteRecruit(ctx, id); err != nil {
+		log.Printf("[ProjectService.CompleteRecruit] repository error: %v", err)
+		return ErrInternal("完成招募失败")
 	}
 	return nil
 }
 
 func (s *ProjectService) RestartRecruit(ctx context.Context, id, userID int) error {
-	if _, err := s.assertProjectOperator(ctx, id, userID, "RestartRecruit"); err != nil {
+	project, err := s.assertProjectOperator(ctx, id, userID, "RestartRecruit")
+	if err != nil {
+		return err
+	}
+	if err := requireProjectStatus(project, map[int]struct{}{
+		models.ProjectStatusRecruitCompleted: {},
+	}, "重启招募"); err != nil {
 		return err
 	}
 	if err := s.repo.Project.UpdateStatus(ctx, id, models.ProjectStatusPending); err != nil {
@@ -949,7 +977,13 @@ func (s *ProjectService) RestartRecruit(ctx context.Context, id, userID int) err
 }
 
 func (s *ProjectService) EndProject(ctx context.Context, id, userID int) error {
-	if _, err := s.assertProjectOperator(ctx, id, userID, "EndProject"); err != nil {
+	project, err := s.assertProjectOperator(ctx, id, userID, "EndProject")
+	if err != nil {
+		return err
+	}
+	if err := requireProjectStatus(project, map[int]struct{}{
+		models.ProjectStatusRecruitCompleted: {},
+	}, "结束项目"); err != nil {
 		return err
 	}
 	if err := s.repo.Project.UpdateStatus(ctx, id, models.ProjectStatusEnded); err != nil {
@@ -960,6 +994,23 @@ func (s *ProjectService) EndProject(ctx context.Context, id, userID int) error {
 }
 
 func (s *ProjectService) RestoreProject(ctx context.Context, id int) error {
+	project, err := s.repo.Project.GetByID(ctx, id)
+	if err != nil {
+		log.Printf("[ProjectService.RestoreProject] repository error getting project: %v", err)
+		return ErrInternal("获取项目信息失败")
+	}
+	if project == nil {
+		return ErrNotFound("项目不存在")
+	}
+	return s.restoreProject(ctx, id, project)
+}
+
+func (s *ProjectService) restoreProject(ctx context.Context, id int, project *models.Project) error {
+	if err := requireProjectStatus(project, map[int]struct{}{
+		models.ProjectStatusDeleting: {},
+	}, "恢复项目"); err != nil {
+		return err
+	}
 	if err := s.repo.Project.UpdateStatus(ctx, id, models.ProjectStatusPending); err != nil {
 		log.Printf("[ProjectService.RestoreProject] repository error: %v", err)
 		return ErrInternal("恢复项目失败")

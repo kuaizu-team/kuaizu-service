@@ -68,6 +68,10 @@ paths:
     $ref: paths/users_me_sent-olive-branches.yaml
   /users/me/olive-branch-quota:
     $ref: paths/users_me_olive-branch-quota.yaml
+  /users/me/project-status-unread:
+    $ref: paths/users_me_project-status-unread.yaml
+  /users/me/project-status-read:
+    $ref: paths/users_me_project-status-read.yaml
   /users/search-by-phone:
     $ref: paths/users_search-by-phone.yaml
   /user/check-by-phone:
@@ -104,6 +108,14 @@ paths:
     $ref: paths/projects_{id}_promotion-batches.yaml
   /projects/{id}/promotion-batches/{batchId}/users:
     $ref: paths/projects_{id}_promotion-batches_{batchId}_users.yaml
+  /projects/{id}/complete-recruit:
+    $ref: paths/projects_{id}_complete-recruit.yaml
+  /projects/{id}/restart-recruit:
+    $ref: paths/projects_{id}_restart-recruit.yaml
+  /projects/{id}/end:
+    $ref: paths/projects_{id}_end.yaml
+  /projects/{id}/restore:
+    $ref: paths/projects_{id}_restore.yaml
   /projects/my:
     $ref: paths/projects_my.yaml
   /projects/{id}/applications:

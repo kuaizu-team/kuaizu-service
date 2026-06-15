@@ -46,6 +46,7 @@ type ProjectRepo interface {
 	ReplaceMembers(ctx context.Context, projectID int, members []models.ProjectMember) error
 	UpdateStatus(ctx context.Context, id int, status int) error
 	UpdateStatusWithRejectReason(ctx context.Context, id int, status int, rejectReason *string) error
+	CompleteRecruit(ctx context.Context, id int) (int64, error)
 	IncrementViewCount(ctx context.Context, id int) error
 }
 
@@ -142,7 +143,6 @@ type ApplicationRepo interface {
 	CheckDuplicate(ctx context.Context, projectID, userID int) (bool, error)
 	UpdateStatus(ctx context.Context, id int, status int) error
 	UpdateStatusWithReviewer(ctx context.Context, id int, status int, reviewerID int, reviewerRole *string) error
-	DeletePendingByProjectID(ctx context.Context, projectID int) (int64, error)
 	GetUnreadApplicationCount(ctx context.Context, userID int) (int, error)
 	MarkReviewerRead(ctx context.Context, projectID, ownerID int, ids []int) error
 	GetProjectDashboardStats(ctx context.Context, projectID int) (ApplicationDashboardStats, error)

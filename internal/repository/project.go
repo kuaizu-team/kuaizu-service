@@ -789,6 +789,40 @@ func (r *ProjectRepository) UpdateStatusWithRejectReason(ctx context.Context, id
 	return nil
 }
 
+func (r *ProjectRepository) CompleteRecruit(ctx context.Context, id int) (int64, error) {
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+
+	result, err := tx.ExecContext(ctx,
+		`UPDATE project SET status = ?, reject_reason = NULL, deleted_at = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+		models.ProjectStatusRecruitCompleted, id,
+	)
+	if err != nil {
+		return 0, fmt.Errorf("complete recruit project status: %w", err)
+	}
+	rowsAffected, _ := result.RowsAffected()
+	if rowsAffected == 0 {
+		return 0, fmt.Errorf("project not found")
+	}
+
+	result, err = tx.ExecContext(ctx,
+		`UPDATE project_application SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE project_id = ? AND status = ?`,
+		models.ApplicationStatusRejected, id, models.ApplicationStatusPending,
+	)
+	if err != nil {
+		return 0, fmt.Errorf("reject pending applications after complete recruit: %w", err)
+	}
+	pendingRejected, _ := result.RowsAffected()
+
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+	return pendingRejected, nil
+}
+
 // IncrementViewCount increments the view count of a project
 func (r *ProjectRepository) IncrementViewCount(ctx context.Context, id int) error {
 	query := `UPDATE project SET view_count = view_count + 1 WHERE id = ?`

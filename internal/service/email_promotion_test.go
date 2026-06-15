@@ -212,6 +212,11 @@ func (m *MockProjectRepo) UpdateStatusWithRejectReason(ctx context.Context, id i
 	return args.Error(0)
 }
 
+func (m *MockProjectRepo) CompleteRecruit(ctx context.Context, id int) (int64, error) {
+	args := m.Called(ctx, id)
+	return int64(args.Int(0)), args.Error(1)
+}
+
 func (m *MockProjectRepo) IncrementViewCount(ctx context.Context, id int) error {
 	args := m.Called(ctx, id)
 	return args.Error(0)
