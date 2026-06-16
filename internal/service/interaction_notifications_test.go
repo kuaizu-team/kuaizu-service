@@ -26,7 +26,7 @@ func TestBuildProjectInteractionNotification(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, ok := buildProjectInteractionNotification(tt.kind, tt.operator, project, "user")
+			got, ok := buildProjectInteractionNotification(tt.kind, tt.operator, project, "user", 1)
 			if ok != tt.wantOK {
 				t.Fatalf("ok = %v, want %v", ok, tt.wantOK)
 			}
@@ -68,7 +68,7 @@ func TestBuildTalentInteractionNotification(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, ok := buildTalentInteractionNotification(tt.kind, tt.operator, profile, "user")
+			got, ok := buildTalentInteractionNotification(tt.kind, tt.operator, profile, "user", 1)
 			if ok != tt.wantOK {
 				t.Fatalf("ok = %v, want %v", ok, tt.wantOK)
 			}
@@ -93,13 +93,13 @@ func TestBuildTalentInteractionNotification(t *testing.T) {
 
 func TestBuildVisitNotifications(t *testing.T) {
 	project := &models.Project{ID: 10, CreatorID: 100, Name: "project"}
-	if _, ok := buildProjectVisitNotification(0, project, "visitor"); ok {
+	if _, ok := buildProjectVisitNotification(0, project, "visitor", 3); ok {
 		t.Fatal("anonymous project visit should not notify")
 	}
-	if _, ok := buildProjectVisitNotification(100, project, "owner"); ok {
+	if _, ok := buildProjectVisitNotification(100, project, "owner", 3); ok {
 		t.Fatal("owner project visit should not notify")
 	}
-	projectNotice, ok := buildProjectVisitNotification(200, project, "visitor")
+	projectNotice, ok := buildProjectVisitNotification(200, project, "visitor", 3)
 	if !ok {
 		t.Fatal("visitor project visit should notify")
 	}
@@ -109,18 +109,18 @@ func TestBuildVisitNotifications(t *testing.T) {
 	if projectNotice.pagePath != "pages/project-dashboard/project-dashboard?id=10" {
 		t.Fatalf("project pagePath = %q", projectNotice.pagePath)
 	}
-	if projectNotice.data["project_name"] != "project" || projectNotice.data["visit_user"] != "visitor" {
+	if projectNotice.data["project_name"] != "project" || projectNotice.data["visit_user"] != "visitor等3人" {
 		t.Fatalf("unexpected project data: %#v", projectNotice.data)
 	}
 
 	profile := &models.TalentProfile{ID: 20, UserID: 101}
-	if _, ok := buildTalentVisitNotification(0, profile, "visitor"); ok {
+	if _, ok := buildTalentVisitNotification(0, profile, "visitor", 3); ok {
 		t.Fatal("anonymous talent visit should not notify")
 	}
-	if _, ok := buildTalentVisitNotification(101, profile, "owner"); ok {
+	if _, ok := buildTalentVisitNotification(101, profile, "owner", 3); ok {
 		t.Fatal("owner talent visit should not notify")
 	}
-	talentNotice, ok := buildTalentVisitNotification(201, profile, "visitor")
+	talentNotice, ok := buildTalentVisitNotification(201, profile, "visitor", 3)
 	if !ok {
 		t.Fatal("visitor talent visit should notify")
 	}
@@ -130,7 +130,7 @@ func TestBuildVisitNotifications(t *testing.T) {
 	if talentNotice.pagePath != "pages/talent-dashboard/talent-dashboard?id=20" {
 		t.Fatalf("talent pagePath = %q", talentNotice.pagePath)
 	}
-	if talentNotice.data["visit_user"] != "visitor" || talentNotice.data["remark"] != subscribeInteractionRemark {
+	if talentNotice.data["visit_user"] != "visitor等3人" || talentNotice.data["remark"] != subscribeInteractionRemark {
 		t.Fatalf("unexpected talent data: %#v", talentNotice.data)
 	}
 }
@@ -146,6 +146,16 @@ func TestNotificationUserNameFallback(t *testing.T) {
 	name := "  user  "
 	if got := notificationUserName(&models.User{Nickname: &name}); got != "user" {
 		t.Fatalf("trimmed user name = %q", got)
+	}
+}
+
+func TestNotificationGroupUserNameFitsTemplateLimit(t *testing.T) {
+	got := notificationGroupUserName("abcdefghijklmnopqrstu", 123)
+	if len([]rune(got)) > 20 {
+		t.Fatalf("group user name exceeds 20 chars: %q", got)
+	}
+	if got != "abcdefghijkl...等123人" {
+		t.Fatalf("group user name = %q", got)
 	}
 }
 

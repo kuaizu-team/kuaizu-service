@@ -194,11 +194,19 @@ func (s *ProjectService) GetProjectWithView(ctx context.Context, id, viewerUserI
 		if s.message == nil {
 			return
 		}
+		progress, err := s.repo.ProjectViewLog.NotifyProgress(asyncCtx, id, viewerUserID, project.CreatorID)
+		if err != nil {
+			log.Printf("[ProjectService.GetProjectWithView] get visit notify progress error (non-fatal): %v", err)
+			return
+		}
+		if !shouldSendGroupedInteractionNotification(progress) {
+			return
+		}
 		viewer, err := s.repo.User.GetByID(asyncCtx, viewerUserID)
 		if err != nil {
 			log.Printf("[ProjectService.GetProjectWithView] get viewer error (non-fatal): %v", err)
 		}
-		notification, ok := buildProjectVisitNotification(viewerUserID, project, notificationUserName(viewer))
+		notification, ok := buildProjectVisitNotification(viewerUserID, project, notificationUserName(viewer), progress.DistinctUserCount)
 		if ok {
 			sendSubscribeNotification(asyncCtx, s.message, notification)
 		}

@@ -205,11 +205,19 @@ func (s *TalentProfileService) GetTalentProfileWithView(ctx context.Context, id,
 		if s.message == nil {
 			return
 		}
+		progress, err := s.repo.TalentViewLog.NotifyProgress(asyncCtx, id, viewerUserID, profile.UserID)
+		if err != nil {
+			log.Printf("[TalentProfileService.GetTalentProfileWithView] get visit notify progress error (non-fatal): %v", err)
+			return
+		}
+		if !shouldSendGroupedInteractionNotification(progress) {
+			return
+		}
 		viewer, err := s.repo.User.GetByID(asyncCtx, viewerUserID)
 		if err != nil {
 			log.Printf("[TalentProfileService.GetTalentProfileWithView] get viewer error (non-fatal): %v", err)
 		}
-		notification, ok := buildTalentVisitNotification(viewerUserID, profile, notificationUserName(viewer))
+		notification, ok := buildTalentVisitNotification(viewerUserID, profile, notificationUserName(viewer), progress.DistinctUserCount)
 		if ok {
 			sendSubscribeNotification(asyncCtx, s.message, notification)
 		}

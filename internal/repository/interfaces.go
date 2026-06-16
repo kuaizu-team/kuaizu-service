@@ -264,6 +264,7 @@ type ProjectViewLogRepo interface {
 	InsertDurationLog(ctx context.Context, projectID int, userID *int, durationMs int) error
 	GetViewers(ctx context.Context, projectID int, limit int) ([]ProjectViewer, int, error)
 	CountUnreadVisits(ctx context.Context, projectID, ownerUserID int) (int, error)
+	NotifyProgress(ctx context.Context, projectID, viewerUserID, ownerUserID int) (InteractionNotifyProgress, error)
 }
 
 // TalentViewLogRepo defines the interface for talent view log operations.
@@ -274,6 +275,7 @@ type TalentViewLogRepo interface {
 	GetViewers(ctx context.Context, talentID int, limit int) ([]TalentViewer, int, error)
 	GetTopViewersToday(ctx context.Context, talentID int, limit int) ([]TopTalentViewer, error)
 	CountUnreadVisits(ctx context.Context, talentID, ownerUserID int) (int, error)
+	NotifyProgress(ctx context.Context, talentID, viewerUserID, ownerUserID int) (InteractionNotifyProgress, error)
 }
 
 // Compile-time interface satisfaction checks
