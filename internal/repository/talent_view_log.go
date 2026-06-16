@@ -70,6 +70,43 @@ func (r *TalentViewLogRepository) InsertDurationLog(ctx context.Context, talentI
 	return nil
 }
 
+func (r *TalentViewLogRepository) NotifyProgress(ctx context.Context, talentID, viewerUserID, ownerUserID int) (InteractionNotifyProgress, error) {
+	var progress InteractionNotifyProgress
+	err := r.db.QueryRowxContext(ctx, `
+		SELECT
+			COUNT(DISTINCT CASE WHEN user_id IS NOT NULL AND user_id<>? THEN user_id END) distinct_user_count,
+			NOT EXISTS (
+				SELECT 1
+				FROM talent_view_log prev
+				WHERE prev.talent_id = ?
+				  AND prev.user_id = ?
+				  AND prev.duration_ms IS NULL
+				  AND prev.id < (
+					SELECT MAX(cur.id)
+					FROM talent_view_log cur
+					WHERE cur.talent_id = ?
+					  AND cur.user_id = ?
+					  AND cur.duration_ms IS NULL
+				  )
+				  AND prev.viewed_at >= DATE_SUB((
+					SELECT MAX(cur.viewed_at)
+					FROM talent_view_log cur
+					WHERE cur.talent_id = ?
+					  AND cur.user_id = ?
+					  AND cur.duration_ms IS NULL
+				  ), INTERVAL 30 DAY)
+			) is_new_user
+		FROM talent_view_log
+		WHERE talent_id = ?
+		  AND duration_ms IS NULL
+		  AND viewed_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+	`, ownerUserID, talentID, viewerUserID, talentID, viewerUserID, talentID, viewerUserID, talentID).Scan(&progress.DistinctUserCount, &progress.IsNewUser)
+	if err != nil {
+		return InteractionNotifyProgress{}, fmt.Errorf("get talent visit notify progress: %w", err)
+	}
+	return progress, nil
+}
+
 // GetDashboardStats returns aggregated dashboard data for a single talent profile.
 func (r *TalentViewLogRepository) GetDashboardStats(ctx context.Context, talentID int) (*TalentDashboardStats, error) {
 	var totalViews int
@@ -224,9 +261,11 @@ func (r *TalentViewLogRepository) GetTopViewersToday(ctx context.Context, talent
 func (r *TalentViewLogRepository) CountUnreadVisits(ctx context.Context, talentID, ownerUserID int) (int, error) {
 	var count int
 	err := r.db.QueryRowxContext(ctx, `
-		SELECT COUNT(*)
+		SELECT COUNT(DISTINCT vl.user_id)
 		FROM talent_view_log vl
 		WHERE vl.talent_id = ?
+		  AND vl.user_id IS NOT NULL
+		  AND vl.user_id <> ?
 		  AND vl.duration_ms IS NULL
 		  AND vl.viewed_at > COALESCE(
 			(SELECT s.last_viewed_at
@@ -235,7 +274,16 @@ func (r *TalentViewLogRepository) CountUnreadVisits(ctx context.Context, talentI
 			   AND s.target_id = ? AND s.interaction_type = 'visit'),
 			'1970-01-01 00:00:01'
 		  )
-	`, talentID, ownerUserID, talentID).Scan(&count)
+		  AND NOT EXISTS (
+			SELECT 1
+			FROM talent_view_log prev
+			WHERE prev.talent_id = vl.talent_id
+			  AND prev.user_id = vl.user_id
+			  AND prev.duration_ms IS NULL
+			  AND (prev.viewed_at < vl.viewed_at OR (prev.viewed_at = vl.viewed_at AND prev.id < vl.id))
+			  AND prev.viewed_at >= DATE_SUB(vl.viewed_at, INTERVAL 30 DAY)
+		  )
+	`, talentID, ownerUserID, ownerUserID, talentID).Scan(&count)
 	if err != nil {
 		return 0, fmt.Errorf("count unread talent visits: %w", err)
 	}

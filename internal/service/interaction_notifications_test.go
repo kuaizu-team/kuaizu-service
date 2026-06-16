@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/kuaizu-team/kuaizu-service/internal/models"
+	"github.com/kuaizu-team/kuaizu-service/internal/repository"
 )
 
 func TestBuildProjectInteractionNotification(t *testing.T) {
@@ -26,7 +27,7 @@ func TestBuildProjectInteractionNotification(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, ok := buildProjectInteractionNotification(tt.kind, tt.operator, project, "user")
+			got, ok := buildProjectInteractionNotification(tt.kind, tt.operator, project, "user", 1)
 			if ok != tt.wantOK {
 				t.Fatalf("ok = %v, want %v", ok, tt.wantOK)
 			}
@@ -68,7 +69,7 @@ func TestBuildTalentInteractionNotification(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, ok := buildTalentInteractionNotification(tt.kind, tt.operator, profile, "user")
+			got, ok := buildTalentInteractionNotification(tt.kind, tt.operator, profile, "user", 1)
 			if ok != tt.wantOK {
 				t.Fatalf("ok = %v, want %v", ok, tt.wantOK)
 			}
@@ -93,13 +94,13 @@ func TestBuildTalentInteractionNotification(t *testing.T) {
 
 func TestBuildVisitNotifications(t *testing.T) {
 	project := &models.Project{ID: 10, CreatorID: 100, Name: "project"}
-	if _, ok := buildProjectVisitNotification(0, project, "visitor"); ok {
+	if _, ok := buildProjectVisitNotification(0, project, "visitor", 3); ok {
 		t.Fatal("anonymous project visit should not notify")
 	}
-	if _, ok := buildProjectVisitNotification(100, project, "owner"); ok {
+	if _, ok := buildProjectVisitNotification(100, project, "owner", 3); ok {
 		t.Fatal("owner project visit should not notify")
 	}
-	projectNotice, ok := buildProjectVisitNotification(200, project, "visitor")
+	projectNotice, ok := buildProjectVisitNotification(200, project, "visitor", 3)
 	if !ok {
 		t.Fatal("visitor project visit should notify")
 	}
@@ -109,18 +110,18 @@ func TestBuildVisitNotifications(t *testing.T) {
 	if projectNotice.pagePath != "pages/project-dashboard/project-dashboard?id=10" {
 		t.Fatalf("project pagePath = %q", projectNotice.pagePath)
 	}
-	if projectNotice.data["project_name"] != "project" || projectNotice.data["visit_user"] != "visitor" {
+	if projectNotice.data["project_name"] != "project" || projectNotice.data["visit_user"] != "visitor等3人" {
 		t.Fatalf("unexpected project data: %#v", projectNotice.data)
 	}
 
 	profile := &models.TalentProfile{ID: 20, UserID: 101}
-	if _, ok := buildTalentVisitNotification(0, profile, "visitor"); ok {
+	if _, ok := buildTalentVisitNotification(0, profile, "visitor", 3); ok {
 		t.Fatal("anonymous talent visit should not notify")
 	}
-	if _, ok := buildTalentVisitNotification(101, profile, "owner"); ok {
+	if _, ok := buildTalentVisitNotification(101, profile, "owner", 3); ok {
 		t.Fatal("owner talent visit should not notify")
 	}
-	talentNotice, ok := buildTalentVisitNotification(201, profile, "visitor")
+	talentNotice, ok := buildTalentVisitNotification(201, profile, "visitor", 3)
 	if !ok {
 		t.Fatal("visitor talent visit should notify")
 	}
@@ -130,7 +131,7 @@ func TestBuildVisitNotifications(t *testing.T) {
 	if talentNotice.pagePath != "pages/talent-dashboard/talent-dashboard?id=20" {
 		t.Fatalf("talent pagePath = %q", talentNotice.pagePath)
 	}
-	if talentNotice.data["visit_user"] != "visitor" || talentNotice.data["remark"] != subscribeInteractionRemark {
+	if talentNotice.data["visit_user"] != "visitor等3人" || talentNotice.data["remark"] != subscribeInteractionRemark {
 		t.Fatalf("unexpected talent data: %#v", talentNotice.data)
 	}
 }
@@ -146,6 +147,55 @@ func TestNotificationUserNameFallback(t *testing.T) {
 	name := "  user  "
 	if got := notificationUserName(&models.User{Nickname: &name}); got != "user" {
 		t.Fatalf("trimmed user name = %q", got)
+	}
+}
+
+func TestNotificationGroupUserNameFitsTemplateLimit(t *testing.T) {
+	got := notificationGroupUserName("abcdefghijklmnopqrstu", 123)
+	if len([]rune(got)) > 20 {
+		t.Fatalf("group user name exceeds 20 chars: %q", got)
+	}
+	if got != "abcdefghijkl...等123人" {
+		t.Fatalf("group user name = %q", got)
+	}
+}
+
+func TestShouldSendGroupedInteractionNotification(t *testing.T) {
+	tests := []struct {
+		name string
+		in   repository.InteractionNotifyProgress
+		want bool
+	}{
+		{name: "third distinct new user sends", in: repository.InteractionNotifyProgress{DistinctUserCount: 3, IsNewUser: true}, want: true},
+		{name: "sixth distinct new user sends", in: repository.InteractionNotifyProgress{DistinctUserCount: 6, IsNewUser: true}, want: true},
+		{name: "new user below threshold skips", in: repository.InteractionNotifyProgress{DistinctUserCount: 2, IsNewUser: true}},
+		{name: "new user non multiple skips", in: repository.InteractionNotifyProgress{DistinctUserCount: 4, IsNewUser: true}},
+		{name: "repeat user skips even on threshold", in: repository.InteractionNotifyProgress{DistinctUserCount: 3, IsNewUser: false}},
+		{name: "zero count skips", in: repository.InteractionNotifyProgress{DistinctUserCount: 0, IsNewUser: true}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := shouldSendGroupedInteractionNotification(tt.in); got != tt.want {
+				t.Fatalf("shouldSendGroupedInteractionNotification(%#v) = %v, want %v", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestNotificationInteractionUserNameGroupingRules(t *testing.T) {
+	grouped := notificationGroupUserName("alice", 3)
+	if got := notificationInteractionUserName("like", "alice", 3); got != grouped {
+		t.Fatalf("like grouped name = %q, want %q", got, grouped)
+	}
+	if got := notificationInteractionUserName("share", "alice", 6); got != notificationGroupUserName("alice", 6) {
+		t.Fatalf("share grouped name = %q", got)
+	}
+	if got := notificationInteractionUserName("like", "alice", 2); got != "alice" {
+		t.Fatalf("like below threshold name = %q", got)
+	}
+	if got := notificationInteractionUserName("favorite", "alice", 3); got != "alice" {
+		t.Fatalf("favorite should stay immediate single-user name, got %q", got)
 	}
 }
 

@@ -96,7 +96,22 @@ func TestUnreadForTargetCalculatesAllTypesAndDefaultState(t *testing.T) {
 	capturedQuery.Lock()
 	query := normalizeSQL(capturedQuery.query)
 	capturedQuery.Unlock()
-	for _, want := range []string{"project_like", "project_favorite", "project_share", "project_view_log", "duration_ms IS NULL", "interaction_type='visit'", "interaction_dashboard_view_state", "created_at>COALESCE", "viewed_at>COALESCE", "1970-01-01 00:00:01"} {
+	for _, want := range []string{
+		"project_like",
+		"project_favorite",
+		"project_share",
+		"project_view_log",
+		"COUNT(DISTINCT i.user_id)",
+		"i.user_id<>?",
+		"duration_ms IS NULL",
+		"interaction_type='visit'",
+		"interaction_dashboard_view_state",
+		"created_at>COALESCE",
+		"viewed_at>COALESCE",
+		"NOT EXISTS",
+		"DATE_SUB(i.viewed_at, INTERVAL 30 DAY)",
+		"1970-01-01 00:00:01",
+	} {
 		if !strings.Contains(query, want) {
 			t.Fatalf("query missing %q: %s", want, query)
 		}
@@ -121,6 +136,18 @@ func TestUnreadDashboardTotals(t *testing.T) {
 	capturedQuery.Unlock()
 	if !strings.Contains(query, "project_members") {
 		t.Fatalf("project unread totals should include project members: %s", query)
+	}
+	for _, want := range []string{
+		"COUNT(DISTINCT i.project_id, i.user_id)",
+		"COUNT(DISTINCT i.talent_profile_id, i.user_id)",
+		"COUNT(DISTINCT i.talent_id, i.user_id)",
+		"i.user_id<>?",
+		"NOT EXISTS",
+		"DATE_SUB(i.viewed_at, INTERVAL 30 DAY)",
+	} {
+		if !strings.Contains(query, want) {
+			t.Fatalf("dashboard totals query missing %q: %s", want, query)
+		}
 	}
 }
 
@@ -165,6 +192,16 @@ func TestBatchProjectUnreadUsesOneAggregateQuery(t *testing.T) {
 	capturedQuery.Unlock()
 	if strings.Count(query, "UNION ALL") != 3 || !strings.Contains(query, "GROUP BY x.project_id") || !strings.Contains(query, "project_view_log") || !strings.Contains(query, "interaction_type='visit'") || !strings.Contains(query, "project_members") {
 		t.Fatalf("expected one four-type aggregate query: %s", query)
+	}
+	for _, want := range []string{
+		"COUNT(DISTINCT i.user_id)",
+		"i.user_id<>?",
+		"NOT EXISTS",
+		"DATE_SUB(i.viewed_at, INTERVAL 30 DAY)",
+	} {
+		if !strings.Contains(query, want) {
+			t.Fatalf("batch unread query missing %q: %s", want, query)
+		}
 	}
 }
 

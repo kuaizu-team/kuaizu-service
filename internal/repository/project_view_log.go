@@ -85,6 +85,43 @@ func (r *ProjectViewLogRepository) InsertDurationLog(ctx context.Context, projec
 	return nil
 }
 
+func (r *ProjectViewLogRepository) NotifyProgress(ctx context.Context, projectID, viewerUserID, ownerUserID int) (InteractionNotifyProgress, error) {
+	var progress InteractionNotifyProgress
+	err := r.db.QueryRowxContext(ctx, `
+		SELECT
+			COUNT(DISTINCT CASE WHEN user_id IS NOT NULL AND user_id<>? THEN user_id END) distinct_user_count,
+			NOT EXISTS (
+				SELECT 1
+				FROM project_view_log prev
+				WHERE prev.project_id = ?
+				  AND prev.user_id = ?
+				  AND prev.duration_ms IS NULL
+				  AND prev.id < (
+					SELECT MAX(cur.id)
+					FROM project_view_log cur
+					WHERE cur.project_id = ?
+					  AND cur.user_id = ?
+					  AND cur.duration_ms IS NULL
+				  )
+				  AND prev.viewed_at >= DATE_SUB((
+					SELECT MAX(cur.viewed_at)
+					FROM project_view_log cur
+					WHERE cur.project_id = ?
+					  AND cur.user_id = ?
+					  AND cur.duration_ms IS NULL
+				  ), INTERVAL 30 DAY)
+			) is_new_user
+		FROM project_view_log
+		WHERE project_id = ?
+		  AND duration_ms IS NULL
+		  AND viewed_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+	`, ownerUserID, projectID, viewerUserID, projectID, viewerUserID, projectID, viewerUserID, projectID).Scan(&progress.DistinctUserCount, &progress.IsNewUser)
+	if err != nil {
+		return InteractionNotifyProgress{}, fmt.Errorf("get project visit notify progress: %w", err)
+	}
+	return progress, nil
+}
+
 // GetDashboardStats returns aggregated dashboard data for a single project.
 // Rows with duration_ms IS NOT NULL are dwell-time-only records and are excluded from view counts.
 func (r *ProjectViewLogRepository) GetDashboardStats(ctx context.Context, projectID int) (*ProjectDashboardStats, error) {
@@ -272,9 +309,11 @@ func (r *ProjectViewLogRepository) GetViewers(ctx context.Context, projectID, li
 func (r *ProjectViewLogRepository) CountUnreadVisits(ctx context.Context, projectID, ownerUserID int) (int, error) {
 	var count int
 	err := r.db.QueryRowxContext(ctx, `
-		SELECT COUNT(*)
+		SELECT COUNT(DISTINCT vl.user_id)
 		FROM project_view_log vl
 		WHERE vl.project_id = ?
+		  AND vl.user_id IS NOT NULL
+		  AND vl.user_id <> ?
 		  AND vl.duration_ms IS NULL
 		  AND vl.viewed_at > COALESCE(
 			(SELECT s.last_viewed_at
@@ -283,7 +322,16 @@ func (r *ProjectViewLogRepository) CountUnreadVisits(ctx context.Context, projec
 			   AND s.target_id = ? AND s.interaction_type = 'visit'),
 			'1970-01-01 00:00:01'
 		  )
-	`, projectID, ownerUserID, projectID).Scan(&count)
+		  AND NOT EXISTS (
+			SELECT 1
+			FROM project_view_log prev
+			WHERE prev.project_id = vl.project_id
+			  AND prev.user_id = vl.user_id
+			  AND prev.duration_ms IS NULL
+			  AND (prev.viewed_at < vl.viewed_at OR (prev.viewed_at = vl.viewed_at AND prev.id < vl.id))
+			  AND prev.viewed_at >= DATE_SUB(vl.viewed_at, INTERVAL 30 DAY)
+		  )
+	`, projectID, ownerUserID, ownerUserID, projectID).Scan(&count)
 	if err != nil {
 		return 0, fmt.Errorf("count unread project visits: %w", err)
 	}

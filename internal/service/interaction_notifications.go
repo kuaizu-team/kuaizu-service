@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strconv"
 	"strings"
 
 	"github.com/kuaizu-team/kuaizu-service/internal/models"
@@ -43,10 +44,31 @@ func notificationUserName(user *models.User) string {
 	if name == "" {
 		return "用户"
 	}
-	return truncate20(name)
+	return truncate20WithEllipsis(name)
 }
 
-func buildProjectInteractionNotification(kind string, operatorUserID int, project *models.Project, operatorName string) (subscribeNotification, bool) {
+func notificationGroupUserName(userName string, count int) string {
+	suffix := "等" + strconv.Itoa(count) + "人"
+	maxNameLen := 20 - len([]rune(suffix))
+	if maxNameLen < 1 {
+		return truncate20WithEllipsis(suffix)
+	}
+	name := strings.TrimSpace(userName)
+	if name == "" {
+		name = "用户"
+	}
+	runes := []rune(name)
+	if len(runes) > maxNameLen {
+		if maxNameLen > 3 {
+			name = string(runes[:maxNameLen-3]) + "..."
+		} else {
+			name = string(runes[:maxNameLen])
+		}
+	}
+	return name + suffix
+}
+
+func buildProjectInteractionNotification(kind string, operatorUserID int, project *models.Project, operatorName string, count int) (subscribeNotification, bool) {
 	if project == nil || operatorUserID <= 0 || operatorUserID == project.CreatorID {
 		return subscribeNotification{}, false
 	}
@@ -69,7 +91,7 @@ func buildProjectInteractionNotification(kind string, operatorUserID int, projec
 
 	data := map[string]string{
 		"project_name":        truncate20(project.Name),
-		userFieldByKind[kind]: truncate20(operatorName),
+		userFieldByKind[kind]: notificationInteractionUserName(kind, operatorName, count),
 		"remark":              subscribeInteractionRemark,
 	}
 	return subscribeNotification{
@@ -80,7 +102,7 @@ func buildProjectInteractionNotification(kind string, operatorUserID int, projec
 	}, true
 }
 
-func buildTalentInteractionNotification(kind string, operatorUserID int, profile *models.TalentProfile, operatorName string) (subscribeNotification, bool) {
+func buildTalentInteractionNotification(kind string, operatorUserID int, profile *models.TalentProfile, operatorName string, count int) (subscribeNotification, bool) {
 	if profile == nil || operatorUserID <= 0 || operatorUserID == profile.UserID {
 		return subscribeNotification{}, false
 	}
@@ -102,7 +124,7 @@ func buildTalentInteractionNotification(kind string, operatorUserID int, profile
 	}
 
 	data := map[string]string{
-		userFieldByKind[kind]: truncate20(operatorName),
+		userFieldByKind[kind]: notificationInteractionUserName(kind, operatorName, count),
 		"remark":              subscribeInteractionRemark,
 	}
 	return subscribeNotification{
@@ -113,7 +135,14 @@ func buildTalentInteractionNotification(kind string, operatorUserID int, profile
 	}, true
 }
 
-func buildProjectVisitNotification(viewerUserID int, project *models.Project, viewerName string) (subscribeNotification, bool) {
+func notificationInteractionUserName(kind, operatorName string, count int) string {
+	if count >= 3 && kind != "favorite" {
+		return notificationGroupUserName(operatorName, count)
+	}
+	return truncate20WithEllipsis(operatorName)
+}
+
+func buildProjectVisitNotification(viewerUserID int, project *models.Project, viewerName string, count int) (subscribeNotification, bool) {
 	if project == nil || viewerUserID <= 0 || viewerUserID == project.CreatorID {
 		return subscribeNotification{}, false
 	}
@@ -122,14 +151,14 @@ func buildProjectVisitNotification(viewerUserID int, project *models.Project, vi
 		bizKey:      models.MsgBizKeyProjectVisit,
 		data: map[string]string{
 			"project_name": truncate20(project.Name),
-			"visit_user":   truncate20(viewerName),
+			"visit_user":   notificationGroupUserName(viewerName, count),
 			"remark":       subscribeInteractionRemark,
 		},
 		pagePath: projectDashboardPagePath(project.ID),
 	}, true
 }
 
-func buildTalentVisitNotification(viewerUserID int, profile *models.TalentProfile, viewerName string) (subscribeNotification, bool) {
+func buildTalentVisitNotification(viewerUserID int, profile *models.TalentProfile, viewerName string, count int) (subscribeNotification, bool) {
 	if profile == nil || viewerUserID <= 0 || viewerUserID == profile.UserID {
 		return subscribeNotification{}, false
 	}
@@ -137,7 +166,7 @@ func buildTalentVisitNotification(viewerUserID int, profile *models.TalentProfil
 		ownerUserID: profile.UserID,
 		bizKey:      models.MsgBizKeyTalentVisit,
 		data: map[string]string{
-			"visit_user": truncate20(viewerName),
+			"visit_user": notificationGroupUserName(viewerName, count),
 			"remark":     subscribeInteractionRemark,
 		},
 		pagePath: talentDashboardPagePath(profile.ID),
@@ -167,14 +196,38 @@ func (s *InteractionService) notifyInteractionAsync(ctx context.Context, target,
 				log.Printf("[Interaction.notifyInteractionAsync] get project error (non-fatal): %v", err)
 				return
 			}
-			notification, ok = buildProjectInteractionNotification(kind, operatorUserID, project, operatorName)
+			count := 1
+			if kind != "favorite" {
+				progress, err := s.repo.Interaction.NotifyProgress(asyncCtx, target, kind, targetID, operatorUserID, project.CreatorID)
+				if err != nil {
+					log.Printf("[Interaction.notifyInteractionAsync] get project notify progress error (non-fatal): %v", err)
+					return
+				}
+				if !shouldSendGroupedInteractionNotification(progress) {
+					return
+				}
+				count = progress.DistinctUserCount
+			}
+			notification, ok = buildProjectInteractionNotification(kind, operatorUserID, project, operatorName, count)
 		case repository.InteractionTalent:
 			profile, err := s.repo.TalentProfile.GetByID(asyncCtx, targetID)
 			if err != nil {
 				log.Printf("[Interaction.notifyInteractionAsync] get talent profile error (non-fatal): %v", err)
 				return
 			}
-			notification, ok = buildTalentInteractionNotification(kind, operatorUserID, profile, operatorName)
+			count := 1
+			if kind != "favorite" {
+				progress, err := s.repo.Interaction.NotifyProgress(asyncCtx, target, kind, targetID, operatorUserID, profile.UserID)
+				if err != nil {
+					log.Printf("[Interaction.notifyInteractionAsync] get talent notify progress error (non-fatal): %v", err)
+					return
+				}
+				if !shouldSendGroupedInteractionNotification(progress) {
+					return
+				}
+				count = progress.DistinctUserCount
+			}
+			notification, ok = buildTalentInteractionNotification(kind, operatorUserID, profile, operatorName, count)
 		default:
 			return
 		}
@@ -183,6 +236,10 @@ func (s *InteractionService) notifyInteractionAsync(ctx context.Context, target,
 		}
 		sendSubscribeNotification(asyncCtx, s.message, notification)
 	}(context.WithoutCancel(ctx))
+}
+
+func shouldSendGroupedInteractionNotification(progress repository.InteractionNotifyProgress) bool {
+	return progress.IsNewUser && progress.DistinctUserCount > 0 && progress.DistinctUserCount%3 == 0
 }
 
 func sendSubscribeNotification(ctx context.Context, sender subscribeMessageSender, notification subscribeNotification) {

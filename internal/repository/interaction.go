@@ -35,6 +35,11 @@ type DashboardUnreadTotals struct {
 	TotalCount   int `db:"total_count" json:"totalCount"`
 }
 
+type InteractionNotifyProgress struct {
+	DistinctUserCount int
+	IsNewUser         bool
+}
+
 const (
 	InteractionProject = "projects"
 	InteractionTalent  = "talent-profiles"
@@ -131,6 +136,28 @@ func (r *InteractionRepository) Share(ctx context.Context, target string, target
 		return nil, err
 	}
 	return r.Get(ctx, target, targetID, userID)
+}
+
+func (r *InteractionRepository) NotifyProgress(ctx context.Context, target, kind string, targetID, operatorUserID, ownerUserID int) (InteractionNotifyProgress, error) {
+	like, _, share, idCol, err := interactionTables(target)
+	if err != nil {
+		return InteractionNotifyProgress{}, err
+	}
+	table := like
+	if kind == "share" {
+		table = share
+	} else if kind != "like" {
+		return InteractionNotifyProgress{}, fmt.Errorf("invalid interaction kind")
+	}
+	var progress InteractionNotifyProgress
+	query := fmt.Sprintf(`SELECT
+		COUNT(DISTINCT CASE WHEN user_id IS NOT NULL AND user_id<>? THEN user_id END) distinct_user_count,
+		COUNT(CASE WHEN user_id=? THEN 1 END)=1 is_new_user
+		FROM %s WHERE %s=?`, table, idCol)
+	if err := r.db.QueryRowxContext(ctx, query, ownerUserID, operatorUserID, targetID).Scan(&progress.DistinctUserCount, &progress.IsNewUser); err != nil {
+		return InteractionNotifyProgress{}, err
+	}
+	return progress, nil
 }
 
 func (r *InteractionRepository) Batch(ctx context.Context, target string, targetIDs []int, userID int) (map[int]models.Interaction, error) {
@@ -314,24 +341,34 @@ func (r *InteractionRepository) UnreadForTarget(ctx context.Context, target stri
 		visitTable, visitIDCol = "talent_view_log", "talent_id"
 	}
 	query := fmt.Sprintf(`SELECT
-		(SELECT COUNT(*) FROM %s i WHERE i.%s=? AND i.created_at>COALESCE(
+		(SELECT COUNT(DISTINCT i.user_id) FROM %s i WHERE i.%s=? AND i.user_id<>? AND i.created_at>COALESCE(
 			(SELECT s.last_viewed_at FROM interaction_dashboard_view_state s WHERE s.user_id=? AND s.target_type=? AND s.target_id=? AND s.interaction_type='like'),
 			'1970-01-01 00:00:01')) like_count,
-		(SELECT COUNT(*) FROM %s i WHERE i.%s=? AND i.created_at>COALESCE(
+		(SELECT COUNT(DISTINCT i.user_id) FROM %s i WHERE i.%s=? AND i.user_id<>? AND i.created_at>COALESCE(
 			(SELECT s.last_viewed_at FROM interaction_dashboard_view_state s WHERE s.user_id=? AND s.target_type=? AND s.target_id=? AND s.interaction_type='favorite'),
 			'1970-01-01 00:00:01')) favorite_count,
-		(SELECT COUNT(*) FROM %s i WHERE i.%s=? AND i.created_at>COALESCE(
+		(SELECT COUNT(DISTINCT i.user_id) FROM %s i WHERE i.%s=? AND i.user_id<>? AND i.created_at>COALESCE(
 			(SELECT s.last_viewed_at FROM interaction_dashboard_view_state s WHERE s.user_id=? AND s.target_type=? AND s.target_id=? AND s.interaction_type='share'),
-			'1970-01-01 00:00:01')) share_count,
-		(SELECT COUNT(*) FROM %s i WHERE i.%s=? AND i.duration_ms IS NULL AND i.viewed_at>COALESCE(
+			'1970-01-01 00:00:01')
+			AND NOT EXISTS (
+				SELECT 1 FROM %s prev
+				WHERE prev.%s=i.%s AND prev.user_id=i.user_id AND prev.id<i.id
+			)) share_count,
+		(SELECT COUNT(DISTINCT i.user_id) FROM %s i WHERE i.%s=? AND i.user_id IS NOT NULL AND i.user_id<>? AND i.duration_ms IS NULL AND i.viewed_at>COALESCE(
 			(SELECT s.last_viewed_at FROM interaction_dashboard_view_state s WHERE s.user_id=? AND s.target_type=? AND s.target_id=? AND s.interaction_type='visit'),
-			'1970-01-01 00:00:01')) visit_count`,
-		like, idCol, favorite, idCol, share, idCol, visitTable, visitIDCol)
+			'1970-01-01 00:00:01')
+			AND NOT EXISTS (
+				SELECT 1 FROM %s prev
+				WHERE prev.%s=i.%s AND prev.user_id=i.user_id AND prev.duration_ms IS NULL
+				  AND (prev.viewed_at<i.viewed_at OR (prev.viewed_at=i.viewed_at AND prev.id<i.id))
+				  AND prev.viewed_at>=DATE_SUB(i.viewed_at, INTERVAL 30 DAY)
+			)) visit_count`,
+		like, idCol, favorite, idCol, share, idCol, share, idCol, idCol, visitTable, visitIDCol, visitTable, visitIDCol, visitIDCol)
 	args := []interface{}{
-		targetID, ownerUserID, target, targetID,
-		targetID, ownerUserID, target, targetID,
-		targetID, ownerUserID, target, targetID,
-		targetID, ownerUserID, target, targetID,
+		targetID, ownerUserID, ownerUserID, target, targetID,
+		targetID, ownerUserID, ownerUserID, target, targetID,
+		targetID, ownerUserID, ownerUserID, target, targetID,
+		targetID, ownerUserID, ownerUserID, target, targetID,
 	}
 	var unread InteractionUnread
 	if err := r.db.QueryRowxContext(ctx, query, args...).StructScan(&unread); err != nil {
@@ -344,35 +381,55 @@ func (r *InteractionRepository) UnreadForTarget(ctx context.Context, target stri
 func (r *InteractionRepository) UnreadDashboardTotals(ctx context.Context, ownerUserID int) (DashboardUnreadTotals, error) {
 	query := `SELECT
 		(
-			(SELECT COUNT(*) FROM project_like i JOIN project p ON p.id=i.project_id WHERE (p.creator_id=? OR EXISTS (
+			(SELECT COUNT(DISTINCT i.project_id, i.user_id) FROM project_like i JOIN project p ON p.id=i.project_id WHERE (p.creator_id=? OR EXISTS (
 				SELECT 1 FROM project_members pm WHERE pm.project_id=i.project_id AND pm.user_id=?
-			)) AND i.created_at>COALESCE(
+			)) AND i.user_id<>? AND i.created_at>COALESCE(
 				(SELECT s.last_viewed_at FROM interaction_dashboard_view_state s WHERE s.user_id=? AND s.target_type='projects' AND s.target_id=i.project_id AND s.interaction_type='like'),'1970-01-01 00:00:01'))
-			+(SELECT COUNT(*) FROM project_favorite i JOIN project p ON p.id=i.project_id WHERE (p.creator_id=? OR EXISTS (
+			+(SELECT COUNT(DISTINCT i.project_id, i.user_id) FROM project_favorite i JOIN project p ON p.id=i.project_id WHERE (p.creator_id=? OR EXISTS (
 				SELECT 1 FROM project_members pm WHERE pm.project_id=i.project_id AND pm.user_id=?
-			)) AND i.created_at>COALESCE(
+			)) AND i.user_id<>? AND i.created_at>COALESCE(
 				(SELECT s.last_viewed_at FROM interaction_dashboard_view_state s WHERE s.user_id=? AND s.target_type='projects' AND s.target_id=i.project_id AND s.interaction_type='favorite'),'1970-01-01 00:00:01'))
-			+(SELECT COUNT(*) FROM project_share i JOIN project p ON p.id=i.project_id WHERE (p.creator_id=? OR EXISTS (
+			+(SELECT COUNT(DISTINCT i.project_id, i.user_id) FROM project_share i JOIN project p ON p.id=i.project_id WHERE (p.creator_id=? OR EXISTS (
 				SELECT 1 FROM project_members pm WHERE pm.project_id=i.project_id AND pm.user_id=?
-			)) AND i.created_at>COALESCE(
-				(SELECT s.last_viewed_at FROM interaction_dashboard_view_state s WHERE s.user_id=? AND s.target_type='projects' AND s.target_id=i.project_id AND s.interaction_type='share'),'1970-01-01 00:00:01'))
-			+(SELECT COUNT(*) FROM project_view_log i JOIN project p ON p.id=i.project_id WHERE (p.creator_id=? OR EXISTS (
+			)) AND i.user_id<>? AND i.created_at>COALESCE(
+				(SELECT s.last_viewed_at FROM interaction_dashboard_view_state s WHERE s.user_id=? AND s.target_type='projects' AND s.target_id=i.project_id AND s.interaction_type='share'),'1970-01-01 00:00:01')
+				AND NOT EXISTS (
+					SELECT 1 FROM project_share prev
+					WHERE prev.project_id=i.project_id AND prev.user_id=i.user_id AND prev.id<i.id
+				))
+			+(SELECT COUNT(DISTINCT i.project_id, i.user_id) FROM project_view_log i JOIN project p ON p.id=i.project_id WHERE (p.creator_id=? OR EXISTS (
 				SELECT 1 FROM project_members pm WHERE pm.project_id=i.project_id AND pm.user_id=?
-			)) AND i.duration_ms IS NULL AND i.viewed_at>COALESCE(
-				(SELECT s.last_viewed_at FROM interaction_dashboard_view_state s WHERE s.user_id=? AND s.target_type='projects' AND s.target_id=i.project_id AND s.interaction_type='visit'),'1970-01-01 00:00:01'))
+			)) AND i.user_id IS NOT NULL AND i.user_id<>? AND i.duration_ms IS NULL AND i.viewed_at>COALESCE(
+				(SELECT s.last_viewed_at FROM interaction_dashboard_view_state s WHERE s.user_id=? AND s.target_type='projects' AND s.target_id=i.project_id AND s.interaction_type='visit'),'1970-01-01 00:00:01')
+				AND NOT EXISTS (
+					SELECT 1 FROM project_view_log prev
+					WHERE prev.project_id=i.project_id AND prev.user_id=i.user_id AND prev.duration_ms IS NULL
+					  AND (prev.viewed_at<i.viewed_at OR (prev.viewed_at=i.viewed_at AND prev.id<i.id))
+					  AND prev.viewed_at>=DATE_SUB(i.viewed_at, INTERVAL 30 DAY)
+				))
 		) project_count,
 		(
-			(SELECT COUNT(*) FROM talent_like i JOIN talent_profile tp ON tp.id=i.talent_profile_id WHERE tp.user_id=? AND i.created_at>COALESCE(
+			(SELECT COUNT(DISTINCT i.talent_profile_id, i.user_id) FROM talent_like i JOIN talent_profile tp ON tp.id=i.talent_profile_id WHERE tp.user_id=? AND i.user_id<>? AND i.created_at>COALESCE(
 				(SELECT s.last_viewed_at FROM interaction_dashboard_view_state s WHERE s.user_id=? AND s.target_type='talent-profiles' AND s.target_id=i.talent_profile_id AND s.interaction_type='like'),'1970-01-01 00:00:01'))
-			+(SELECT COUNT(*) FROM talent_favorite i JOIN talent_profile tp ON tp.id=i.talent_profile_id WHERE tp.user_id=? AND i.created_at>COALESCE(
+			+(SELECT COUNT(DISTINCT i.talent_profile_id, i.user_id) FROM talent_favorite i JOIN talent_profile tp ON tp.id=i.talent_profile_id WHERE tp.user_id=? AND i.user_id<>? AND i.created_at>COALESCE(
 				(SELECT s.last_viewed_at FROM interaction_dashboard_view_state s WHERE s.user_id=? AND s.target_type='talent-profiles' AND s.target_id=i.talent_profile_id AND s.interaction_type='favorite'),'1970-01-01 00:00:01'))
-			+(SELECT COUNT(*) FROM talent_share i JOIN talent_profile tp ON tp.id=i.talent_profile_id WHERE tp.user_id=? AND i.created_at>COALESCE(
-				(SELECT s.last_viewed_at FROM interaction_dashboard_view_state s WHERE s.user_id=? AND s.target_type='talent-profiles' AND s.target_id=i.talent_profile_id AND s.interaction_type='share'),'1970-01-01 00:00:01'))
-			+(SELECT COUNT(*) FROM talent_view_log i JOIN talent_profile tp ON tp.id=i.talent_id WHERE tp.user_id=? AND i.duration_ms IS NULL AND i.viewed_at>COALESCE(
-				(SELECT s.last_viewed_at FROM interaction_dashboard_view_state s WHERE s.user_id=? AND s.target_type='talent-profiles' AND s.target_id=i.talent_id AND s.interaction_type='visit'),'1970-01-01 00:00:01'))
+			+(SELECT COUNT(DISTINCT i.talent_profile_id, i.user_id) FROM talent_share i JOIN talent_profile tp ON tp.id=i.talent_profile_id WHERE tp.user_id=? AND i.user_id<>? AND i.created_at>COALESCE(
+				(SELECT s.last_viewed_at FROM interaction_dashboard_view_state s WHERE s.user_id=? AND s.target_type='talent-profiles' AND s.target_id=i.talent_profile_id AND s.interaction_type='share'),'1970-01-01 00:00:01')
+				AND NOT EXISTS (
+					SELECT 1 FROM talent_share prev
+					WHERE prev.talent_profile_id=i.talent_profile_id AND prev.user_id=i.user_id AND prev.id<i.id
+				))
+			+(SELECT COUNT(DISTINCT i.talent_id, i.user_id) FROM talent_view_log i JOIN talent_profile tp ON tp.id=i.talent_id WHERE tp.user_id=? AND i.user_id IS NOT NULL AND i.user_id<>? AND i.duration_ms IS NULL AND i.viewed_at>COALESCE(
+				(SELECT s.last_viewed_at FROM interaction_dashboard_view_state s WHERE s.user_id=? AND s.target_type='talent-profiles' AND s.target_id=i.talent_id AND s.interaction_type='visit'),'1970-01-01 00:00:01')
+				AND NOT EXISTS (
+					SELECT 1 FROM talent_view_log prev
+					WHERE prev.talent_id=i.talent_id AND prev.user_id=i.user_id AND prev.duration_ms IS NULL
+					  AND (prev.viewed_at<i.viewed_at OR (prev.viewed_at=i.viewed_at AND prev.id<i.id))
+					  AND prev.viewed_at>=DATE_SUB(i.viewed_at, INTERVAL 30 DAY)
+				))
 		) talent_count`
-	args := make([]interface{}, 0, 20)
-	for i := 0; i < 20; i++ {
+	args := make([]interface{}, 0, 28)
+	for i := 0; i < 28; i++ {
 		args = append(args, ownerUserID)
 	}
 	var totals DashboardUnreadTotals
@@ -389,30 +446,40 @@ func (r *InteractionRepository) BatchProjectUnread(ctx context.Context, ownerUse
 		return result, nil
 	}
 	query, args, err := sqlx.In(`SELECT x.project_id,SUM(x.cnt) unread_count FROM (
-		SELECT i.project_id,COUNT(*) cnt FROM project_like i JOIN project p ON p.id=i.project_id
+		SELECT i.project_id,COUNT(DISTINCT i.user_id) cnt FROM project_like i JOIN project p ON p.id=i.project_id
 		WHERE (p.creator_id=? OR EXISTS (SELECT 1 FROM project_members pm WHERE pm.project_id=i.project_id AND pm.user_id=?))
-		  AND i.project_id IN (?) AND i.created_at>COALESCE(
+		  AND i.project_id IN (?) AND i.user_id<>? AND i.created_at>COALESCE(
 			(SELECT s.last_viewed_at FROM interaction_dashboard_view_state s WHERE s.user_id=? AND s.target_type='projects' AND s.target_id=i.project_id AND s.interaction_type='like'),'1970-01-01 00:00:01') GROUP BY i.project_id
 		UNION ALL
-		SELECT i.project_id,COUNT(*) cnt FROM project_favorite i JOIN project p ON p.id=i.project_id
+		SELECT i.project_id,COUNT(DISTINCT i.user_id) cnt FROM project_favorite i JOIN project p ON p.id=i.project_id
 		WHERE (p.creator_id=? OR EXISTS (SELECT 1 FROM project_members pm WHERE pm.project_id=i.project_id AND pm.user_id=?))
-		  AND i.project_id IN (?) AND i.created_at>COALESCE(
+		  AND i.project_id IN (?) AND i.user_id<>? AND i.created_at>COALESCE(
 			(SELECT s.last_viewed_at FROM interaction_dashboard_view_state s WHERE s.user_id=? AND s.target_type='projects' AND s.target_id=i.project_id AND s.interaction_type='favorite'),'1970-01-01 00:00:01') GROUP BY i.project_id
 		UNION ALL
-		SELECT i.project_id,COUNT(*) cnt FROM project_share i JOIN project p ON p.id=i.project_id
+		SELECT i.project_id,COUNT(DISTINCT i.user_id) cnt FROM project_share i JOIN project p ON p.id=i.project_id
 		WHERE (p.creator_id=? OR EXISTS (SELECT 1 FROM project_members pm WHERE pm.project_id=i.project_id AND pm.user_id=?))
-		  AND i.project_id IN (?) AND i.created_at>COALESCE(
-			(SELECT s.last_viewed_at FROM interaction_dashboard_view_state s WHERE s.user_id=? AND s.target_type='projects' AND s.target_id=i.project_id AND s.interaction_type='share'),'1970-01-01 00:00:01') GROUP BY i.project_id
+		  AND i.project_id IN (?) AND i.user_id<>? AND i.created_at>COALESCE(
+			(SELECT s.last_viewed_at FROM interaction_dashboard_view_state s WHERE s.user_id=? AND s.target_type='projects' AND s.target_id=i.project_id AND s.interaction_type='share'),'1970-01-01 00:00:01')
+		  AND NOT EXISTS (
+			SELECT 1 FROM project_share prev
+			WHERE prev.project_id=i.project_id AND prev.user_id=i.user_id AND prev.id<i.id
+		  ) GROUP BY i.project_id
 		UNION ALL
-		SELECT i.project_id,COUNT(*) cnt FROM project_view_log i JOIN project p ON p.id=i.project_id
+		SELECT i.project_id,COUNT(DISTINCT i.user_id) cnt FROM project_view_log i JOIN project p ON p.id=i.project_id
 		WHERE (p.creator_id=? OR EXISTS (SELECT 1 FROM project_members pm WHERE pm.project_id=i.project_id AND pm.user_id=?))
-		  AND i.project_id IN (?) AND i.duration_ms IS NULL AND i.viewed_at>COALESCE(
-			(SELECT s.last_viewed_at FROM interaction_dashboard_view_state s WHERE s.user_id=? AND s.target_type='projects' AND s.target_id=i.project_id AND s.interaction_type='visit'),'1970-01-01 00:00:01') GROUP BY i.project_id
+		  AND i.project_id IN (?) AND i.user_id IS NOT NULL AND i.user_id<>? AND i.duration_ms IS NULL AND i.viewed_at>COALESCE(
+			(SELECT s.last_viewed_at FROM interaction_dashboard_view_state s WHERE s.user_id=? AND s.target_type='projects' AND s.target_id=i.project_id AND s.interaction_type='visit'),'1970-01-01 00:00:01')
+		  AND NOT EXISTS (
+			SELECT 1 FROM project_view_log prev
+			WHERE prev.project_id=i.project_id AND prev.user_id=i.user_id AND prev.duration_ms IS NULL
+			  AND (prev.viewed_at<i.viewed_at OR (prev.viewed_at=i.viewed_at AND prev.id<i.id))
+			  AND prev.viewed_at>=DATE_SUB(i.viewed_at, INTERVAL 30 DAY)
+		  ) GROUP BY i.project_id
 	) x GROUP BY x.project_id`,
-		ownerUserID, ownerUserID, projectIDs, ownerUserID,
-		ownerUserID, ownerUserID, projectIDs, ownerUserID,
-		ownerUserID, ownerUserID, projectIDs, ownerUserID,
-		ownerUserID, ownerUserID, projectIDs, ownerUserID)
+		ownerUserID, ownerUserID, projectIDs, ownerUserID, ownerUserID,
+		ownerUserID, ownerUserID, projectIDs, ownerUserID, ownerUserID,
+		ownerUserID, ownerUserID, projectIDs, ownerUserID, ownerUserID,
+		ownerUserID, ownerUserID, projectIDs, ownerUserID, ownerUserID)
 	if err != nil {
 		return nil, err
 	}
