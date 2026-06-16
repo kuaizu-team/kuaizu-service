@@ -715,13 +715,25 @@ func (r *ProjectRepository) HasUnreadPassiveStatusChange(ctx context.Context, us
 					WHERE pm.project_id = p.id AND pm.user_id = ?
 				))
 				AND p.status IN (?, ?)
-				AND p.updated_at > COALESCE(u.last_viewed_my_projects_at, CAST('1970-01-01 00:00:01' AS DATETIME))
+				AND p.passive_status_changed_at > COALESCE(u.last_viewed_my_projects_at, CAST('1970-01-01 00:00:01' AS DATETIME))
 		)
 	`, userID, userID, userID, models.ProjectStatusApproved, models.ProjectStatusRejected).Scan(&exists)
 	if err != nil {
 		return false, fmt.Errorf("check unread passive project status change: %w", err)
 	}
 	return exists, nil
+}
+
+func (r *ProjectRepository) MarkPassiveStatusChange(ctx context.Context, id int) error {
+	result, err := r.db.ExecContext(ctx, `UPDATE project SET passive_status_changed_at = CURRENT_TIMESTAMP WHERE id = ?`, id)
+	if err != nil {
+		return fmt.Errorf("mark passive project status change: %w", err)
+	}
+	rowsAffected, _ := result.RowsAffected()
+	if rowsAffected == 0 {
+		return fmt.Errorf("project not found")
+	}
+	return nil
 }
 
 func (r *ProjectRepository) RoleExists(ctx context.Context, role string) (bool, error) {

@@ -162,6 +162,10 @@ func (m *MockProjectRepo) HasUnreadPassiveStatusChange(ctx context.Context, user
 	return false, nil
 }
 
+func (m *MockProjectRepo) MarkPassiveStatusChange(ctx context.Context, id int) error {
+	return nil
+}
+
 func (m *MockProjectRepo) RoleExists(ctx context.Context, role string) (bool, error) {
 	args := m.Called(ctx, role)
 	return args.Bool(0), args.Error(1)

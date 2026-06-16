@@ -366,6 +366,7 @@ CREATE TABLE `project` (
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   `reject_reason` varchar(255) DEFAULT NULL COMMENT '驳回原因',
+  `passive_status_changed_at` timestamp NULL DEFAULT NULL COMMENT '待审核项目被动审核为通过/拒绝的时间，用于我的项目红点',
   `deleted_at` timestamp NULL DEFAULT NULL COMMENT '删除时间',
   `is_cross_school` tinyint(4) DEFAULT '1' COMMENT '是否跨校: 1-可以,0-不可以',
   `education_requirement` tinyint(4) DEFAULT '1' COMMENT '学历要求1-大专2-本科',

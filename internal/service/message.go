@@ -200,11 +200,11 @@ func (s *MessageService) broadcastVersionUpdate(ctx context.Context, roadmapID i
 
 				callCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
 				defer cancel()
-				err := s.SendSubscribeMsgByBizKeyWithPage(callCtx, uid, models.MsgBizKeyVersionUpdate, map[string]string{
+				err := s.SendSubscribeMsgByBizKey(callCtx, uid, models.MsgBizKeyVersionUpdate, map[string]string{
 					"title":   title,
 					"content": content,
 					"remark":  "点击查看详情",
-				}, "pages/roadmap/roadmap")
+				})
 				if err != nil {
 					log.Printf("[VersionUpdateBroadcast] send failed roadmap_id=%d user_id=%d: %v", roadmapID, uid, err)
 					atomic.AddInt32(&failed, 1)

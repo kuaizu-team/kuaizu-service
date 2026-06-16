@@ -1288,6 +1288,13 @@ func (s *ProjectService) ReviewProject(ctx context.Context, id, status int, reje
 		log.Printf("[ProjectService.ReviewProject] repository error updating status: %v", err)
 		return ErrInternal("审核失败")
 	}
+	if project.Status == models.ProjectStatusPending &&
+		(status == models.ProjectStatusApproved || status == models.ProjectStatusRejected) {
+		if err := s.repo.Project.MarkPassiveStatusChange(ctx, id); err != nil {
+			log.Printf("[ProjectService.ReviewProject] repository error marking passive status change: %v", err)
+			return ErrInternal("审核失败")
+		}
+	}
 
 	// 向项目负责人发送审核结果通知
 	go func(asyncCtx context.Context) {
