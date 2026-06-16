@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/kuaizu-team/kuaizu-service/internal/models"
+	"github.com/kuaizu-team/kuaizu-service/internal/repository"
 )
 
 func TestBuildProjectInteractionNotification(t *testing.T) {
@@ -156,6 +157,45 @@ func TestNotificationGroupUserNameFitsTemplateLimit(t *testing.T) {
 	}
 	if got != "abcdefghijkl...等123人" {
 		t.Fatalf("group user name = %q", got)
+	}
+}
+
+func TestShouldSendGroupedInteractionNotification(t *testing.T) {
+	tests := []struct {
+		name string
+		in   repository.InteractionNotifyProgress
+		want bool
+	}{
+		{name: "third distinct new user sends", in: repository.InteractionNotifyProgress{DistinctUserCount: 3, IsNewUser: true}, want: true},
+		{name: "sixth distinct new user sends", in: repository.InteractionNotifyProgress{DistinctUserCount: 6, IsNewUser: true}, want: true},
+		{name: "new user below threshold skips", in: repository.InteractionNotifyProgress{DistinctUserCount: 2, IsNewUser: true}},
+		{name: "new user non multiple skips", in: repository.InteractionNotifyProgress{DistinctUserCount: 4, IsNewUser: true}},
+		{name: "repeat user skips even on threshold", in: repository.InteractionNotifyProgress{DistinctUserCount: 3, IsNewUser: false}},
+		{name: "zero count skips", in: repository.InteractionNotifyProgress{DistinctUserCount: 0, IsNewUser: true}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := shouldSendGroupedInteractionNotification(tt.in); got != tt.want {
+				t.Fatalf("shouldSendGroupedInteractionNotification(%#v) = %v, want %v", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestNotificationInteractionUserNameGroupingRules(t *testing.T) {
+	grouped := notificationGroupUserName("alice", 3)
+	if got := notificationInteractionUserName("like", "alice", 3); got != grouped {
+		t.Fatalf("like grouped name = %q, want %q", got, grouped)
+	}
+	if got := notificationInteractionUserName("share", "alice", 6); got != notificationGroupUserName("alice", 6) {
+		t.Fatalf("share grouped name = %q", got)
+	}
+	if got := notificationInteractionUserName("like", "alice", 2); got != "alice" {
+		t.Fatalf("like below threshold name = %q", got)
+	}
+	if got := notificationInteractionUserName("favorite", "alice", 3); got != "alice" {
+		t.Fatalf("favorite should stay immediate single-user name, got %q", got)
 	}
 }
 
