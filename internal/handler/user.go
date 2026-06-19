@@ -1,7 +1,10 @@
 package handler
 
 import (
+	"strconv"
+
 	"github.com/kuaizu-team/kuaizu-service/api"
+	"github.com/kuaizu-team/kuaizu-service/internal/models"
 	"github.com/kuaizu-team/kuaizu-service/internal/service"
 	"github.com/labstack/echo/v4"
 )
@@ -215,4 +218,24 @@ func (s *Server) GetCertificationStatus(ctx echo.Context) error {
 		Status:     (*api.AuthStatus)(&certInfo.Status),
 		AuthImgUrl: certInfo.AuthImgUrl,
 	})
+}
+
+func (s *Server) GetUserCollaborationHistory(ctx echo.Context) error {
+	id, err := strconv.Atoi(ctx.Param("id"))
+	if err != nil || id <= 0 {
+		return BadRequest(ctx, "invalid user id")
+	}
+	var list []models.CollaborationScore
+	if err := s.repo.DB().SelectContext(ctx.Request().Context(), &list, `
+		SELECT cs.id, cs.user_id, cs.project_id, cs.scorer_id, cs.score, cs.created_at,
+			p.name AS project_name, u.nickname AS scorer_nickname
+		FROM collaboration_score cs
+		LEFT JOIN project p ON p.id = cs.project_id
+		LEFT JOIN `+"`user`"+` u ON u.id = cs.scorer_id
+		WHERE cs.user_id = ?
+		ORDER BY cs.created_at DESC, cs.id DESC
+	`, id); err != nil {
+		return InternalError(ctx, "获取协作评分记录失败")
+	}
+	return Success(ctx, list)
 }

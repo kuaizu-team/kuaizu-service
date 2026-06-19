@@ -32,6 +32,7 @@ type User struct {
 	LastViewedMyProjectsAt   *time.Time `db:"last_viewed_my_projects_at"`  // 最后查看我的项目页的时间
 	UserStatus               int        `db:"user_status"`                 // 0=正常, 1=封禁, 2=已毕业
 	BanReason                *string    `db:"ban_reason"`                  // 封禁原因（仅 user_status=1 时有意义）
+	CollaborationScore       *float64   `db:"collaboration_score"`
 	CreatedAt                *time.Time `db:"created_at"`
 
 	// Joined fields (not always populated)
@@ -62,6 +63,11 @@ func (u *User) ToVO() *api.UserVO {
 		TalentProfileId:     u.TalentProfileID,
 		SchoolName:          u.SchoolName,
 		MajorName:           u.MajorName,
+		CollaborationScore:  u.CollaborationScore,
+	}
+	if u.CollaborationScore != nil {
+		level := CollaborationLevel(*u.CollaborationScore)
+		vo.CollaborationLevel = &level
 	}
 
 	if u.AuthStatus != nil {
@@ -99,6 +105,21 @@ func (u *User) ToVO() *api.UserVO {
 	}
 
 	return vo
+}
+
+func CollaborationLevel(score float64) string {
+	switch {
+	case score >= 80:
+		return "极好"
+	case score >= 60:
+		return "优秀"
+	case score >= 40:
+		return "良好"
+	case score >= 20:
+		return "中等"
+	default:
+		return "较差"
+	}
 }
 
 // ptrFullURL takes a nullable relative OSS path and returns a pointer to the full URL.

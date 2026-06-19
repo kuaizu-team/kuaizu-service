@@ -272,7 +272,7 @@ func (r *ProjectRepository) enrichCreatorsBatch(ctx context.Context, projects []
 		}
 		index[projects[i].CreatorID] = append(index[projects[i].CreatorID], i)
 	}
-	query, args, err := sqlx.In(`SELECT u.id,u.openid,u.nickname,u.avatar_url,u.auth_status,s.school_name,m.major_name,tp.id talent_profile_id
+	query, args, err := sqlx.In(`SELECT u.id,u.openid,u.nickname,u.avatar_url,u.auth_status,u.collaboration_score,s.school_name,m.major_name,tp.id talent_profile_id
 		FROM `+"`user`"+` u LEFT JOIN school s ON s.id=u.school_id LEFT JOIN major m ON m.id=u.major_id LEFT JOIN talent_profile tp ON tp.user_id=u.id WHERE u.id IN (?)`, ids)
 	if err != nil {
 		return err

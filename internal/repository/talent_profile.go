@@ -337,7 +337,7 @@ func (r *TalentProfileRepository) List(ctx context.Context, params TalentProfile
 			tp.project_experience, tp.mbti, tp.status, tp.reject_reason, tp.view_count,
 			tp.created_at, tp.updated_at,
 			u.nickname, u.phone, u.email, u.avatar_url,
-			u.school_id, u.major_id, u.grade, u.auth_status
+			u.school_id, u.major_id, u.grade, u.auth_status, u.collaboration_score
 		FROM talent_profile tp
 		LEFT JOIN `+"`user`"+` u ON tp.user_id = u.id%s
 		WHERE %s
@@ -375,7 +375,7 @@ func (r *TalentProfileRepository) GetByID(ctx context.Context, id int) (*models.
 			tp.project_experience, tp.mbti, tp.status, tp.reject_reason, tp.view_count,
 			tp.created_at, tp.updated_at,
 			u.nickname, u.phone, u.email, u.wechat_id, u.avatar_url,
-			u.school_id, u.major_id, u.grade, u.auth_status
+			u.school_id, u.major_id, u.grade, u.auth_status, u.collaboration_score
 		FROM talent_profile tp
 		LEFT JOIN ` + "`user`" + ` u ON tp.user_id = u.id
 		WHERE tp.id = ?
@@ -406,7 +406,7 @@ func (r *TalentProfileRepository) GetByUserID(ctx context.Context, userID int) (
 			tp.project_experience, tp.mbti, tp.status, tp.reject_reason, tp.view_count,
 			tp.created_at, tp.updated_at,
 			u.nickname, u.phone, u.email, u.wechat_id, u.avatar_url,
-			u.school_id, u.major_id, u.grade, u.auth_status
+			u.school_id, u.major_id, u.grade, u.auth_status, u.collaboration_score
 		FROM talent_profile tp
 		LEFT JOIN ` + "`user`" + ` u ON tp.user_id = u.id
 		WHERE tp.user_id = ?

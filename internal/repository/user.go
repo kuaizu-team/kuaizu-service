@@ -29,7 +29,7 @@ func (r *UserRepository) GetByID(ctx context.Context, id int) (*models.User, err
 			u.free_branch_used_today, u.last_active_date,
 			u.auth_status, u.auth_img_url, u.avatar_url, u.cover_image,
 			u.wechat_id, u.sent_olive_viewed_at, u.applications_last_viewed_at, u.last_viewed_my_projects_at,
-			u.user_status, u.ban_reason, u.created_at,
+			u.user_status, u.ban_reason, u.collaboration_score, u.created_at,
 			s.school_name, s.school_code,
 			m.major_name, m.class_id
 		FROM ` + "`user`" + ` u
@@ -55,7 +55,7 @@ func (r *UserRepository) GetByPhone(ctx context.Context, phone string) (*models.
 		SELECT
 			u.id, u.openid, u.nickname, u.phone, u.email,
 			u.school_id, u.major_id, u.grade,
-			u.auth_status, u.avatar_url, u.created_at,
+			u.auth_status, u.avatar_url, u.collaboration_score, u.created_at,
 			s.school_name,
 			m.major_name,
 			tp.id AS talent_profile_id
@@ -87,7 +87,7 @@ func (r *UserRepository) GetByIDForUpdateTx(ctx context.Context, tx *sqlx.Tx, id
 			u.free_branch_used_today, u.last_active_date,
 			u.auth_status, u.auth_img_url, u.avatar_url, u.cover_image,
 			u.wechat_id, u.sent_olive_viewed_at, u.applications_last_viewed_at, u.last_viewed_my_projects_at,
-			u.user_status, u.ban_reason, u.created_at,
+			u.user_status, u.ban_reason, u.collaboration_score, u.created_at,
 			s.school_name, s.school_code,
 			m.major_name, m.class_id
 		FROM ` + "`user`" + ` u
@@ -117,7 +117,7 @@ func (r *UserRepository) GetByOpenID(ctx context.Context, openid string) (*model
 			u.free_branch_used_today, u.last_active_date,
 			u.auth_status, u.auth_img_url, u.avatar_url, u.cover_image,
 			u.wechat_id, u.sent_olive_viewed_at, u.applications_last_viewed_at, u.last_viewed_my_projects_at,
-			u.user_status, u.ban_reason, u.created_at,
+			u.user_status, u.ban_reason, u.collaboration_score, u.created_at,
 			s.school_name, s.school_code,
 			m.major_name, m.class_id
 		FROM ` + "`user`" + ` u
@@ -471,7 +471,7 @@ func (r *UserRepository) ListUsers(ctx context.Context, params UserListParams) (
 			u.school_id, u.major_id, u.grade, u.olive_branch_count,
 			u.free_branch_used_today, u.last_active_date,
 			u.auth_status, u.auth_img_url, u.avatar_url, u.cover_image,
-			u.wechat_id, u.user_status, u.ban_reason, u.created_at,
+			u.wechat_id, u.user_status, u.ban_reason, u.collaboration_score, u.created_at,
 			s.school_name, s.school_code,
 			m.major_name, m.class_id%s
 		FROM `+"`user`"+` u

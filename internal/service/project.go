@@ -580,6 +580,80 @@ func projectMembersContainUser(members []models.ProjectMember, userID int) bool 
 	return false
 }
 
+func (s *ProjectService) RemoveMember(ctx context.Context, projectID int, scorerID int, memberID int, score int) error {
+	if projectID <= 0 || memberID <= 0 {
+		return ErrBadRequest("invalid project or member id")
+	}
+	if score < 0 || score > 100 {
+		return ErrBadRequest("score must be between 0 and 100")
+	}
+	if scorerID == memberID {
+		return ErrBadRequest("不能移除自己")
+	}
+
+	project, err := s.repo.Project.GetByID(ctx, projectID)
+	if err != nil {
+		log.Printf("[ProjectService.RemoveMember] repository error getting project: %v", err)
+		return ErrInternal("获取项目失败")
+	}
+	if project == nil {
+		return ErrNotFound("项目不存在")
+	}
+	members, err := s.repo.Project.ListMembers(ctx, projectID)
+	if err != nil {
+		log.Printf("[ProjectService.RemoveMember] repository error listing members: %v", err)
+		return ErrInternal("获取项目成员失败")
+	}
+	currentRole, _ := currentUserProjectRole(project, scorerID, members)
+	if !canOperateAsHighestRole(currentRole, members) {
+		return ErrForbidden("当前角色不能移除项目成员")
+	}
+
+	found := false
+	for _, member := range members {
+		if member.UserID == memberID {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return ErrNotFound("项目成员不存在")
+	}
+
+	tx, err := s.repo.DB().BeginTxx(ctx, nil)
+	if err != nil {
+		return ErrInternal("开启事务失败")
+	}
+	defer tx.Rollback()
+
+	result, err := tx.ExecContext(ctx, "DELETE FROM project_members WHERE project_id=? AND user_id=?", projectID, memberID)
+	if err != nil {
+		log.Printf("[ProjectService.RemoveMember] delete member failed: %v", err)
+		return ErrInternal("移除项目成员失败")
+	}
+	affected, _ := result.RowsAffected()
+	if affected == 0 {
+		return ErrNotFound("项目成员不存在")
+	}
+
+	if _, err := tx.ExecContext(ctx, `INSERT INTO collaboration_score(user_id, project_id, scorer_id, score, created_at)
+		VALUES (?, ?, ?, ?, NOW())`, memberID, projectID, scorerID, score); err != nil {
+		log.Printf("[ProjectService.RemoveMember] insert score failed: %v", err)
+		return ErrInternal("记录协作评分失败")
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE `+"`user`"+` SET collaboration_score=(
+		SELECT avg_score FROM (SELECT COALESCE(AVG(score), 100) AS avg_score FROM collaboration_score WHERE user_id=?) t
+	) WHERE id=?`, memberID, memberID); err != nil {
+		log.Printf("[ProjectService.RemoveMember] update user score failed: %v", err)
+		return ErrInternal("更新协作指数失败")
+	}
+
+	if err := tx.Commit(); err != nil {
+		return ErrInternal("提交事务失败")
+	}
+	return nil
+}
+
 func (s *ProjectService) resolveProjectSchool(ctx context.Context, creatorID int, schoolID, initiatingSchoolID *int, useCreatorDefault bool) (*int, error) {
 	effectiveSchoolID := schoolID
 	if effectiveSchoolID == nil {

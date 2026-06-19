@@ -38,6 +38,13 @@ properties:
   coverImage:
     type: string
     description: 封面图
+  collaborationScore:
+    type: number
+    format: double
+    description: 协作指数，0-100 分
+  collaborationLevel:
+    type: string
+    description: 协作指数等级（较差/中等/良好/优秀/极好）
   createdAt:
     type: string
     format: date-time
