@@ -38,6 +38,7 @@ type ProjectRepo interface {
 	IsOwner(ctx context.Context, projectID, userID int) (bool, error)
 	IsOwnerOrMember(ctx context.Context, projectID, userID int) (bool, error)
 	HasUnreadPassiveStatusChange(ctx context.Context, userID int) (bool, error)
+	MarkPassiveStatusChange(ctx context.Context, id int) error
 	RoleExists(ctx context.Context, role string) (bool, error)
 	GetMemberRole(ctx context.Context, projectID, userID int) (*string, error)
 	ListMilestones(ctx context.Context, projectID int) ([]models.ProjectMilestone, error)

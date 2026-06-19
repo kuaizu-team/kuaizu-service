@@ -7,6 +7,7 @@ import "github.com/kuaizu-team/kuaizu-service/api"
 type Interaction struct {
 	Liked         bool  `db:"liked" json:"liked"`
 	Favorited     bool  `db:"favorited" json:"favorited"`
+	Shared        bool  `db:"shared" json:"shared"`
 	LikeCount     int   `db:"like_count" json:"likeCount"`
 	FavoriteCount int   `db:"favorite_count" json:"favoriteCount"`
 	ShareCount    int   `db:"share_count" json:"shareCount"`
@@ -15,7 +16,7 @@ type Interaction struct {
 
 func (i Interaction) ToVO() *api.InteractionVO {
 	return &api.InteractionVO{
-		Liked: i.Liked, Favorited: i.Favorited, LikeCount: i.LikeCount,
+		Liked: i.Liked, Favorited: i.Favorited, Shared: i.Shared, LikeCount: i.LikeCount,
 		FavoriteCount: i.FavoriteCount, ShareCount: i.ShareCount,
 	}
 }

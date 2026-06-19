@@ -74,12 +74,13 @@ func getInteraction(ctx context.Context, db sqlx.ExtContext, target string, targ
 	query := fmt.Sprintf(`SELECT
 		EXISTS(SELECT 1 FROM %s WHERE %s=? AND user_id=?) liked,
 		EXISTS(SELECT 1 FROM %s WHERE %s=? AND user_id=?) favorited,
+		EXISTS(SELECT 1 FROM %s WHERE %s=? AND user_id=?) shared,
 		(SELECT COUNT(*) FROM %s WHERE %s=?) like_count,
 		(SELECT COUNT(*) FROM %s WHERE %s=?) favorite_count,
 		(SELECT COUNT(*) FROM %s WHERE %s=?) share_count`,
-		like, idCol, favorite, idCol, like, idCol, favorite, idCol, share, idCol)
+		like, idCol, favorite, idCol, share, idCol, like, idCol, favorite, idCol, share, idCol)
 	var result models.Interaction
-	err = sqlx.GetContext(ctx, db, &result, query, targetID, userID, targetID, userID, targetID, targetID, targetID)
+	err = sqlx.GetContext(ctx, db, &result, query, targetID, userID, targetID, userID, targetID, userID, targetID, targetID, targetID)
 	return &result, err
 }
 
@@ -170,7 +171,7 @@ func (r *InteractionRepository) Batch(ctx context.Context, target string, target
 		return nil, err
 	}
 	parts := make([]string, len(targetIDs))
-	args := []interface{}{userID, userID}
+	args := []interface{}{userID, userID, userID}
 	for i, id := range targetIDs {
 		if i == 0 {
 			parts[i] = "SELECT ? target_id"
@@ -182,11 +183,12 @@ func (r *InteractionRepository) Batch(ctx context.Context, target string, target
 	query := fmt.Sprintf(`SELECT x.target_id,
 		EXISTS(SELECT 1 FROM %s WHERE %s=x.target_id AND user_id=?) liked,
 		EXISTS(SELECT 1 FROM %s WHERE %s=x.target_id AND user_id=?) favorited,
+		EXISTS(SELECT 1 FROM %s WHERE %s=x.target_id AND user_id=?) shared,
 		(SELECT COUNT(*) FROM %s WHERE %s=x.target_id) like_count,
 		(SELECT COUNT(*) FROM %s WHERE %s=x.target_id) favorite_count,
 		(SELECT COUNT(*) FROM %s WHERE %s=x.target_id) share_count
 		FROM (%s) x`,
-		like, idCol, favorite, idCol, like, idCol, favorite, idCol, share, idCol, strings.Join(parts, " UNION ALL "))
+		like, idCol, favorite, idCol, share, idCol, like, idCol, favorite, idCol, share, idCol, strings.Join(parts, " UNION ALL "))
 	type row struct {
 		TargetID int `db:"target_id"`
 		models.Interaction

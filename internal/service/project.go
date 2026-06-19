@@ -571,6 +571,15 @@ func (s *ProjectService) buildProjectMembers(ctx context.Context, input *[]api.P
 	return &members, nil
 }
 
+func projectMembersContainUser(members []models.ProjectMember, userID int) bool {
+	for _, member := range members {
+		if member.UserID == userID {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *ProjectService) resolveProjectSchool(ctx context.Context, creatorID int, schoolID, initiatingSchoolID *int, useCreatorDefault bool) (*int, error) {
 	effectiveSchoolID := schoolID
 	if effectiveSchoolID == nil {
@@ -736,6 +745,9 @@ func (s *ProjectService) UpdateProject(ctx context.Context, id, userID int, inpu
 	members, err := s.buildProjectMembers(ctx, input.Members, 0, nil, false)
 	if err != nil {
 		return nil, err
+	}
+	if members != nil && !projectMembersContainUser(*members, userID) {
+		return nil, ErrBadRequest("不能删除自己")
 	}
 
 	if !isOwner {
@@ -1287,6 +1299,13 @@ func (s *ProjectService) ReviewProject(ctx context.Context, id, status int, reje
 	} else if err := s.repo.Project.UpdateStatus(ctx, id, status); err != nil {
 		log.Printf("[ProjectService.ReviewProject] repository error updating status: %v", err)
 		return ErrInternal("审核失败")
+	}
+	if project.Status == models.ProjectStatusPending &&
+		(status == models.ProjectStatusApproved || status == models.ProjectStatusRejected) {
+		if err := s.repo.Project.MarkPassiveStatusChange(ctx, id); err != nil {
+			log.Printf("[ProjectService.ReviewProject] repository error marking passive status change: %v", err)
+			return ErrInternal("审核失败")
+		}
 	}
 
 	// 向项目负责人发送审核结果通知

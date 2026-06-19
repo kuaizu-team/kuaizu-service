@@ -60,7 +60,7 @@ VALUES (
   'E4chXELjSpL2SqcanY7ooXRIs365cyYad7I0hrbylmg',
   '版本更新通知',
   JSON_OBJECT('title', 'thing5', 'content', 'thing3', 'remark', 'thing6'),
-  'pages/roadmap/roadmap'
+  'pages/home/home'
 )
 ON DUPLICATE KEY UPDATE
   `template_id` = VALUES(`template_id`),

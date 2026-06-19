@@ -155,15 +155,15 @@ func TestBatchUsesRequestedTargetsAsBaseSet(t *testing.T) {
 	db := openCaptureDB(t)
 	defer db.Close()
 	repo := NewInteractionRepository(sqlx.NewDb(db, "capture_user_repo"))
-	setCapturedQuery([]string{"target_id", "liked", "favorited", "like_count", "favorite_count", "share_count"}, [][]driver.Value{
-		{int64(10), false, true, int64(0), int64(1), int64(2)},
+	setCapturedQuery([]string{"target_id", "liked", "favorited", "shared", "like_count", "favorite_count", "share_count"}, [][]driver.Value{
+		{int64(10), false, true, true, int64(0), int64(1), int64(2)},
 	})
 
 	got, err := repo.Batch(context.Background(), InteractionProject, []int{10}, 7)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if item := got[10]; item.LikeCount != 0 || item.FavoriteCount != 1 || item.ShareCount != 2 || !item.Favorited {
+	if item := got[10]; item.LikeCount != 0 || item.FavoriteCount != 1 || item.ShareCount != 2 || !item.Favorited || !item.Shared {
 		t.Fatalf("unexpected batch interaction: %#v", got[10])
 	}
 	capturedQuery.Lock()
