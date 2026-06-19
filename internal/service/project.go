@@ -571,6 +571,15 @@ func (s *ProjectService) buildProjectMembers(ctx context.Context, input *[]api.P
 	return &members, nil
 }
 
+func projectMembersContainUser(members []models.ProjectMember, userID int) bool {
+	for _, member := range members {
+		if member.UserID == userID {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *ProjectService) resolveProjectSchool(ctx context.Context, creatorID int, schoolID, initiatingSchoolID *int, useCreatorDefault bool) (*int, error) {
 	effectiveSchoolID := schoolID
 	if effectiveSchoolID == nil {
@@ -736,6 +745,9 @@ func (s *ProjectService) UpdateProject(ctx context.Context, id, userID int, inpu
 	members, err := s.buildProjectMembers(ctx, input.Members, 0, nil, false)
 	if err != nil {
 		return nil, err
+	}
+	if members != nil && !projectMembersContainUser(*members, userID) {
+		return nil, ErrBadRequest("不能删除自己")
 	}
 
 	if !isOwner {
