@@ -40,19 +40,20 @@ type OliveBranchDashboardStats struct {
 
 // obUserRow holds JOIN-ed user + school + major columns for olive branch queries.
 type obUserRow struct {
-	UID         int     `db:"u_id"`
-	UNickname   *string `db:"u_nickname"`
-	UPhone      *string `db:"u_phone"`
-	UEmail      *string `db:"u_email"`
-	UGrade      *int    `db:"u_grade"`
-	UAuthStatus *int    `db:"u_auth_status"`
-	UAvatarUrl  *string `db:"u_avatar_url"`
-	USchoolID   *int    `db:"u_school_id"`
-	UMajorID    *int    `db:"u_major_id"`
-	USchoolName *string `db:"u_school_name"`
-	USchoolCode *string `db:"u_school_code"`
-	UMajorName  *string `db:"u_major_name"`
-	UClassID    *int    `db:"u_class_id"`
+	UID                 int      `db:"u_id"`
+	UNickname           *string  `db:"u_nickname"`
+	UPhone              *string  `db:"u_phone"`
+	UEmail              *string  `db:"u_email"`
+	UGrade              *int     `db:"u_grade"`
+	UAuthStatus         *int     `db:"u_auth_status"`
+	UAvatarUrl          *string  `db:"u_avatar_url"`
+	UCollaborationScore *float64 `db:"u_collaboration_score"`
+	USchoolID           *int     `db:"u_school_id"`
+	UMajorID            *int     `db:"u_major_id"`
+	USchoolName         *string  `db:"u_school_name"`
+	USchoolCode         *string  `db:"u_school_code"`
+	UMajorName          *string  `db:"u_major_name"`
+	UClassID            *int     `db:"u_class_id"`
 }
 
 // obRow is the flat scan target (olive branch + user columns).
@@ -99,6 +100,7 @@ func (r *OliveBranchRepository) ListByReceiverID(ctx context.Context, params Oli
 			s.grade       AS u_grade,
 			s.auth_status AS u_auth_status,
 			s.avatar_url  AS u_avatar_url,
+			s.collaboration_score AS u_collaboration_score,
 			s.school_id   AS u_school_id,
 			s.major_id    AS u_major_id,
 			sch.school_name AS u_school_name,
@@ -133,19 +135,20 @@ func (r *OliveBranchRepository) ListByReceiverID(ctx context.Context, params Oli
 		}
 		ob := row.OliveBranch
 		ob.Sender = &models.User{
-			ID:         row.UID,
-			Nickname:   row.UNickname,
-			Phone:      row.UPhone,
-			Email:      row.UEmail,
-			Grade:      row.UGrade,
-			AuthStatus: row.UAuthStatus,
-			AvatarUrl:  row.UAvatarUrl,
-			SchoolID:   row.USchoolID,
-			MajorID:    row.UMajorID,
-			SchoolName: row.USchoolName,
-			SchoolCode: row.USchoolCode,
-			MajorName:  row.UMajorName,
-			ClassID:    row.UClassID,
+			ID:                 row.UID,
+			Nickname:           row.UNickname,
+			Phone:              row.UPhone,
+			Email:              row.UEmail,
+			Grade:              row.UGrade,
+			AuthStatus:         row.UAuthStatus,
+			AvatarUrl:          row.UAvatarUrl,
+			CollaborationScore: row.UCollaborationScore,
+			SchoolID:           row.USchoolID,
+			MajorID:            row.UMajorID,
+			SchoolName:         row.USchoolName,
+			SchoolCode:         row.USchoolCode,
+			MajorName:          row.UMajorName,
+			ClassID:            row.UClassID,
 		}
 		records = append(records, ob)
 	}
@@ -303,6 +306,7 @@ func (r *OliveBranchRepository) ListBySenderID(ctx context.Context, params Olive
 			recv.grade       AS u_grade,
 			recv.auth_status AS u_auth_status,
 			recv.avatar_url  AS u_avatar_url,
+			recv.collaboration_score AS u_collaboration_score,
 			recv.school_id   AS u_school_id,
 			recv.major_id    AS u_major_id,
 			sch.school_name  AS u_school_name,
@@ -351,19 +355,20 @@ func (r *OliveBranchRepository) ListBySenderID(ctx context.Context, params Olive
 		}
 		ob := row.OliveBranch
 		ob.Receiver = &models.User{
-			ID:         row.UID,
-			Nickname:   row.UNickname,
-			Phone:      row.UPhone,
-			Email:      row.UEmail,
-			Grade:      row.UGrade,
-			AuthStatus: row.UAuthStatus,
-			AvatarUrl:  row.UAvatarUrl,
-			SchoolID:   row.USchoolID,
-			MajorID:    row.UMajorID,
-			SchoolName: row.USchoolName,
-			SchoolCode: row.USchoolCode,
-			MajorName:  row.UMajorName,
-			ClassID:    row.UClassID,
+			ID:                 row.UID,
+			Nickname:           row.UNickname,
+			Phone:              row.UPhone,
+			Email:              row.UEmail,
+			Grade:              row.UGrade,
+			AuthStatus:         row.UAuthStatus,
+			AvatarUrl:          row.UAvatarUrl,
+			CollaborationScore: row.UCollaborationScore,
+			SchoolID:           row.USchoolID,
+			MajorID:            row.UMajorID,
+			SchoolName:         row.USchoolName,
+			SchoolCode:         row.USchoolCode,
+			MajorName:          row.UMajorName,
+			ClassID:            row.UClassID,
 		}
 		if row.SmsID != nil {
 			ob.SmsNotice = &models.SmsNotice{
@@ -477,6 +482,7 @@ func (r *OliveBranchRepository) ListByRelatedProjectID(ctx context.Context, para
 			recv.grade       AS u_grade,
 			recv.auth_status AS u_auth_status,
 			recv.avatar_url  AS u_avatar_url,
+			recv.collaboration_score AS u_collaboration_score,
 			recv.school_id   AS u_school_id,
 			recv.major_id    AS u_major_id,
 			sch.school_name  AS u_school_name,
@@ -506,19 +512,20 @@ func (r *OliveBranchRepository) ListByRelatedProjectID(ctx context.Context, para
 		}
 		ob := row.OliveBranch
 		ob.Receiver = &models.User{
-			ID:         row.UID,
-			Nickname:   row.UNickname,
-			Phone:      row.UPhone,
-			Email:      row.UEmail,
-			Grade:      row.UGrade,
-			AuthStatus: row.UAuthStatus,
-			AvatarUrl:  row.UAvatarUrl,
-			SchoolID:   row.USchoolID,
-			MajorID:    row.UMajorID,
-			SchoolName: row.USchoolName,
-			SchoolCode: row.USchoolCode,
-			MajorName:  row.UMajorName,
-			ClassID:    row.UClassID,
+			ID:                 row.UID,
+			Nickname:           row.UNickname,
+			Phone:              row.UPhone,
+			Email:              row.UEmail,
+			Grade:              row.UGrade,
+			AuthStatus:         row.UAuthStatus,
+			AvatarUrl:          row.UAvatarUrl,
+			CollaborationScore: row.UCollaborationScore,
+			SchoolID:           row.USchoolID,
+			MajorID:            row.UMajorID,
+			SchoolName:         row.USchoolName,
+			SchoolCode:         row.USchoolCode,
+			MajorName:          row.UMajorName,
+			ClassID:            row.UClassID,
 		}
 		records = append(records, ob)
 	}

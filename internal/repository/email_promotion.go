@@ -440,11 +440,12 @@ func bestPromotionPredicate(alias, otherAlias string) string {
 
 // ProjectPromotionUser is a safe display row for a promotion recipient.
 type ProjectPromotionUser struct {
-	UserID          int     `db:"user_id" json:"userId"`
-	TalentProfileID *int    `db:"talent_profile_id" json:"talentProfileId"`
-	Nickname        *string `db:"nickname" json:"nickname"`
-	AvatarUrl       *string `db:"avatar_url" json:"avatarUrl"`
-	AuthStatus      int     `db:"auth_status" json:"authStatus"`
+	UserID             int      `db:"user_id" json:"userId"`
+	TalentProfileID    *int     `db:"talent_profile_id" json:"talentProfileId"`
+	Nickname           *string  `db:"nickname" json:"nickname"`
+	AvatarUrl          *string  `db:"avatar_url" json:"avatarUrl"`
+	AuthStatus         int      `db:"auth_status" json:"authStatus"`
+	CollaborationScore *float64 `db:"collaboration_score" json:"collaborationScore,omitempty"`
 }
 
 // ListProjectPromotionUsers returns recipient users for a promotion batch.
@@ -469,7 +470,8 @@ func (r *EmailPromotionRepository) ListProjectPromotionUsers(ctx context.Context
 				tp.id AS talent_profile_id,
 				u.nickname,
 				u.avatar_url,
-				COALESCE(u.auth_status, 0) AS auth_status
+				COALESCE(u.auth_status, 0) AS auth_status,
+				u.collaboration_score
 			FROM email_promotion_recipient epr
 			JOIN ` + "`user`" + ` u ON u.id = epr.user_id
 			LEFT JOIN (
@@ -507,7 +509,8 @@ func (r *EmailPromotionRepository) ListProjectPromotionUsers(ctx context.Context
 			tp.id AS talent_profile_id,
 			u.nickname,
 			u.avatar_url,
-			COALESCE(u.auth_status, 0) AS auth_status
+			COALESCE(u.auth_status, 0) AS auth_status,
+			u.collaboration_score
 		FROM email_task et
 		JOIN ` + "`user`" + ` u ON u.email = et.recipient_email
 		LEFT JOIN (
@@ -518,7 +521,7 @@ func (r *EmailPromotionRepository) ListProjectPromotionUsers(ctx context.Context
 		WHERE et.promotion_id = ?
 		  AND et.recipient_email IS NOT NULL AND et.recipient_email != ''
 		  AND u.email IS NOT NULL AND u.email != ''
-		GROUP BY u.id, tp.id, u.nickname, u.avatar_url, u.auth_status
+		GROUP BY u.id, tp.id, u.nickname, u.avatar_url, u.auth_status, u.collaboration_score
 		ORDER BY MIN(et.create_time) ASC, u.id ASC
 		LIMIT ? OFFSET ?
 	`

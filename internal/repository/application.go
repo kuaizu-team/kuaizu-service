@@ -45,20 +45,21 @@ type ApplicationListParams struct {
 
 // userWithSchoolMajor holds user + school + major columns for the second batch query.
 type userWithSchoolMajor struct {
-	ID         int     `db:"id"`
-	OpenID     string  `db:"openid"`
-	Nickname   *string `db:"nickname"`
-	Phone      *string `db:"phone"`
-	Email      *string `db:"email"`
-	AvatarUrl  *string `db:"avatar_url"`
-	AuthStatus *int    `db:"auth_status"`
-	Grade      *int    `db:"grade"`
-	SchoolID   *int    `db:"school_id"`
-	MajorID    *int    `db:"major_id"`
-	SchoolName *string `db:"school_name"`
-	SchoolCode *string `db:"school_code"`
-	MajorName  *string `db:"major_name"`
-	ClassID    *int    `db:"class_id"`
+	ID                 int      `db:"id"`
+	OpenID             string   `db:"openid"`
+	Nickname           *string  `db:"nickname"`
+	Phone              *string  `db:"phone"`
+	Email              *string  `db:"email"`
+	AvatarUrl          *string  `db:"avatar_url"`
+	AuthStatus         *int     `db:"auth_status"`
+	CollaborationScore *float64 `db:"collaboration_score"`
+	Grade              *int     `db:"grade"`
+	SchoolID           *int     `db:"school_id"`
+	MajorID            *int     `db:"major_id"`
+	SchoolName         *string  `db:"school_name"`
+	SchoolCode         *string  `db:"school_code"`
+	MajorName          *string  `db:"major_name"`
+	ClassID            *int     `db:"class_id"`
 }
 
 // talentProfileRow holds talent_profile columns for the third batch query.
@@ -133,7 +134,7 @@ func (r *ApplicationRepository) List(ctx context.Context, params ApplicationList
 	userQuery, userArgs, err := sqlx.In(`
 		SELECT
 			u.id, u.openid, u.nickname, u.phone, u.email, u.avatar_url,
-			u.auth_status, u.grade, u.school_id, u.major_id,
+			u.auth_status, u.collaboration_score, u.grade, u.school_id, u.major_id,
 			s.school_name, s.school_code,
 			m.major_name, m.class_id
 		FROM `+"`user`"+` u
@@ -155,20 +156,21 @@ func (r *ApplicationRepository) List(ctx context.Context, params ApplicationList
 	userMap := make(map[int]*models.User, len(userRows))
 	for _, row := range userRows {
 		userMap[row.ID] = &models.User{
-			ID:         row.ID,
-			OpenID:     row.OpenID,
-			Nickname:   row.Nickname,
-			Phone:      row.Phone,
-			Email:      row.Email,
-			AvatarUrl:  row.AvatarUrl,
-			AuthStatus: row.AuthStatus,
-			Grade:      row.Grade,
-			SchoolID:   row.SchoolID,
-			MajorID:    row.MajorID,
-			SchoolName: row.SchoolName,
-			SchoolCode: row.SchoolCode,
-			MajorName:  row.MajorName,
-			ClassID:    row.ClassID,
+			ID:                 row.ID,
+			OpenID:             row.OpenID,
+			Nickname:           row.Nickname,
+			Phone:              row.Phone,
+			Email:              row.Email,
+			AvatarUrl:          row.AvatarUrl,
+			AuthStatus:         row.AuthStatus,
+			CollaborationScore: row.CollaborationScore,
+			Grade:              row.Grade,
+			SchoolID:           row.SchoolID,
+			MajorID:            row.MajorID,
+			SchoolName:         row.SchoolName,
+			SchoolCode:         row.SchoolCode,
+			MajorName:          row.MajorName,
+			ClassID:            row.ClassID,
 		}
 	}
 
