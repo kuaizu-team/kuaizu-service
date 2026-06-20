@@ -129,6 +129,7 @@ func main() {
 	// Project-application unread badge endpoints
 	apiGroup.GET("/project-applications/my/unread-status", server.GetMyApplicationUnreadStatus)
 	apiGroup.POST("/project-applications/my/mark-read", server.MarkMyApplicationsRead)
+	apiGroup.GET("/users/me/collaboration-history", server.GetMyCollaborationHistory)
 	apiGroup.GET("/users/me/project-status-unread", server.GetMyProjectStatusUnread)
 	apiGroup.POST("/users/me/project-status-read", server.MarkMyProjectStatusRead)
 

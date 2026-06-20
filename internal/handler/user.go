@@ -2,6 +2,7 @@ package handler
 
 import (
 	"github.com/kuaizu-team/kuaizu-service/api"
+	"github.com/kuaizu-team/kuaizu-service/internal/models"
 	"github.com/kuaizu-team/kuaizu-service/internal/service"
 	"github.com/labstack/echo/v4"
 )
@@ -27,6 +28,26 @@ func (s *Server) GetCurrentUser(ctx echo.Context) error {
 	}
 
 	return Success(ctx, toExtendedUserVO(user))
+}
+
+// GetMyCollaborationHistory handles GET /users/me/collaboration-history.
+func (s *Server) GetMyCollaborationHistory(ctx echo.Context) error {
+	userID := GetUserID(ctx)
+
+	var list []models.CollaborationScore
+	if err := s.repo.DB().SelectContext(ctx.Request().Context(), &list, `
+		SELECT cs.id, cs.user_id, cs.project_id, cs.scorer_id, cs.score, cs.created_at,
+			p.name AS project_name, u.nickname AS scorer_nickname
+		FROM collaboration_score cs
+		LEFT JOIN project p ON p.id = cs.project_id
+		LEFT JOIN `+"`user`"+` u ON u.id = cs.scorer_id
+		WHERE cs.user_id = ?
+		ORDER BY cs.created_at DESC, cs.id DESC
+	`, userID); err != nil {
+		return InternalError(ctx, "get collaboration history failed")
+	}
+
+	return Success(ctx, list)
 }
 
 // SearchUserByPhone handles GET /users/search-by-phone.
