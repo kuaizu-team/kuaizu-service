@@ -166,6 +166,75 @@ func (s *AdminServer) GetUser(ctx echo.Context) error {
 	return response.Success(ctx, adminvo.NewAdminUserDetailVO(user, profile))
 }
 
+func (s *AdminServer) GetUserCollaborationHistory(ctx echo.Context) error {
+	id, err := strconv.Atoi(ctx.Param("id"))
+	if err != nil || id <= 0 {
+		return response.BadRequest(ctx, "invalid user id")
+	}
+	var list []models.CollaborationScore
+	if err := s.repo.DB().SelectContext(ctx.Request().Context(), &list, `
+		SELECT cs.id, cs.user_id, cs.project_id, cs.scorer_id, cs.score, cs.created_at,
+			p.name AS project_name, u.nickname AS scorer_nickname
+		FROM collaboration_score cs
+		LEFT JOIN project p ON p.id = cs.project_id
+		LEFT JOIN `+"`user`"+` u ON u.id = cs.scorer_id
+		WHERE cs.user_id = ?
+		ORDER BY cs.created_at DESC, cs.id DESC
+	`, id); err != nil {
+		return response.InternalError(ctx, "获取协作评分记录失败")
+	}
+	return response.Success(ctx, list)
+}
+
+type updateCollaborationScoreRequest struct {
+	Score int `json:"score"`
+}
+
+func (s *AdminServer) UpdateUserCollaborationScore(ctx echo.Context) error {
+	if adminRole(ctx) != models.AdminRoleSuperAdmin {
+		return response.Forbidden(ctx, "权限不足")
+	}
+	userID, err := strconv.Atoi(ctx.Param("id"))
+	if err != nil || userID <= 0 {
+		return response.BadRequest(ctx, "invalid user id")
+	}
+	scoreID, err := strconv.Atoi(ctx.Param("scoreId"))
+	if err != nil || scoreID <= 0 {
+		return response.BadRequest(ctx, "invalid score id")
+	}
+	var req updateCollaborationScoreRequest
+	if err := ctx.Bind(&req); err != nil {
+		return response.BadRequest(ctx, "invalid request body")
+	}
+	if req.Score < 0 || req.Score > 100 {
+		return response.BadRequest(ctx, "score must be between 0 and 100")
+	}
+
+	tx, err := s.repo.DB().BeginTxx(ctx.Request().Context(), nil)
+	if err != nil {
+		return response.InternalError(ctx, "开启事务失败")
+	}
+	defer tx.Rollback()
+
+	result, err := tx.ExecContext(ctx.Request().Context(), "UPDATE collaboration_score SET score=? WHERE id=? AND user_id=?", req.Score, scoreID, userID)
+	if err != nil {
+		return response.InternalError(ctx, "更新评分失败")
+	}
+	affected, _ := result.RowsAffected()
+	if affected == 0 {
+		return response.NotFound(ctx, "评分记录不存在")
+	}
+	if _, err := tx.ExecContext(ctx.Request().Context(), `UPDATE `+"`user`"+` SET collaboration_score=(
+		SELECT avg_score FROM (SELECT COALESCE(AVG(score), 100) AS avg_score FROM collaboration_score WHERE user_id=?) t
+	) WHERE id=?`, userID, userID); err != nil {
+		return response.InternalError(ctx, "更新协作指数失败")
+	}
+	if err := tx.Commit(); err != nil {
+		return response.InternalError(ctx, "提交事务失败")
+	}
+	return response.Success(ctx, map[string]interface{}{"ok": true})
+}
+
 // ListUserApplications handles GET /admin/users/:id/applications
 func (s *AdminServer) ListUserApplications(ctx echo.Context) error {
 	id, err := strconv.Atoi(ctx.Param("id"))

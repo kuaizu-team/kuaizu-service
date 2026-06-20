@@ -76,6 +76,7 @@ type TalentProfile struct {
 	AvatarUrl  *string `db:"avatar_url"`
 	Grade      *int    `db:"grade"`
 	AuthStatus *int    `db:"auth_status"`
+	CollaborationScore *float64 `db:"collaboration_score"`
 	// SchoolID/MajorID are fetched from user table and used for follow-up lookups
 	SchoolID *int `db:"school_id"`
 	MajorID  *int `db:"major_id"`
@@ -96,7 +97,7 @@ func (t *TalentProfile) skills() *[]string {
 
 // ToVO converts TalentProfile to API TalentProfileVO (list view)
 func (t *TalentProfile) ToVO() *api.TalentProfileVO {
-	return &api.TalentProfileVO{
+	vo := &api.TalentProfileVO{
 		Id:           &t.ID,
 		UserId:       &t.UserID,
 		Nickname:     t.Nickname,
@@ -111,6 +112,12 @@ func (t *TalentProfile) ToVO() *api.TalentProfileVO {
 		Grade:        t.Grade,
 		Interaction:  t.Interaction.ToVO(),
 	}
+	if t.CollaborationScore != nil {
+		vo.CollaborationScore = t.CollaborationScore
+		level := CollaborationLevel(*t.CollaborationScore)
+		vo.CollaborationLevel = &level
+	}
+	return vo
 }
 
 // ToDetailVO converts TalentProfile to API TalentProfileDetailVO (detail view)
@@ -134,6 +141,11 @@ func (t *TalentProfile) ToDetailVO() *api.TalentProfileDetailVO {
 		Grade:             t.Grade,
 		AuthStatus:        t.AuthStatus,
 		Interaction:       t.Interaction.ToVO(),
+	}
+	if t.CollaborationScore != nil {
+		vo.CollaborationScore = t.CollaborationScore
+		level := CollaborationLevel(*t.CollaborationScore)
+		vo.CollaborationLevel = &level
 	}
 
 	return vo

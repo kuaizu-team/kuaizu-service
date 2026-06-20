@@ -44,12 +44,13 @@ type HourlyViewItem struct {
 
 // ProjectViewer is one row in the GET /projects/{id}/viewers response.
 type ProjectViewer struct {
-	UserID          int       `db:"user_id"           json:"user_id"`
-	TalentProfileID *int      `db:"talent_profile_id" json:"talent_profile_id"`
-	Nickname        *string   `db:"nickname"          json:"nickname"`
-	AvatarUrl       *string   `db:"avatar_url"        json:"avatar_url"`
-	AuthStatus      int       `db:"auth_status"       json:"auth_status"`
-	LastViewedAt    time.Time `db:"last_viewed_at"    json:"last_viewed_at"`
+	UserID             int       `db:"user_id"           json:"user_id"`
+	TalentProfileID    *int      `db:"talent_profile_id" json:"talent_profile_id"`
+	Nickname           *string   `db:"nickname"          json:"nickname"`
+	AvatarUrl          *string   `db:"avatar_url"        json:"avatar_url"`
+	AuthStatus         int       `db:"auth_status"       json:"auth_status"`
+	CollaborationScore *float64  `db:"collaboration_score" json:"collaboration_score,omitempty"`
+	LastViewedAt       time.Time `db:"last_viewed_at"    json:"last_viewed_at"`
 }
 
 // ProjectViewLogRepository handles project_view_log database operations.
@@ -284,13 +285,14 @@ func (r *ProjectViewLogRepository) GetViewers(ctx context.Context, projectID, li
 	viewers := make([]ProjectViewer, 0)
 	if err := r.db.SelectContext(ctx, &viewers,
 		`SELECT vl.user_id, tp.id AS talent_profile_id, u.nickname, u.avatar_url, COALESCE(u.auth_status, 0) AS auth_status,
+		        u.collaboration_score,
 		        MAX(vl.viewed_at) AS last_viewed_at
 		 FROM project_view_log vl
 		 JOIN `+"`user`"+` u ON u.id = vl.user_id
 		 LEFT JOIN talent_profile tp ON tp.user_id = vl.user_id
 		 WHERE vl.project_id = ? AND vl.user_id IS NOT NULL
 		   AND vl.viewed_at >= NOW() - INTERVAL 24 HOUR AND vl.duration_ms IS NULL
-		 GROUP BY vl.user_id, tp.id, u.nickname, u.avatar_url, u.auth_status
+		 GROUP BY vl.user_id, tp.id, u.nickname, u.avatar_url, u.auth_status, u.collaboration_score
 		 ORDER BY last_viewed_at DESC
 		 LIMIT ?`,
 		projectID, limit,
