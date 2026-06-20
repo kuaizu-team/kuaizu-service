@@ -139,8 +139,6 @@ func main() {
 	apiGroup.POST("/invitation/feedback", server.SubmitInvitationFeedback)
 	apiGroup.GET("/users/me/pending-invitation", server.GetMyPendingInvitation)
 	apiGroup.POST("/users/me/pending-invitation/clear", server.ClearMyPendingInvitation)
-	apiGroup.GET("/users/:id/collaboration-history", server.GetUserCollaborationHistory)
-	apiGroup.POST("/projects/remove-member", server.RemoveProjectMember)
 	apiGroup.GET("/roadmap", server.ListRoadmap)
 	apiGroup.GET("/roadmap/has-new", server.HasNewRoadmap)
 	apiGroup.POST("/roadmap/mark-read", server.MarkRoadmapRead)

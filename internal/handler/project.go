@@ -372,25 +372,13 @@ func (s *Server) DeleteProject(ctx echo.Context, id int) error {
 
 	return SuccessMessage(ctx, "项目已删除")
 }
-
-type removeProjectMemberRequest struct {
-	ProjectID int `json:"projectId"`
-	MemberID  int `json:"memberId"`
-	Score     int `json:"score"`
-}
-
-func (s *Server) RemoveProjectMember(ctx echo.Context) error {
+func (s *Server) RemoveProjectMember(ctx echo.Context, id int, memberId int, params api.RemoveProjectMemberParams) error {
 	userID := GetUserID(ctx)
-	var req removeProjectMemberRequest
-	if err := ctx.Bind(&req); err != nil {
-		return BadRequest(ctx, "请求参数错误")
-	}
-	if err := s.svc.Project.RemoveMember(ctx.Request().Context(), req.ProjectID, userID, req.MemberID, req.Score); err != nil {
+	if err := s.svc.Project.RemoveMember(ctx.Request().Context(), id, userID, memberId, params.Score); err != nil {
 		return mapServiceError(ctx, err)
 	}
 	return Success(ctx, nil)
 }
-
 func (s *Server) RestoreProject(ctx echo.Context, id int) error {
 	userID := GetUserID(ctx)
 	if id <= 0 {

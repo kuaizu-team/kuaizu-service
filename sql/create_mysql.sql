@@ -556,6 +556,7 @@ CREATE TABLE `user` (
   `cover_image` varchar(100) DEFAULT NULL COMMENT '用户中心封面url',
   `unionid` varchar(100) DEFAULT NULL COMMENT '微信用户unionid',
   `last_viewed_my_projects_at` timestamp NULL DEFAULT NULL COMMENT '最后查看我的项目页时间',
+  `collaboration_score` DECIMAL(5,2) NOT NULL DEFAULT 100.00 COMMENT 'collaboration score, 0-100',
   PRIMARY KEY (`id`),
   UNIQUE KEY `openid` (`openid`),
   KEY `idx_user_openid` (`openid`),
@@ -564,6 +565,27 @@ CREATE TABLE `user` (
   CONSTRAINT `fk_user_major` FOREIGN KEY (`major_id`) REFERENCES `major` (`id`) ON DELETE SET NULL,
   CONSTRAINT `fk_user_school` FOREIGN KEY (`school_id`) REFERENCES `school` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB AUTO_INCREMENT=2153 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='用户表';
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `collaboration_score`
+--
+
+DROP TABLE IF EXISTS `collaboration_score`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `collaboration_score` (
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `user_id` INT UNSIGNED NOT NULL COMMENT 'rated user ID',
+  `project_id` INT UNSIGNED NOT NULL COMMENT 'project ID',
+  `scorer_id` INT UNSIGNED NOT NULL COMMENT 'scorer user ID',
+  `score` TINYINT UNSIGNED NOT NULL COMMENT '0-100 score',
+  `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_collaboration_score_user` (`user_id`),
+  KEY `idx_collaboration_score_project` (`project_id`),
+  KEY `idx_collaboration_score_scorer` (`scorer_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='collaboration score history';
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --

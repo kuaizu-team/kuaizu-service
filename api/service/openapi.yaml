@@ -116,6 +116,8 @@ paths:
     $ref: paths/projects_{id}_end.yaml
   /projects/{id}/restore:
     $ref: paths/projects_{id}_restore.yaml
+  /projects/{id}/members/{memberId}:
+    $ref: paths/projects_{id}_members_{memberId}.yaml
   /projects/my:
     $ref: paths/projects_my.yaml
   /projects/{id}/applications:

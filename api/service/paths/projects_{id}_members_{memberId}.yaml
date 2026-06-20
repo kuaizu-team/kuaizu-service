@@ -1,0 +1,53 @@
+parameters:
+  - name: id
+    in: path
+    required: true
+    schema:
+      type: integer
+    description: 项目ID
+  - name: memberId
+    in: path
+    required: true
+    schema:
+      type: integer
+    description: 成员用户ID
+delete:
+  tags:
+    - Projects
+  summary: 移除项目成员
+  description: 仅项目最高权限角色可操作；移除时记录该成员的协作评分并刷新协作指数。
+  operationId: removeProjectMember
+  parameters:
+    - name: score
+      in: query
+      required: true
+      schema:
+        type: integer
+        minimum: 0
+        maximum: 100
+      description: 移除成员时给出的协作评分，0-100 分
+  responses:
+    '200':
+      description: 操作成功
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/BaseResponse.yaml
+    '400':
+      description: 请求参数错误
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/BaseResponse.yaml
+    '403':
+      description: 当前角色无权移除成员
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/BaseResponse.yaml
+    '404':
+      description: 项目或成员不存在
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/BaseResponse.yaml
