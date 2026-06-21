@@ -289,6 +289,33 @@ func canAssignProjectRole(currentRole *string, assignedRole string) bool {
 	}
 	return projectRolePriority(assignedRole) >= projectRolePriority(*currentRole)
 }
+
+func canSelfUpdateProjectRole(userID int, nextRole string, members []models.ProjectMember) bool {
+	if userID <= 0 || strings.TrimSpace(nextRole) == "" {
+		return false
+	}
+	currentRole := ""
+	highestPriority := 3
+	for _, member := range members {
+		priority := projectRolePriority(member.Role)
+		if priority < highestPriority {
+			highestPriority = priority
+		}
+		if member.UserID == userID {
+			currentRole = member.Role
+		}
+	}
+	if currentRole == "" {
+		return false
+	}
+	currentPriority := projectRolePriority(currentRole)
+	nextPriority := projectRolePriority(nextRole)
+	if currentPriority == highestPriority {
+		return nextPriority >= highestPriority
+	}
+	return nextPriority > highestPriority
+}
+
 func currentUserProjectRole(project *models.Project, userID int, members []models.ProjectMember) (*string, *string) {
 	if userID <= 0 {
 		return nil, nil
@@ -618,11 +645,11 @@ func projectMembersContainUser(members []models.ProjectMember, userID int) bool 
 	return false
 }
 
-func (s *ProjectService) RemoveMember(ctx context.Context, projectID int, scorerID int, memberID int, score int) error {
+func (s *ProjectService) RemoveMember(ctx context.Context, projectID int, scorerID int, memberID int, score *int) error {
 	if projectID <= 0 || memberID <= 0 {
 		return ErrBadRequest("invalid project or member id")
 	}
-	if score < 0 || score > 100 {
+	if score != nil && (*score < 0 || *score > 100) {
 		return ErrBadRequest("score must be between 0 and 100")
 	}
 	if scorerID == memberID {
@@ -674,16 +701,18 @@ func (s *ProjectService) RemoveMember(ctx context.Context, projectID int, scorer
 		return ErrNotFound("项目成员不存在")
 	}
 
-	if _, err := tx.ExecContext(ctx, `INSERT INTO collaboration_score(user_id, project_id, scorer_id, score, created_at)
-		VALUES (?, ?, ?, ?, NOW())`, memberID, projectID, scorerID, score); err != nil {
-		log.Printf("[ProjectService.RemoveMember] insert score failed: %v", err)
-		return ErrInternal("记录协作评分失败")
-	}
-	if _, err := tx.ExecContext(ctx, `UPDATE `+"`user`"+` SET collaboration_score=(
-		SELECT avg_score FROM (SELECT COALESCE(AVG(score), 100) AS avg_score FROM collaboration_score WHERE user_id=?) t
-	) WHERE id=?`, memberID, memberID); err != nil {
-		log.Printf("[ProjectService.RemoveMember] update user score failed: %v", err)
-		return ErrInternal("更新协作指数失败")
+	if score != nil {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO collaboration_score(user_id, project_id, scorer_id, score, created_at)
+			VALUES (?, ?, ?, ?, NOW())`, memberID, projectID, scorerID, *score); err != nil {
+			log.Printf("[ProjectService.RemoveMember] insert score failed: %v", err)
+			return ErrInternal("记录协作评分失败")
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE `+"`user`"+` SET collaboration_score=(
+			SELECT avg_score FROM (SELECT COALESCE(AVG(score), 100) AS avg_score FROM collaboration_score WHERE user_id=?) t
+		) WHERE id=?`, memberID, memberID); err != nil {
+			log.Printf("[ProjectService.RemoveMember] update user score failed: %v", err)
+			return ErrInternal("更新协作指数失败")
+		}
 	}
 
 	if err := tx.Commit(); err != nil {
@@ -898,16 +927,26 @@ func (s *ProjectService) UpdateProject(ctx context.Context, id, userID int, inpu
 			}
 		}
 		additions := make([]models.ProjectMember, 0)
+		selfRoleChanged := false
 		for _, member := range *members {
 			if role, ok := existing[member.UserID]; ok {
 				if role != member.Role {
+					if member.UserID == userID && canSelfUpdateProjectRole(userID, member.Role, existingMembers) {
+						selfRoleChanged = true
+						continue
+					}
 					return nil, ErrForbidden("当前角色不能修改已有成员角色")
 				}
 				continue
 			}
 			additions = append(additions, member)
 		}
-		if err := s.repo.Project.AddMembers(ctx, id, additions); err != nil {
+		if selfRoleChanged {
+			if err := s.repo.Project.ReplaceMembers(ctx, id, *members); err != nil {
+				log.Printf("[ProjectService.UpdateProject] repository error replacing members for self role update: %v", err)
+				return nil, ErrInternal("更新项目成员失败")
+			}
+		} else if err := s.repo.Project.AddMembers(ctx, id, additions); err != nil {
 			log.Printf("[ProjectService.UpdateProject] repository error adding members: %v", err)
 			return nil, ErrInternal("添加项目成员失败")
 		}
