@@ -821,8 +821,8 @@ func (r *ProjectRepository) CompleteRecruit(ctx context.Context, id int) (int64,
 	}
 
 	result, err = tx.ExecContext(ctx,
-		`UPDATE project_application SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE project_id = ? AND status = ?`,
-		models.ApplicationStatusRejected, id, models.ApplicationStatusPending,
+		`UPDATE project_application SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE project_id = ? AND status IN (?, ?)`,
+		models.ApplicationStatusRejected, id, models.ApplicationStatusPending, models.ApplicationStatusDiscussing,
 	)
 	if err != nil {
 		return 0, fmt.Errorf("reject pending applications after complete recruit: %w", err)

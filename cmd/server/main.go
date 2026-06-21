@@ -135,7 +135,6 @@ func main() {
 
 	// Project-application reviewer read status
 	apiGroup.POST("/project-applications/mark-read", server.MarkReviewerApplicationRead)
-	apiGroup.POST("/project-applications/:id/assign-role", server.AssignApplicationRole)
 
 	// Super-admin invitation feedback
 	apiGroup.POST("/invitation/feedback", server.SubmitInvitationFeedback)

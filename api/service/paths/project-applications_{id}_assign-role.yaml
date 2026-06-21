@@ -1,0 +1,31 @@
+parameters:
+  - name: id
+    in: path
+    required: true
+    schema:
+      type: integer
+    description: Application ID
+post:
+  tags:
+    - ProjectApplications
+  summary: Assign project role to an application
+  description: Assigns a project role to a discussing application and marks it as joined.
+  operationId: assignApplicationRole
+  requestBody:
+    required: true
+    content:
+      application/json:
+        schema:
+          type: object
+          required:
+            - role
+          properties:
+            role:
+              type: string
+  responses:
+    '200':
+      description: Operation succeeded
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/BaseResponse.yaml

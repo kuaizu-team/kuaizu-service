@@ -369,7 +369,7 @@ func (r *ApplicationRepository) GetProjectDashboardStats(ctx context.Context, pr
 			COALESCE(SUM(CASE WHEN status <> ? THEN 1 ELSE 0 END), 0) AS processed
 		FROM project_application
 		WHERE project_id = ?
-	`, models.ApplicationStatusApproved, models.ApplicationStatusPending, projectID).Scan(
+	`, models.ApplicationStatusJoined, models.ApplicationStatusPending, projectID).Scan(
 		&stats.Total,
 		&stats.Read,
 		&stats.Approved,
@@ -391,7 +391,7 @@ func (r *ApplicationRepository) GetUserDashboardStats(ctx context.Context, userI
 			COALESCE(SUM(CASE WHEN status <> ? THEN 1 ELSE 0 END), 0) AS processed
 		FROM project_application
 		WHERE user_id = ?
-	`, models.ApplicationStatusApproved, models.ApplicationStatusPending, userID).Scan(
+	`, models.ApplicationStatusJoined, models.ApplicationStatusPending, userID).Scan(
 		&stats.Total,
 		&stats.Read,
 		&stats.Approved,
@@ -428,24 +428,6 @@ func (r *ApplicationRepository) UpdateStatusWithReviewer(ctx context.Context, id
 	result, err := r.db.ExecContext(ctx, query, status, reviewerID, reviewerRole, id)
 	if err != nil {
 		return fmt.Errorf("update application status with reviewer: %w", err)
-	}
-
-	rowsAffected, _ := result.RowsAffected()
-	if rowsAffected == 0 {
-		return fmt.Errorf("application not found")
-	}
-
-	return nil
-}
-
-func (r *ApplicationRepository) UpdateAssignedRole(ctx context.Context, id int, role string) error {
-	query := `UPDATE project_application
-		SET status = ?, assigned_role = ?, updated_at = CURRENT_TIMESTAMP
-		WHERE id = ?`
-
-	result, err := r.db.ExecContext(ctx, query, models.ApplicationStatusJoined, role, id)
-	if err != nil {
-		return fmt.Errorf("update application assigned role: %w", err)
 	}
 
 	rowsAffected, _ := result.RowsAffected()

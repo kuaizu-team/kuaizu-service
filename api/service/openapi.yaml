@@ -124,6 +124,8 @@ paths:
     $ref: paths/projects_{id}_applications.yaml
   /project-applications/{id}:
     $ref: paths/project-applications_{id}.yaml
+  /project-applications/{id}/assign-role:
+    $ref: paths/project-applications_{id}_assign-role.yaml
   /project-applications/my:
     $ref: paths/project-applications_my.yaml
   /talent-profiles:

@@ -603,12 +603,9 @@ func (s *Server) MarkReviewerApplicationRead(ctx echo.Context) error {
 	return Success(ctx, nil)
 }
 
-func (s *Server) AssignApplicationRole(ctx echo.Context) error {
+func (s *Server) AssignApplicationRole(ctx echo.Context, id int) error {
 	userID := GetUserID(ctx)
-	id, err := strconv.Atoi(ctx.Param("id"))
-	if err != nil || id <= 0 {
-		return BadRequest(ctx, "无效的申请 ID")
-	}
+
 	var req struct {
 		Role string `json:"role"`
 	}
