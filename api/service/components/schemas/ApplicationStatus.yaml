@@ -1,10 +1,13 @@
-type: integer
+﻿type: integer
 enum:
   - 0
   - 1
   - 2
+  - 3
 description: |
   申请状态:
   - 0: 待审核
-  - 1: 已通过
+  - 1: 正在互相了解
   - 2: 已拒绝
+  - 3: 已加入团队
+

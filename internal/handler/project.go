@@ -603,6 +603,28 @@ func (s *Server) MarkReviewerApplicationRead(ctx echo.Context) error {
 	return Success(ctx, nil)
 }
 
+func (s *Server) AssignApplicationRole(ctx echo.Context) error {
+	userID := GetUserID(ctx)
+	id, err := strconv.Atoi(ctx.Param("id"))
+	if err != nil || id <= 0 {
+		return BadRequest(ctx, "无效的申请 ID")
+	}
+	var req struct {
+		Role string `json:"role"`
+	}
+	if err := ctx.Bind(&req); err != nil {
+		return BadRequest(ctx, "请求参数错误")
+	}
+	if err := s.svc.Project.AssignApplicationRole(ctx.Request().Context(), service.AssignApplicationRoleInput{
+		ApplicationID: id,
+		UserID:        userID,
+		Role:          req.Role,
+	}); err != nil {
+		return mapServiceError(ctx, err)
+	}
+	return Success(ctx, nil)
+}
+
 // ReviewApplication handles PATCH /project-applications/{id}
 func (s *Server) ReviewApplication(ctx echo.Context, id int) error {
 	userID := GetUserID(ctx)

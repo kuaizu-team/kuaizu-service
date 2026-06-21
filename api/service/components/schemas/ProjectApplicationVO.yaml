@@ -1,4 +1,4 @@
-type: object
+﻿type: object
 properties:
   id:
     type: integer
@@ -12,6 +12,13 @@ properties:
     type: string
   reviewerRoleName:
     type: string
+  assignedRole:
+    type: string
+  assignedRoleName:
+    type: string
+  canReview:
+    type: boolean
+    description: 当前登录用户是否可对该申请执行同意入队/不合适操作
   applicant:
     $ref: ./UserVO.yaml
   applyReason:
@@ -32,3 +39,4 @@ properties:
     description: 项目方是否已读(仅待审核状态有意义)
   talentProfile:
     $ref: ./TalentProfileVO.yaml
+

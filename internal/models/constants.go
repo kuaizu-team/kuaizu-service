@@ -108,9 +108,11 @@ const (
 
 // Project Application Status
 const (
-	ApplicationStatusPending  = 0 // 待审核
-	ApplicationStatusApproved = 1 // 已通过
-	ApplicationStatusRejected = 2 // 已拒绝
+	ApplicationStatusPending    = 0 // 待审核
+	ApplicationStatusDiscussing = 1 // 正在互相了解
+	ApplicationStatusRejected   = 2 // 已拒绝
+	ApplicationStatusJoined     = 3 // 已加入团队
+	ApplicationStatusApproved   = ApplicationStatusDiscussing
 )
 
 // Talent Profile Status

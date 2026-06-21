@@ -104,13 +104,14 @@ func (r *ApplicationRepository) List(ctx context.Context, params ApplicationList
 	query := fmt.Sprintf(`
 		SELECT
 			pa.id, pa.project_id, pa.user_id,
-			pa.status, pa.is_read, pa.reviewer_id, pa.reviewer_role,
+			pa.status, pa.is_read, pa.reviewer_id, pa.reviewer_role, pa.assigned_role,
 			pa.applied_at, pa.updated_at,
 			p.name AS project_name,
-			pr.name AS reviewer_role_name
+			pr.name AS reviewer_role_name, ar.name AS assigned_role_name
 		FROM project_application pa
 		LEFT JOIN project p ON pa.project_id = p.id
 		LEFT JOIN project_role pr ON pr.code = pa.reviewer_role
+		LEFT JOIN project_role ar ON ar.code = pa.assigned_role
 		WHERE %s
 		ORDER BY pa.applied_at DESC
 		LIMIT ? OFFSET ?
@@ -242,7 +243,7 @@ func (r *ApplicationRepository) GetByID(ctx context.Context, id int) (*models.Pr
 	query := `
 		SELECT
 			pa.id, pa.project_id, pa.user_id,
-			pa.status, pa.is_read, pa.reviewer_id, pa.reviewer_role,
+			pa.status, pa.is_read, pa.reviewer_id, pa.reviewer_role, pa.assigned_role,
 			pa.applied_at, pa.updated_at
 		FROM project_application pa
 		WHERE pa.id = ?
@@ -425,6 +426,24 @@ func (r *ApplicationRepository) UpdateStatusWithReviewer(ctx context.Context, id
 	result, err := r.db.ExecContext(ctx, query, status, reviewerID, reviewerRole, id)
 	if err != nil {
 		return fmt.Errorf("update application status with reviewer: %w", err)
+	}
+
+	rowsAffected, _ := result.RowsAffected()
+	if rowsAffected == 0 {
+		return fmt.Errorf("application not found")
+	}
+
+	return nil
+}
+
+func (r *ApplicationRepository) UpdateAssignedRole(ctx context.Context, id int, role string) error {
+	query := `UPDATE project_application
+		SET status = ?, assigned_role = ?, updated_at = CURRENT_TIMESTAMP
+		WHERE id = ?`
+
+	result, err := r.db.ExecContext(ctx, query, models.ApplicationStatusJoined, role, id)
+	if err != nil {
+		return fmt.Errorf("update application assigned role: %w", err)
 	}
 
 	rowsAffected, _ := result.RowsAffected()
