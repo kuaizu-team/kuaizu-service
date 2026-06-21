@@ -251,6 +251,71 @@ func canOperateAsHighestRole(currentRole *string, members []models.ProjectMember
 	return role != ""
 }
 
+func projectRolePriority(role string) int {
+	switch strings.TrimSpace(role) {
+	case models.ProjectRoleTeamLeader:
+		return 1
+	case models.ProjectRoleTeamMember, "":
+		return 3
+	default:
+		return 2
+	}
+}
+
+func canReviewApplicationByRole(currentUserID int, currentRole *string, app *models.ProjectApplication) bool {
+	if currentRole == nil || strings.TrimSpace(*currentRole) == "" || app == nil {
+		return false
+	}
+	if app.Status == models.ApplicationStatusPending {
+		return true
+	}
+	if app.ReviewerID != nil && *app.ReviewerID == currentUserID {
+		return true
+	}
+	if app.ReviewerRole == nil || strings.TrimSpace(*app.ReviewerRole) == "" {
+		return true
+	}
+	currentPriority := projectRolePriority(*currentRole)
+	reviewerPriority := projectRolePriority(*app.ReviewerRole)
+	if currentPriority == 1 {
+		return true
+	}
+	return currentPriority < reviewerPriority
+}
+
+func canAssignProjectRole(currentRole *string, assignedRole string) bool {
+	if currentRole == nil || strings.TrimSpace(*currentRole) == "" || strings.TrimSpace(assignedRole) == "" {
+		return false
+	}
+	return projectRolePriority(assignedRole) >= projectRolePriority(*currentRole)
+}
+
+func canSelfUpdateProjectRole(userID int, nextRole string, members []models.ProjectMember) bool {
+	if userID <= 0 || strings.TrimSpace(nextRole) == "" {
+		return false
+	}
+	currentRole := ""
+	highestPriority := 3
+	for _, member := range members {
+		priority := projectRolePriority(member.Role)
+		if priority < highestPriority {
+			highestPriority = priority
+		}
+		if member.UserID == userID {
+			currentRole = member.Role
+		}
+	}
+	if currentRole == "" {
+		return false
+	}
+	currentPriority := projectRolePriority(currentRole)
+	nextPriority := projectRolePriority(nextRole)
+	if currentPriority == highestPriority {
+		return nextPriority >= highestPriority
+	}
+	return nextPriority > highestPriority
+}
+
 func currentUserProjectRole(project *models.Project, userID int, members []models.ProjectMember) (*string, *string) {
 	if userID <= 0 {
 		return nil, nil
@@ -580,11 +645,11 @@ func projectMembersContainUser(members []models.ProjectMember, userID int) bool 
 	return false
 }
 
-func (s *ProjectService) RemoveMember(ctx context.Context, projectID int, scorerID int, memberID int, score int) error {
+func (s *ProjectService) RemoveMember(ctx context.Context, projectID int, scorerID int, memberID int, score *int) error {
 	if projectID <= 0 || memberID <= 0 {
 		return ErrBadRequest("invalid project or member id")
 	}
-	if score < 0 || score > 100 {
+	if score != nil && (*score < 0 || *score > 100) {
 		return ErrBadRequest("score must be between 0 and 100")
 	}
 	if scorerID == memberID {
@@ -636,16 +701,18 @@ func (s *ProjectService) RemoveMember(ctx context.Context, projectID int, scorer
 		return ErrNotFound("项目成员不存在")
 	}
 
-	if _, err := tx.ExecContext(ctx, `INSERT INTO collaboration_score(user_id, project_id, scorer_id, score, created_at)
-		VALUES (?, ?, ?, ?, NOW())`, memberID, projectID, scorerID, score); err != nil {
-		log.Printf("[ProjectService.RemoveMember] insert score failed: %v", err)
-		return ErrInternal("记录协作评分失败")
-	}
-	if _, err := tx.ExecContext(ctx, `UPDATE `+"`user`"+` SET collaboration_score=(
-		SELECT avg_score FROM (SELECT COALESCE(AVG(score), 100) AS avg_score FROM collaboration_score WHERE user_id=?) t
-	) WHERE id=?`, memberID, memberID); err != nil {
-		log.Printf("[ProjectService.RemoveMember] update user score failed: %v", err)
-		return ErrInternal("更新协作指数失败")
+	if score != nil {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO collaboration_score(user_id, project_id, scorer_id, score, created_at)
+			VALUES (?, ?, ?, ?, NOW())`, memberID, projectID, scorerID, *score); err != nil {
+			log.Printf("[ProjectService.RemoveMember] insert score failed: %v", err)
+			return ErrInternal("记录协作评分失败")
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE `+"`user`"+` SET collaboration_score=(
+			SELECT avg_score FROM (SELECT COALESCE(AVG(score), 100) AS avg_score FROM collaboration_score WHERE user_id=?) t
+		) WHERE id=?`, memberID, memberID); err != nil {
+			log.Printf("[ProjectService.RemoveMember] update user score failed: %v", err)
+			return ErrInternal("更新协作指数失败")
+		}
 	}
 
 	if err := tx.Commit(); err != nil {
@@ -860,16 +927,26 @@ func (s *ProjectService) UpdateProject(ctx context.Context, id, userID int, inpu
 			}
 		}
 		additions := make([]models.ProjectMember, 0)
+		selfRoleChanged := false
 		for _, member := range *members {
 			if role, ok := existing[member.UserID]; ok {
 				if role != member.Role {
+					if member.UserID == userID && canSelfUpdateProjectRole(userID, member.Role, existingMembers) {
+						selfRoleChanged = true
+						continue
+					}
 					return nil, ErrForbidden("当前角色不能修改已有成员角色")
 				}
 				continue
 			}
 			additions = append(additions, member)
 		}
-		if err := s.repo.Project.AddMembers(ctx, id, additions); err != nil {
+		if selfRoleChanged {
+			if err := s.repo.Project.ReplaceMembers(ctx, id, *members); err != nil {
+				log.Printf("[ProjectService.UpdateProject] repository error replacing members for self role update: %v", err)
+				return nil, ErrInternal("更新项目成员失败")
+			}
+		} else if err := s.repo.Project.AddMembers(ctx, id, additions); err != nil {
 			log.Printf("[ProjectService.UpdateProject] repository error adding members: %v", err)
 			return nil, ErrInternal("添加项目成员失败")
 		}
@@ -1125,12 +1202,21 @@ type ApplicationListResult struct {
 func (s *ProjectService) ListProjectApplications(ctx context.Context, projectID, userID int, params repository.ApplicationListParams) (*ApplicationListResult, error) {
 	params.Page, params.Size = normalizePageParams(params.Page, params.Size)
 
-	isReviewer, err := s.repo.Project.IsOwnerOrMember(ctx, projectID, userID)
+	project, err := s.repo.Project.GetByID(ctx, projectID)
 	if err != nil {
-		log.Printf("[ProjectService.ListProjectApplications] repository error checking ownership: %v", err)
+		log.Printf("[ProjectService.ListProjectApplications] repository error getting project: %v", err)
 		return nil, ErrInternal("检查权限失败")
 	}
-	if !isReviewer {
+	if project == nil {
+		return nil, ErrNotFound("项目不存在")
+	}
+	members, err := s.repo.Project.ListMembers(ctx, projectID)
+	if err != nil {
+		log.Printf("[ProjectService.ListProjectApplications] repository error listing members: %v", err)
+		return nil, ErrInternal("检查权限失败")
+	}
+	currentRole, _ := currentUserProjectRole(project, userID, members)
+	if currentRole == nil {
 		return nil, ErrForbidden("无权查看申请列表")
 	}
 
@@ -1140,6 +1226,10 @@ func (s *ProjectService) ListProjectApplications(ctx context.Context, projectID,
 	if err != nil {
 		log.Printf("[ProjectService.ListProjectApplications] repository error: %v", err)
 		return nil, ErrInternal("获取申请列表失败")
+	}
+	for i := range applications {
+		canReview := canReviewApplicationByRole(userID, currentRole, &applications[i])
+		applications[i].CanReview = &canReview
 	}
 
 	totalPages := int((total + int64(params.Size) - 1) / int64(params.Size))
@@ -1250,6 +1340,9 @@ func (s *ProjectService) ReviewApplication(ctx context.Context, applicationID, u
 	if err := IsValidStatus("application.status", int(status)); err != nil {
 		return err
 	}
+	if status != models.ApplicationStatusDiscussing && status != models.ApplicationStatusRejected {
+		return ErrBadRequest("不支持的申请操作")
+	}
 
 	app, err := s.repo.Application.GetByID(ctx, applicationID)
 	if err != nil {
@@ -1258,6 +1351,12 @@ func (s *ProjectService) ReviewApplication(ctx context.Context, applicationID, u
 	}
 	if app == nil {
 		return ErrNotFound("申请不存在")
+	}
+	if app.Status == models.ApplicationStatusRejected || app.Status == models.ApplicationStatusJoined {
+		return ErrBadRequest("当前申请状态不允许操作")
+	}
+	if status == models.ApplicationStatusDiscussing && app.Status != models.ApplicationStatusPending {
+		return ErrBadRequest("只有待审核申请可以进入互相了解")
 	}
 
 	project, err := s.repo.Project.GetByID(ctx, app.ProjectID)
@@ -1268,22 +1367,17 @@ func (s *ProjectService) ReviewApplication(ctx context.Context, applicationID, u
 	if project == nil {
 		return ErrNotFound("项目不存在")
 	}
-	memberRole, err := s.repo.Project.GetMemberRole(ctx, app.ProjectID, userID)
+	members, err := s.repo.Project.ListMembers(ctx, app.ProjectID)
 	if err != nil {
-		log.Printf("[ProjectService.ReviewApplication] repository error checking member role: %v", err)
+		log.Printf("[ProjectService.ReviewApplication] repository error listing members: %v", err)
 		return ErrInternal("检查权限失败")
 	}
-	isOwner := project.CreatorID == userID
-	if !isOwner && memberRole == nil {
+	reviewerRole, _ := currentUserProjectRole(project, userID, members)
+	if reviewerRole == nil {
 		return ErrForbidden("无权审核申请")
 	}
-	reviewerRole := memberRole
-	if reviewerRole == nil && isOwner {
-		reviewerRole = project.PublisherRole
-		if reviewerRole == nil || strings.TrimSpace(*reviewerRole) == "" {
-			fallback := models.ProjectRoleTeamLeader
-			reviewerRole = &fallback
-		}
+	if app.Status != models.ApplicationStatusPending && !canReviewApplicationByRole(userID, reviewerRole, app) {
+		return ErrForbidden("当前角色无权操作该申请")
 	}
 
 	if err := s.repo.Application.UpdateStatusWithReviewer(ctx, applicationID, int(status), userID, reviewerRole); err != nil {
@@ -1291,10 +1385,8 @@ func (s *ProjectService) ReviewApplication(ctx context.Context, applicationID, u
 		return ErrInternal("更新申请状态失败")
 	}
 
-	// 向申请人发送名片投递结果通知
 	go func(asyncCtx context.Context) {
-		// 2. 准备通知数据
-		resultStr := "已通过"
+		resultStr := "正在互相了解"
 		remark := "请在名片-投递名片管理及时处理哦。"
 		if status == models.ApplicationStatusRejected {
 			resultStr = "被拒绝"
@@ -1307,13 +1399,90 @@ func (s *ProjectService) ReviewApplication(ctx context.Context, applicationID, u
 			"remark":          remark,
 		}
 
-		// 3. 发送消息给申请人 (app.UserID)
 		err = s.message.SendSubscribeMsgByBizKey(asyncCtx, app.UserID, models.MsgBizKeyCardDeliveryResult, data)
 		if err != nil {
 			log.Printf("[ProjectService.ReviewApplication] notification error: %v", err)
 		}
 	}(context.WithoutCancel(ctx))
 
+	return nil
+}
+
+type AssignApplicationRoleInput struct {
+	ApplicationID int
+	UserID        int
+	Role          string
+}
+
+func (s *ProjectService) AssignApplicationRole(ctx context.Context, input AssignApplicationRoleInput) error {
+	role := strings.TrimSpace(input.Role)
+	if input.ApplicationID <= 0 || input.UserID <= 0 || role == "" {
+		return ErrBadRequest("参数错误")
+	}
+
+	app, err := s.repo.Application.GetByID(ctx, input.ApplicationID)
+	if err != nil {
+		log.Printf("[ProjectService.AssignApplicationRole] repository error getting application: %v", err)
+		return ErrInternal("获取申请信息失败")
+	}
+	if app == nil {
+		return ErrNotFound("申请不存在")
+	}
+	if app.Status != models.ApplicationStatusDiscussing {
+		return ErrBadRequest("只有正在互相了解的申请可以同意入队")
+	}
+	project, err := s.repo.Project.GetByID(ctx, app.ProjectID)
+	if err != nil {
+		log.Printf("[ProjectService.AssignApplicationRole] repository error getting project: %v", err)
+		return ErrInternal("获取项目信息失败")
+	}
+	if project == nil {
+		return ErrNotFound("项目不存在")
+	}
+	members, err := s.repo.Project.ListMembers(ctx, app.ProjectID)
+	if err != nil {
+		log.Printf("[ProjectService.AssignApplicationRole] repository error listing members: %v", err)
+		return ErrInternal("检查权限失败")
+	}
+	currentRole, _ := currentUserProjectRole(project, input.UserID, members)
+	if !canReviewApplicationByRole(input.UserID, currentRole, app) {
+		return ErrForbidden("当前角色无权操作该申请")
+	}
+	if !canAssignProjectRole(currentRole, role) {
+		return ErrForbidden("当前角色不能分配该团队角色")
+	}
+	exists, err := s.repo.Project.RoleExists(ctx, role)
+	if err != nil {
+		return ErrInternal("校验项目角色失败")
+	}
+	if !exists {
+		return ErrBadRequest("项目角色不存在")
+	}
+
+	tx, err := s.repo.DB().BeginTxx(ctx, nil)
+	if err != nil {
+		return ErrInternal("开启事务失败")
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `INSERT INTO project_members(project_id,user_id,role)
+		VALUES(?,?,?)
+		ON DUPLICATE KEY UPDATE role=VALUES(role), updated_at=CURRENT_TIMESTAMP`, app.ProjectID, app.UserID, role); err != nil {
+		log.Printf("[ProjectService.AssignApplicationRole] add member failed: %v", err)
+		return ErrInternal("添加项目成员失败")
+	}
+	result, err := tx.ExecContext(ctx, `UPDATE project_application
+		SET status=?, assigned_role=?, updated_at=CURRENT_TIMESTAMP
+		WHERE id=?`, models.ApplicationStatusJoined, role, input.ApplicationID)
+	if err != nil {
+		log.Printf("[ProjectService.AssignApplicationRole] update application failed: %v", err)
+		return ErrInternal("更新申请状态失败")
+	}
+	if rows, _ := result.RowsAffected(); rows == 0 {
+		return ErrNotFound("申请不存在")
+	}
+	if err := tx.Commit(); err != nil {
+		return ErrInternal("提交事务失败")
+	}
 	return nil
 }
 

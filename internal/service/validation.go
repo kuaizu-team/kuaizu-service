@@ -50,8 +50,8 @@ func IsValidStatus(field string, status int) error {
 			return ErrBadRequest(fmt.Sprintf("无效的学历要求: %d", status))
 		}
 	case "application.status":
-		// 状态:0-待审核,1-已通过,2-已拒绝
-		if status < models.ApplicationStatusPending || status > models.ApplicationStatusRejected {
+		// 状态:0-待审核,1-正在互相了解,2-已拒绝,3-已加入团队
+		if status < models.ApplicationStatusPending || status > models.ApplicationStatusJoined {
 			return ErrBadRequest(fmt.Sprintf("无效的申请状态: %d", status))
 		}
 	case "talent_profile.status":

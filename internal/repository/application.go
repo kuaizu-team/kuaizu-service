@@ -104,13 +104,16 @@ func (r *ApplicationRepository) List(ctx context.Context, params ApplicationList
 	query := fmt.Sprintf(`
 		SELECT
 			pa.id, pa.project_id, pa.user_id,
-			pa.status, pa.is_read, pa.reviewer_id, pa.reviewer_role,
+			pa.status, pa.is_read, pa.reviewer_id, pa.reviewer_role, pa.assigned_role,
 			pa.applied_at, pa.updated_at,
 			p.name AS project_name,
-			pr.name AS reviewer_role_name
+			pr.name AS reviewer_role_name, ar.name AS assigned_role_name,
+			CASE WHEN pm.id IS NULL THEN FALSE ELSE TRUE END AS is_current_member
 		FROM project_application pa
 		LEFT JOIN project p ON pa.project_id = p.id
 		LEFT JOIN project_role pr ON pr.code = pa.reviewer_role
+		LEFT JOIN project_role ar ON ar.code = pa.assigned_role
+		LEFT JOIN project_members pm ON pm.project_id = pa.project_id AND pm.user_id = pa.user_id
 		WHERE %s
 		ORDER BY pa.applied_at DESC
 		LIMIT ? OFFSET ?
@@ -242,7 +245,7 @@ func (r *ApplicationRepository) GetByID(ctx context.Context, id int) (*models.Pr
 	query := `
 		SELECT
 			pa.id, pa.project_id, pa.user_id,
-			pa.status, pa.is_read, pa.reviewer_id, pa.reviewer_role,
+			pa.status, pa.is_read, pa.reviewer_id, pa.reviewer_role, pa.assigned_role,
 			pa.applied_at, pa.updated_at
 		FROM project_application pa
 		WHERE pa.id = ?
@@ -366,7 +369,7 @@ func (r *ApplicationRepository) GetProjectDashboardStats(ctx context.Context, pr
 			COALESCE(SUM(CASE WHEN status <> ? THEN 1 ELSE 0 END), 0) AS processed
 		FROM project_application
 		WHERE project_id = ?
-	`, models.ApplicationStatusApproved, models.ApplicationStatusPending, projectID).Scan(
+	`, models.ApplicationStatusJoined, models.ApplicationStatusPending, projectID).Scan(
 		&stats.Total,
 		&stats.Read,
 		&stats.Approved,
@@ -388,7 +391,7 @@ func (r *ApplicationRepository) GetUserDashboardStats(ctx context.Context, userI
 			COALESCE(SUM(CASE WHEN status <> ? THEN 1 ELSE 0 END), 0) AS processed
 		FROM project_application
 		WHERE user_id = ?
-	`, models.ApplicationStatusApproved, models.ApplicationStatusPending, userID).Scan(
+	`, models.ApplicationStatusJoined, models.ApplicationStatusPending, userID).Scan(
 		&stats.Total,
 		&stats.Read,
 		&stats.Approved,

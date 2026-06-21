@@ -10,6 +10,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func removeScorePtr(v int) *int { return &v }
+
 func TestRemoveMemberRejectsInvalidInputBeforeRepository(t *testing.T) {
 	svc := NewProjectService(&repository.Repository{}, nil, nil)
 
@@ -18,14 +20,14 @@ func TestRemoveMemberRejectsInvalidInputBeforeRepository(t *testing.T) {
 		projectID int
 		scorerID  int
 		memberID  int
-		score     int
+		score     *int
 		message   string
 	}{
-		{name: "invalid project", projectID: 0, scorerID: 1, memberID: 2, score: 80, message: "invalid project or member id"},
-		{name: "invalid member", projectID: 1, scorerID: 2, memberID: 0, score: 80, message: "invalid project or member id"},
-		{name: "low score", projectID: 1, scorerID: 2, memberID: 3, score: -1, message: "score must be between 0 and 100"},
-		{name: "high score", projectID: 1, scorerID: 2, memberID: 3, score: 101, message: "score must be between 0 and 100"},
-		{name: "self remove", projectID: 1, scorerID: 2, memberID: 2, score: 80, message: "不能移除自己"},
+		{name: "invalid project", projectID: 0, scorerID: 1, memberID: 2, score: removeScorePtr(80), message: "invalid project or member id"},
+		{name: "invalid member", projectID: 1, scorerID: 2, memberID: 0, score: removeScorePtr(80), message: "invalid project or member id"},
+		{name: "low score", projectID: 1, scorerID: 2, memberID: 3, score: removeScorePtr(-1), message: "score must be between 0 and 100"},
+		{name: "high score", projectID: 1, scorerID: 2, memberID: 3, score: removeScorePtr(101), message: "score must be between 0 and 100"},
+		{name: "self remove", projectID: 1, scorerID: 2, memberID: 2, score: removeScorePtr(80), message: "不能移除自己"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			err := svc.RemoveMember(context.Background(), tc.projectID, tc.scorerID, tc.memberID, tc.score)
@@ -55,7 +57,7 @@ func TestRemoveMemberRejectsNonHighestRole(t *testing.T) {
 	}, nil).Once()
 
 	svc := NewProjectService(&repository.Repository{Project: projectRepo}, nil, nil)
-	err := svc.RemoveMember(context.Background(), projectID, scorerID, memberID, 80)
+	err := svc.RemoveMember(context.Background(), projectID, scorerID, memberID, removeScorePtr(80))
 
 	var serviceErr *ServiceError
 	require.ErrorAs(t, err, &serviceErr)

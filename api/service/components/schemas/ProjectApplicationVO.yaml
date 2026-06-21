@@ -12,6 +12,16 @@ properties:
     type: string
   reviewerRoleName:
     type: string
+  assignedRole:
+    type: string
+  assignedRoleName:
+    type: string
+  canReview:
+    type: boolean
+    description: 当前登录用户是否可对该申请执行同意入队/不合适操作
+  isCurrentMember:
+    type: boolean
+    description: 申请人当前是否仍在该项目团队中；仅已加入团队状态下有展示意义
   applicant:
     $ref: ./UserVO.yaml
   applyReason:

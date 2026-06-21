@@ -109,13 +109,13 @@ func (u *User) ToVO() *api.UserVO {
 
 func CollaborationLevel(score float64) string {
 	switch {
-	case score >= 80:
+	case score >= 95:
 		return "极好"
-	case score >= 60:
+	case score >= 90:
 		return "优秀"
-	case score >= 40:
+	case score >= 85:
 		return "良好"
-	case score >= 20:
+	case score >= 50:
 		return "中等"
 	default:
 		return "较差"

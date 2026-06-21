@@ -1,4 +1,4 @@
-parameters:
+﻿parameters:
   - name: id
     in: path
     required: true
@@ -15,17 +15,17 @@ delete:
   tags:
     - Projects
   summary: 移除项目成员
-  description: 仅项目最高权限角色可操作；移除时记录该成员的协作评分并刷新协作指数。
+  description: 仅项目最高权限角色可操作；传入 score 时记录该成员的协作评分并刷新协作指数。
   operationId: removeProjectMember
   parameters:
     - name: score
       in: query
-      required: true
+      required: false
       schema:
         type: integer
         minimum: 0
         maximum: 100
-      description: 移除成员时给出的协作评分，0-100 分
+      description: 移除成员时给出的协作评分，0-100 分；不传则仅移除成员，不记录评分
   responses:
     '200':
       description: 操作成功
