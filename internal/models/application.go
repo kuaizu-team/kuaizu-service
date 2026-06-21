@@ -23,6 +23,7 @@ type ProjectApplication struct {
 	ProjectName      *string        `db:"project_name"`
 	ReviewerRoleName *string        `db:"reviewer_role_name"`
 	AssignedRoleName *string        `db:"assigned_role_name"`
+	IsCurrentMember  *bool          `db:"is_current_member"`
 	CanReview        *bool          `db:"-"`
 	Applicant        *User          `db:"-"`
 	TalentProfile    *TalentProfile `db:"-"`
@@ -42,6 +43,7 @@ func (a *ProjectApplication) ToVO() *api.ProjectApplicationVO {
 		ReviewerRoleName: a.ReviewerRoleName,
 		AssignedRole:     a.AssignedRole,
 		AssignedRoleName: a.AssignedRoleName,
+		IsCurrentMember:  a.IsCurrentMember,
 		CanReview:        a.CanReview,
 		AppliedAt:        &a.AppliedAt,
 	}

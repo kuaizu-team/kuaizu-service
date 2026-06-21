@@ -107,11 +107,13 @@ func (r *ApplicationRepository) List(ctx context.Context, params ApplicationList
 			pa.status, pa.is_read, pa.reviewer_id, pa.reviewer_role, pa.assigned_role,
 			pa.applied_at, pa.updated_at,
 			p.name AS project_name,
-			pr.name AS reviewer_role_name, ar.name AS assigned_role_name
+			pr.name AS reviewer_role_name, ar.name AS assigned_role_name,
+			CASE WHEN pm.id IS NULL THEN FALSE ELSE TRUE END AS is_current_member
 		FROM project_application pa
 		LEFT JOIN project p ON pa.project_id = p.id
 		LEFT JOIN project_role pr ON pr.code = pa.reviewer_role
 		LEFT JOIN project_role ar ON ar.code = pa.assigned_role
+		LEFT JOIN project_members pm ON pm.project_id = pa.project_id AND pm.user_id = pa.user_id
 		WHERE %s
 		ORDER BY pa.applied_at DESC
 		LIMIT ? OFFSET ?
