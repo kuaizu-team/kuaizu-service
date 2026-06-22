@@ -111,15 +111,45 @@ type AdminRoadmapVO struct {
 
 // AdminInformationContentVO is the admin-facing information-center response model.
 type AdminInformationContentVO struct {
-	ID           int       `json:"id"`
-	Title        string    `json:"title"`
-	URL          string    `json:"url"`
-	Content      string    `json:"content"`
-	Category     string    `json:"category"`
-	DisplayOrder int       `json:"displayOrder"`
-	IsPublished  bool      `json:"isPublished"`
-	CreatedAt    time.Time `json:"createdAt"`
-	UpdatedAt    time.Time `json:"updatedAt"`
+	ID           int            `json:"id"`
+	Title        string         `json:"title"`
+	URL          string         `json:"url"`
+	Content      string         `json:"content"`
+	Category     string         `json:"category"`
+	DisplayOrder int            `json:"displayOrder"`
+	IsPublished  bool           `json:"isPublished"`
+	CreatedAt    time.Time      `json:"createdAt"`
+	UpdatedAt    time.Time      `json:"updatedAt"`
+	Events       []AdminEventVO `json:"events"`
+}
+
+// AdminEventVO is the admin-facing campus event response model.
+type AdminEventVO struct {
+	ID                   int        `json:"id"`
+	Name                 string     `json:"name"`
+	IsRanking            bool       `json:"isRanking"`
+	RegistrationDeadline *time.Time `json:"registrationDeadline"`
+	ArticleURL           *string    `json:"articleUrl"`
+	DisplayOrder         int        `json:"displayOrder"`
+	CreatedAt            time.Time  `json:"createdAt"`
+	UpdatedAt            time.Time  `json:"updatedAt"`
+}
+
+// NewAdminEventVO converts an Event model to AdminEventVO.
+func NewAdminEventVO(e *models.Event) *AdminEventVO {
+	if e == nil {
+		return nil
+	}
+	return &AdminEventVO{
+		ID:                   e.ID,
+		Name:                 e.Name,
+		IsRanking:            e.IsRanking == 1,
+		RegistrationDeadline: e.RegistrationDeadline,
+		ArticleURL:           e.ArticleURL,
+		DisplayOrder:         e.DisplayOrder,
+		CreatedAt:            e.CreatedAt,
+		UpdatedAt:            e.UpdatedAt,
+	}
 }
 
 // NewAdminProjectVO converts a Project model to AdminProjectVO.
@@ -243,7 +273,7 @@ func NewAdminInformationContentVO(i *models.InformationContent) *AdminInformatio
 	if i == nil {
 		return nil
 	}
-	return &AdminInformationContentVO{
+	vo := &AdminInformationContentVO{
 		ID:           i.ID,
 		Title:        i.Title,
 		URL:          i.URL,
@@ -254,6 +284,13 @@ func NewAdminInformationContentVO(i *models.InformationContent) *AdminInformatio
 		CreatedAt:    i.CreatedAt,
 		UpdatedAt:    i.UpdatedAt,
 	}
+	if len(i.Events) > 0 {
+		vo.Events = make([]AdminEventVO, len(i.Events))
+		for idx := range i.Events {
+			vo.Events[idx] = *NewAdminEventVO(&i.Events[idx])
+		}
+	}
+	return vo
 }
 
 // NewAdminTalentProfileVO converts a TalentProfile model to AdminTalentProfileVO.

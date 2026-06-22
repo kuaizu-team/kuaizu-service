@@ -84,6 +84,7 @@ func main() {
 			"/api/v2/dictionaries/majors",            // Major list
 			"/api/v2/email/unsubscribe",              // Email unsubscribe
 			"/api/v2/information/list",               // Information center list
+			"/api/v2/info-center/events",             // Information center event timeline
 			"/api/v2/roadmap",                        // Platform roadmap
 		}
 
@@ -96,6 +97,9 @@ func main() {
 
 		// Public GET endpoints with path parameters
 		if method == "GET" {
+			if path == "/api/v2/events" || path == "/api/v2/events/:id" {
+				return true
+			}
 			// /api/v2/projects - list (public)
 			if path == "/api/v2/projects" {
 				return true
@@ -140,6 +144,11 @@ func main() {
 	apiGroup.POST("/invitation/feedback", server.SubmitInvitationFeedback)
 	apiGroup.GET("/users/me/pending-invitation", server.GetMyPendingInvitation)
 	apiGroup.POST("/users/me/pending-invitation/clear", server.ClearMyPendingInvitation)
+	apiGroup.GET("/events", server.ListEvents)
+	apiGroup.POST("/events", server.CreateEvent)
+	apiGroup.GET("/events/:id", server.GetEvent)
+	apiGroup.GET("/info-center/events", server.ListInfoCenterEvents)
+
 	apiGroup.GET("/roadmap", server.ListRoadmap)
 	apiGroup.GET("/roadmap/has-new", server.HasNewRoadmap)
 	apiGroup.POST("/roadmap/mark-read", server.MarkRoadmapRead)

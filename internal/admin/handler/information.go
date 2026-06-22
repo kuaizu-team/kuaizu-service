@@ -17,12 +17,14 @@ import (
 const informationForbiddenMessage = "only super admin can manage information content"
 
 type informationContentRequest struct {
-	Title        string `json:"title"`
-	Content      string `json:"content"`
-	URL          string `json:"url"`
-	Category     string `json:"category"`
-	DisplayOrder *int   `json:"displayOrder"`
-	IsPublished  *bool  `json:"isPublished"`
+	Title        string  `json:"title"`
+	Content      string  `json:"content"`
+	URL          string  `json:"url"`
+	Category     string  `json:"category"`
+	DisplayOrder *int    `json:"displayOrder"`
+	IsPublished  *bool   `json:"isPublished"`
+	EventIDs     []int   `json:"eventIds"`
+	CreatedAt    *string `json:"createdAt"`
 }
 
 // ListInformation handles GET /admin/information.

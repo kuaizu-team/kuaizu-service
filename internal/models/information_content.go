@@ -24,6 +24,7 @@ type InformationContent struct {
 	IsPublished  int       `db:"is_published"`
 	CreatedAt    time.Time `db:"created_at"`
 	UpdatedAt    time.Time `db:"updated_at"`
+	Events       []Event   `db:"-"`
 }
 
 func IsValidInformationCategory(category string) bool {

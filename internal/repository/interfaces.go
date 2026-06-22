@@ -51,6 +51,19 @@ type ProjectRepo interface {
 	IncrementViewCount(ctx context.Context, id int) error
 }
 
+// EventRepo defines the interface for campus event operations.
+type EventRepo interface {
+	List(ctx context.Context, params EventListParams) ([]models.Event, int64, error)
+	ListTimeline(ctx context.Context, limit int) ([]models.Event, error)
+	GetByID(ctx context.Context, id int) (*models.Event, error)
+	Create(ctx context.Context, event *models.Event) error
+	Update(ctx context.Context, event *models.Event) error
+	Delete(ctx context.Context, id int) error
+	ListByProjectIDs(ctx context.Context, projectIDs []int) (map[int][]models.Event, error)
+	ListProjectIDs(ctx context.Context, eventID int) ([]int, error)
+	ReplaceProjectEventsTx(ctx context.Context, tx *sqlx.Tx, projectID int, eventIDs []int) error
+}
+
 // ProductRepo defines the interface for product repository operations used by services.
 type ProductRepo interface {
 	GetByID(ctx context.Context, id int) (*models.Product, error)
@@ -282,6 +295,7 @@ type TalentViewLogRepo interface {
 // Compile-time interface satisfaction checks
 var _ OrderRepo = (*OrderRepository)(nil)
 var _ ProjectRepo = (*ProjectRepository)(nil)
+var _ EventRepo = (*EventRepository)(nil)
 var _ ProductRepo = (*ProductRepository)(nil)
 var _ RoadmapRepo = (*RoadmapRepository)(nil)
 var _ InformationContentRepo = (*InformationContentRepository)(nil)

@@ -1,0 +1,23 @@
+type: object
+properties:
+  id:
+    type: integer
+  name:
+    type: string
+  isRanking:
+    type: boolean
+  registrationDeadline:
+    type: string
+    format: date
+    nullable: true
+  articleUrl:
+    type: string
+    nullable: true
+  displayOrder:
+    type: integer
+  createdAt:
+    type: string
+    format: date-time
+  updatedAt:
+    type: string
+    format: date-time

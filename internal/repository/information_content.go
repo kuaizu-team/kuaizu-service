@@ -150,3 +150,54 @@ func (r *InformationContentRepository) AdminDelete(ctx context.Context, id int) 
 	}
 	return nil
 }
+
+func (r *InformationContentRepository) enrichEventsBatch(ctx context.Context, items []models.InformationContent) error {
+	if len(items) == 0 {
+		return nil
+	}
+	ids := make([]int, 0, len(items))
+	index := make(map[int]int, len(items))
+	for i := range items {
+		ids = append(ids, items[i].ID)
+		index[items[i].ID] = i
+	}
+	query, args, err := sqlx.In(`SELECT ie.information_id, e.id, e.name, e.is_ranking, e.registration_deadline, e.article_url, e.display_order, e.created_at, e.updated_at
+		FROM information_event ie
+		JOIN event e ON e.id = ie.event_id
+		WHERE ie.information_id IN (?)
+		ORDER BY e.display_order DESC, e.created_at DESC, e.id DESC`, ids)
+	if err != nil {
+		return err
+	}
+	rows, err := r.db.QueryxContext(ctx, r.db.Rebind(query), args...)
+	if err != nil {
+		return fmt.Errorf("query information events: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var informationID int
+		var event models.Event
+		if err := rows.Scan(&informationID, &event.ID, &event.Name, &event.IsRanking, &event.RegistrationDeadline, &event.ArticleURL, &event.DisplayOrder, &event.CreatedAt, &event.UpdatedAt); err != nil {
+			return err
+		}
+		if i, ok := index[informationID]; ok {
+			items[i].Events = append(items[i].Events, event)
+		}
+	}
+	return rows.Err()
+}
+
+func saveInformationEventsTx(ctx context.Context, tx *sqlx.Tx, informationID int, events []models.Event) error {
+	if _, err := tx.ExecContext(ctx, "DELETE FROM information_event WHERE information_id=?", informationID); err != nil {
+		return err
+	}
+	for _, event := range events {
+		if event.ID <= 0 {
+			continue
+		}
+		if _, err := tx.ExecContext(ctx, "INSERT IGNORE INTO information_event(information_id,event_id) VALUES(?,?)", informationID, event.ID); err != nil {
+			return err
+		}
+	}
+	return nil
+}

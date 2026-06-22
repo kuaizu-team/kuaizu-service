@@ -18,6 +18,7 @@ type Services struct {
 	ContentAudit       *ContentAuditService
 	TalentProfile      *TalentProfileService
 	Project            *ProjectService
+	Event              *EventService
 	Message            *MessageService
 	User               *UserService
 	Feedback           *FeedbackService
@@ -43,6 +44,7 @@ func New(repo *repository.Repository, deps *Dependencies) *Services {
 		ContentAudit:       contentAudit,
 		TalentProfile:      NewTalentProfileService(repo, contentAudit, message),
 		Project:            NewProjectService(repo, contentAudit, message),
+		Event:              NewEventService(repo),
 		Message:            message,
 		User:               NewUserService(repo, message),
 		Feedback:           NewFeedbackService(repo, message),
