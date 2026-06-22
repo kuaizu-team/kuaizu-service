@@ -43,17 +43,17 @@ func (r *EventRepository) List(ctx context.Context, params EventListParams) ([]m
 	conditions := []string{"1=1"}
 	args := []interface{}{}
 	if params.Keyword != nil && strings.TrimSpace(*params.Keyword) != "" {
-		conditions = append(conditions, "name LIKE ?")
+		conditions = append(conditions, "e.name LIKE ?")
 		args = append(args, "%"+strings.TrimSpace(*params.Keyword)+"%")
 	}
 	where := strings.Join(conditions, " AND ")
 
 	var total int64
-	if err := r.db.QueryRowxContext(ctx, "SELECT COUNT(*) FROM event WHERE "+where, args...).Scan(&total); err != nil {
+	if err := r.db.QueryRowxContext(ctx, "SELECT COUNT(*) FROM event e WHERE "+where, args...).Scan(&total); err != nil {
 		return nil, 0, fmt.Errorf("count events: %w", err)
 	}
 
-	query := fmt.Sprintf(`SELECT %s FROM event WHERE %s ORDER BY display_order DESC, created_at DESC, id DESC LIMIT ? OFFSET ?`, eventSelectColumns(), where)
+	query := fmt.Sprintf(`SELECT e.%s, COALESCE(COUNT(DISTINCT pe.project_id), 0) AS project_count FROM event e LEFT JOIN project_event pe ON pe.event_id = e.id WHERE %s GROUP BY e.id, e.name, e.is_ranking, e.registration_deadline, e.article_url, e.display_order, e.created_at, e.updated_at ORDER BY e.display_order DESC, e.created_at DESC, e.id DESC LIMIT ? OFFSET ?`, strings.ReplaceAll(eventSelectColumns(), ", ", ", e."), where)
 	args = append(args, params.Size, (params.Page-1)*params.Size)
 	var events []models.Event
 	if err := r.db.SelectContext(ctx, &events, query, args...); err != nil {

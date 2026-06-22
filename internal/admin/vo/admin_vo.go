@@ -131,6 +131,7 @@ type AdminEventVO struct {
 	RegistrationDeadline *time.Time `json:"registrationDeadline"`
 	ArticleURL           *string    `json:"articleUrl"`
 	DisplayOrder         int        `json:"displayOrder"`
+	ProjectCount         int        `json:"projectCount"`
 	CreatedAt            time.Time  `json:"createdAt"`
 	UpdatedAt            time.Time  `json:"updatedAt"`
 }
@@ -147,6 +148,7 @@ func NewAdminEventVO(e *models.Event) *AdminEventVO {
 		RegistrationDeadline: e.RegistrationDeadline,
 		ArticleURL:           e.ArticleURL,
 		DisplayOrder:         e.DisplayOrder,
+		ProjectCount:         e.ProjectCount,
 		CreatedAt:            e.CreatedAt,
 		UpdatedAt:            e.UpdatedAt,
 	}

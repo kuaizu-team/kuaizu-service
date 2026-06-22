@@ -15,6 +15,7 @@ type Event struct {
 	RegistrationDeadline *time.Time `db:"registration_deadline"`
 	ArticleURL           *string    `db:"article_url"`
 	DisplayOrder         int        `db:"display_order"`
+	ProjectCount         int        `db:"project_count"`
 	CreatedAt            time.Time  `db:"created_at"`
 	UpdatedAt            time.Time  `db:"updated_at"`
 }
