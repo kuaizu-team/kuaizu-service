@@ -13,6 +13,7 @@ import (
 type projectRecommendationVO struct {
 	ID             int            `json:"id"`
 	ProjectID      int            `json:"projectId"`
+	ProjectName    *string        `json:"projectName,omitempty"`
 	Description    *string        `json:"description"`
 	DisplayOrder   int            `json:"displayOrder"`
 	IsVisible      bool           `json:"isVisible"`
@@ -100,12 +101,15 @@ func projectRecommendationVOs(items []models.ProjectRecommendation) []projectRec
 	list := make([]projectRecommendationVO, 0, len(items))
 	for i := range items {
 		var project *api.ProjectVO
+		var projectName *string
 		if items[i].Project != nil {
 			project = items[i].Project.ToVO()
+			projectName = &items[i].Project.Name
 		}
 		list = append(list, projectRecommendationVO{
 			ID:             items[i].ID,
 			ProjectID:      items[i].ProjectID,
+			ProjectName:    projectName,
 			Description:    items[i].Description,
 			DisplayOrder:   items[i].DisplayOrder,
 			IsVisible:      items[i].IsVisible == 1,
