@@ -110,6 +110,7 @@ func (s *Server) CreateProject(ctx echo.Context) error {
 		InitiatingSchoolID:   req.InitiatingSchoolId,
 		Milestones:           req.Milestones,
 		Members:              req.Members,
+		EventIDs:             req.EventIDs,
 	}
 
 	project, err := s.svc.Project.CreateProject(ctx.Request().Context(), input)
@@ -362,6 +363,7 @@ func (s *Server) UpdateProject(ctx echo.Context, id int) error {
 		InitiatingSchoolID:   req.InitiatingSchoolId,
 		Milestones:           req.Milestones,
 		Members:              req.Members,
+		EventIDs:             req.EventIDs,
 	}
 
 	project, err := s.svc.Project.UpdateProject(ctx.Request().Context(), id, userID, input)
