@@ -75,17 +75,20 @@ func main() {
 
 		// Public endpoints that don't require authentication
 		publicEndpoints := []string{
-			"/api/v2/auth/login/wechat",              // WeChat login
-			"/api/v2/auth/register/phone",            // WeChat phone registration
-			"/api/v2/dictionaries/schools",           // School list
-			"/api/v2/dictionaries/schools/provinces", // Province list
-			"/api/v2/dictionaries/schools/cities",    // City list
-			"/api/v2/dictionaries/schools/districts", // District list
-			"/api/v2/dictionaries/majors",            // Major list
-			"/api/v2/email/unsubscribe",              // Email unsubscribe
-			"/api/v2/information/list",               // Information center list
-			"/api/v2/info-center/events",             // Information center event timeline
-			"/api/v2/roadmap",                        // Platform roadmap
+			"/api/v2/auth/login/wechat",                 // WeChat login
+			"/api/v2/auth/register/phone",               // WeChat phone registration
+			"/api/v2/dictionaries/schools",              // School list
+			"/api/v2/dictionaries/schools/provinces",    // Province list
+			"/api/v2/dictionaries/schools/cities",       // City list
+			"/api/v2/dictionaries/schools/districts",    // District list
+			"/api/v2/dictionaries/majors",               // Major list
+			"/api/v2/email/unsubscribe",                 // Email unsubscribe
+			"/api/v2/information/list",                  // Information center list
+			"/api/v2/info-center/events",                // Information center event timeline
+			"/api/v2/recommendations/projects/featured", // Featured project recommendation
+			"/api/v2/recommendations/podcasts",          // Info-center podcast recommendations
+			"/api/v2/recommendations/news",              // Info-center news recommendations
+			"/api/v2/roadmap",                           // Platform roadmap
 		}
 
 		// Check exact matches
@@ -148,6 +151,10 @@ func main() {
 	apiGroup.POST("/events", server.CreateEvent)
 	apiGroup.GET("/events/:id", server.GetEvent)
 	apiGroup.GET("/info-center/events", server.ListInfoCenterEvents)
+	apiGroup.GET("/recommendations/projects", server.ListRecommendationProjects)
+	apiGroup.GET("/recommendations/projects/featured", server.GetFeaturedRecommendationProject)
+	apiGroup.GET("/recommendations/podcasts", server.ListRecommendationPodcasts)
+	apiGroup.GET("/recommendations/news", server.ListRecommendationNews)
 
 	apiGroup.GET("/roadmap", server.ListRoadmap)
 	apiGroup.GET("/roadmap/has-new", server.HasNewRoadmap)

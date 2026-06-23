@@ -28,11 +28,29 @@ func (s *Server) ListEvents(ctx echo.Context) error {
 	if keyword != "" {
 		keywordPtr = &keyword
 	}
-	result, err := s.svc.Event.ListEvents(ctx.Request().Context(), repository.EventListParams{
-		Page:    page,
-		Size:    size,
-		Keyword: keywordPtr,
-	})
+	params := repository.EventListParams{Page: page, Size: size, Keyword: keywordPtr}
+	if raw := strings.TrimSpace(ctx.QueryParam("isRanking")); raw != "" {
+		value, err := strconv.ParseBool(raw)
+		if err != nil {
+			return BadRequest(ctx, "invalid isRanking")
+		}
+		params.IsRanking = &value
+	}
+	if raw := strings.TrimSpace(ctx.QueryParam("registrationDeadlineFrom")); raw != "" {
+		value, err := time.Parse("2006-01-02", raw)
+		if err != nil {
+			return BadRequest(ctx, "invalid registrationDeadlineFrom")
+		}
+		params.RegistrationDeadlineFrom = &value
+	}
+	if raw := strings.TrimSpace(ctx.QueryParam("registrationDeadlineTo")); raw != "" {
+		value, err := time.Parse("2006-01-02", raw)
+		if err != nil {
+			return BadRequest(ctx, "invalid registrationDeadlineTo")
+		}
+		params.RegistrationDeadlineTo = &value
+	}
+	result, err := s.svc.Event.ListEvents(ctx.Request().Context(), params)
 	if err != nil {
 		return mapServiceError(ctx, err)
 	}

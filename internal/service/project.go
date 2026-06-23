@@ -161,6 +161,12 @@ func (s *ProjectService) GetProject(ctx context.Context, id int) (*models.Projec
 	}
 	project.Milestones = milestones
 	project.Members = members
+	projects := []models.Project{*project}
+	if err := s.attachProjectEvents(ctx, projects); err != nil {
+		log.Printf("[ProjectService.GetProject] event enrichment error: %v", err)
+		return nil, ErrInternal("get project events failed")
+	}
+	*project = projects[0]
 
 	return project, nil
 }

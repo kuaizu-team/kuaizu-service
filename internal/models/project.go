@@ -128,6 +128,13 @@ func (p *Project) ToVO() *api.ProjectVO {
 		CanCompleteRecruitment:  p.CanCompleteRecruitment,
 		CanDeleteMembers:        p.CanDeleteMembers,
 	}
+	if len(p.Events) > 0 {
+		events := make([]api.EventVO, len(p.Events))
+		for i := range p.Events {
+			events[i] = p.Events[i].ToVO()
+		}
+		vo.Events = &events
+	}
 	if len(p.Tags) > 0 {
 		tags := make([]api.ProjectTagVO, len(p.Tags))
 		for i := range p.Tags {
@@ -172,6 +179,13 @@ func (p *Project) ToDetailVO() *api.ProjectDetailVO {
 		CurrentUserRoleName:    p.CurrentUserRoleName,
 		CanCompleteRecruitment: p.CanCompleteRecruitment,
 		CanDeleteMembers:       p.CanDeleteMembers,
+	}
+	if len(p.Events) > 0 {
+		events := make([]api.EventVO, len(p.Events))
+		for i := range p.Events {
+			events[i] = p.Events[i].ToVO()
+		}
+		vo.Events = &events
 	}
 	if len(p.Tags) > 0 {
 		tags := make([]api.ProjectTagVO, len(p.Tags))

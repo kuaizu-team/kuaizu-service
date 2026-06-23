@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/jmoiron/sqlx"
 	"github.com/kuaizu-team/kuaizu-service/internal/models"
@@ -15,9 +16,12 @@ type EventRepository struct {
 }
 
 type EventListParams struct {
-	Page    int
-	Size    int
-	Keyword *string
+	Page                     int
+	Size                     int
+	Keyword                  *string
+	IsRanking                *bool
+	RegistrationDeadlineFrom *time.Time
+	RegistrationDeadlineTo   *time.Time
 }
 
 func NewEventRepository(db *sqlx.DB) *EventRepository {
@@ -46,6 +50,22 @@ func (r *EventRepository) List(ctx context.Context, params EventListParams) ([]m
 		conditions = append(conditions, "e.name LIKE ?")
 		args = append(args, "%"+strings.TrimSpace(*params.Keyword)+"%")
 	}
+	if params.IsRanking != nil {
+		value := 0
+		if *params.IsRanking {
+			value = 1
+		}
+		conditions = append(conditions, "e.is_ranking = ?")
+		args = append(args, value)
+	}
+	if params.RegistrationDeadlineFrom != nil {
+		conditions = append(conditions, "e.registration_deadline >= ?")
+		args = append(args, *params.RegistrationDeadlineFrom)
+	}
+	if params.RegistrationDeadlineTo != nil {
+		conditions = append(conditions, "e.registration_deadline <= ?")
+		args = append(args, *params.RegistrationDeadlineTo)
+	}
 	where := strings.Join(conditions, " AND ")
 
 	var total int64
@@ -53,7 +73,7 @@ func (r *EventRepository) List(ctx context.Context, params EventListParams) ([]m
 		return nil, 0, fmt.Errorf("count events: %w", err)
 	}
 
-	query := fmt.Sprintf(`SELECT e.%s, COALESCE(COUNT(DISTINCT pe.project_id), 0) AS project_count FROM event e LEFT JOIN project_event pe ON pe.event_id = e.id WHERE %s GROUP BY e.id, e.name, e.is_ranking, e.registration_deadline, e.article_url, e.display_order, e.created_at, e.updated_at ORDER BY e.display_order DESC, e.created_at DESC, e.id DESC LIMIT ? OFFSET ?`, strings.ReplaceAll(eventSelectColumns(), ", ", ", e."), where)
+	query := fmt.Sprintf(`SELECT e.%s, COALESCE(COUNT(DISTINCT pe.project_id), 0) AS project_count FROM event e LEFT JOIN project_event pe ON pe.event_id = e.id WHERE %s GROUP BY e.id, e.name, e.is_ranking, e.registration_deadline, e.article_url, e.display_order, e.created_at, e.updated_at ORDER BY CASE WHEN e.registration_deadline IS NULL THEN 1 ELSE 0 END ASC, e.registration_deadline ASC, e.display_order DESC, e.created_at DESC, e.id DESC LIMIT ? OFFSET ?`, strings.ReplaceAll(eventSelectColumns(), ", ", ", e."), where)
 	args = append(args, params.Size, (params.Page-1)*params.Size)
 	var events []models.Event
 	if err := r.db.SelectContext(ctx, &events, query, args...); err != nil {
