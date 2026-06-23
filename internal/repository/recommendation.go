@@ -43,7 +43,7 @@ func (r *RecommendationRepository) ListProjects(ctx context.Context, params Proj
 	limit := normalizeRecommendationLimit(params.Limit)
 	query := fmt.Sprintf(`
 		SELECT
-			pr.id, pr.project_id, pr.display_order, pr.is_visible, pr.is_featured, pr.created_at, pr.updated_at,
+			pr.id, pr.project_id, pr.display_order, pr.is_visible, pr.is_featured, pr.interview_url, pr.created_at, pr.updated_at,
 			p.id, p.creator_id, p.name, p.description, p.school_id, p.direction, p.member_count, p.status,
 			p.promotion_status, p.promotion_expire_time, p.view_count, p.created_at, p.updated_at, p.reject_reason,
 			p.deleted_at, p.is_cross_school, p.education_requirement, p.skill_requirement, p.publisher_role,
@@ -67,7 +67,7 @@ func (r *RecommendationRepository) ListProjects(ctx context.Context, params Proj
 		var item models.ProjectRecommendation
 		var project models.Project
 		if err := rows.Scan(
-			&item.ID, &item.ProjectID, &item.DisplayOrder, &item.IsVisible, &item.IsFeatured, &item.CreatedAt, &item.UpdatedAt,
+			&item.ID, &item.ProjectID, &item.DisplayOrder, &item.IsVisible, &item.IsFeatured, &item.InterviewURL, &item.CreatedAt, &item.UpdatedAt,
 			&project.ID, &project.CreatorID, &project.Name, &project.Description, &project.SchoolID, &project.Direction, &project.MemberCount, &project.Status,
 			&project.PromotionStatus, &project.PromotionExpireTime, &project.ViewCount, &project.CreatedAt, &project.UpdatedAt, &project.RejectReason,
 			&project.DeletedAt, &project.IsCrossSchool, &project.EducationRequirement, &project.SkillRequirement, &project.PublisherRole,
@@ -104,7 +104,7 @@ func (r *RecommendationRepository) listProjectsByCondition(ctx context.Context, 
 	limit := normalizeRecommendationLimit(params.Limit)
 	query := fmt.Sprintf(`
 		SELECT
-			pr.id, pr.project_id, pr.display_order, pr.is_visible, pr.is_featured, pr.created_at, pr.updated_at,
+			pr.id, pr.project_id, pr.display_order, pr.is_visible, pr.is_featured, pr.interview_url, pr.created_at, pr.updated_at,
 			p.id, p.creator_id, p.name, p.description, p.school_id, p.direction, p.member_count, p.status,
 			p.promotion_status, p.promotion_expire_time, p.view_count, p.created_at, p.updated_at, p.reject_reason,
 			p.deleted_at, p.is_cross_school, p.education_requirement, p.skill_requirement, p.publisher_role,
@@ -128,7 +128,7 @@ func (r *RecommendationRepository) listProjectsByCondition(ctx context.Context, 
 		var item models.ProjectRecommendation
 		var project models.Project
 		if err := rows.Scan(
-			&item.ID, &item.ProjectID, &item.DisplayOrder, &item.IsVisible, &item.IsFeatured, &item.CreatedAt, &item.UpdatedAt,
+			&item.ID, &item.ProjectID, &item.DisplayOrder, &item.IsVisible, &item.IsFeatured, &item.InterviewURL, &item.CreatedAt, &item.UpdatedAt,
 			&project.ID, &project.CreatorID, &project.Name, &project.Description, &project.SchoolID, &project.Direction, &project.MemberCount, &project.Status,
 			&project.PromotionStatus, &project.PromotionExpireTime, &project.ViewCount, &project.CreatedAt, &project.UpdatedAt, &project.RejectReason,
 			&project.DeletedAt, &project.IsCrossSchool, &project.EducationRequirement, &project.SkillRequirement, &project.PublisherRole,
@@ -149,9 +149,9 @@ func (r *RecommendationRepository) listProjectsByCondition(ctx context.Context, 
 }
 
 func (r *RecommendationRepository) UpsertProject(ctx context.Context, item *models.ProjectRecommendation) error {
-	query := `INSERT INTO project_recommendation (project_id, display_order, is_visible, is_featured)
-		VALUES (:project_id, :display_order, :is_visible, :is_featured)
-		ON DUPLICATE KEY UPDATE display_order=VALUES(display_order), is_visible=VALUES(is_visible), is_featured=VALUES(is_featured), updated_at=CURRENT_TIMESTAMP`
+	query := `INSERT INTO project_recommendation (project_id, display_order, is_visible, is_featured, interview_url)
+		VALUES (:project_id, :display_order, :is_visible, :is_featured, :interview_url)
+		ON DUPLICATE KEY UPDATE display_order=VALUES(display_order), is_visible=VALUES(is_visible), is_featured=VALUES(is_featured), interview_url=VALUES(interview_url), updated_at=CURRENT_TIMESTAMP`
 	result, err := r.db.NamedExecContext(ctx, query, item)
 	if err != nil {
 		return fmt.Errorf("upsert project recommendation: %w", err)
@@ -163,7 +163,7 @@ func (r *RecommendationRepository) UpsertProject(ctx context.Context, item *mode
 }
 
 func (r *RecommendationRepository) UpdateProject(ctx context.Context, item *models.ProjectRecommendation) error {
-	result, err := r.db.NamedExecContext(ctx, `UPDATE project_recommendation SET project_id=:project_id, display_order=:display_order, is_visible=:is_visible, is_featured=:is_featured, updated_at=CURRENT_TIMESTAMP WHERE id=:id`, item)
+	result, err := r.db.NamedExecContext(ctx, `UPDATE project_recommendation SET project_id=:project_id, display_order=:display_order, is_visible=:is_visible, is_featured=:is_featured, interview_url=:interview_url, updated_at=CURRENT_TIMESTAMP WHERE id=:id`, item)
 	if err != nil {
 		return fmt.Errorf("update project recommendation: %w", err)
 	}

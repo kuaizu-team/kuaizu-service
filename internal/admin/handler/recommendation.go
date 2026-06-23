@@ -15,10 +15,11 @@ import (
 )
 
 type adminProjectRecommendationRequest struct {
-	ProjectID    int   `json:"projectId"`
-	DisplayOrder *int  `json:"displayOrder"`
-	IsVisible    *bool `json:"isVisible"`
-	IsFeatured   *bool `json:"isFeatured"`
+	ProjectID    int     `json:"projectId"`
+	DisplayOrder *int    `json:"displayOrder"`
+	IsVisible    *bool   `json:"isVisible"`
+	IsFeatured   *bool   `json:"isFeatured"`
+	InterviewURL *string `json:"interviewUrl"`
 }
 
 type adminProjectRecommendationVO struct {
@@ -27,6 +28,7 @@ type adminProjectRecommendationVO struct {
 	DisplayOrder   int            `json:"displayOrder"`
 	IsVisible      bool           `json:"isVisible"`
 	IsFeatured     bool           `json:"isFeatured"`
+	InterviewURL   *string        `json:"interviewUrl"`
 	IsFromMySchool bool           `json:"isFromMySchool"`
 	CreatedAt      interface{}    `json:"createdAt"`
 	UpdatedAt      interface{}    `json:"updatedAt"`
@@ -278,6 +280,16 @@ func buildProjectRecommendation(req adminProjectRecommendationRequest) (*models.
 	if req.IsFeatured != nil {
 		item.IsFeatured = models.BoolInt(*req.IsFeatured)
 	}
+	if req.InterviewURL != nil {
+		value := strings.TrimSpace(*req.InterviewURL)
+		if value != "" {
+			parsedURL, err := url.ParseRequestURI(value)
+			if err != nil || parsedURL.Scheme == "" || parsedURL.Host == "" || (parsedURL.Scheme != "http" && parsedURL.Scheme != "https") {
+				return nil, errors.New("interviewUrl is invalid")
+			}
+			item.InterviewURL = &value
+		}
+	}
 	return item, nil
 }
 
@@ -329,6 +341,7 @@ func adminProjectRecommendationVOs(items []models.ProjectRecommendation) []admin
 			DisplayOrder:   items[i].DisplayOrder,
 			IsVisible:      items[i].IsVisible == 1,
 			IsFeatured:     items[i].IsFeatured == 1,
+			InterviewURL:   items[i].InterviewURL,
 			IsFromMySchool: items[i].IsFromMySchool,
 			CreatedAt:      items[i].CreatedAt,
 			UpdatedAt:      items[i].UpdatedAt,

@@ -9,6 +9,7 @@ type ProjectRecommendation struct {
 	DisplayOrder int       `db:"display_order"`
 	IsVisible    int       `db:"is_visible"`
 	IsFeatured   int       `db:"is_featured"`
+	InterviewURL *string   `db:"interview_url"`
 	CreatedAt    time.Time `db:"created_at"`
 	UpdatedAt    time.Time `db:"updated_at"`
 

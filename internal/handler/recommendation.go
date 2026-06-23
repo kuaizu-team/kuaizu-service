@@ -16,6 +16,7 @@ type projectRecommendationVO struct {
 	DisplayOrder   int            `json:"displayOrder"`
 	IsVisible      bool           `json:"isVisible"`
 	IsFeatured     bool           `json:"isFeatured"`
+	InterviewURL   *string        `json:"interviewUrl"`
 	IsFromMySchool bool           `json:"isFromMySchool"`
 	CreatedAt      interface{}    `json:"createdAt"`
 	UpdatedAt      interface{}    `json:"updatedAt"`
@@ -107,6 +108,7 @@ func projectRecommendationVOs(items []models.ProjectRecommendation) []projectRec
 			DisplayOrder:   items[i].DisplayOrder,
 			IsVisible:      items[i].IsVisible == 1,
 			IsFeatured:     items[i].IsFeatured == 1,
+			InterviewURL:   items[i].InterviewURL,
 			IsFromMySchool: items[i].IsFromMySchool,
 			CreatedAt:      items[i].CreatedAt,
 			UpdatedAt:      items[i].UpdatedAt,
