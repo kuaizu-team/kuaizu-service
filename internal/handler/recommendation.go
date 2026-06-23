@@ -13,6 +13,7 @@ import (
 type projectRecommendationVO struct {
 	ID             int            `json:"id"`
 	ProjectID      int            `json:"projectId"`
+	Description    *string        `json:"description"`
 	DisplayOrder   int            `json:"displayOrder"`
 	IsVisible      bool           `json:"isVisible"`
 	IsFeatured     bool           `json:"isFeatured"`
@@ -105,6 +106,7 @@ func projectRecommendationVOs(items []models.ProjectRecommendation) []projectRec
 		list = append(list, projectRecommendationVO{
 			ID:             items[i].ID,
 			ProjectID:      items[i].ProjectID,
+			Description:    items[i].Description,
 			DisplayOrder:   items[i].DisplayOrder,
 			IsVisible:      items[i].IsVisible == 1,
 			IsFeatured:     items[i].IsFeatured == 1,

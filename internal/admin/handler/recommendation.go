@@ -16,6 +16,7 @@ import (
 
 type adminProjectRecommendationRequest struct {
 	ProjectID    int     `json:"projectId"`
+	Description  *string `json:"description"`
 	DisplayOrder *int    `json:"displayOrder"`
 	IsVisible    *bool   `json:"isVisible"`
 	IsFeatured   *bool   `json:"isFeatured"`
@@ -25,6 +26,7 @@ type adminProjectRecommendationRequest struct {
 type adminProjectRecommendationVO struct {
 	ID             int            `json:"id"`
 	ProjectID      int            `json:"projectId"`
+	Description    *string        `json:"description"`
 	DisplayOrder   int            `json:"displayOrder"`
 	IsVisible      bool           `json:"isVisible"`
 	IsFeatured     bool           `json:"isFeatured"`
@@ -271,6 +273,15 @@ func buildProjectRecommendation(req adminProjectRecommendationRequest) (*models.
 		return nil, errors.New("projectId is required")
 	}
 	item := &models.ProjectRecommendation{ProjectID: req.ProjectID, IsVisible: 1}
+	if req.Description != nil {
+		value := strings.TrimSpace(*req.Description)
+		if len([]rune(value)) > 500 {
+			return nil, errors.New("description must be at most 500 characters")
+		}
+		if value != "" {
+			item.Description = &value
+		}
+	}
 	if req.DisplayOrder != nil {
 		item.DisplayOrder = *req.DisplayOrder
 	}
@@ -338,6 +349,7 @@ func adminProjectRecommendationVOs(items []models.ProjectRecommendation) []admin
 		list = append(list, adminProjectRecommendationVO{
 			ID:             items[i].ID,
 			ProjectID:      items[i].ProjectID,
+			Description:    items[i].Description,
 			DisplayOrder:   items[i].DisplayOrder,
 			IsVisible:      items[i].IsVisible == 1,
 			IsFeatured:     items[i].IsFeatured == 1,

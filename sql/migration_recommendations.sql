@@ -4,6 +4,7 @@
 CREATE TABLE IF NOT EXISTS project_recommendation (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   project_id INT NOT NULL,
+  description VARCHAR(500) NULL COMMENT '卡片描述',
   display_order INT NOT NULL DEFAULT 0 COMMENT '展示权重',
   is_visible TINYINT(1) NOT NULL DEFAULT 1 COMMENT '是否显示',
   is_featured TINYINT(1) NOT NULL DEFAULT 0 COMMENT '是否推荐到首页',

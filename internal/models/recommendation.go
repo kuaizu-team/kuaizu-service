@@ -6,6 +6,7 @@ import "time"
 type ProjectRecommendation struct {
 	ID           int       `db:"id"`
 	ProjectID    int       `db:"project_id"`
+	Description  *string   `db:"description"`
 	DisplayOrder int       `db:"display_order"`
 	IsVisible    int       `db:"is_visible"`
 	IsFeatured   int       `db:"is_featured"`
