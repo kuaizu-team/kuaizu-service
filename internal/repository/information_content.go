@@ -83,6 +83,9 @@ func (r *InformationContentRepository) AdminList(ctx context.Context, params Inf
 	if err := r.db.SelectContext(ctx, &items, query, args...); err != nil {
 		return nil, 0, fmt.Errorf("query admin information content: %w", err)
 	}
+	if err := r.enrichEventsBatch(ctx, items); err != nil {
+		return nil, 0, err
+	}
 	return items, total, nil
 }
 
@@ -101,7 +104,11 @@ func (r *InformationContentRepository) AdminGetByID(ctx context.Context, id int)
 		}
 		return nil, fmt.Errorf("query information content by id: %w", err)
 	}
-	return &item, nil
+	items := []models.InformationContent{item}
+	if err := r.enrichEventsBatch(ctx, items); err != nil {
+		return nil, err
+	}
+	return &items[0], nil
 }
 
 // AdminCreate inserts a new information item.
@@ -110,12 +117,24 @@ func (r *InformationContentRepository) AdminCreate(ctx context.Context, item *mo
 		INSERT INTO information_content (title, url, content, category, display_order, is_published)
 		VALUES (:title, :url, :content, :category, :display_order, :is_published)
 	`
-	result, err := r.db.NamedExecContext(ctx, query, item)
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin create information content tx: %w", err)
+	}
+	defer tx.Rollback()
+
+	result, err := tx.NamedExecContext(ctx, query, item)
 	if err != nil {
 		return fmt.Errorf("create information content: %w", err)
 	}
 	id, _ := result.LastInsertId()
 	item.ID = int(id)
+	if err := saveInformationEventsTx(ctx, tx, item.ID, item.Events); err != nil {
+		return fmt.Errorf("save information events: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit create information content tx: %w", err)
+	}
 	return nil
 }
 
@@ -132,13 +151,25 @@ func (r *InformationContentRepository) AdminUpdate(ctx context.Context, item *mo
 		    updated_at = CURRENT_TIMESTAMP
 		WHERE id = :id
 	`
-	result, err := r.db.NamedExecContext(ctx, query, item)
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin update information content tx: %w", err)
+	}
+	defer tx.Rollback()
+
+	result, err := tx.NamedExecContext(ctx, query, item)
 	if err != nil {
 		return fmt.Errorf("update information content: %w", err)
 	}
 	rowsAffected, _ := result.RowsAffected()
 	if rowsAffected == 0 {
 		return sql.ErrNoRows
+	}
+	if err := saveInformationEventsTx(ctx, tx, item.ID, item.Events); err != nil {
+		return fmt.Errorf("save information events: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit update information content tx: %w", err)
 	}
 	return nil
 }

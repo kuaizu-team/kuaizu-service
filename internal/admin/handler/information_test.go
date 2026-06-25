@@ -98,3 +98,38 @@ func (f *fakeAdminInformationRepo) AdminList(_ context.Context, params repositor
 	f.params = params
 	return []models.InformationContent{}, 0, nil
 }
+
+func TestBuildInformationContentKeepsEventIDsOnlyForCampusEvents(t *testing.T) {
+	published := true
+	order := 3
+	item, err := buildInformationContent(informationContentRequest{
+		Title:        "Campus event",
+		Content:      "Summary",
+		URL:          "https://example.com/article",
+		Category:     models.InformationCategoryCampusEvent,
+		DisplayOrder: &order,
+		IsPublished:  &published,
+		EventIDs:     []int{2, 0, 2, 5},
+	})
+	if err != nil {
+		t.Fatalf("buildInformationContent returned error: %v", err)
+	}
+	if len(item.Events) != 2 || item.Events[0].ID != 2 || item.Events[1].ID != 5 {
+		t.Fatalf("events = %+v, want IDs [2 5]", item.Events)
+	}
+
+	item, err = buildInformationContent(informationContentRequest{
+		Title:       "Project recommendation",
+		Content:     "Summary",
+		URL:         "https://example.com/project",
+		Category:    models.InformationCategoryCampusProject,
+		IsPublished: &published,
+		EventIDs:    []int{2},
+	})
+	if err != nil {
+		t.Fatalf("buildInformationContent returned error: %v", err)
+	}
+	if len(item.Events) != 0 {
+		t.Fatalf("events = %+v, want none for non-campus-event category", item.Events)
+	}
+}
