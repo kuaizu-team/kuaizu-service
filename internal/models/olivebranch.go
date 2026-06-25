@@ -16,6 +16,9 @@ type OliveBranch struct {
 	CostType         int       `db:"cost_type"` // 1-免费额度, 2-付费额度
 	Status           int       `db:"status"`    // 0-待处理, 1-已接受, 2-已拒绝, 3-已忽略
 	IsRead           bool      `db:"is_read"`   // 接收方是否已读
+	OperatorRole     *string   `db:"operator_role"`
+	OperatorRoleName *string   `db:"operator_role_name"`
+	CanReview        *bool     `db:"-"`
 	AssignedRole     *string   `db:"assigned_role"`
 	AssignedRoleName *string   `db:"assigned_role_name"`
 	IsCurrentMember  *bool     `db:"is_current_member"`
@@ -41,6 +44,9 @@ func (o *OliveBranch) ToVO() *api.OliveBranchVO {
 		CostType:         &o.CostType,
 		Status:           &status,
 		IsRead:           &o.IsRead,
+		OperatorRole:     o.OperatorRole,
+		OperatorRoleName: o.OperatorRoleName,
+		CanReview:        o.CanReview,
 		AssignedRole:     o.AssignedRole,
 		AssignedRoleName: o.AssignedRoleName,
 		IsCurrentMember:  o.IsCurrentMember,

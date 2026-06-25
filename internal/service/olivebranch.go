@@ -53,8 +53,14 @@ func (s *OliveBranchService) SendOliveBranch(ctx context.Context, userID int, re
 	if project == nil {
 		return nil, ErrNotFound("关联项目不存在")
 	}
-	if project.CreatorID != userID {
-		return nil, ErrForbidden("只有项目队长可以发送邀请")
+	members, err := s.repo.Project.ListMembers(ctx, req.RelatedProjectID)
+	if err != nil {
+		log.Printf("[OliveBranchService.SendOliveBranch] repository error listing project members: %v", err)
+		return nil, ErrInternal("检查项目成员权限失败")
+	}
+	operatorRole, operatorRoleName := currentUserProjectRole(project, userID, members)
+	if operatorRole == nil {
+		return nil, ErrForbidden("只有项目团队成员可以发送邀请")
 	}
 	projectName = &project.Name
 
@@ -126,6 +132,7 @@ func (s *OliveBranchService) SendOliveBranch(ctx context.Context, userID int, re
 		RelatedProjectID: req.RelatedProjectID,
 		CostType:         costType,
 		Status:           models.OliveBranchStatusPending,
+		OperatorRole:     operatorRole,
 	}
 
 	if err := s.repo.OliveBranch.CreateTx(ctx, tx, ob); err != nil {
@@ -139,6 +146,7 @@ func (s *OliveBranchService) SendOliveBranch(ctx context.Context, userID int, re
 	}
 
 	ob.ProjectName = projectName
+	ob.OperatorRoleName = operatorRoleName
 	ob.Sender = sender
 	ob.Receiver = receiver
 
