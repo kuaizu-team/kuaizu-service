@@ -95,7 +95,11 @@ func (s *Server) HandleOliveBranch(ctx echo.Context, id int) error {
 		return BadRequest(ctx, "请求参数错误")
 	}
 
-	ob, err := s.svc.OliveBranch.HandleOliveBranch(ctx.Request().Context(), userID, id, string(req.Action))
+	role := ""
+	if req.Role != nil {
+		role = *req.Role
+	}
+	ob, err := s.svc.OliveBranch.HandleOliveBranch(ctx.Request().Context(), userID, id, string(req.Action), role)
 	if err != nil {
 		return mapServiceError(ctx, err)
 	}

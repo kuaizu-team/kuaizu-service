@@ -30,6 +30,15 @@ properties:
     description: 邀请留言(已弃用)
   status:
     $ref: ./OliveBranchStatus.yaml
+  assignedRole:
+    type: string
+    description: Assigned project role code after joining
+  assignedRoleName:
+    type: string
+    description: Assigned project role name after joining
+  isCurrentMember:
+    type: boolean
+    description: Whether receiver is still a current project member
   isRead:
     type: boolean
     description: 接收方是否已读(仅发出列表有意义)

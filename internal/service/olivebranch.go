@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"log"
+	"strings"
 
 	"github.com/kuaizu-team/kuaizu-service/internal/models"
 	"github.com/kuaizu-team/kuaizu-service/internal/repository"
@@ -164,77 +165,142 @@ func (s *OliveBranchService) SendOliveBranch(ctx context.Context, userID int, re
 }
 
 // HandleOliveBranch processes accept/reject of an olive branch.
-func (s *OliveBranchService) HandleOliveBranch(ctx context.Context, userID, branchID int, action string) (*models.OliveBranch, error) {
+func (s *OliveBranchService) HandleOliveBranch(ctx context.Context, userID, branchID int, action string, role string) (*models.OliveBranch, error) {
 	ob, err := s.repo.OliveBranch.GetByID(ctx, branchID)
 	if err != nil {
 		log.Printf("[OliveBranchService.HandleOliveBranch] repository error getting olive branch: %v", err)
-		return nil, ErrInternal("查询橄榄枝失败")
+		return nil, ErrInternal("???????")
 	}
 	if ob == nil {
-		return nil, ErrNotFound("橄榄枝不存在")
+		return nil, ErrNotFound("??????")
 	}
-
-	if ob.ReceiverID != userID {
-		return nil, ErrForbidden("只有接收者可以处理此邀请")
-	}
-
-	if ob.Status != models.OliveBranchStatusPending {
-		return nil, ErrBadRequest("此邀请已被处理")
-	}
-
-	var newStatus int
+	action = strings.ToUpper(strings.TrimSpace(action))
+	role = strings.TrimSpace(role)
 	switch action {
-	case "ACCEPT":
-		newStatus = models.OliveBranchStatusAccepted
+	case "ACCEPT", "DISCUSS":
+		if ob.ReceiverID != userID {
+			return nil, ErrForbidden("????????????")
+		}
+		if ob.Status != models.OliveBranchStatusPending {
+			return nil, ErrBadRequest("???????")
+		}
+		if err := s.repo.OliveBranch.UpdateStatus(ctx, branchID, models.OliveBranchStatusDiscussing); err != nil {
+			log.Printf("[OliveBranchService.HandleOliveBranch] repository error updating status: %v", err)
+			return nil, ErrInternal("??????")
+		}
+		ob.Status = models.OliveBranchStatusDiscussing
+		s.notifyOliveBranchResult(ctx, ob.SenderID, userID, ob.Status)
+		return ob, nil
 	case "REJECT":
-		newStatus = models.OliveBranchStatusRejected
+		if ob.Status == models.OliveBranchStatusPending {
+			if ob.ReceiverID != userID {
+				return nil, ErrForbidden("????????????")
+			}
+		} else if ob.Status == models.OliveBranchStatusDiscussing {
+			if err := s.ensureCanOperateDiscussingBranch(ctx, ob, userID, ""); err != nil {
+				return nil, err
+			}
+		} else {
+			return nil, ErrBadRequest("???????")
+		}
+		if err := s.repo.OliveBranch.UpdateStatus(ctx, branchID, models.OliveBranchStatusRejected); err != nil {
+			log.Printf("[OliveBranchService.HandleOliveBranch] repository error updating status: %v", err)
+			return nil, ErrInternal("??????")
+		}
+		ob.Status = models.OliveBranchStatusRejected
+		s.notifyOliveBranchResult(ctx, ob.SenderID, userID, ob.Status)
+		return ob, nil
+	case "ADMIT":
+		if ob.Status != models.OliveBranchStatusDiscussing {
+			return nil, ErrBadRequest("?????????????????")
+		}
+		if role == "" {
+			return nil, ErrBadRequest("???????")
+		}
+		if err := s.ensureCanOperateDiscussingBranch(ctx, ob, userID, role); err != nil {
+			return nil, err
+		}
+		tx, err := s.repo.DB().BeginTxx(ctx, nil)
+		if err != nil {
+			return nil, ErrInternal("??????")
+		}
+		defer tx.Rollback()
+		if _, err := tx.ExecContext(ctx, `INSERT INTO project_members(project_id,user_id,role) VALUES(?,?,?) ON DUPLICATE KEY UPDATE role=VALUES(role), updated_at=CURRENT_TIMESTAMP`, ob.RelatedProjectID, ob.ReceiverID, role); err != nil {
+			log.Printf("[OliveBranchService.HandleOliveBranch] add member failed: %v", err)
+			return nil, ErrInternal("????????")
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE olive_branch_record SET status=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`, models.OliveBranchStatusAccepted, branchID); err != nil {
+			log.Printf("[OliveBranchService.HandleOliveBranch] update status failed: %v", err)
+			return nil, ErrInternal("??????")
+		}
+		if err := tx.Commit(); err != nil {
+			return nil, ErrInternal("??????")
+		}
+		ob.Status = models.OliveBranchStatusAccepted
+		ob.AssignedRole = &role
+		s.notifyOliveBranchResult(ctx, ob.ReceiverID, userID, ob.Status)
+		return ob, nil
 	default:
-		return nil, ErrBadRequest("操作类型无效，必须为ACCEPT或REJECT")
+		return nil, ErrBadRequest("??????")
 	}
+}
 
-	if err := IsValidStatus("olive_branch.status", newStatus); err != nil {
-		return nil, err
+func (s *OliveBranchService) ensureCanOperateDiscussingBranch(ctx context.Context, ob *models.OliveBranch, userID int, assignedRole string) error {
+	project, err := s.repo.Project.GetByID(ctx, ob.RelatedProjectID)
+	if err != nil {
+		log.Printf("[OliveBranchService.ensureCanOperateDiscussingBranch] repository error getting project: %v", err)
+		return ErrInternal("????????")
 	}
-
-	if err := s.repo.OliveBranch.UpdateStatus(ctx, branchID, newStatus); err != nil {
-		log.Printf("[OliveBranchService.HandleOliveBranch] repository error updating status: %v", err)
-		return nil, ErrInternal("处理邀请失败")
+	if project == nil {
+		return ErrNotFound("?????")
 	}
+	members, err := s.repo.Project.ListMembers(ctx, ob.RelatedProjectID)
+	if err != nil {
+		log.Printf("[OliveBranchService.ensureCanOperateDiscussingBranch] repository error listing members: %v", err)
+		return ErrInternal("??????")
+	}
+	currentRole, _ := currentUserProjectRole(project, userID, members)
+	if currentRole == nil {
+		return ErrForbidden("???????????")
+	}
+	if assignedRole != "" {
+		if !canAssignProjectRole(currentRole, assignedRole) {
+			return ErrForbidden("?????????????")
+		}
+		exists, err := s.repo.Project.RoleExists(ctx, assignedRole)
+		if err != nil {
+			return ErrInternal("????????")
+		}
+		if !exists {
+			return ErrBadRequest("???????")
+		}
+	}
+	return nil
+}
 
-	ob.Status = newStatus
-
-	// 向橄榄枝发送方推送「橄榄枝邀请结果通知」（MSG_USER_REPLY）
-	// userID 为响应者（接收方），ob.SenderID 为原发送方
-	go func(asyncCtx context.Context, senderID, responderID, status int) {
-		// 获取响应者昵称（nickname 字段）
+func (s *OliveBranchService) notifyOliveBranchResult(ctx context.Context, targetUserID, responderID, status int) {
+	go func(asyncCtx context.Context) {
 		responder, err := s.repo.User.GetByID(asyncCtx, responderID)
 		if err != nil || responder == nil {
 			log.Printf("[OliveBranchService.HandleOliveBranch] notification: failed to get responder: %v", err)
 			return
 		}
-
-		responderName := "匿名用户"
+		responderName := "????"
 		if responder.Nickname != nil && *responder.Nickname != "" {
 			responderName = *responder.Nickname
 		}
-
-		resultStr := "同意"         // phrase3 ≤ 5 字
-		remark := "恭喜！对方已同意您的邀请。" // thing5，13 字 ≤ 20
+		resultStr := "??????"
+		remark := "??????????"
 		if status == models.OliveBranchStatusRejected {
-			resultStr = "拒绝"
-			remark = "很遗憾，对方拒绝了您的邀请。" // thing5，14 字 ≤ 20
+			resultStr = "??"
+			remark = "??????????"
+		} else if status == models.OliveBranchStatusAccepted {
+			resultStr = "???"
+			remark = "????????"
 		}
-
-		data := map[string]string{
-			"nickname": truncate20(responderName), // thing2 ≤ 20 字
-			"result":   resultStr,
-			"remark":   remark,
-		}
-
-		if err := s.message.SendSubscribeMsgByBizKey(asyncCtx, senderID, models.MsgBizKeyUserReply, data); err != nil {
+		data := map[string]string{"nickname": truncate20(responderName), "result": resultStr, "remark": remark}
+		if err := s.message.SendSubscribeMsgByBizKey(asyncCtx, targetUserID, models.MsgBizKeyUserReply, data); err != nil {
 			log.Printf("[OliveBranchService.HandleOliveBranch] notification error: %v", err)
 		}
-	}(context.WithoutCancel(ctx), ob.SenderID, userID, newStatus)
-
-	return ob, nil
+	}(context.WithoutCancel(ctx))
 }

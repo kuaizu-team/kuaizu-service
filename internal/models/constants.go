@@ -34,10 +34,11 @@ const (
 
 // Olive Branch Status
 const (
-	OliveBranchStatusPending  = 0 // 待处理
-	OliveBranchStatusAccepted = 1 // 已接受
-	OliveBranchStatusRejected = 2 // 已拒绝
-	OliveBranchStatusIgnored  = 3 // 已忽略
+	OliveBranchStatusPending    = 0 // ???
+	OliveBranchStatusDiscussing = 1 // ?????
+	OliveBranchStatusAccepted   = 2 // ???/???
+	OliveBranchStatusRejected   = 3 // ???
+	OliveBranchStatusIgnored    = 4 // ???
 )
 
 // Olive Branch Cost Type
