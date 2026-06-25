@@ -248,24 +248,24 @@ func (s *OliveBranchService) HandleOliveBranch(ctx context.Context, userID, bran
 	ob, err := s.repo.OliveBranch.GetByID(ctx, branchID)
 	if err != nil {
 		log.Printf("[OliveBranchService.HandleOliveBranch] repository error getting olive branch: %v", err)
-		return nil, ErrInternal("???????")
+		return nil, ErrInternal("\u67e5\u8be2\u6a44\u6984\u679d\u5931\u8d25")
 	}
 	if ob == nil {
-		return nil, ErrNotFound("??????")
+		return nil, ErrNotFound("\u6a44\u6984\u679d\u4e0d\u5b58\u5728")
 	}
 	action = strings.ToUpper(strings.TrimSpace(action))
 	role = strings.TrimSpace(role)
 	switch action {
 	case "ACCEPT", "DISCUSS":
 		if ob.ReceiverID != userID {
-			return nil, ErrForbidden("????????????")
+			return nil, ErrForbidden("\u65e0\u6743\u5904\u7406\u8be5\u6a44\u6984\u679d")
 		}
 		if ob.Status != models.OliveBranchStatusPending {
-			return nil, ErrBadRequest("???????")
+			return nil, ErrBadRequest("\u5f53\u524d\u72b6\u6001\u4e0d\u53ef\u64cd\u4f5c")
 		}
 		if err := s.repo.OliveBranch.UpdateStatus(ctx, branchID, models.OliveBranchStatusDiscussing); err != nil {
 			log.Printf("[OliveBranchService.HandleOliveBranch] repository error updating status: %v", err)
-			return nil, ErrInternal("??????")
+			return nil, ErrInternal("\u66f4\u65b0\u72b6\u6001\u5931\u8d25")
 		}
 		ob.Status = models.OliveBranchStatusDiscussing
 		s.notifyOliveBranchResult(ctx, ob.SenderID, userID, ob.Status)
@@ -273,54 +273,54 @@ func (s *OliveBranchService) HandleOliveBranch(ctx context.Context, userID, bran
 	case "REJECT":
 		if ob.Status == models.OliveBranchStatusPending {
 			if ob.ReceiverID != userID {
-				return nil, ErrForbidden("????????????")
+				return nil, ErrForbidden("\u65e0\u6743\u5904\u7406\u8be5\u6a44\u6984\u679d")
 			}
 		} else if ob.Status == models.OliveBranchStatusDiscussing {
 			if err := s.ensureCanOperateDiscussingBranch(ctx, ob, userID, ""); err != nil {
 				return nil, err
 			}
 		} else {
-			return nil, ErrBadRequest("???????")
+			return nil, ErrBadRequest("\u5f53\u524d\u72b6\u6001\u4e0d\u53ef\u64cd\u4f5c")
 		}
 		if err := s.repo.OliveBranch.UpdateStatus(ctx, branchID, models.OliveBranchStatusRejected); err != nil {
 			log.Printf("[OliveBranchService.HandleOliveBranch] repository error updating status: %v", err)
-			return nil, ErrInternal("??????")
+			return nil, ErrInternal("\u66f4\u65b0\u72b6\u6001\u5931\u8d25")
 		}
 		ob.Status = models.OliveBranchStatusRejected
 		s.notifyOliveBranchResult(ctx, ob.SenderID, userID, ob.Status)
 		return ob, nil
 	case "ADMIT":
 		if ob.Status != models.OliveBranchStatusDiscussing {
-			return nil, ErrBadRequest("?????????????????")
+			return nil, ErrBadRequest("\u8bf7\u5148\u8fdb\u5165\u4e92\u76f8\u4e86\u89e3\u540e\u518d\u51c6\u8bb8\u5165\u961f")
 		}
 		if role == "" {
-			return nil, ErrBadRequest("???????")
+			return nil, ErrBadRequest("\u8bf7\u9009\u62e9\u56e2\u961f\u89d2\u8272")
 		}
 		if err := s.ensureCanOperateDiscussingBranch(ctx, ob, userID, role); err != nil {
 			return nil, err
 		}
 		tx, err := s.repo.DB().BeginTxx(ctx, nil)
 		if err != nil {
-			return nil, ErrInternal("??????")
+			return nil, ErrInternal("\u5f00\u542f\u4e8b\u52a1\u5931\u8d25")
 		}
 		defer tx.Rollback()
 		if _, err := tx.ExecContext(ctx, `INSERT INTO project_members(project_id,user_id,role) VALUES(?,?,?) ON DUPLICATE KEY UPDATE role=VALUES(role), updated_at=CURRENT_TIMESTAMP`, ob.RelatedProjectID, ob.ReceiverID, role); err != nil {
 			log.Printf("[OliveBranchService.HandleOliveBranch] add member failed: %v", err)
-			return nil, ErrInternal("????????")
+			return nil, ErrInternal("\u52a0\u5165\u56e2\u961f\u5931\u8d25")
 		}
 		if _, err := tx.ExecContext(ctx, `UPDATE olive_branch_record SET status=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`, models.OliveBranchStatusAccepted, branchID); err != nil {
 			log.Printf("[OliveBranchService.HandleOliveBranch] update status failed: %v", err)
-			return nil, ErrInternal("??????")
+			return nil, ErrInternal("\u66f4\u65b0\u72b6\u6001\u5931\u8d25")
 		}
 		if err := tx.Commit(); err != nil {
-			return nil, ErrInternal("??????")
+			return nil, ErrInternal("\u63d0\u4ea4\u4e8b\u52a1\u5931\u8d25")
 		}
 		ob.Status = models.OliveBranchStatusAccepted
 		ob.AssignedRole = &role
 		s.notifyOliveBranchResult(ctx, ob.ReceiverID, userID, ob.Status)
 		return ob, nil
 	default:
-		return nil, ErrBadRequest("??????")
+		return nil, ErrBadRequest("\u4e0d\u652f\u6301\u7684\u64cd\u4f5c")
 	}
 }
 
@@ -328,30 +328,30 @@ func (s *OliveBranchService) ensureCanOperateDiscussingBranch(ctx context.Contex
 	project, err := s.repo.Project.GetByID(ctx, ob.RelatedProjectID)
 	if err != nil {
 		log.Printf("[OliveBranchService.ensureCanOperateDiscussingBranch] repository error getting project: %v", err)
-		return ErrInternal("????????")
+		return ErrInternal("\u67e5\u8be2\u9879\u76ee\u5931\u8d25")
 	}
 	if project == nil {
-		return ErrNotFound("?????")
+		return ErrNotFound("\u9879\u76ee\u4e0d\u5b58\u5728")
 	}
 	members, err := s.repo.Project.ListMembers(ctx, ob.RelatedProjectID)
 	if err != nil {
 		log.Printf("[OliveBranchService.ensureCanOperateDiscussingBranch] repository error listing members: %v", err)
-		return ErrInternal("??????")
+		return ErrInternal("\u67e5\u8be2\u56e2\u961f\u6210\u5458\u5931\u8d25")
 	}
 	currentRole, _ := currentUserProjectRole(project, userID, members)
 	if currentRole == nil {
-		return ErrForbidden("???????????")
+		return ErrForbidden("\u65e0\u6743\u7ba1\u7406\u8be5\u9879\u76ee")
 	}
 	if assignedRole != "" {
 		if !canAssignProjectRole(currentRole, assignedRole) {
-			return ErrForbidden("?????????????")
+			return ErrForbidden("\u65e0\u6743\u5206\u914d\u8be5\u56e2\u961f\u89d2\u8272")
 		}
 		exists, err := s.repo.Project.RoleExists(ctx, assignedRole)
 		if err != nil {
-			return ErrInternal("????????")
+			return ErrInternal("\u67e5\u8be2\u89d2\u8272\u5931\u8d25")
 		}
 		if !exists {
-			return ErrBadRequest("???????")
+			return ErrBadRequest("\u89d2\u8272\u4e0d\u5b58\u5728")
 		}
 	}
 	return nil
@@ -364,18 +364,18 @@ func (s *OliveBranchService) notifyOliveBranchResult(ctx context.Context, target
 			log.Printf("[OliveBranchService.HandleOliveBranch] notification: failed to get responder: %v", err)
 			return
 		}
-		responderName := "????"
+		responderName := "\u5bf9\u65b9"
 		if responder.Nickname != nil && *responder.Nickname != "" {
 			responderName = *responder.Nickname
 		}
-		resultStr := "??????"
-		remark := "??????????"
+		resultStr := "\u5df2\u8fdb\u5165\u4e92\u76f8\u4e86\u89e3"
+		remark := "\u8bf7\u524d\u5f80\u9879\u76ee\u6216\u4eba\u624d\u8be6\u60c5\u7ee7\u7eed\u6c9f\u901a"
 		if status == models.OliveBranchStatusRejected {
-			resultStr = "??"
-			remark = "??????????"
+			resultStr = "\u4e0d\u5408\u9002"
+			remark = "\u5bf9\u65b9\u6682\u672a\u7ee7\u7eed\u63a8\u8fdb\u672c\u6b21\u9080\u7ea6"
 		} else if status == models.OliveBranchStatusAccepted {
-			resultStr = "???"
-			remark = "????????"
+			resultStr = "\u5df2\u5165\u961f"
+			remark = "\u5df2\u51c6\u8bb8\u52a0\u5165\u56e2\u961f"
 		}
 		data := map[string]string{"nickname": truncate20(responderName), "result": resultStr, "remark": remark}
 		if err := s.message.SendSubscribeMsgByBizKey(asyncCtx, targetUserID, models.MsgBizKeyUserReply, data); err != nil {
