@@ -172,6 +172,77 @@ func (s *OliveBranchService) SendOliveBranch(ctx context.Context, userID int, re
 	return ob, nil
 }
 
+// ResendOliveBranch reactivates an existing olive branch record instead of creating a duplicate.
+func (s *OliveBranchService) ResendOliveBranch(ctx context.Context, userID, branchID int) (*models.OliveBranch, error) {
+	ob, err := s.repo.OliveBranch.GetByID(ctx, branchID)
+	if err != nil {
+		log.Printf("[OliveBranchService.ResendOliveBranch] repository error getting olive branch: %v", err)
+		return nil, ErrInternal("查询橄榄枝失败")
+	}
+	if ob == nil {
+		return nil, ErrNotFound("橄榄枝不存在")
+	}
+	if ob.Status == models.OliveBranchStatusPending || ob.Status == models.OliveBranchStatusDiscussing {
+		return nil, ErrBadRequest("当前状态不需要再次发送")
+	}
+
+	project, err := s.repo.Project.GetByID(ctx, ob.RelatedProjectID)
+	if err != nil {
+		log.Printf("[OliveBranchService.ResendOliveBranch] repository error getting project: %v", err)
+		return nil, ErrInternal("查询项目失败")
+	}
+	if project == nil {
+		return nil, ErrNotFound("关联项目不存在")
+	}
+	members, err := s.repo.Project.ListMembers(ctx, ob.RelatedProjectID)
+	if err != nil {
+		log.Printf("[OliveBranchService.ResendOliveBranch] repository error listing members: %v", err)
+		return nil, ErrInternal("检查项目成员失败")
+	}
+	currentRole, operatorRoleName := currentUserProjectRole(project, userID, members)
+	if currentRole == nil {
+		return nil, ErrForbidden("只有项目团队成员可以再次发送橄榄枝")
+	}
+	for _, member := range members {
+		if member.UserID == ob.ReceiverID {
+			return nil, ErrBadRequest("该用户仍在团队中，无需再次发送")
+		}
+	}
+
+	if _, err := s.repo.DB().ExecContext(ctx, `UPDATE olive_branch_record SET status=?, is_read=FALSE, updated_at=CURRENT_TIMESTAMP WHERE id=?`, models.OliveBranchStatusPending, branchID); err != nil {
+		log.Printf("[OliveBranchService.ResendOliveBranch] update status failed: %v", err)
+		return nil, ErrInternal("再次发送橄榄枝失败")
+	}
+
+	ob.Status = models.OliveBranchStatusPending
+	ob.IsRead = false
+	ob.OperatorRole = currentRole
+	ob.OperatorRoleName = operatorRoleName
+	ob.ProjectName = &project.Name
+
+	go func(asyncCtx context.Context) {
+		sender, err := s.repo.User.GetByID(asyncCtx, userID)
+		if err != nil || sender == nil {
+			log.Printf("[OliveBranchService.ResendOliveBranch] notification: failed to get sender: %v", err)
+			return
+		}
+		inviterName := "匿名用户"
+		if sender.Nickname != nil && *sender.Nickname != "" {
+			inviterName = *sender.Nickname
+		}
+		data := map[string]string{
+			"project_name": truncate20(project.Name),
+			"inviter":      truncate20(inviterName),
+			"remark":       "您收到一条新的橄榄枝邀请",
+		}
+		if err := s.message.SendSubscribeMsgByBizKey(asyncCtx, ob.ReceiverID, models.MsgBizKeyInviteJoin, data); err != nil {
+			log.Printf("[OliveBranchService.ResendOliveBranch] notification error: %v", err)
+		}
+	}(context.WithoutCancel(ctx))
+
+	return ob, nil
+}
+
 // HandleOliveBranch processes accept/reject of an olive branch.
 func (s *OliveBranchService) HandleOliveBranch(ctx context.Context, userID, branchID int, action string, role string) (*models.OliveBranch, error) {
 	ob, err := s.repo.OliveBranch.GetByID(ctx, branchID)

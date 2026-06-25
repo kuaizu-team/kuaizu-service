@@ -134,6 +134,8 @@ func main() {
 	// Olive-branch receiver read status
 	apiGroup.POST("/olive-branches/received/mark-read", server.MarkReceiverOliveBranchRead)
 
+	apiGroup.POST("/olive-branches/:id/resend", server.ResendOliveBranch)
+
 	// Project-application unread badge endpoints
 	apiGroup.GET("/project-applications/my/unread-status", server.GetMyApplicationUnreadStatus)
 	apiGroup.POST("/project-applications/my/mark-read", server.MarkMyApplicationsRead)

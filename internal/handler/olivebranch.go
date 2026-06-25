@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"log"
+	"strconv"
 	"time"
 
 	"github.com/kuaizu-team/kuaizu-service/api"
@@ -100,6 +101,22 @@ func (s *Server) HandleOliveBranch(ctx echo.Context, id int) error {
 		role = *req.Role
 	}
 	ob, err := s.svc.OliveBranch.HandleOliveBranch(ctx.Request().Context(), userID, id, string(req.Action), role)
+	if err != nil {
+		return mapServiceError(ctx, err)
+	}
+
+	return Success(ctx, ob.ToVO())
+}
+
+// ResendOliveBranch handles POST /olive-branches/{id}/resend.
+func (s *Server) ResendOliveBranch(ctx echo.Context) error {
+	userID := GetUserID(ctx)
+	id, err := strconv.Atoi(ctx.Param("id"))
+	if err != nil || id <= 0 {
+		return BadRequest(ctx, "橄榄枝ID不正确")
+	}
+
+	ob, err := s.svc.OliveBranch.ResendOliveBranch(ctx.Request().Context(), userID, id)
 	if err != nil {
 		return mapServiceError(ctx, err)
 	}
