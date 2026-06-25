@@ -311,7 +311,7 @@ func (r *OliveBranchRepository) ListBySenderID(ctx context.Context, params Olive
 
 	// Query with pagination
 	offset := (params.Page - 1) * params.Size
-	args := []interface{}{params.SenderID, params.SenderID, params.SenderID, params.SenderID, params.SenderID}
+	args := []interface{}{params.SenderID, params.SenderID, params.SenderID, params.SenderID, params.SenderID, params.SenderID}
 
 	query := `
 		SELECT
