@@ -134,10 +134,22 @@ func (r *EventRepository) Update(ctx context.Context, event *models.Event) error
 		    registration_deadline = :registration_deadline,
 		    article_url = :article_url,
 		    display_order = :display_order,
-		    created_at = :created_at,
 		    updated_at = CURRENT_TIMESTAMP
 		WHERE id = :id
 	`
+	if !event.CreatedAt.IsZero() {
+		query = `
+			UPDATE event
+			SET name = :name,
+			    is_ranking = :is_ranking,
+			    registration_deadline = :registration_deadline,
+			    article_url = :article_url,
+			    display_order = :display_order,
+			    created_at = :created_at,
+			    updated_at = CURRENT_TIMESTAMP
+			WHERE id = :id
+		`
+	}
 	result, err := r.db.NamedExecContext(ctx, query, event)
 	if err != nil {
 		return fmt.Errorf("update event: %w", err)
@@ -147,6 +159,36 @@ func (r *EventRepository) Update(ctx context.Context, event *models.Event) error
 		return sql.ErrNoRows
 	}
 	return nil
+}
+
+func (r *EventRepository) Merge(ctx context.Context, sourceID, targetID int) error {
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.ExecContext(ctx, `INSERT IGNORE INTO project_event(project_id, event_id) SELECT project_id, ? FROM project_event WHERE event_id = ?`, targetID, sourceID); err != nil {
+		return fmt.Errorf("merge project event relations: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM project_event WHERE event_id = ?`, sourceID); err != nil {
+		return fmt.Errorf("delete source project event relations: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT IGNORE INTO information_event(information_id, event_id) SELECT information_id, ? FROM information_event WHERE event_id = ?`, targetID, sourceID); err != nil {
+		return fmt.Errorf("merge information event relations: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM information_event WHERE event_id = ?`, sourceID); err != nil {
+		return fmt.Errorf("delete source information event relations: %w", err)
+	}
+	result, err := tx.ExecContext(ctx, "DELETE FROM event WHERE id = ?", sourceID)
+	if err != nil {
+		return fmt.Errorf("delete source event: %w", err)
+	}
+	rows, _ := result.RowsAffected()
+	if rows == 0 {
+		return sql.ErrNoRows
+	}
+	return tx.Commit()
 }
 
 func (r *EventRepository) Delete(ctx context.Context, id int) error {

@@ -34,11 +34,11 @@ const (
 
 // Olive Branch Status
 const (
-	OliveBranchStatusPending    = 0 // ???
-	OliveBranchStatusDiscussing = 1 // ?????
-	OliveBranchStatusAccepted   = 2 // ???/???
-	OliveBranchStatusRejected   = 3 // ???
-	OliveBranchStatusIgnored    = 4 // ???
+	OliveBranchStatusPending    = 0 // pending
+	OliveBranchStatusAccepted   = 1 // accepted / joined
+	OliveBranchStatusRejected   = 2 // rejected
+	OliveBranchStatusIgnored    = 3 // ignored
+	OliveBranchStatusDiscussing = 4 // discussing
 )
 
 // Olive Branch Cost Type

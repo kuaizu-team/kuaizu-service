@@ -59,6 +59,7 @@ type EventRepo interface {
 	Create(ctx context.Context, event *models.Event) error
 	Update(ctx context.Context, event *models.Event) error
 	Delete(ctx context.Context, id int) error
+	Merge(ctx context.Context, sourceID, targetID int) error
 	ListByProjectIDs(ctx context.Context, projectIDs []int) (map[int][]models.Event, error)
 	ListProjectIDs(ctx context.Context, eventID int) ([]int, error)
 	ReplaceProjectEventsTx(ctx context.Context, tx *sqlx.Tx, projectID int, eventIDs []int) error

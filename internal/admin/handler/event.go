@@ -23,6 +23,10 @@ type adminEventRequest struct {
 	CreatedAt            *string `json:"createdAt"`
 }
 
+type adminEventMergeRequest struct {
+	TargetEventID int `json:"targetEventId"`
+}
+
 func (s *AdminServer) ListEvents(ctx echo.Context) error {
 	if err := requireSuperAdmin(ctx); err != nil {
 		return err
@@ -107,6 +111,25 @@ func (s *AdminServer) DeleteEvent(ctx echo.Context) error {
 		return mapServiceError(ctx, err)
 	}
 	return response.SuccessMessage(ctx, "operation succeeded")
+}
+
+func (s *AdminServer) MergeEvent(ctx echo.Context) error {
+	if err := requireSuperAdmin(ctx); err != nil {
+		return err
+	}
+	id, err := parseIDParam(ctx, "id", "event")
+	if err != nil {
+		return err
+	}
+	var req adminEventMergeRequest
+	if err := ctx.Bind(&req); err != nil {
+		return response.BadRequest(ctx, "invalid request body")
+	}
+	merged, err := s.svc.Event.MergeEvent(ctx.Request().Context(), id, req.TargetEventID)
+	if err != nil {
+		return mapServiceError(ctx, err)
+	}
+	return response.Success(ctx, adminvo.NewAdminEventVO(merged))
 }
 
 func buildAdminEventModel(req adminEventRequest) (*models.Event, error) {

@@ -105,3 +105,33 @@ func (s *EventService) DeleteEvent(ctx context.Context, id int) error {
 	}
 	return nil
 }
+
+func (s *EventService) MergeEvent(ctx context.Context, sourceID, targetID int) (*models.Event, error) {
+	if sourceID <= 0 || targetID <= 0 {
+		return nil, ErrBadRequest("invalid event id")
+	}
+	if sourceID == targetID {
+		return nil, ErrBadRequest("source event and target event must be different")
+	}
+	source, err := s.repo.Event.GetByID(ctx, sourceID)
+	if err != nil {
+		log.Printf("[EventService.MergeEvent] repository error getting source event: %v", err)
+		return nil, ErrInternal("get source event failed")
+	}
+	if source == nil {
+		return nil, ErrNotFound("source event not found")
+	}
+	target, err := s.repo.Event.GetByID(ctx, targetID)
+	if err != nil {
+		log.Printf("[EventService.MergeEvent] repository error getting target event: %v", err)
+		return nil, ErrInternal("get target event failed")
+	}
+	if target == nil {
+		return nil, ErrNotFound("target event not found")
+	}
+	if err := s.repo.Event.Merge(ctx, sourceID, targetID); err != nil {
+		log.Printf("[EventService.MergeEvent] repository error: %v", err)
+		return nil, ErrInternal("merge event failed")
+	}
+	return s.repo.Event.GetByID(ctx, targetID)
+}

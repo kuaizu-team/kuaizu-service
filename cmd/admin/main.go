@@ -104,6 +104,7 @@ func main() {
 	adminGroup.POST("/events", server.CreateEvent)
 	adminGroup.PUT("/events/:id", server.UpdateEvent)
 	adminGroup.DELETE("/events/:id", server.DeleteEvent)
+	adminGroup.POST("/events/:id/merge", server.MergeEvent)
 
 	adminGroup.GET("/recommendations/projects", server.ListProjectRecommendations)
 	adminGroup.POST("/recommendations/projects", server.CreateProjectRecommendation)
