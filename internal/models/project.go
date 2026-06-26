@@ -16,10 +16,10 @@ type Project struct {
 	SchoolID             *int       `db:"school_id"`
 	Direction            *int       `db:"direction"`
 	MemberCount          *int       `db:"member_count"`
-	Status               int        `db:"status"`                // 0-待审核, 1-已通过, 2-已驳回, 3-已关闭, 4-删除中, 5-已结束
-	PromotionStatus      int        `db:"promotion_status"`      // 0-无, 1-推广中, 2-已结束
-	PromotionExpireTime  *time.Time `db:"promotion_expire_time"` // 推广结束时间
-	ViewCount            int        `db:"view_count"`            // 浏览量
+	Status               int        `db:"status"`                // 0-寰呭鏍? 1-宸查€氳繃, 2-宸查┏鍥? 3-宸插叧闂? 4-鍒犻櫎涓? 5-宸茬粨鏉?
+	PromotionStatus      int        `db:"promotion_status"`      // 0-鏃? 1-鎺ㄥ箍涓? 2-宸茬粨鏉?
+	PromotionExpireTime  *time.Time `db:"promotion_expire_time"` // 鎺ㄥ箍缁撴潫鏃堕棿
+	ViewCount            int        `db:"view_count"`            // 娴忚閲?
 	CreatedAt            time.Time  `db:"created_at"`
 	UpdatedAt            time.Time  `db:"updated_at"`
 	RejectReason         *string    `db:"reject_reason"`
@@ -35,6 +35,7 @@ type Project struct {
 	PublisherRoleName          *string            `db:"publisher_role_name"`
 	InitiatingSchoolName       *string            `db:"initiating_school_name"`
 	Tags                       []ProjectTag       `db:"-"`
+	Events                     []Event            `db:"-"`
 	Milestones                 []ProjectMilestone `db:"-"`
 	Members                    []ProjectMember    `db:"-"`
 	Interaction                Interaction        `db:"-"`
@@ -44,9 +45,9 @@ type Project struct {
 	CanCompleteRecruitment     *bool              `db:"-"`
 	CanDeleteMembers           *bool              `db:"-"`
 	Creator                    *User              `db:"-"`
-	CreatorTalentProfileStatus *int               `db:"-"`                         // 创建者名片状态（仅详情接口填充）
-	PendingApplicationCount    int                `db:"pending_application_count"` // 待处理申请数（仅列表接口填充）
-	PendingCount               int                `db:"pending_count"`             // 管理后台用：投递+橄榄枝待处理总数（仅管理后台列表填充）
+	CreatorTalentProfileStatus *int               `db:"-"`                         // 鍒涘缓鑰呭悕鐗囩姸鎬侊紙浠呰鎯呮帴鍙ｅ～鍏咃級
+	PendingApplicationCount    int                `db:"pending_application_count"` // 寰呭鐞嗙敵璇锋暟锛堜粎鍒楄〃鎺ュ彛濉厖锛?
+	PendingCount               int                `db:"pending_count"`             // 绠＄悊鍚庡彴鐢細鎶曢€?姗勬鏋濆緟澶勭悊鎬绘暟锛堜粎绠＄悊鍚庡彴鍒楄〃濉厖锛?
 }
 
 type ProjectTag struct {
@@ -127,6 +128,13 @@ func (p *Project) ToVO() *api.ProjectVO {
 		CanCompleteRecruitment:  p.CanCompleteRecruitment,
 		CanDeleteMembers:        p.CanDeleteMembers,
 	}
+	if len(p.Events) > 0 {
+		events := make([]api.EventVO, len(p.Events))
+		for i := range p.Events {
+			events[i] = p.Events[i].ToVO()
+		}
+		vo.Events = &events
+	}
 	if len(p.Tags) > 0 {
 		tags := make([]api.ProjectTagVO, len(p.Tags))
 		for i := range p.Tags {
@@ -171,6 +179,13 @@ func (p *Project) ToDetailVO() *api.ProjectDetailVO {
 		CurrentUserRoleName:    p.CurrentUserRoleName,
 		CanCompleteRecruitment: p.CanCompleteRecruitment,
 		CanDeleteMembers:       p.CanDeleteMembers,
+	}
+	if len(p.Events) > 0 {
+		events := make([]api.EventVO, len(p.Events))
+		for i := range p.Events {
+			events[i] = p.Events[i].ToVO()
+		}
+		vo.Events = &events
 	}
 	if len(p.Tags) > 0 {
 		tags := make([]api.ProjectTagVO, len(p.Tags))

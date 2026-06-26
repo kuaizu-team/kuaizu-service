@@ -4,11 +4,11 @@ parameters:
     required: true
     schema:
       type: integer
-    description: 橄榄枝ID
+    description: Olive branch ID
 patch:
   tags:
     - OliveBranches
-  summary: 处理邀请(接受/拒绝)
+  summary: Handle olive branch invitation
   operationId: handleOliveBranch
   requestBody:
     required: true
@@ -23,11 +23,16 @@ patch:
               type: string
               enum:
                 - ACCEPT
+                - DISCUSS
+                - ADMIT
                 - REJECT
-              description: 操作类型
+              description: ACCEPT/DISCUSS enters discussing, ADMIT joins the team, REJECT declines
+            role:
+              type: string
+              description: Project role to assign when action is ADMIT
   responses:
     '200':
-      description: 操作成功
+      description: Success
       content:
         application/json:
           schema:

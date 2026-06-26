@@ -12,6 +12,16 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
+type createProjectRequest struct {
+	api.CreateProjectDTO
+	EventIDs *[]int `json:"eventIds"`
+}
+
+type updateProjectRequest struct {
+	api.UpdateProjectDTO
+	EventIDs *[]int `json:"eventIds"`
+}
+
 // ListProjects handles GET /projects
 func (s *Server) ListProjects(ctx echo.Context, params api.ListProjectsParams) error {
 	listParams := repository.ListParams{
@@ -80,7 +90,7 @@ func (s *Server) ListProjects(ctx echo.Context, params api.ListProjectsParams) e
 func (s *Server) CreateProject(ctx echo.Context) error {
 	userID := GetUserID(ctx)
 
-	var req api.CreateProjectDTO
+	var req createProjectRequest
 	if err := ctx.Bind(&req); err != nil {
 		return BadRequest(ctx, "请求参数错误")
 	}
@@ -100,6 +110,7 @@ func (s *Server) CreateProject(ctx echo.Context) error {
 		InitiatingSchoolID:   req.InitiatingSchoolId,
 		Milestones:           req.Milestones,
 		Members:              req.Members,
+		EventIDs:             req.EventIDs,
 	}
 
 	project, err := s.svc.Project.CreateProject(ctx.Request().Context(), input)
@@ -332,7 +343,7 @@ func (s *Server) ListProjectPromotionBatchUsers(ctx echo.Context, id int, batchI
 func (s *Server) UpdateProject(ctx echo.Context, id int) error {
 	userID := GetUserID(ctx)
 
-	var req api.UpdateProjectDTO
+	var req updateProjectRequest
 	if err := ctx.Bind(&req); err != nil {
 		return BadRequest(ctx, "请求参数错误")
 	}
@@ -352,6 +363,7 @@ func (s *Server) UpdateProject(ctx echo.Context, id int) error {
 		InitiatingSchoolID:   req.InitiatingSchoolId,
 		Milestones:           req.Milestones,
 		Members:              req.Members,
+		EventIDs:             req.EventIDs,
 	}
 
 	project, err := s.svc.Project.UpdateProject(ctx.Request().Context(), id, userID, input)

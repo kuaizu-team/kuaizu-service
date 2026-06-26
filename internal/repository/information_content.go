@@ -83,6 +83,9 @@ func (r *InformationContentRepository) AdminList(ctx context.Context, params Inf
 	if err := r.db.SelectContext(ctx, &items, query, args...); err != nil {
 		return nil, 0, fmt.Errorf("query admin information content: %w", err)
 	}
+	if err := r.enrichEventsBatch(ctx, items); err != nil {
+		return nil, 0, err
+	}
 	return items, total, nil
 }
 
@@ -101,7 +104,11 @@ func (r *InformationContentRepository) AdminGetByID(ctx context.Context, id int)
 		}
 		return nil, fmt.Errorf("query information content by id: %w", err)
 	}
-	return &item, nil
+	items := []models.InformationContent{item}
+	if err := r.enrichEventsBatch(ctx, items); err != nil {
+		return nil, err
+	}
+	return &items[0], nil
 }
 
 // AdminCreate inserts a new information item.
@@ -110,12 +117,24 @@ func (r *InformationContentRepository) AdminCreate(ctx context.Context, item *mo
 		INSERT INTO information_content (title, url, content, category, display_order, is_published)
 		VALUES (:title, :url, :content, :category, :display_order, :is_published)
 	`
-	result, err := r.db.NamedExecContext(ctx, query, item)
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin create information content tx: %w", err)
+	}
+	defer tx.Rollback()
+
+	result, err := tx.NamedExecContext(ctx, query, item)
 	if err != nil {
 		return fmt.Errorf("create information content: %w", err)
 	}
 	id, _ := result.LastInsertId()
 	item.ID = int(id)
+	if err := saveInformationEventsTx(ctx, tx, item.ID, item.Events); err != nil {
+		return fmt.Errorf("save information events: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit create information content tx: %w", err)
+	}
 	return nil
 }
 
@@ -132,13 +151,25 @@ func (r *InformationContentRepository) AdminUpdate(ctx context.Context, item *mo
 		    updated_at = CURRENT_TIMESTAMP
 		WHERE id = :id
 	`
-	result, err := r.db.NamedExecContext(ctx, query, item)
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin update information content tx: %w", err)
+	}
+	defer tx.Rollback()
+
+	result, err := tx.NamedExecContext(ctx, query, item)
 	if err != nil {
 		return fmt.Errorf("update information content: %w", err)
 	}
 	rowsAffected, _ := result.RowsAffected()
 	if rowsAffected == 0 {
 		return sql.ErrNoRows
+	}
+	if err := saveInformationEventsTx(ctx, tx, item.ID, item.Events); err != nil {
+		return fmt.Errorf("save information events: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit update information content tx: %w", err)
 	}
 	return nil
 }
@@ -147,6 +178,57 @@ func (r *InformationContentRepository) AdminUpdate(ctx context.Context, item *mo
 func (r *InformationContentRepository) AdminDelete(ctx context.Context, id int) error {
 	if _, err := r.db.ExecContext(ctx, "DELETE FROM information_content WHERE id = ?", id); err != nil {
 		return fmt.Errorf("delete information content: %w", err)
+	}
+	return nil
+}
+
+func (r *InformationContentRepository) enrichEventsBatch(ctx context.Context, items []models.InformationContent) error {
+	if len(items) == 0 {
+		return nil
+	}
+	ids := make([]int, 0, len(items))
+	index := make(map[int]int, len(items))
+	for i := range items {
+		ids = append(ids, items[i].ID)
+		index[items[i].ID] = i
+	}
+	query, args, err := sqlx.In(`SELECT ie.information_id, e.id, e.name, e.is_ranking, e.registration_deadline, e.article_url, e.display_order, e.created_at, e.updated_at
+		FROM information_event ie
+		JOIN event e ON e.id = ie.event_id
+		WHERE ie.information_id IN (?)
+		ORDER BY e.display_order DESC, e.created_at DESC, e.id DESC`, ids)
+	if err != nil {
+		return err
+	}
+	rows, err := r.db.QueryxContext(ctx, r.db.Rebind(query), args...)
+	if err != nil {
+		return fmt.Errorf("query information events: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var informationID int
+		var event models.Event
+		if err := rows.Scan(&informationID, &event.ID, &event.Name, &event.IsRanking, &event.RegistrationDeadline, &event.ArticleURL, &event.DisplayOrder, &event.CreatedAt, &event.UpdatedAt); err != nil {
+			return err
+		}
+		if i, ok := index[informationID]; ok {
+			items[i].Events = append(items[i].Events, event)
+		}
+	}
+	return rows.Err()
+}
+
+func saveInformationEventsTx(ctx context.Context, tx *sqlx.Tx, informationID int, events []models.Event) error {
+	if _, err := tx.ExecContext(ctx, "DELETE FROM information_event WHERE information_id=?", informationID); err != nil {
+		return err
+	}
+	for _, event := range events {
+		if event.ID <= 0 {
+			continue
+		}
+		if _, err := tx.ExecContext(ctx, "INSERT IGNORE INTO information_event(information_id,event_id) VALUES(?,?)", informationID, event.ID); err != nil {
+			return err
+		}
 	}
 	return nil
 }

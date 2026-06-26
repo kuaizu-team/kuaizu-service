@@ -62,6 +62,7 @@ func main() {
 	}
 
 	svc := service.New(repo, deps)
+	service.StartProjectCleanupScheduler(context.Background(), repo)
 	server := handler.NewServer(repo, svc)
 
 	// Register API routes with /api/v2 prefix
@@ -75,16 +76,20 @@ func main() {
 
 		// Public endpoints that don't require authentication
 		publicEndpoints := []string{
-			"/api/v2/auth/login/wechat",              // WeChat login
-			"/api/v2/auth/register/phone",            // WeChat phone registration
-			"/api/v2/dictionaries/schools",           // School list
-			"/api/v2/dictionaries/schools/provinces", // Province list
-			"/api/v2/dictionaries/schools/cities",    // City list
-			"/api/v2/dictionaries/schools/districts", // District list
-			"/api/v2/dictionaries/majors",            // Major list
-			"/api/v2/email/unsubscribe",              // Email unsubscribe
-			"/api/v2/information/list",               // Information center list
-			"/api/v2/roadmap",                        // Platform roadmap
+			"/api/v2/auth/login/wechat",                 // WeChat login
+			"/api/v2/auth/register/phone",               // WeChat phone registration
+			"/api/v2/dictionaries/schools",              // School list
+			"/api/v2/dictionaries/schools/provinces",    // Province list
+			"/api/v2/dictionaries/schools/cities",       // City list
+			"/api/v2/dictionaries/schools/districts",    // District list
+			"/api/v2/dictionaries/majors",               // Major list
+			"/api/v2/email/unsubscribe",                 // Email unsubscribe
+			"/api/v2/information/list",                  // Information center list
+			"/api/v2/info-center/events",                // Information center event timeline
+			"/api/v2/recommendations/projects/featured", // Featured project recommendation
+			"/api/v2/recommendations/podcasts",          // Info-center podcast recommendations
+			"/api/v2/recommendations/news",              // Info-center news recommendations
+			"/api/v2/roadmap",                           // Platform roadmap
 		}
 
 		// Check exact matches
@@ -96,6 +101,9 @@ func main() {
 
 		// Public GET endpoints with path parameters
 		if method == "GET" {
+			if path == "/api/v2/events" || path == "/api/v2/events/:id" {
+				return true
+			}
 			// /api/v2/projects - list (public)
 			if path == "/api/v2/projects" {
 				return true
@@ -126,6 +134,8 @@ func main() {
 	// Olive-branch receiver read status
 	apiGroup.POST("/olive-branches/received/mark-read", server.MarkReceiverOliveBranchRead)
 
+	apiGroup.POST("/olive-branches/:id/resend", server.ResendOliveBranch)
+
 	// Project-application unread badge endpoints
 	apiGroup.GET("/project-applications/my/unread-status", server.GetMyApplicationUnreadStatus)
 	apiGroup.POST("/project-applications/my/mark-read", server.MarkMyApplicationsRead)
@@ -140,6 +150,15 @@ func main() {
 	apiGroup.POST("/invitation/feedback", server.SubmitInvitationFeedback)
 	apiGroup.GET("/users/me/pending-invitation", server.GetMyPendingInvitation)
 	apiGroup.POST("/users/me/pending-invitation/clear", server.ClearMyPendingInvitation)
+	apiGroup.GET("/events", server.ListEvents)
+	apiGroup.POST("/events", server.CreateEvent)
+	apiGroup.GET("/events/:id", server.GetEvent)
+	apiGroup.GET("/info-center/events", server.ListInfoCenterEvents)
+	apiGroup.GET("/recommendations/projects", server.ListRecommendationProjects)
+	apiGroup.GET("/recommendations/projects/featured", server.GetFeaturedRecommendationProject)
+	apiGroup.GET("/recommendations/podcasts", server.ListRecommendationPodcasts)
+	apiGroup.GET("/recommendations/news", server.ListRecommendationNews)
+
 	apiGroup.GET("/roadmap", server.ListRoadmap)
 	apiGroup.GET("/roadmap/has-new", server.HasNewRoadmap)
 	apiGroup.POST("/roadmap/mark-read", server.MarkRoadmapRead)

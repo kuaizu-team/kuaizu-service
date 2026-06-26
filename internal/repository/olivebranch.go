@@ -60,12 +60,13 @@ type obUserRow struct {
 type obRow struct {
 	models.OliveBranch
 	obUserRow
-	SmsID        *int       `db:"sms_id"`
-	SmsOrderID   *int       `db:"sms_order_id"`
-	SmsStatus    *int       `db:"sms_status"`
-	SmsError     *string    `db:"sms_error_message"`
-	SmsCreatedAt *time.Time `db:"sms_created_at"`
-	SmsUpdatedAt *time.Time `db:"sms_updated_at"`
+	SmsID           *int       `db:"sms_id"`
+	SmsOrderID      *int       `db:"sms_order_id"`
+	SmsStatus       *int       `db:"sms_status"`
+	SmsError        *string    `db:"sms_error_message"`
+	SmsCreatedAt    *time.Time `db:"sms_created_at"`
+	SmsUpdatedAt    *time.Time `db:"sms_updated_at"`
+	CurrentUserRole *string    `db:"current_user_role"`
 }
 
 // ListByReceiverID retrieves paginated olive branches received by a user
@@ -93,6 +94,11 @@ func (r *OliveBranchRepository) ListByReceiverID(ctx context.Context, params Oli
 			ob.type, ob.cost_type, ob.status, ob.is_read,
 			ob.created_at, ob.updated_at,
 			p.name AS project_name,
+			COALESCE(ob.operator_role, sender_member.role, p.publisher_role, 'TEAM_LEADER') AS operator_role,
+			op_role.name AS operator_role_name,
+			ob_member.role AS assigned_role,
+			ob_role.name AS assigned_role_name,
+			CASE WHEN ob_member.id IS NULL THEN FALSE ELSE TRUE END AS is_current_member,
 			s.id          AS u_id,
 			s.nickname    AS u_nickname,
 			s.phone       AS u_phone,
@@ -109,6 +115,10 @@ func (r *OliveBranchRepository) ListByReceiverID(ctx context.Context, params Oli
 			m.class_id    AS u_class_id
 		FROM olive_branch_record ob
 		LEFT JOIN project p ON ob.related_project_id = p.id
+		LEFT JOIN project_members sender_member ON sender_member.project_id = ob.related_project_id AND sender_member.user_id = ob.sender_id
+		LEFT JOIN project_role op_role ON op_role.code = COALESCE(ob.operator_role, sender_member.role, p.publisher_role, 'TEAM_LEADER')
+		LEFT JOIN project_members ob_member ON ob_member.project_id = ob.related_project_id AND ob_member.user_id = ob.receiver_id
+		LEFT JOIN project_role ob_role ON ob_role.code = ob_member.role
 		LEFT JOIN ` + "`user`" + ` s ON ob.sender_id = s.id
 		LEFT JOIN school sch ON s.school_id = sch.id
 		LEFT JOIN major m ON s.major_id = m.id
@@ -168,9 +178,15 @@ func (r *OliveBranchRepository) GetByID(ctx context.Context, id int) (*models.Ol
 			ob.id, ob.sender_id, ob.receiver_id, ob.related_project_id,
 			ob.type, ob.cost_type, ob.status,
 			ob.created_at, ob.updated_at,
-			p.name AS project_name
+			p.name AS project_name,
+			COALESCE(ob.operator_role, sender_member.role, p.publisher_role, 'TEAM_LEADER') AS operator_role,
+			op_role.name AS operator_role_name
 		FROM olive_branch_record ob
 		LEFT JOIN project p ON ob.related_project_id = p.id
+		LEFT JOIN project_members ob_member ON ob_member.project_id = ob.related_project_id AND ob_member.user_id = ob.receiver_id
+		LEFT JOIN project_role ob_role ON ob_role.code = ob_member.role
+		LEFT JOIN project_members sender_member ON sender_member.project_id = ob.related_project_id AND sender_member.user_id = ob.sender_id
+		LEFT JOIN project_role op_role ON op_role.code = COALESCE(ob.operator_role, sender_member.role, p.publisher_role, 'TEAM_LEADER')
 		WHERE ob.id = ?
 	`
 
@@ -190,10 +206,10 @@ func (r *OliveBranchRepository) Create(ctx context.Context, ob *models.OliveBran
 	query := `
 		INSERT INTO olive_branch_record (
 			sender_id, receiver_id, related_project_id,
-			type, cost_type, status
+			type, cost_type, status, operator_role
 		) VALUES (
 			:sender_id, :receiver_id, :related_project_id,
-			:type, :cost_type, :status
+			:type, :cost_type, :status, :operator_role
 		)
 	`
 
@@ -216,10 +232,10 @@ func (r *OliveBranchRepository) CreateTx(ctx context.Context, tx *sqlx.Tx, ob *m
 	query := `
 		INSERT INTO olive_branch_record (
 			sender_id, receiver_id, related_project_id,
-			type, cost_type, status
+			type, cost_type, status, operator_role
 		) VALUES (
 			:sender_id, :receiver_id, :related_project_id,
-			:type, :cost_type, :status
+			:type, :cost_type, :status, :operator_role
 		)
 	`
 
@@ -240,8 +256,8 @@ func (r *OliveBranchRepository) CreateTx(ctx context.Context, tx *sqlx.Tx, ob *m
 // ExistsPending checks if there is a pending (status=0) olive branch from sender to receiver.
 func (r *OliveBranchRepository) ExistsPending(ctx context.Context, senderID, receiverID, relatedProjectID int) (bool, error) {
 	var count int
-	query := `SELECT COUNT(*) FROM olive_branch_record WHERE sender_id = ? AND receiver_id = ? AND related_project_id = ? AND status = 0`
-	if err := r.db.QueryRowxContext(ctx, query, senderID, receiverID, relatedProjectID).Scan(&count); err != nil {
+	query := `SELECT COUNT(*) FROM olive_branch_record WHERE sender_id = ? AND receiver_id = ? AND related_project_id = ? AND status IN (?, ?)`
+	if err := r.db.QueryRowxContext(ctx, query, senderID, receiverID, relatedProjectID, models.OliveBranchStatusPending, models.OliveBranchStatusDiscussing).Scan(&count); err != nil {
 		return false, fmt.Errorf("check pending olive branch: %w", err)
 	}
 	return count > 0, nil
@@ -271,6 +287,10 @@ func (r *OliveBranchRepository) ListBySenderID(ctx context.Context, params Olive
 	countQuery := `SELECT COUNT(*)
 		FROM olive_branch_record ob
 		LEFT JOIN project p ON ob.related_project_id = p.id
+		LEFT JOIN project_members ob_member ON ob_member.project_id = ob.related_project_id AND ob_member.user_id = ob.receiver_id
+		LEFT JOIN project_role ob_role ON ob_role.code = ob_member.role
+		LEFT JOIN project_members sender_member ON sender_member.project_id = ob.related_project_id AND sender_member.user_id = ob.sender_id
+		LEFT JOIN project_role op_role ON op_role.code = COALESCE(ob.operator_role, sender_member.role, p.publisher_role, 'TEAM_LEADER')
 		WHERE (
 			ob.sender_id = ?
 			OR p.creator_id = ?
@@ -291,7 +311,7 @@ func (r *OliveBranchRepository) ListBySenderID(ctx context.Context, params Olive
 
 	// Query with pagination
 	offset := (params.Page - 1) * params.Size
-	args := []interface{}{params.SenderID, params.SenderID, params.SenderID}
+	args := []interface{}{params.SenderID, params.SenderID, params.SenderID, params.SenderID, params.SenderID, params.SenderID}
 
 	query := `
 		SELECT
@@ -299,6 +319,12 @@ func (r *OliveBranchRepository) ListBySenderID(ctx context.Context, params Olive
 			ob.type, ob.cost_type, ob.status, ob.is_read,
 			ob.created_at, ob.updated_at,
 			p.name AS project_name,
+			COALESCE(ob.operator_role, sender_member.role, p.publisher_role, 'TEAM_LEADER') AS operator_role,
+			op_role.name AS operator_role_name,
+			ob_member.role AS assigned_role,
+			ob_role.name AS assigned_role_name,
+			CASE WHEN ob_member.id IS NULL THEN FALSE ELSE TRUE END AS is_current_member,
+			COALESCE(current_member.role, CASE WHEN p.creator_id = ? THEN p.publisher_role END, CASE WHEN p.creator_id = ? THEN 'TEAM_LEADER' END) AS current_user_role,
 			recv.id          AS u_id,
 			recv.nickname    AS u_nickname,
 			recv.phone       AS u_phone,
@@ -321,10 +347,15 @@ func (r *OliveBranchRepository) ListBySenderID(ctx context.Context, params Olive
 			sn.updated_at    AS sms_updated_at
 		FROM olive_branch_record ob
 		LEFT JOIN project p ON ob.related_project_id = p.id
+		LEFT JOIN project_members ob_member ON ob_member.project_id = ob.related_project_id AND ob_member.user_id = ob.receiver_id
+		LEFT JOIN project_role ob_role ON ob_role.code = ob_member.role
+		LEFT JOIN project_members sender_member ON sender_member.project_id = ob.related_project_id AND sender_member.user_id = ob.sender_id
+		LEFT JOIN project_role op_role ON op_role.code = COALESCE(ob.operator_role, sender_member.role, p.publisher_role, 'TEAM_LEADER')
+		LEFT JOIN project_members current_member ON current_member.project_id = ob.related_project_id AND current_member.user_id = ?
 		LEFT JOIN ` + "`user`" + ` recv ON ob.receiver_id = recv.id
 		LEFT JOIN school sch ON recv.school_id = sch.id
 		LEFT JOIN major m ON recv.major_id = m.id
-		LEFT JOIN olive_branch_sms_notice sn ON sn.olive_branch_record_id = ob.id
+		LEFT JOIN olive_branch_sms_notice sn ON sn.olive_branch_record_id = ob.id AND sn.updated_at >= ob.updated_at
 		WHERE (
 			ob.sender_id = ?
 			OR p.creator_id = ?
@@ -369,6 +400,10 @@ func (r *OliveBranchRepository) ListBySenderID(ctx context.Context, params Olive
 			SchoolCode:         row.USchoolCode,
 			MajorName:          row.UMajorName,
 			ClassID:            row.UClassID,
+		}
+		if row.CurrentUserRole != nil && ob.OperatorRole != nil {
+			canReview := canOperateOliveByRole(*row.CurrentUserRole, *ob.OperatorRole)
+			ob.CanReview = &canReview
 		}
 		if row.SmsID != nil {
 			ob.SmsNotice = &models.SmsNotice{
@@ -436,6 +471,26 @@ func (r *OliveBranchRepository) GetUserReceivedDashboardStats(ctx context.Contex
 	return stats, nil
 }
 
+func oliveRolePriority(role string) int {
+	switch role {
+	case models.ProjectRoleTeamLeader:
+		return 1
+	case models.ProjectRoleTeamMember, "":
+		return 3
+	default:
+		return 2
+	}
+}
+
+func canOperateOliveByRole(currentRole, operatorRole string) bool {
+	currentPriority := oliveRolePriority(currentRole)
+	operatorPriority := oliveRolePriority(operatorRole)
+	if currentPriority == 1 {
+		return true
+	}
+	return currentPriority <= operatorPriority
+}
+
 func intValue(value *int) int {
 	if value == nil {
 		return 0
@@ -475,6 +530,11 @@ func (r *OliveBranchRepository) ListByRelatedProjectID(ctx context.Context, para
 			ob.type, ob.cost_type, ob.status, ob.is_read,
 			ob.created_at, ob.updated_at,
 			p.name AS project_name,
+			COALESCE(ob.operator_role, sender_member.role, p.publisher_role, 'TEAM_LEADER') AS operator_role,
+			op_role.name AS operator_role_name,
+			ob_member.role AS assigned_role,
+			ob_role.name AS assigned_role_name,
+			CASE WHEN ob_member.id IS NULL THEN FALSE ELSE TRUE END AS is_current_member,
 			recv.id          AS u_id,
 			recv.nickname    AS u_nickname,
 			recv.phone       AS u_phone,
@@ -491,6 +551,10 @@ func (r *OliveBranchRepository) ListByRelatedProjectID(ctx context.Context, para
 			m.class_id       AS u_class_id
 		FROM olive_branch_record ob
 		LEFT JOIN project p ON ob.related_project_id = p.id
+		LEFT JOIN project_members ob_member ON ob_member.project_id = ob.related_project_id AND ob_member.user_id = ob.receiver_id
+		LEFT JOIN project_role ob_role ON ob_role.code = ob_member.role
+		LEFT JOIN project_members sender_member ON sender_member.project_id = ob.related_project_id AND sender_member.user_id = ob.sender_id
+		LEFT JOIN project_role op_role ON op_role.code = COALESCE(ob.operator_role, sender_member.role, p.publisher_role, 'TEAM_LEADER')
 		LEFT JOIN ` + "`user`" + ` recv ON ob.receiver_id = recv.id
 		LEFT JOIN school sch ON recv.school_id = sch.id
 		LEFT JOIN major m ON recv.major_id = m.id

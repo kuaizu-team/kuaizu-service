@@ -21,8 +21,8 @@ type ProjectService struct {
 }
 
 type projectMetadataRepo interface {
-	CreateWithMetadata(ctx context.Context, p *models.Project, tags *[]string, publisherRole *string, initiatingSchoolID *int, milestones *[]models.ProjectMilestone, members *[]models.ProjectMember) error
-	UpdateWithMetadata(ctx context.Context, p *models.Project, tags *[]string, publisherRole *string, initiatingSchoolID *int, milestones *[]models.ProjectMilestone, members *[]models.ProjectMember) error
+	CreateWithMetadata(ctx context.Context, p *models.Project, tags *[]string, publisherRole *string, initiatingSchoolID *int, milestones *[]models.ProjectMilestone, members *[]models.ProjectMember, eventIDs *[]int) error
+	UpdateWithMetadata(ctx context.Context, p *models.Project, tags *[]string, publisherRole *string, initiatingSchoolID *int, milestones *[]models.ProjectMilestone, members *[]models.ProjectMember, eventIDs *[]int) error
 }
 
 // NewProjectService creates a new ProjectService.
@@ -105,6 +105,10 @@ func (s *ProjectService) ListMyProjects(ctx context.Context, userID int, params 
 		log.Printf("[ProjectService.ListMyProjects] repository error: %v", err)
 		return nil, ErrInternal("获取我的项目列表失败")
 	}
+	if err := s.attachProjectEvents(ctx, projects); err != nil {
+		log.Printf("[ProjectService.ListMyProjects] event enrichment error: %v", err)
+		return nil, ErrInternal("get project events failed")
+	}
 	if err := s.attachProjectPermissions(ctx, projects, userID); err != nil {
 		log.Printf("[ProjectService.ListMyProjects] permission enrichment error: %v", err)
 		return nil, ErrInternal("获取我的项目列表失败")
@@ -157,6 +161,12 @@ func (s *ProjectService) GetProject(ctx context.Context, id int) (*models.Projec
 	}
 	project.Milestones = milestones
 	project.Members = members
+	projects := []models.Project{*project}
+	if err := s.attachProjectEvents(ctx, projects); err != nil {
+		log.Printf("[ProjectService.GetProject] event enrichment error: %v", err)
+		return nil, ErrInternal("get project events failed")
+	}
+	*project = projects[0]
 
 	return project, nil
 }
@@ -367,6 +377,24 @@ func (s *ProjectService) attachProjectPermissions(ctx context.Context, projects 
 	return nil
 }
 
+func (s *ProjectService) attachProjectEvents(ctx context.Context, projects []models.Project) error {
+	if len(projects) == 0 || s.repo.Event == nil {
+		return nil
+	}
+	ids := make([]int, 0, len(projects))
+	for i := range projects {
+		ids = append(ids, projects[i].ID)
+	}
+	events, err := s.repo.Event.ListByProjectIDs(ctx, ids)
+	if err != nil {
+		return err
+	}
+	for i := range projects {
+		projects[i].Events = events[projects[i].ID]
+	}
+	return nil
+}
+
 // ProjectDashboardResult is the response payload for GET /projects/{id}/dashboard.
 type ProjectDashboardResult struct {
 	TotalViews             int                                       `json:"total_views"`
@@ -531,6 +559,7 @@ type CreateProjectInput struct {
 	InitiatingSchoolID   *int
 	Milestones           *[]api.ProjectMilestoneDTO
 	Members              *[]api.ProjectMemberDTO
+	EventIDs             *[]int
 }
 
 func validateProjectTags(tags *[]string) error {
@@ -822,7 +851,7 @@ func (s *ProjectService) CreateProject(ctx context.Context, input CreateProjectI
 	if !ok {
 		return nil, ErrInternal("project repository does not support metadata transaction")
 	}
-	if err := projectRepo.CreateWithMetadata(ctx, project, input.Tags, input.PublisherRole, input.InitiatingSchoolID, milestones, members); err != nil {
+	if err := projectRepo.CreateWithMetadata(ctx, project, input.Tags, input.PublisherRole, input.InitiatingSchoolID, milestones, members, input.EventIDs); err != nil {
 		log.Printf("[ProjectService.CreateProject] repository error: %v", err)
 		return nil, ErrInternal("创建项目失败")
 	}
@@ -852,6 +881,7 @@ type UpdateProjectInput struct {
 	InitiatingSchoolID *int
 	Milestones         *[]api.ProjectMilestoneDTO
 	Members            *[]api.ProjectMemberDTO
+	EventIDs           *[]int
 }
 
 // UpdateProject checks ownership, audits content, applies updates, and returns the updated project.
@@ -1027,7 +1057,7 @@ func (s *ProjectService) UpdateProject(ctx context.Context, id, userID int, inpu
 	if !ok {
 		return nil, ErrInternal("project repository does not support metadata transaction")
 	}
-	if err := projectRepo.UpdateWithMetadata(ctx, project, input.Tags, input.PublisherRole, input.InitiatingSchoolID, milestones, members); err != nil {
+	if err := projectRepo.UpdateWithMetadata(ctx, project, input.Tags, input.PublisherRole, input.InitiatingSchoolID, milestones, members, input.EventIDs); err != nil {
 		log.Printf("[ProjectService.UpdateProject] repository error updating: %v", err)
 		return nil, ErrInternal("更新项目失败")
 	}

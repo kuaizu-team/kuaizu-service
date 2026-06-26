@@ -440,7 +440,7 @@ func (r *ProjectRepository) Create(ctx context.Context, p *models.Project) error
 	return nil
 }
 
-func (r *ProjectRepository) CreateWithMetadata(ctx context.Context, p *models.Project, tags *[]string, publisherRole *string, initiatingSchoolID *int, milestones *[]models.ProjectMilestone, members *[]models.ProjectMember) error {
+func (r *ProjectRepository) CreateWithMetadata(ctx context.Context, p *models.Project, tags *[]string, publisherRole *string, initiatingSchoolID *int, milestones *[]models.ProjectMilestone, members *[]models.ProjectMember, eventIDs *[]int) error {
 	tx, err := r.db.BeginTxx(ctx, nil)
 	if err != nil {
 		return err
@@ -466,7 +466,7 @@ func (r *ProjectRepository) CreateWithMetadata(ctx context.Context, p *models.Pr
 		return fmt.Errorf("get last insert id: %w", err)
 	}
 	p.ID = int(id)
-	if err := saveProjectMetadataTx(ctx, tx, p.ID, tags, publisherRole, initiatingSchoolID, milestones, members); err != nil {
+	if err := saveProjectMetadataTx(ctx, tx, p.ID, tags, publisherRole, initiatingSchoolID, milestones, members, eventIDs); err != nil {
 		return err
 	}
 	return tx.Commit()
@@ -500,7 +500,7 @@ func (r *ProjectRepository) Update(ctx context.Context, p *models.Project) error
 	return nil
 }
 
-func (r *ProjectRepository) UpdateWithMetadata(ctx context.Context, p *models.Project, tags *[]string, publisherRole *string, initiatingSchoolID *int, milestones *[]models.ProjectMilestone, members *[]models.ProjectMember) error {
+func (r *ProjectRepository) UpdateWithMetadata(ctx context.Context, p *models.Project, tags *[]string, publisherRole *string, initiatingSchoolID *int, milestones *[]models.ProjectMilestone, members *[]models.ProjectMember, eventIDs *[]int) error {
 	tx, err := r.db.BeginTxx(ctx, nil)
 	if err != nil {
 		return err
@@ -527,13 +527,13 @@ func (r *ProjectRepository) UpdateWithMetadata(ctx context.Context, p *models.Pr
 	if rowsAffected == 0 {
 		return fmt.Errorf("project not found")
 	}
-	if err := saveProjectMetadataTx(ctx, tx, p.ID, tags, publisherRole, initiatingSchoolID, milestones, members); err != nil {
+	if err := saveProjectMetadataTx(ctx, tx, p.ID, tags, publisherRole, initiatingSchoolID, milestones, members, eventIDs); err != nil {
 		return err
 	}
 	return tx.Commit()
 }
 
-func saveProjectMetadataTx(ctx context.Context, tx *sqlx.Tx, projectID int, tags *[]string, publisherRole *string, initiatingSchoolID *int, milestones *[]models.ProjectMilestone, members *[]models.ProjectMember) error {
+func saveProjectMetadataTx(ctx context.Context, tx *sqlx.Tx, projectID int, tags *[]string, publisherRole *string, initiatingSchoolID *int, milestones *[]models.ProjectMilestone, members *[]models.ProjectMember, eventIDs *[]int) error {
 	if publisherRole != nil {
 		if _, err := tx.ExecContext(ctx, "UPDATE project SET publisher_role=? WHERE id=?", *publisherRole, projectID); err != nil {
 			return err
@@ -583,6 +583,16 @@ func saveProjectMetadataTx(ctx context.Context, tx *sqlx.Tx, projectID int, tags
 		for _, member := range *members {
 			if _, err := tx.ExecContext(ctx, `INSERT INTO project_members(project_id,user_id,role)
 				VALUES(?,?,?)`, projectID, member.UserID, member.Role); err != nil {
+				return err
+			}
+		}
+	}
+	if eventIDs != nil {
+		if _, err := tx.ExecContext(ctx, "DELETE FROM project_event WHERE project_id=?", projectID); err != nil {
+			return err
+		}
+		for _, eventID := range uniquePositiveIDs(*eventIDs) {
+			if _, err := tx.ExecContext(ctx, `INSERT IGNORE INTO project_event(project_id,event_id) VALUES(?,?)`, projectID, eventID); err != nil {
 				return err
 			}
 		}

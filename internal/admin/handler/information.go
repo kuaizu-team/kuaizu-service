@@ -17,12 +17,14 @@ import (
 const informationForbiddenMessage = "only super admin can manage information content"
 
 type informationContentRequest struct {
-	Title        string `json:"title"`
-	Content      string `json:"content"`
-	URL          string `json:"url"`
-	Category     string `json:"category"`
-	DisplayOrder *int   `json:"displayOrder"`
-	IsPublished  *bool  `json:"isPublished"`
+	Title        string  `json:"title"`
+	Content      string  `json:"content"`
+	URL          string  `json:"url"`
+	Category     string  `json:"category"`
+	DisplayOrder *int    `json:"displayOrder"`
+	IsPublished  *bool   `json:"isPublished"`
+	EventIDs     []int   `json:"eventIds"`
+	CreatedAt    *string `json:"createdAt"`
 }
 
 // ListInformation handles GET /admin/information.
@@ -173,6 +175,24 @@ func requireSuperAdmin(ctx echo.Context) error {
 	return nil
 }
 
+func buildInformationEvents(category string, eventIDs []int) []models.Event {
+	if category != models.InformationCategoryCampusEvent || len(eventIDs) == 0 {
+		return nil
+	}
+	seen := make(map[int]struct{}, len(eventIDs))
+	events := make([]models.Event, 0, len(eventIDs))
+	for _, id := range eventIDs {
+		if id <= 0 {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		events = append(events, models.Event{ID: id})
+	}
+	return events
+}
 func buildInformationContent(req informationContentRequest) (*models.InformationContent, error) {
 	title := strings.TrimSpace(req.Title)
 	content := strings.TrimSpace(req.Content)
@@ -222,5 +242,6 @@ func buildInformationContent(req informationContentRequest) (*models.Information
 		Category:     category,
 		DisplayOrder: displayOrder,
 		IsPublished:  isPublished,
+		Events:       buildInformationEvents(category, req.EventIDs),
 	}, nil
 }

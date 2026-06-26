@@ -11,7 +11,7 @@ func IsValidStatus(field string, status int) error {
 	switch field {
 	case "olive_branch.status":
 		// 状态:0-待处理,1-已接受,2-已拒绝,3-已忽略
-		if status < models.OliveBranchStatusPending || status > models.OliveBranchStatusIgnored {
+		if status < models.OliveBranchStatusPending || status > models.OliveBranchStatusDiscussing {
 			return ErrBadRequest(fmt.Sprintf("无效的橄榄枝状态: %d", status))
 		}
 	case "order.status":
