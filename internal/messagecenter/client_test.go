@@ -8,6 +8,47 @@ import (
 	"testing"
 )
 
+func TestSubmitApplicationSmsUsesApprovedTemplateVariables(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/sms/send" {
+			t.Fatalf("path = %s, want /api/sms/send", r.URL.Path)
+		}
+		var req struct {
+			TemplateCode string `json:"templateCode"`
+			BusinessTag  string `json:"businessTag"`
+			Recipients   []struct {
+				Phone string                 `json:"phone"`
+				Vars  map[string]interface{} `json:"vars"`
+			} `json:"recipients"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		if req.TemplateCode != "PROJECT_APPLICATION_REJECTED" || req.BusinessTag != "project_application_sms_rejected" {
+			t.Fatalf("request = %+v", req)
+		}
+		if len(req.Recipients) != 1 || req.Recipients[0].Phone != "13800138000" {
+			t.Fatalf("recipients = %+v", req.Recipients)
+		}
+		vars := req.Recipients[0].Vars
+		if vars["nickname"] != "小明" || vars["projectTitle"] != "测试项目" || vars["teamRole"] != "项目负责人" {
+			t.Fatalf("vars = %+v", vars)
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, "test-token", 0)
+	err := client.SubmitApplicationSms(context.Background(), ApplicationSmsRequest{
+		TaskKey: "PROJECT_APPLICATION_SMS:12:rejected", TemplateCode: "PROJECT_APPLICATION_REJECTED",
+		Phone: "13800138000", Nickname: "小明", ProjectTitle: "测试项目", TeamRole: "项目负责人",
+		BusinessTag: "project_application_sms_rejected", TraceID: "PROJECT_APPLICATION_SMS:12",
+	})
+	if err != nil {
+		t.Fatalf("SubmitApplicationSms returned error: %v", err)
+	}
+}
+
 func TestSendAdminSms(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/v2/admin/sms/send" {

@@ -42,5 +42,6 @@ func (p *Product) ToVO() *api.ProductVO {
 		Type:        &p.Type,
 		Description: p.Description,
 		Price:       &p.Price,
+		ConfigJson:  p.ConfigJSON,
 	}
 }
