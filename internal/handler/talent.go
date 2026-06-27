@@ -2,7 +2,9 @@ package handler
 
 import (
 	"errors"
+	"fmt"
 	"log"
+	"time"
 
 	"github.com/kuaizu-team/kuaizu-service/api"
 	"github.com/kuaizu-team/kuaizu-service/internal/models"
@@ -32,6 +34,7 @@ func (s *Server) ListTalentProfiles(ctx echo.Context, params api.ListTalentProfi
 		Status:       &status,
 		SortBy:       params.SortBy,
 		UserSchoolID: params.UserSchoolId,
+		RandomSeed:   fmt.Sprintf("%d:%s", GetOptionalUserID(ctx), time.Now().Format("2006-01-02")),
 	}
 
 	if params.SortBy != nil && *params.SortBy == "school_priority" {

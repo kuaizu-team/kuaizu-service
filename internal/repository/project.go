@@ -52,6 +52,8 @@ type ListParams struct {
 	// When true, adds a pending_count column to SELECT (sum of pending applications
 	// and pending olive branches for each project). Required for SortBy="pendingCount".
 	IncludePendingCount bool
+	// RandomSeed keeps within-tier ordering stable across paginated requests.
+	RandomSeed string
 }
 
 // List retrieves paginated projects with optional filters
@@ -185,14 +187,13 @@ func (r *ProjectRepository) List(ctx context.Context, params ListParams) ([]mode
 
 			tierExpr := "CASE\n" + strings.Join(tierWHENs, "\n") + "\nELSE 5\nEND"
 
-			// Cross-school sub-sort within each tier:
-			//   P1 rows → sub-sort 0 (no distinction; every P1 project is already "same school")
-			//   Other tiers → is_cross_school=1 sorts before is_cross_school=0
-			//     (1 - COALESCE(is_cross_school,0)): cross=1→0, cross=0→1
-			const crossExpr = "CASE WHEN p.school_id = ? THEN 0 ELSE (1 - COALESCE(p.is_cross_school, 0)) END"
-			orderArgs = append(orderArgs, schoolID)
-
-			orderClause = fmt.Sprintf("%s ASC, %s ASC, p.created_at DESC", tierExpr, crossExpr)
+			// Every 10 heat points (like + 2*favorite) promotes one tier.
+			// The cap prevents promotion above P1; the seeded hash makes
+			// pagination stable while changing the order daily.
+			const heatScoreExpr = "COALESCE(plc.like_count, 0) + COALESCE(pfc.favorite_count, 0) * 2"
+			finalTierExpr := fmt.Sprintf("GREATEST(1, (%s) - FLOOR((%s) / 10))", tierExpr, heatScoreExpr)
+			orderClause = fmt.Sprintf("%s ASC, CRC32(CONCAT(?, ':', p.id)) ASC, p.id ASC", finalTierExpr)
+			orderArgs = append(orderArgs, params.RandomSeed)
 		}
 		// If schoolID == 0 (no user school context), fall through to default created_at DESC
 	}
@@ -204,6 +205,20 @@ func (r *ProjectRepository) List(ctx context.Context, params ListParams) ([]mode
 
 	pendingCountSelect := ""
 	pendingCountJoin := ""
+	heatJoin := ""
+	if params.SortBy != nil && *params.SortBy == "school_priority" && params.UserSchoolID != nil && *params.UserSchoolID != 0 {
+		heatJoin = `
+		LEFT JOIN (
+			SELECT project_id, COUNT(*) AS like_count
+			FROM project_like
+			GROUP BY project_id
+		) plc ON plc.project_id = p.id
+		LEFT JOIN (
+			SELECT project_id, COUNT(*) AS favorite_count
+			FROM project_favorite
+			GROUP BY project_id
+		) pfc ON pfc.project_id = p.id`
+	}
 	if params.IncludePendingCount {
 		pendingCountSelect = `,
 			COALESCE(pa_counts.pending_count, 0) + COALESCE(ob_counts.pending_count, 0) AS pending_count`
@@ -229,7 +244,7 @@ func (r *ProjectRepository) List(ctx context.Context, params ListParams) ([]mode
 		FROM project p
 		LEFT JOIN school s ON p.school_id = s.id
 		LEFT JOIN project_role pr ON p.publisher_role = pr.code
-		LEFT JOIN school ins ON p.initiating_school_id = ins.id
+		LEFT JOIN school ins ON p.initiating_school_id = ins.id%s
 		LEFT JOIN (
 			SELECT project_id, COUNT(*) AS pending_count
 			FROM project_application
@@ -239,7 +254,7 @@ func (r *ProjectRepository) List(ctx context.Context, params ListParams) ([]mode
 		WHERE %s
 		ORDER BY %s
 		LIMIT ? OFFSET ?
-	`, pendingCountSelect, pendingCountJoin, whereClause, orderClause)
+	`, pendingCountSelect, heatJoin, pendingCountJoin, whereClause, orderClause)
 
 	// Combine: WHERE args → ORDER BY args → LIMIT/OFFSET args
 	dataArgs := make([]interface{}, 0, len(whereArgs)+len(orderArgs)+2)

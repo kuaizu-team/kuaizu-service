@@ -37,6 +37,7 @@ type TalentProfileListParams struct {
 	UserSchoolCity     *string
 	UserSchoolDistrict *string
 	UserMajorClassID   *int // class_id of the user's major
+	RandomSeed         string
 }
 
 // enrichSchoolMajor 为单条 TalentProfile 分别查 school/major 并回填名称
@@ -159,7 +160,8 @@ func (r *TalentProfileRepository) enrichSchoolMajorBatch(ctx context.Context, pr
 //	Scenario D — neither set (or SortBy != "school_priority"):
 //	  plain tp.updated_at DESC
 //
-// Within every tier the tiebreak is tp.updated_at DESC.
+// Within every tier, a per-user daily seed provides stable pseudo-random order.
+// Every 10 heat points (like + 2*favorite) promotes a profile by one tier.
 // Geo comparisons use the talent's school columns (ts.*) from a conditional LEFT JOIN.
 // Major class comparisons use the talent's major columns (tm.*) from a conditional LEFT JOIN.
 func (r *TalentProfileRepository) List(ctx context.Context, params TalentProfileListParams) ([]models.TalentProfile, int64, error) {
@@ -273,7 +275,7 @@ func (r *TalentProfileRepository) List(ctx context.Context, params TalentProfile
 			orderArgs = append(orderArgs, classID)
 
 			tierExpr := "CASE\n" + strings.Join(whenClauses, "\n") + "\nELSE 10\nEND"
-			orderClause = tierExpr + " ASC, tp.updated_at DESC"
+			orderClause = talentHeatOrderClause(tierExpr)
 
 		// ── Scenario B: school only (5-tier) ────────────────────────────────
 		case hasSchool:
@@ -296,7 +298,7 @@ func (r *TalentProfileRepository) List(ctx context.Context, params TalentProfile
 			}
 
 			tierExpr := "CASE\n" + strings.Join(whenClauses, "\n") + "\nELSE 5\nEND"
-			orderClause = tierExpr + " ASC, tp.updated_at DESC"
+			orderClause = talentHeatOrderClause(tierExpr)
 
 		// ── Scenario C: major only (2-tier) ─────────────────────────────────
 		case hasMajor:
@@ -306,7 +308,7 @@ func (r *TalentProfileRepository) List(ctx context.Context, params TalentProfile
 			orderArgs = append(orderArgs, classID)
 
 			tierExpr := "CASE\n" + strings.Join(whenClauses, "\n") + "\nELSE 2\nEND"
-			orderClause = tierExpr + " ASC, tp.updated_at DESC"
+			orderClause = talentHeatOrderClause(tierExpr)
 		}
 		// Scenario D: neither hasSchool nor hasMajor → keep default "tp.updated_at DESC"
 	}
@@ -318,6 +320,9 @@ func (r *TalentProfileRepository) List(ctx context.Context, params TalentProfile
 	if params.SortBy != nil && *params.SortBy == "school_priority" {
 		const authExpr = "CASE WHEN u.auth_status = 1 THEN 0 ELSE 1 END"
 		orderClause = authExpr + " ASC, " + orderClause
+		if hasSchool || hasMajor {
+			orderArgs = append(orderArgs, params.RandomSeed)
+		}
 	}
 
 	// ── Build optional extra JOINs ───────────────────────────────────────────────
@@ -327,6 +332,19 @@ func (r *TalentProfileRepository) List(ctx context.Context, params TalentProfile
 	}
 	if needsMajorJoin {
 		extraJoins += "\n\t\tLEFT JOIN major tm ON u.major_id = tm.id"
+	}
+	if params.SortBy != nil && *params.SortBy == "school_priority" && (hasSchool || hasMajor) {
+		extraJoins += `
+		LEFT JOIN (
+			SELECT talent_profile_id, COUNT(*) AS like_count
+			FROM talent_like
+			GROUP BY talent_profile_id
+		) tlc ON tlc.talent_profile_id = tp.id
+		LEFT JOIN (
+			SELECT talent_profile_id, COUNT(*) AS favorite_count
+			FROM talent_favorite
+			GROUP BY talent_profile_id
+		) tfc ON tfc.talent_profile_id = tp.id`
 	}
 
 	// ── Main data query ─────────────────────────────────────────────────────────
@@ -364,6 +382,11 @@ func (r *TalentProfileRepository) List(ctx context.Context, params TalentProfile
 	}
 
 	return profiles, total, nil
+}
+
+func talentHeatOrderClause(tierExpr string) string {
+	const heatScoreExpr = "COALESCE(tlc.like_count, 0) + COALESCE(tfc.favorite_count, 0) * 2"
+	return fmt.Sprintf("GREATEST(1, (%s) - FLOOR((%s) / 10)) ASC, CRC32(CONCAT(?, ':', tp.id)) ASC, tp.id ASC", tierExpr, heatScoreExpr)
 }
 
 // GetByID retrieves a talent profile by ID with user info
