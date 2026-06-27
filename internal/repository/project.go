@@ -221,7 +221,7 @@ func (r *ProjectRepository) List(ctx context.Context, params ListParams) ([]mode
 			p.id, p.creator_id, p.name, p.description, p.school_id,
 			p.direction, p.member_count, p.status,
 			p.promotion_status, p.promotion_expire_time, p.view_count,
-			p.created_at, p.updated_at, p.reject_reason, p.deleted_at, p.is_cross_school,
+			p.created_at, p.updated_at, p.recruit_completed_at, p.ended_at, p.reject_reason, p.deleted_at, p.is_cross_school,
 			p.education_requirement, p.skill_requirement,
 			p.publisher_role, p.initiating_school_id,
 			s.school_name, pr.name AS publisher_role_name, ins.school_name AS initiating_school_name,
@@ -321,7 +321,7 @@ func (r *ProjectRepository) GetByID(ctx context.Context, id int) (*models.Projec
 			p.id, p.creator_id, p.name, p.description, p.school_id,
 			p.direction, p.member_count, p.status,
 			p.promotion_status, p.promotion_expire_time, p.view_count,
-			p.created_at, p.updated_at, p.reject_reason, p.deleted_at, p.is_cross_school,
+			p.created_at, p.updated_at, p.recruit_completed_at, p.ended_at, p.reject_reason, p.deleted_at, p.is_cross_school,
 			p.education_requirement, p.skill_requirement,
 			p.publisher_role, p.initiating_school_id,
 			s.school_name, pr.name AS publisher_role_name, ins.school_name AS initiating_school_name,
@@ -782,9 +782,23 @@ func (r *ProjectRepository) IsOwner(ctx context.Context, projectID, userID int) 
 
 // UpdateStatus updates the review status of a project
 func (r *ProjectRepository) UpdateStatus(ctx context.Context, id int, status int) error {
-	query := `UPDATE project SET status = ?, reject_reason = CASE WHEN ? = ? THEN reject_reason ELSE NULL END, deleted_at = CASE WHEN ? = ? THEN deleted_at ELSE NULL END, updated_at = CURRENT_TIMESTAMP WHERE id = ?`
+	query := `UPDATE project
+		SET status = ?,
+			reject_reason = CASE WHEN ? = ? THEN reject_reason ELSE NULL END,
+			deleted_at = CASE WHEN ? = ? THEN deleted_at ELSE NULL END,
+			recruit_completed_at = CASE WHEN ? = ? THEN CURRENT_TIMESTAMP ELSE recruit_completed_at END,
+			ended_at = CASE WHEN ? = ? THEN CURRENT_TIMESTAMP ELSE ended_at END,
+			updated_at = CURRENT_TIMESTAMP
+		WHERE id = ?`
 
-	result, err := r.db.ExecContext(ctx, query, status, status, models.ProjectStatusRejected, status, models.ProjectStatusDeleting, id)
+	result, err := r.db.ExecContext(ctx, query,
+		status,
+		status, models.ProjectStatusRejected,
+		status, models.ProjectStatusDeleting,
+		status, models.ProjectStatusRecruitCompleted,
+		status, models.ProjectStatusEnded,
+		id,
+	)
 	if err != nil {
 		return fmt.Errorf("update project status: %w", err)
 	}
@@ -819,7 +833,7 @@ func (r *ProjectRepository) CompleteRecruit(ctx context.Context, id int) (int64,
 	defer tx.Rollback()
 
 	result, err := tx.ExecContext(ctx,
-		`UPDATE project SET status = ?, reject_reason = NULL, deleted_at = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+		`UPDATE project SET status = ?, reject_reason = NULL, deleted_at = NULL, recruit_completed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
 		models.ProjectStatusRecruitCompleted, id,
 	)
 	if err != nil {
@@ -831,7 +845,7 @@ func (r *ProjectRepository) CompleteRecruit(ctx context.Context, id int) (int64,
 	}
 
 	result, err = tx.ExecContext(ctx,
-		`UPDATE project_application SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE project_id = ? AND status IN (?, ?)`,
+		`UPDATE project_application SET status = ?, rejected_at = COALESCE(rejected_at, CURRENT_TIMESTAMP), updated_at = CURRENT_TIMESTAMP WHERE project_id = ? AND status IN (?, ?)`,
 		models.ApplicationStatusRejected, id, models.ApplicationStatusPending, models.ApplicationStatusDiscussing,
 	)
 	if err != nil {

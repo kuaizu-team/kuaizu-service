@@ -105,7 +105,7 @@ func (r *ApplicationRepository) List(ctx context.Context, params ApplicationList
 		SELECT
 			pa.id, pa.project_id, pa.user_id,
 			pa.status, pa.is_read, pa.reviewer_id, pa.reviewer_role, pa.assigned_role,
-			pa.applied_at, pa.updated_at,
+			pa.applied_at, pa.discussing_at, pa.rejected_at, pa.joined_at, pa.updated_at,
 			p.name AS project_name,
 			pr.name AS reviewer_role_name, ar.name AS assigned_role_name,
 			CASE WHEN pm.id IS NULL THEN FALSE ELSE TRUE END AS is_current_member
@@ -246,7 +246,7 @@ func (r *ApplicationRepository) GetByID(ctx context.Context, id int) (*models.Pr
 		SELECT
 			pa.id, pa.project_id, pa.user_id,
 			pa.status, pa.is_read, pa.reviewer_id, pa.reviewer_role, pa.assigned_role,
-			pa.applied_at, pa.updated_at
+			pa.applied_at, pa.discussing_at, pa.rejected_at, pa.joined_at, pa.updated_at
 		FROM project_application pa
 		WHERE pa.id = ?
 	`
@@ -422,10 +422,18 @@ func (r *ApplicationRepository) UpdateStatus(ctx context.Context, id int, status
 
 func (r *ApplicationRepository) UpdateStatusWithReviewer(ctx context.Context, id int, status int, reviewerID int, reviewerRole *string) error {
 	query := `UPDATE project_application
-		SET status = ?, reviewer_id = ?, reviewer_role = ?, updated_at = CURRENT_TIMESTAMP
+		SET status = ?, reviewer_id = ?, reviewer_role = ?,
+			discussing_at = CASE WHEN ? = ? THEN CURRENT_TIMESTAMP ELSE discussing_at END,
+			rejected_at = CASE WHEN ? = ? THEN CURRENT_TIMESTAMP ELSE rejected_at END,
+			updated_at = CURRENT_TIMESTAMP
 		WHERE id = ?`
 
-	result, err := r.db.ExecContext(ctx, query, status, reviewerID, reviewerRole, id)
+	result, err := r.db.ExecContext(ctx, query,
+		status, reviewerID, reviewerRole,
+		status, models.ApplicationStatusDiscussing,
+		status, models.ApplicationStatusRejected,
+		id,
+	)
 	if err != nil {
 		return fmt.Errorf("update application status with reviewer: %w", err)
 	}

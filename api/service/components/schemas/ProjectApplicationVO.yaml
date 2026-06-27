@@ -37,6 +37,18 @@ properties:
   appliedAt:
     type: string
     format: date-time
+  discussingAt:
+    type: string
+    format: date-time
+    description: 进入互相了解状态的时间
+  rejectedAt:
+    type: string
+    format: date-time
+    description: 被拒绝时间
+  joinedAt:
+    type: string
+    format: date-time
+    description: 同意入队/录用时间
   isRead:
     type: boolean
     description: 项目方是否已读(仅待审核状态有意义)

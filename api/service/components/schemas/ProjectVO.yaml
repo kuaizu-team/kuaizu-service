@@ -73,3 +73,11 @@ properties:
     type: string
     format: date-time
     description: 项目最后更新时间（ISO 8601），列表按此字段降序排列
+  recruitCompletedAt:
+    type: string
+    format: date-time
+    description: Recruit completed timestamp.
+  endedAt:
+    type: string
+    format: date-time
+    description: Project ended timestamp.

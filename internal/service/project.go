@@ -1501,7 +1501,7 @@ func (s *ProjectService) AssignApplicationRole(ctx context.Context, input Assign
 		return ErrInternal("添加项目成员失败")
 	}
 	result, err := tx.ExecContext(ctx, `UPDATE project_application
-		SET status=?, assigned_role=?, updated_at=CURRENT_TIMESTAMP
+		SET status=?, assigned_role=?, joined_at=CURRENT_TIMESTAMP, updated_at=CURRENT_TIMESTAMP
 		WHERE id=?`, models.ApplicationStatusJoined, role, input.ApplicationID)
 	if err != nil {
 		log.Printf("[ProjectService.AssignApplicationRole] update application failed: %v", err)

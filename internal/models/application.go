@@ -8,16 +8,19 @@ import (
 
 // ProjectApplication represents a project application in the database
 type ProjectApplication struct {
-	ID           int       `db:"id"`
-	ProjectID    int       `db:"project_id"`
-	UserID       int       `db:"user_id"`
-	Status       int       `db:"status"`  // 0-待审核, 1-正在互相了解, 2-已拒绝, 3-已加入团队
-	IsRead       bool      `db:"is_read"` // 项目方是否已读
-	ReviewerID   *int      `db:"reviewer_id"`
-	ReviewerRole *string   `db:"reviewer_role"`
-	AssignedRole *string   `db:"assigned_role"`
-	AppliedAt    time.Time `db:"applied_at"`
-	UpdatedAt    time.Time `db:"updated_at"`
+	ID           int        `db:"id"`
+	ProjectID    int        `db:"project_id"`
+	UserID       int        `db:"user_id"`
+	Status       int        `db:"status"`  // 0-待审核, 1-正在互相了解, 2-已拒绝, 3-已加入团队
+	IsRead       bool       `db:"is_read"` // 项目方是否已读
+	ReviewerID   *int       `db:"reviewer_id"`
+	ReviewerRole *string    `db:"reviewer_role"`
+	AssignedRole *string    `db:"assigned_role"`
+	AppliedAt    time.Time  `db:"applied_at"`
+	DiscussingAt *time.Time `db:"discussing_at"`
+	RejectedAt   *time.Time `db:"rejected_at"`
+	JoinedAt     *time.Time `db:"joined_at"`
+	UpdatedAt    time.Time  `db:"updated_at"`
 
 	// Joined fields
 	ProjectName      *string        `db:"project_name"`
@@ -46,6 +49,9 @@ func (a *ProjectApplication) ToVO() *api.ProjectApplicationVO {
 		IsCurrentMember:  a.IsCurrentMember,
 		CanReview:        a.CanReview,
 		AppliedAt:        &a.AppliedAt,
+		DiscussingAt:     a.DiscussingAt,
+		RejectedAt:       a.RejectedAt,
+		JoinedAt:         a.JoinedAt,
 	}
 
 	if a.Applicant != nil {
