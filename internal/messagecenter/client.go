@@ -13,6 +13,7 @@ import (
 )
 
 const defaultTimeout = 3 * time.Second
+const applicationSmsTimeout = 12 * time.Second
 
 // Client submits marketing tasks to the independent message center.
 type Client struct {
@@ -500,7 +501,13 @@ func (c *Client) SubmitApplicationSms(ctx context.Context, req ApplicationSmsReq
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("Authorization", "Bearer "+c.apiToken)
-	resp, err := c.httpClient.Do(httpReq)
+	httpClient := c.httpClient
+	if httpClient.Timeout < applicationSmsTimeout {
+		clientCopy := *httpClient
+		clientCopy.Timeout = applicationSmsTimeout
+		httpClient = &clientCopy
+	}
+	resp, err := httpClient.Do(httpReq)
 	if err != nil {
 		return fmt.Errorf("post application sms: %w", err)
 	}

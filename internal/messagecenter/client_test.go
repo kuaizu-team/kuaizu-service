@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 )
 
 func TestSubmitApplicationSmsUsesApprovedTemplateVariables(t *testing.T) {
@@ -46,6 +47,24 @@ func TestSubmitApplicationSmsUsesApprovedTemplateVariables(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("SubmitApplicationSms returned error: %v", err)
+	}
+}
+
+func TestSubmitApplicationSmsUsesLongerTimeoutThanDefaultClient(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		time.Sleep(80 * time.Millisecond)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, "test-token", 10*time.Millisecond)
+	err := client.SubmitApplicationSms(context.Background(), ApplicationSmsRequest{
+		TaskKey: "PROJECT_APPLICATION_SMS:12:rejected", TemplateCode: "PROJECT_APPLICATION_REJECTED",
+		Phone: "13800138000", Nickname: "小明", ProjectTitle: "测试项目", TeamRole: "项目负责人",
+		BusinessTag: "project_application_sms_rejected", TraceID: "PROJECT_APPLICATION_SMS:12",
+	})
+	if err != nil {
+		t.Fatalf("SubmitApplicationSms returned timeout error: %v", err)
 	}
 }
 
