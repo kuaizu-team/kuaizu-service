@@ -116,6 +116,7 @@ func (p *Project) ToVO() *api.ProjectVO {
 		IsCrossSchool:           p.IsCrossSchool,
 		ViewCount:               &p.ViewCount,
 		PendingApplicationCount: &p.PendingApplicationCount,
+		CreatedAt:               &p.CreatedAt,
 		UpdatedAt:               &p.UpdatedAt,
 		RecruitCompletedAt:      p.RecruitCompletedAt,
 		EndedAt:                 p.EndedAt,

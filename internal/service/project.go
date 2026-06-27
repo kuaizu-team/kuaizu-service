@@ -80,11 +80,11 @@ func (s *ProjectService) ListProjects(ctx context.Context, params repository.Lis
 }
 
 // ListMyProjects returns a paginated list of projects created by the given user,
-// sorted by updated_at descending so recently-modified projects appear first.
+// sorted by creation time descending so the newest projects always appear first.
 func (s *ProjectService) ListMyProjects(ctx context.Context, userID int, params repository.ListParams) (*ProjectListResult, error) {
 	params.Page, params.Size = normalizePageParams(params.Page, params.Size)
 	params.MemberUserID = &userID
-	sortBy := "updated_at"
+	sortBy := "createdAt"
 	params.SortBy = &sortBy
 	if params.Status == nil && len(params.Statuses) == 0 {
 		params.Statuses = []int{

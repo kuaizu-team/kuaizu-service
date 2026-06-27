@@ -136,7 +136,7 @@ func (r *ProjectRepository) List(ctx context.Context, params ListParams) ([]mode
 		if params.Order != nil && strings.EqualFold(*params.Order, "asc") {
 			dir = "ASC"
 		}
-		orderClause = fmt.Sprintf("p.created_at %s", dir)
+		orderClause = fmt.Sprintf("p.created_at %s, p.id %s", dir, dir)
 	} else if params.SortBy != nil && *params.SortBy == "id" {
 		dir := "DESC"
 		if params.Order != nil && strings.EqualFold(*params.Order, "asc") {
