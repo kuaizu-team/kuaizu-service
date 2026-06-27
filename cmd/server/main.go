@@ -142,6 +142,8 @@ func main() {
 	apiGroup.GET("/users/me/collaboration-history", server.GetMyCollaborationHistory)
 	apiGroup.GET("/users/me/project-status-unread", server.GetMyProjectStatusUnread)
 	apiGroup.POST("/users/me/project-status-read", server.MarkMyProjectStatusRead)
+	apiGroup.GET("/users/me/status-notifications/pending", server.GetMyPendingStatusNotification)
+	apiGroup.POST("/users/me/status-notifications/:id/displayed", server.MarkMyStatusNotificationDisplayed)
 
 	// Project-application reviewer read status
 	apiGroup.POST("/project-applications/mark-read", server.MarkReviewerApplicationRead)

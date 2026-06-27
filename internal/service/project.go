@@ -1410,9 +1410,34 @@ func (s *ProjectService) ReviewApplication(ctx context.Context, applicationID, u
 		return ErrForbidden("当前角色无权操作该申请")
 	}
 
-	if err := s.repo.Application.UpdateStatusWithReviewer(ctx, applicationID, int(status), userID, reviewerRole); err != nil {
+	tx, err := s.repo.DB().BeginTxx(ctx, nil)
+	if err != nil {
+		return ErrInternal("开启事务失败")
+	}
+	defer tx.Rollback()
+	result, err := tx.ExecContext(ctx, `UPDATE project_application
+		SET status = ?, reviewer_id = ?, reviewer_role = ?,
+			discussing_at = CASE WHEN ? = ? THEN CURRENT_TIMESTAMP ELSE discussing_at END,
+			rejected_at = CASE WHEN ? = ? THEN CURRENT_TIMESTAMP ELSE rejected_at END,
+			updated_at = CURRENT_TIMESTAMP
+		WHERE id = ?`, status, userID, reviewerRole,
+		status, models.ApplicationStatusDiscussing,
+		status, models.ApplicationStatusRejected, applicationID)
+	if err != nil {
 		log.Printf("[ProjectService.ReviewApplication] repository error updating status: %v", err)
 		return ErrInternal("更新申请状态失败")
+	}
+	if rows, _ := result.RowsAffected(); rows == 0 {
+		return ErrNotFound("申请不存在")
+	}
+	if status == models.ApplicationStatusRejected {
+		if err := repository.CreateTx(ctx, tx, app.UserID, applicationID, models.StatusNotificationApplicationRejected); err != nil {
+			log.Printf("[ProjectService.ReviewApplication] create status notification failed: %v", err)
+			return ErrInternal("创建状态通知失败")
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return ErrInternal("提交事务失败")
 	}
 
 	go func(asyncCtx context.Context) {
@@ -1509,6 +1534,10 @@ func (s *ProjectService) AssignApplicationRole(ctx context.Context, input Assign
 	}
 	if rows, _ := result.RowsAffected(); rows == 0 {
 		return ErrNotFound("申请不存在")
+	}
+	if err := repository.CreateTx(ctx, tx, app.UserID, input.ApplicationID, models.StatusNotificationApplicationAccepted); err != nil {
+		log.Printf("[ProjectService.AssignApplicationRole] create status notification failed: %v", err)
+		return ErrInternal("创建状态通知失败")
 	}
 	if err := tx.Commit(); err != nil {
 		return ErrInternal("提交事务失败")
