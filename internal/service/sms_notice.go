@@ -44,10 +44,19 @@ type SendSmsNoticeInput struct {
 	OrderID             int
 	ReceiverUserID      int
 	OliveBranchRecordID int
+	ApplicationID       *int
+	NoticeType          *string
 	ProjectID           *int
 }
 
+type applicationSmsSubmitter interface {
+	SubmitApplicationSms(ctx context.Context, req messagecenter.ApplicationSmsRequest) error
+}
+
 func (s *SmsNoticeService) Send(ctx context.Context, userID int, input SendSmsNoticeInput) (*models.SmsNotice, error) {
+	if input.ApplicationID != nil {
+		return s.sendApplicationSms(ctx, userID, input)
+	}
 	if input.OrderID <= 0 || input.ReceiverUserID <= 0 || input.OliveBranchRecordID <= 0 {
 		return nil, ErrBadRequest("invalid sms notice parameters")
 	}
@@ -150,6 +159,124 @@ func (s *SmsNoticeService) Send(ctx context.Context, userID int, input SendSmsNo
 	return notice, nil
 }
 
+func (s *SmsNoticeService) sendApplicationSms(ctx context.Context, userID int, input SendSmsNoticeInput) (*models.SmsNotice, error) {
+	if input.ApplicationID == nil || input.NoticeType == nil || input.OrderID <= 0 || input.ReceiverUserID <= 0 {
+		return nil, ErrBadRequest("invalid application sms parameters")
+	}
+	noticeType := strings.TrimSpace(*input.NoticeType)
+	if noticeType != "rejected" && noticeType != "accepted" {
+		return nil, ErrBadRequest("invalid noticeType")
+	}
+	app, err := s.repo.Application.GetByID(ctx, *input.ApplicationID)
+	if err != nil {
+		return nil, ErrInternal("get application failed")
+	}
+	if app == nil {
+		return nil, ErrNotFound("application not found")
+	}
+	if app.UserID != input.ReceiverUserID {
+		return nil, ErrBadRequest("receiverUserId does not match application")
+	}
+	if app.ReviewerID == nil || *app.ReviewerID != userID {
+		return nil, ErrForbidden("no permission to send application sms")
+	}
+	if input.ProjectID != nil && *input.ProjectID != app.ProjectID {
+		return nil, ErrBadRequest("projectId does not match application")
+	}
+	if noticeType == "rejected" && app.Status != models.ApplicationStatusRejected {
+		return nil, ErrBadRequest("application is not rejected")
+	}
+	if noticeType == "accepted" && app.Status != models.ApplicationStatusJoined {
+		return nil, ErrBadRequest("application is not accepted")
+	}
+	order, err := s.repo.Order.GetByID(ctx, input.OrderID)
+	if err != nil {
+		return nil, ErrInternal("get order failed")
+	}
+	if order == nil {
+		return nil, ErrNotFound("order not found")
+	}
+	if order.UserID != userID {
+		return nil, ErrForbidden("no permission to use this order")
+	}
+	if order.Status != models.OrderStatusPaid {
+		return nil, ErrBadRequest("order is not paid")
+	}
+	if used, err := s.repo.SmsNotice.GetByOrderID(ctx, input.OrderID); err != nil {
+		return nil, ErrInternal("check sms notice order failed")
+	} else if used != nil {
+		return nil, ErrBadRequest("order has already been used for another sms notice")
+	}
+	product, err := s.repo.Product.GetByID(ctx, order.ProductID)
+	if err != nil {
+		return nil, ErrInternal("get product failed")
+	}
+	if product == nil || !isSmsNoticeProduct(product) {
+		return nil, ErrBadRequest("order product is not sms notice")
+	}
+	project, err := s.repo.Project.GetByID(ctx, app.ProjectID)
+	if err != nil {
+		return nil, ErrInternal("get project failed")
+	}
+	if project == nil {
+		return nil, ErrNotFound("project not found")
+	}
+	receiver, err := s.repo.User.GetByID(ctx, app.UserID)
+	if err != nil {
+		return nil, ErrInternal("get receiver failed")
+	}
+	if receiver == nil || receiver.Phone == nil || strings.TrimSpace(*receiver.Phone) == "" {
+		return nil, ErrBadRequest("receiver phone is unavailable")
+	}
+	nickname := "同学"
+	if receiver.Nickname != nil && strings.TrimSpace(*receiver.Nickname) != "" {
+		nickname = strings.TrimSpace(*receiver.Nickname)
+	}
+	teamRole := "团队成员"
+	if noticeType == "accepted" && app.AssignedRole != nil && strings.TrimSpace(*app.AssignedRole) != "" {
+		teamRole = applicationSmsRoleName(strings.TrimSpace(*app.AssignedRole))
+	}
+	if noticeType == "rejected" && app.ReviewerRole != nil && strings.TrimSpace(*app.ReviewerRole) != "" {
+		teamRole = applicationSmsRoleName(strings.TrimSpace(*app.ReviewerRole))
+	}
+	submitter, initErr, _ := s.resolveMessageCenter()
+	if initErr != nil {
+		return nil, ErrInternal("message center unavailable")
+	}
+	applicationSubmitter, ok := submitter.(applicationSmsSubmitter)
+	if !ok {
+		return nil, ErrInternal("message center client does not support application sms")
+	}
+	templateCode := "PROJECT_APPLICATION_REJECTED"
+	if noticeType == "accepted" {
+		templateCode = "PROJECT_APPLICATION_ACCEPTED"
+	}
+	err = applicationSubmitter.SubmitApplicationSms(ctx, messagecenter.ApplicationSmsRequest{
+		TaskKey: fmt.Sprintf("PROJECT_APPLICATION_SMS:%d:%s", input.OrderID, noticeType), TemplateCode: templateCode,
+		Phone: strings.TrimSpace(*receiver.Phone), Nickname: nickname, ProjectTitle: project.Name, TeamRole: teamRole,
+		BusinessTag: "project_application_sms_" + noticeType, TraceID: fmt.Sprintf("PROJECT_APPLICATION_SMS:%d", input.OrderID),
+	})
+	if err != nil {
+		return nil, ErrInternal("submit application sms failed")
+	}
+	now := time.Now()
+	channel, tag, trace := "SMS", "project_application_sms_"+noticeType, fmt.Sprintf("PROJECT_APPLICATION_SMS:%d", input.OrderID)
+	return &models.SmsNotice{ID: input.OrderID, Channel: &channel, BusinessTag: &tag, TraceID: &trace, OrderID: input.OrderID,
+		ProjectID: &app.ProjectID, SenderID: userID, ReceiverID: app.UserID, Status: models.SmsNoticeStatusCompleted,
+		StartedAt: &now, CompletedAt: &now, CreatedAt: now, UpdatedAt: now}, nil
+}
+func applicationSmsRoleName(code string) string {
+	names := map[string]string{
+		"TEAM_LEADER": "团队负责人", "RECRUITMENT_LEADER": "招募负责人",
+		"TECH_LEADER": "技术负责人", "OPERATIONS_LEADER": "运营负责人",
+		"PUBLICITY_LEADER": "宣传负责人", "DESIGN_LEADER": "美化负责人",
+		"LEGAL_LEADER": "法务负责人", "TEAM_MEMBER": "团队成员",
+	}
+	if name := names[code]; name != "" {
+		return name
+	}
+	return "团队成员"
+}
 func (s *SmsNoticeService) handleExistingNotice(ctx context.Context, existing *models.SmsNotice, input SendSmsNoticeInput, branch *models.OliveBranch, order *models.Order, project *models.Project, receiver *models.User) (*models.SmsNotice, error) {
 	switch existing.Status {
 	case models.SmsNoticeStatusCompleted, models.SmsNoticeStatusPending, models.SmsNoticeStatusSending:

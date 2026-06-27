@@ -11,14 +11,26 @@ func (s *Server) PostSmsSend(ctx echo.Context) error {
 	userID := GetUserID(ctx)
 
 	var req api.PostSmsSendJSONRequestBody
+	oliveBranchRecordID := 0
 	if err := ctx.Bind(&req); err != nil {
 		return BadRequest(ctx, "请求参数错误")
+	}
+
+	if req.OliveBranchRecordId != nil {
+		oliveBranchRecordID = *req.OliveBranchRecordId
+	}
+	var noticeType *string
+	if req.NoticeType != nil {
+		value := string(*req.NoticeType)
+		noticeType = &value
 	}
 
 	notice, err := s.svc.SmsNotice.Send(ctx.Request().Context(), userID, service.SendSmsNoticeInput{
 		OrderID:             req.OrderId,
 		ReceiverUserID:      req.ReceiverUserId,
-		OliveBranchRecordID: req.OliveBranchRecordId,
+		OliveBranchRecordID: oliveBranchRecordID,
+		ApplicationID:       req.ApplicationId,
+		NoticeType:          noticeType,
 		ProjectID:           req.ProjectId,
 	})
 	if err != nil {

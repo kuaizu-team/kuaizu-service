@@ -2,7 +2,6 @@ type: object
 required:
   - orderId
   - receiverUserId
-  - oliveBranchRecordId
 properties:
   orderId:
     type: integer
@@ -10,5 +9,10 @@ properties:
     type: integer
   oliveBranchRecordId:
     type: integer
+  applicationId:
+    type: integer
+  noticeType:
+    type: string
+    enum: [rejected, accepted]
   projectId:
     type: integer
