@@ -57,6 +57,9 @@ func (s *SmsNoticeService) Send(ctx context.Context, userID int, input SendSmsNo
 	if input.ApplicationID != nil {
 		return s.sendApplicationSms(ctx, userID, input)
 	}
+	if input.NoticeType != nil {
+		return s.sendOliveOutcomeSms(ctx, userID, input)
+	}
 	if input.OrderID <= 0 || input.ReceiverUserID <= 0 || input.OliveBranchRecordID <= 0 {
 		return nil, ErrBadRequest("invalid sms notice parameters")
 	}
@@ -157,6 +160,103 @@ func (s *SmsNoticeService) Send(ctx context.Context, userID int, input SendSmsNo
 		return fresh, nil
 	}
 	return notice, nil
+}
+
+func (s *SmsNoticeService) sendOliveOutcomeSms(ctx context.Context, userID int, input SendSmsNoticeInput) (*models.SmsNotice, error) {
+	noticeType := strings.TrimSpace(valueOrEmpty(input.NoticeType))
+	if input.OrderID <= 0 || input.ReceiverUserID <= 0 || input.OliveBranchRecordID <= 0 || (noticeType != "accepted" && noticeType != "rejected") {
+		return nil, ErrBadRequest("invalid olive branch result sms parameters")
+	}
+	branch, err := s.repo.OliveBranch.GetByID(ctx, input.OliveBranchRecordID)
+	if err != nil || branch == nil {
+		return nil, ErrNotFound("olive branch record not found")
+	}
+	if branch.SenderID != userID || branch.ReceiverID != input.ReceiverUserID {
+		return nil, ErrForbidden("no permission to send olive branch result sms")
+	}
+	expectedStatus := models.OliveBranchStatusRejected
+	if noticeType == "accepted" {
+		expectedStatus = models.OliveBranchStatusAccepted
+	}
+	if branch.Status != expectedStatus {
+		return nil, ErrBadRequest("olive branch status does not match noticeType")
+	}
+	order, err := s.repo.Order.GetByID(ctx, input.OrderID)
+	if err != nil || order == nil || order.UserID != userID || order.Status != models.OrderStatusPaid {
+		return nil, ErrBadRequest("paid sms order is unavailable")
+	}
+	product, err := s.repo.Product.GetByID(ctx, order.ProductID)
+	if err != nil || product == nil || !isSmsNoticeProduct(product) {
+		return nil, ErrBadRequest("order product is not sms notice")
+	}
+	project, err := s.repo.Project.GetByID(ctx, branch.RelatedProjectID)
+	if err != nil || project == nil {
+		return nil, ErrNotFound("project not found")
+	}
+	receiver, err := s.repo.User.GetByID(ctx, branch.ReceiverID)
+	if err != nil || receiver == nil || receiver.Phone == nil || strings.TrimSpace(*receiver.Phone) == "" {
+		return nil, ErrBadRequest("receiver phone is unavailable")
+	}
+	nickname := "同学"
+	if receiver.Nickname != nil && strings.TrimSpace(*receiver.Nickname) != "" {
+		nickname = strings.TrimSpace(*receiver.Nickname)
+	}
+	teamRole := applicationSmsRoleName(valueOrEmpty(branch.OperatorRole))
+	submitter, initErr, _ := s.resolveMessageCenter()
+	if initErr != nil {
+		return nil, ErrInternal("message center unavailable")
+	}
+	applicationSubmitter, ok := submitter.(applicationSmsSubmitter)
+	if !ok {
+		return nil, ErrInternal("message center client does not support result sms")
+	}
+	templateCode := "OLIVE_BRANCH_REJECTED"
+	if noticeType == "accepted" {
+		templateCode = "OLIVE_BRANCH_ACCEPTED"
+	}
+	taskKey := fmt.Sprintf("OLIVE_BRANCH_RESULT_SMS:%d:%s", input.OrderID, noticeType)
+	if used, err := s.repo.SmsNotice.GetByOrderID(ctx, input.OrderID); err != nil {
+		return nil, ErrInternal("check sms notice order failed")
+	} else if used != nil {
+		return nil, ErrBadRequest("order has already been used for another sms notice")
+	}
+	now := time.Now()
+	channel, tag, trace := "SMS", "olive_branch_result_sms_"+noticeType, taskKey
+	notice := &models.SmsNotice{Channel: &channel, BusinessTag: &tag, TraceID: &trace, OrderID: input.OrderID,
+		OliveBranchRecordID: branch.ID, ProjectID: &branch.RelatedProjectID, SenderID: userID, ReceiverID: branch.ReceiverID,
+		Status: models.SmsNoticeStatusPending, StartedAt: &now}
+	outcomeRepo, ok := s.repo.SmsNotice.(interface {
+		CreateOutcome(context.Context, *models.SmsNotice) error
+	})
+	if !ok {
+		return nil, ErrInternal("sms repository does not support result records")
+	}
+	if err := outcomeRepo.CreateOutcome(ctx, notice); err != nil {
+		return nil, ErrInternal("create olive branch result sms record failed")
+	}
+	if err := applicationSubmitter.SubmitApplicationSms(ctx, messagecenter.ApplicationSmsRequest{
+		TaskKey: taskKey, TemplateCode: templateCode, Phone: strings.TrimSpace(*receiver.Phone), Nickname: nickname,
+		ProjectTitle: project.Name, TeamRole: teamRole, BusinessTag: "olive_branch_result_sms_" + noticeType, TraceID: taskKey,
+	}); err != nil {
+		notice.Status = models.SmsNoticeStatusFailed
+		message := err.Error()
+		notice.ErrorMessage = &message
+		_ = s.repo.SmsNotice.Update(ctx, notice)
+		return nil, ErrInternal("submit olive branch result sms failed")
+	}
+	notice.Status = models.SmsNoticeStatusCompleted
+	notice.CompletedAt = &now
+	if err := s.repo.SmsNotice.Update(ctx, notice); err != nil {
+		return nil, ErrInternal("complete olive branch result sms record failed")
+	}
+	return notice, nil
+}
+
+func valueOrEmpty(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
 }
 
 func (s *SmsNoticeService) sendApplicationSms(ctx context.Context, userID int, input SendSmsNoticeInput) (*models.SmsNotice, error) {

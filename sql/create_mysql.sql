@@ -266,6 +266,9 @@ CREATE TABLE `olive_branch_record` (
   `cost_type` int(11) NOT NULL COMMENT '消耗类型:1-免费额度,2-付费额度',
   `message` text COMMENT '邀请留言(已弃用)',
   `status` int(11) DEFAULT '0' COMMENT '状态:0-待处理,1-已接受,2-已拒绝,3-已忽略',
+	`discussing_at` timestamp NULL DEFAULT NULL COMMENT '进入互相了解时间',
+	`rejected_at` timestamp NULL DEFAULT NULL COMMENT '标记不合适时间',
+	`admitted_at` timestamp NULL DEFAULT NULL COMMENT '同意入队时间',
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   PRIMARY KEY (`id`),
@@ -581,14 +584,18 @@ CREATE TABLE `status_notification` (
   `id` BIGINT NOT NULL AUTO_INCREMENT,
   `user_id` INT NOT NULL,
   `type` VARCHAR(50) NOT NULL,
-  `application_id` INT NOT NULL,
+	`application_id` INT NULL,
+	`olive_branch_id` INT NULL,
+	`priority` INT NOT NULL DEFAULT 10,
   `displayed_at` TIMESTAMP NULL DEFAULT NULL,
   `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   KEY `idx_status_notification_pending` (`user_id`, `displayed_at`, `id`),
   KEY `idx_status_notification_application` (`application_id`),
+	KEY `idx_status_notification_olive` (`olive_branch_id`),
   CONSTRAINT `fk_status_notification_user` FOREIGN KEY (`user_id`) REFERENCES `user` (`id`) ON DELETE CASCADE,
-  CONSTRAINT `fk_status_notification_application` FOREIGN KEY (`application_id`) REFERENCES `project_application` (`id`) ON DELETE CASCADE
+	CONSTRAINT `fk_status_notification_application` FOREIGN KEY (`application_id`) REFERENCES `project_application` (`id`) ON DELETE CASCADE,
+	CONSTRAINT `fk_status_notification_olive` FOREIGN KEY (`olive_branch_id`) REFERENCES `olive_branch_record` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Status notification delivery queue';
 
 DROP TABLE IF EXISTS `collaboration_score`;
