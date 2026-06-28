@@ -13,6 +13,9 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='olive_branch_record' AND COLUMN_NAME='admitted_at') THEN
     ALTER TABLE olive_branch_record ADD COLUMN admitted_at TIMESTAMP NULL DEFAULT NULL COMMENT 'admitted time' AFTER rejected_at;
   END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='olive_branch_record' AND COLUMN_NAME='assigned_role') THEN
+    ALTER TABLE olive_branch_record ADD COLUMN assigned_role VARCHAR(32) NULL COMMENT 'assigned project role' AFTER operator_role;
+  END IF;
   IF EXISTS (SELECT 1 FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='status_notification' AND COLUMN_NAME='application_id' AND IS_NULLABLE='NO') THEN
     ALTER TABLE status_notification MODIFY application_id INT NULL;
   END IF;
