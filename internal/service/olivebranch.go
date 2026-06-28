@@ -209,8 +209,43 @@ func (s *OliveBranchService) ResendOliveBranch(ctx context.Context, userID, bran
 		}
 	}
 
-	if _, err := s.repo.DB().ExecContext(ctx, `UPDATE olive_branch_record SET status=?, is_read=FALSE, updated_at=CURRENT_TIMESTAMP WHERE id=?`, models.OliveBranchStatusPending, branchID); err != nil {
-		log.Printf("[OliveBranchService.ResendOliveBranch] update status failed: %v", err)
+	tx, err := s.repo.DB().BeginTxx(ctx, nil)
+	if err != nil {
+		return nil, ErrInternal("再次发送橄榄枝失败")
+	}
+	defer tx.Rollback()
+	if err := s.repo.User.ResetDailyFreeBranchQuotaIfNeededTx(ctx, tx, userID); err != nil {
+		return nil, ErrInternal("更新额度失败")
+	}
+	sender, err := s.repo.User.GetByIDForUpdateTx(ctx, tx, userID)
+	if err != nil || sender == nil {
+		return nil, ErrInternal("获取用户额度失败")
+	}
+	freeUsed, paidBalance := 0, 0
+	if sender.FreeBranchUsedToday != nil {
+		freeUsed = *sender.FreeBranchUsedToday
+	}
+	if sender.OliveBranchCount != nil {
+		paidBalance = *sender.OliveBranchCount
+	}
+	if freeUsed < models.OliveBranchDailyFreeQuota {
+		freeUsed++
+		sender.FreeBranchUsedToday = &freeUsed
+		ob.CostType = models.OliveBranchCostFree
+	} else if paidBalance > 0 {
+		paidBalance--
+		sender.OliveBranchCount = &paidBalance
+		ob.CostType = models.OliveBranchCostPaid
+	} else {
+		return nil, &ServiceError{Code: ErrorCode(4002), Message: "橄榄枝额度不足，今日免费额度已用完且无付费余额"}
+	}
+	if err := s.repo.User.UpdateQuotaTx(ctx, tx, sender); err != nil {
+		return nil, ErrInternal("更新额度失败")
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE olive_branch_record SET status=?, cost_type=?, is_read=FALSE, updated_at=CURRENT_TIMESTAMP WHERE id=?`, models.OliveBranchStatusPending, ob.CostType, branchID); err != nil {
+		return nil, ErrInternal("再次发送橄榄枝失败")
+	}
+	if err := tx.Commit(); err != nil {
 		return nil, ErrInternal("再次发送橄榄枝失败")
 	}
 

@@ -81,6 +81,9 @@ func (s *SmsNoticeService) Send(ctx context.Context, userID int, input SendSmsNo
 	if branch.ReceiverID != input.ReceiverUserID {
 		return nil, ErrBadRequest("receiverUserId does not match olive branch receiver")
 	}
+	if branch.Status != models.OliveBranchStatusPending {
+		return nil, ErrBadRequest("sms notice is only available for a pending olive branch")
+	}
 
 	order, err := s.repo.Order.GetByID(ctx, input.OrderID)
 	if err != nil {
@@ -136,7 +139,8 @@ func (s *SmsNoticeService) Send(ctx context.Context, userID int, input SendSmsNo
 	if err != nil {
 		return nil, ErrInternal("check sms notice failed")
 	}
-	if existing != nil {
+	// Resending advances the olive branch timestamp and starts a new interaction cycle.
+	if existing != nil && !existing.CreatedAt.Before(branch.UpdatedAt) {
 		return s.handleExistingNotice(ctx, existing, input, branch, order, project, receiver)
 	}
 
@@ -527,6 +531,19 @@ func (s *SmsNoticeService) GetByOliveBranchRecordID(ctx context.Context, userID,
 	notice, err := s.repo.SmsNotice.GetByOliveBranchRecordID(ctx, oliveBranchRecordID)
 	if err != nil {
 		return nil, ErrInternal("get sms notice failed")
+	}
+	if notice == nil {
+		return nil, nil
+	}
+	branch, err := s.repo.OliveBranch.GetByID(ctx, oliveBranchRecordID)
+	if err != nil {
+		return nil, ErrInternal("get olive branch failed")
+	}
+	if branch == nil {
+		return nil, ErrNotFound("olive branch record not found")
+	}
+	if notice.CreatedAt.Before(branch.UpdatedAt) {
+		return nil, nil
 	}
 	return s.checkNoticeVisible(notice, userID)
 }

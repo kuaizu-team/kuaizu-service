@@ -30,6 +30,7 @@ type ListParams struct {
 	Status        *int
 	Statuses      []int
 	Direction     *int
+	EventID       *int
 	CreatorID     *int
 	MemberUserID  *int
 	IsCrossSchool *int
@@ -87,6 +88,10 @@ func (r *ProjectRepository) List(ctx context.Context, params ListParams) ([]mode
 	if params.Direction != nil {
 		conditions = append(conditions, "p.direction = ?")
 		whereArgs = append(whereArgs, *params.Direction)
+	}
+	if params.EventID != nil {
+		conditions = append(conditions, "EXISTS (SELECT 1 FROM project_event pe WHERE pe.project_id = p.id AND pe.event_id = ?)")
+		whereArgs = append(whereArgs, *params.EventID)
 	}
 	if params.CreatorID != nil {
 		conditions = append(conditions, "p.creator_id = ?")

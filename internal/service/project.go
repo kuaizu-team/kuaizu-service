@@ -1476,15 +1476,15 @@ func (s *ProjectService) ReviewApplication(ctx context.Context, applicationID, u
 	}
 
 	go func(asyncCtx context.Context) {
-		resultStr := "正在互相了解"
-		remark := "请在名片-投递名片管理及时处理哦。"
+		resultStr := "互相了解"
+		remark := "请及时查看投递进展。"
 		if status == models.ApplicationStatusRejected {
-			resultStr = "被拒绝"
-			remark = "别灰心，更多优质校园项目待您探索。"
+			resultStr = "不合适"
+			remark = "更多校园项目等你探索。"
 		}
 
 		data := map[string]string{
-			"project_name":    project.Name,
+			"project_name":    truncate20(project.Name),
 			"delivery_result": resultStr,
 			"remark":          remark,
 		}
@@ -1577,6 +1577,16 @@ func (s *ProjectService) AssignApplicationRole(ctx context.Context, input Assign
 	if err := tx.Commit(); err != nil {
 		return ErrInternal("提交事务失败")
 	}
+	go func(asyncCtx context.Context) {
+		data := map[string]string{
+			"project_name":    truncate20(project.Name),
+			"delivery_result": "同意入队",
+			"remark":          "恭喜加入团队，请及时查看项目。",
+		}
+		if err := s.message.SendSubscribeMsgByBizKey(asyncCtx, app.UserID, models.MsgBizKeyCardDeliveryResult, data); err != nil {
+			log.Printf("[ProjectService.AssignApplicationRole] notification error: %v", err)
+		}
+	}(context.WithoutCancel(ctx))
 	return nil
 }
 

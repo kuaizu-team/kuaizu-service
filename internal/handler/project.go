@@ -31,6 +31,7 @@ func (s *Server) ListProjects(ctx echo.Context, params api.ListProjectsParams) e
 		Size:     10,
 		Keyword:  params.Keyword,
 		SchoolID: params.SchoolId,
+		EventID:  params.EventId,
 	}
 
 	if params.Page != nil {
