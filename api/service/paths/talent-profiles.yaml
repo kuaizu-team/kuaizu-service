@@ -38,6 +38,12 @@ get:
       description: 当前用户专业 ID，`sortBy=school_priority` 时用于判断同专业大类人才。
       schema:
         type: integer
+    - name: randomSeed
+      in: query
+      description: 同一次分页浏览使用相同随机种子；下拉刷新时传入新种子可重排同层内容。
+      schema:
+        type: string
+        maxLength: 64
   security: []
   responses:
     '200':

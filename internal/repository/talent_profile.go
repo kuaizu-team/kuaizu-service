@@ -160,7 +160,7 @@ func (r *TalentProfileRepository) enrichSchoolMajorBatch(ctx context.Context, pr
 //	Scenario D — neither set (or SortBy != "school_priority"):
 //	  plain tp.updated_at DESC
 //
-// Within every tier, a per-user daily seed provides stable pseudo-random order.
+// Within every tier, a refresh-scoped seed provides stable pseudo-random order.
 // Every 10 heat points (like + 2*favorite) promotes a profile by one tier.
 // Geo comparisons use the talent's school columns (ts.*) from a conditional LEFT JOIN.
 // Major class comparisons use the talent's major columns (tm.*) from a conditional LEFT JOIN.
@@ -321,7 +321,7 @@ func (r *TalentProfileRepository) List(ctx context.Context, params TalentProfile
 		const authExpr = "CASE WHEN u.auth_status = 1 THEN 0 ELSE 1 END"
 		orderClause = authExpr + " ASC, " + orderClause
 		if hasSchool || hasMajor {
-			orderArgs = append(orderArgs, params.RandomSeed)
+			orderArgs = append(orderArgs, params.RandomSeed, params.RandomSeed, params.RandomSeed)
 		}
 	}
 
@@ -386,7 +386,10 @@ func (r *TalentProfileRepository) List(ctx context.Context, params TalentProfile
 
 func talentHeatOrderClause(tierExpr string) string {
 	const heatScoreExpr = "COALESCE(tlc.like_count, 0) + COALESCE(tfc.favorite_count, 0) * 2"
-	return fmt.Sprintf("GREATEST(1, (%s) - FLOOR((%s) / 10)) ASC, CRC32(CONCAT(?, ':', tp.id)) ASC, tp.id ASC", tierExpr, heatScoreExpr)
+	return fmt.Sprintf(`GREATEST(1, (%s) - FLOOR((%s) / 10)) ASC,
+		ROW_NUMBER() OVER (PARTITION BY tp.user_id ORDER BY CRC32(CONCAT(?, ':item:', tp.id))) ASC,
+		CRC32(CONCAT(?, ':owner:', tp.user_id)) ASC,
+		CRC32(CONCAT(?, ':item:', tp.id)) ASC, tp.id ASC`, tierExpr, heatScoreExpr)
 }
 
 // GetByID retrieves a talent profile by ID with user info

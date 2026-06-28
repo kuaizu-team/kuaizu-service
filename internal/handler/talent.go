@@ -36,6 +36,9 @@ func (s *Server) ListTalentProfiles(ctx echo.Context, params api.ListTalentProfi
 		UserSchoolID: params.UserSchoolId,
 		RandomSeed:   fmt.Sprintf("%d:%s", GetOptionalUserID(ctx), time.Now().Format("2006-01-02")),
 	}
+	if params.RandomSeed != nil && *params.RandomSeed != "" {
+		listParams.RandomSeed = *params.RandomSeed
+	}
 
 	if params.SortBy != nil && *params.SortBy == "school_priority" {
 		reqCtx := ctx.Request().Context()

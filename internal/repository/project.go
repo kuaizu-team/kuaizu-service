@@ -52,7 +52,7 @@ type ListParams struct {
 	// When true, adds a pending_count column to SELECT (sum of pending applications
 	// and pending olive branches for each project). Required for SortBy="pendingCount".
 	IncludePendingCount bool
-	// RandomSeed keeps within-tier ordering stable across paginated requests.
+	// RandomSeed keeps within-tier ordering stable for one pagination session.
 	RandomSeed string
 }
 
@@ -188,12 +188,15 @@ func (r *ProjectRepository) List(ctx context.Context, params ListParams) ([]mode
 			tierExpr := "CASE\n" + strings.Join(tierWHENs, "\n") + "\nELSE 5\nEND"
 
 			// Every 10 heat points (like + 2*favorite) promotes one tier.
-			// The cap prevents promotion above P1; the seeded hash makes
-			// pagination stable while changing the order daily.
+			// The cap prevents promotion above P1; the request seed keeps
+			// pagination stable and changes on an explicit refresh.
 			const heatScoreExpr = "COALESCE(plc.like_count, 0) + COALESCE(pfc.favorite_count, 0) * 2"
 			finalTierExpr := fmt.Sprintf("GREATEST(1, (%s) - FLOOR((%s) / 10))", tierExpr, heatScoreExpr)
-			orderClause = fmt.Sprintf("%s ASC, CRC32(CONCAT(?, ':', p.id)) ASC, p.id ASC", finalTierExpr)
-			orderArgs = append(orderArgs, params.RandomSeed)
+			orderClause = fmt.Sprintf(`%s ASC,
+				ROW_NUMBER() OVER (PARTITION BY p.creator_id ORDER BY CRC32(CONCAT(?, ':item:', p.id))) ASC,
+				CRC32(CONCAT(?, ':owner:', p.creator_id)) ASC,
+				CRC32(CONCAT(?, ':item:', p.id)) ASC, p.id ASC`, finalTierExpr)
+			orderArgs = append(orderArgs, params.RandomSeed, params.RandomSeed, params.RandomSeed)
 		}
 		// If schoolID == 0 (no user school context), fall through to default created_at DESC
 	}

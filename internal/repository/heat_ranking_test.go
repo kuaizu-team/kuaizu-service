@@ -9,7 +9,7 @@ import (
 	"github.com/jmoiron/sqlx"
 )
 
-func TestProjectSchoolPriorityUsesHeatUpgradeAndStableRandomOrder(t *testing.T) {
+func TestProjectSchoolPriorityUsesHeatUpgradeAndOwnerRoundRobin(t *testing.T) {
 	db := openCaptureDB(t)
 	defer db.Close()
 	repo := NewProjectRepository(sqlx.NewDb(db, "capture_user_repo"))
@@ -36,13 +36,15 @@ func TestProjectSchoolPriorityUsesHeatUpgradeAndStableRandomOrder(t *testing.T) 
 	for _, want := range []string{
 		"FROM project_like", "FROM project_favorite",
 		"GREATEST(1,", "FLOOR((COALESCE(plc.like_count, 0) + COALESCE(pfc.favorite_count, 0) * 2) / 10)",
-		"CRC32(CONCAT(?, ':', p.id)) ASC, p.id ASC",
+		"ROW_NUMBER() OVER (PARTITION BY p.creator_id",
+		"CRC32(CONCAT(?, ':owner:', p.creator_id)) ASC",
+		"CRC32(CONCAT(?, ':item:', p.id)) ASC, p.id ASC",
 	} {
 		if !strings.Contains(query, want) {
 			t.Fatalf("query missing %q: %s", want, query)
 		}
 	}
-	if len(args) != 4 || args[0].Value != int64(schoolID) || args[1].Value != seed || args[2].Value != int64(10) || args[3].Value != int64(0) {
+	if len(args) != 6 || args[0].Value != int64(schoolID) || args[1].Value != seed || args[2].Value != seed || args[3].Value != seed || args[4].Value != int64(10) || args[5].Value != int64(0) {
 		t.Fatalf("unexpected list args: %#v", args)
 	}
 }
@@ -79,13 +81,15 @@ func TestTalentSchoolPriorityKeepsAuthFirstThenUsesHeatUpgrade(t *testing.T) {
 	for _, want := range []string{
 		"FROM talent_like", "FROM talent_favorite",
 		"FLOOR((COALESCE(tlc.like_count, 0) + COALESCE(tfc.favorite_count, 0) * 2) / 10)",
-		"CRC32(CONCAT(?, ':', tp.id)) ASC, tp.id ASC",
+		"ROW_NUMBER() OVER (PARTITION BY tp.user_id",
+		"CRC32(CONCAT(?, ':owner:', tp.user_id)) ASC",
+		"CRC32(CONCAT(?, ':item:', tp.id)) ASC, tp.id ASC",
 	} {
 		if !strings.Contains(query, want) {
 			t.Fatalf("query missing %q: %s", want, query)
 		}
 	}
-	if len(args) != 4 || args[0].Value != int64(schoolID) || args[1].Value != seed || args[2].Value != int64(10) || args[3].Value != int64(0) {
+	if len(args) != 6 || args[0].Value != int64(schoolID) || args[1].Value != seed || args[2].Value != seed || args[3].Value != seed || args[4].Value != int64(10) || args[5].Value != int64(0) {
 		t.Fatalf("unexpected list args: %#v", args)
 	}
 }

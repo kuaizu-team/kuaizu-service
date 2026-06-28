@@ -44,6 +44,12 @@ get:
       description: 当前用户学校 ID，`sortBy=school_priority` 时用于判断本校项目。
       schema:
         type: integer
+    - name: randomSeed
+      in: query
+      description: 同一次分页浏览使用相同随机种子；下拉刷新时传入新种子可重排同层内容。
+      schema:
+        type: string
+        maxLength: 64
   responses:
     '200':
       description: 成功

@@ -54,6 +54,9 @@ func (s *Server) ListProjects(ctx echo.Context, params api.ListProjectsParams) e
 	listParams.SortBy = params.SortBy
 	listParams.UserSchoolID = params.UserSchoolId
 	listParams.RandomSeed = fmt.Sprintf("%d:%s", GetOptionalUserID(ctx), time.Now().Format("2006-01-02"))
+	if params.RandomSeed != nil && *params.RandomSeed != "" {
+		listParams.RandomSeed = *params.RandomSeed
+	}
 
 	result, err := s.svc.Project.ListProjects(ctx.Request().Context(), listParams)
 	if err != nil {
