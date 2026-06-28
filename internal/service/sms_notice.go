@@ -45,6 +45,7 @@ type SendSmsNoticeInput struct {
 	ReceiverUserID      int
 	OliveBranchRecordID int
 	ApplicationID       *int
+	MemberRemovalID     *int64
 	NoticeType          *string
 	ProjectID           *int
 }
@@ -56,6 +57,9 @@ type applicationSmsSubmitter interface {
 func (s *SmsNoticeService) Send(ctx context.Context, userID int, input SendSmsNoticeInput) (*models.SmsNotice, error) {
 	if input.ApplicationID != nil {
 		return s.sendApplicationSms(ctx, userID, input)
+	}
+	if input.MemberRemovalID != nil {
+		return s.sendMemberRemovalSms(ctx, userID, input)
 	}
 	if input.NoticeType != nil {
 		return s.sendOliveOutcomeSms(ctx, userID, input)
@@ -248,6 +252,84 @@ func (s *SmsNoticeService) sendOliveOutcomeSms(ctx context.Context, userID int, 
 	notice.CompletedAt = &now
 	if err := s.repo.SmsNotice.Update(ctx, notice); err != nil {
 		return nil, ErrInternal("complete olive branch result sms record failed")
+	}
+	return notice, nil
+}
+
+func (s *SmsNoticeService) sendMemberRemovalSms(ctx context.Context, userID int, input SendSmsNoticeInput) (*models.SmsNotice, error) {
+	if input.MemberRemovalID == nil || *input.MemberRemovalID <= 0 || input.OrderID <= 0 || input.ReceiverUserID <= 0 {
+		return nil, ErrBadRequest("invalid member removal sms parameters")
+	}
+	var removal struct {
+		ID          int64  `db:"id"`
+		UserID      int    `db:"user_id"`
+		ProjectID   int    `db:"project_id"`
+		OperatorID  int    `db:"operator_id"`
+		Role        string `db:"role"`
+		ProjectName string `db:"project_name"`
+	}
+	if err := s.repo.DB().GetContext(ctx, &removal, `SELECT pmr.id,pmr.user_id,pmr.project_id,pmr.operator_id,pmr.role,p.name AS project_name FROM project_member_removal pmr JOIN project p ON p.id=pmr.project_id WHERE pmr.id=?`, *input.MemberRemovalID); err != nil {
+		return nil, ErrNotFound("member removal record not found")
+	}
+	if removal.OperatorID != userID || removal.UserID != input.ReceiverUserID {
+		return nil, ErrForbidden("no permission to send member removal sms")
+	}
+	order, err := s.repo.Order.GetByID(ctx, input.OrderID)
+	if err != nil || order == nil || order.UserID != userID || order.Status != models.OrderStatusPaid {
+		return nil, ErrBadRequest("paid sms order is unavailable")
+	}
+	product, err := s.repo.Product.GetByID(ctx, order.ProductID)
+	if err != nil || product == nil || !isSmsNoticeProduct(product) {
+		return nil, ErrBadRequest("order product is not sms notice")
+	}
+	if used, err := s.repo.SmsNotice.GetByOrderID(ctx, input.OrderID); err != nil {
+		return nil, ErrInternal("check sms notice order failed")
+	} else if used != nil {
+		return nil, ErrBadRequest("order has already been used for another sms notice")
+	}
+	receiver, err := s.repo.User.GetByID(ctx, removal.UserID)
+	if err != nil || receiver == nil || receiver.Phone == nil || strings.TrimSpace(*receiver.Phone) == "" {
+		return nil, ErrBadRequest("receiver phone is unavailable")
+	}
+	nickname := "同学"
+	if receiver.Nickname != nil && strings.TrimSpace(*receiver.Nickname) != "" {
+		nickname = strings.TrimSpace(*receiver.Nickname)
+	}
+	submitter, initErr, _ := s.resolveMessageCenter()
+	if initErr != nil {
+		return nil, ErrInternal("message center unavailable")
+	}
+	applicationSubmitter, ok := submitter.(applicationSmsSubmitter)
+	if !ok {
+		return nil, ErrInternal("message center client does not support member removal sms")
+	}
+	taskKey := fmt.Sprintf("MEMBER_REMOVAL_SMS:%d", input.OrderID)
+	now := time.Now()
+	channel, tag, trace := "SMS", "member_removal_sms", taskKey
+	notice := &models.SmsNotice{Channel: &channel, BusinessTag: &tag, TraceID: &trace, OrderID: input.OrderID,
+		ProjectID: &removal.ProjectID, SenderID: userID, ReceiverID: removal.UserID,
+		Status: models.SmsNoticeStatusPending, StartedAt: &now}
+	memberRemovalRepo, ok := s.repo.SmsNotice.(interface {
+		CreateMemberRemoval(context.Context, *models.SmsNotice, int64) error
+		CompleteMemberRemoval(context.Context, *models.SmsNotice) error
+	})
+	if !ok || memberRemovalRepo.CreateMemberRemoval(ctx, notice, removal.ID) != nil {
+		return nil, ErrInternal("create member removal sms record failed")
+	}
+	if err := applicationSubmitter.SubmitApplicationSms(ctx, messagecenter.ApplicationSmsRequest{
+		TaskKey: taskKey, TemplateCode: "MEMBER_REMOVAL_THANKS", Phone: strings.TrimSpace(*receiver.Phone), Nickname: nickname,
+		ProjectTitle: removal.ProjectName, TeamRole: applicationSmsRoleName(removal.Role), BusinessTag: tag, TraceID: trace,
+	}); err != nil {
+		notice.Status = models.SmsNoticeStatusFailed
+		message := err.Error()
+		notice.ErrorMessage = &message
+		_ = memberRemovalRepo.CompleteMemberRemoval(ctx, notice)
+		return nil, ErrInternal("submit member removal sms failed")
+	}
+	notice.Status = models.SmsNoticeStatusCompleted
+	notice.CompletedAt = &now
+	if err := memberRemovalRepo.CompleteMemberRemoval(ctx, notice); err != nil {
+		return nil, ErrInternal("complete member removal sms record failed")
 	}
 	return notice, nil
 }

@@ -629,7 +629,7 @@ func (r *ProjectRepository) ListMilestones(ctx context.Context, projectID int) (
 
 func (r *ProjectRepository) ListMembers(ctx context.Context, projectID int) ([]models.ProjectMember, error) {
 	var members []models.ProjectMember
-	if err := r.db.SelectContext(ctx, &members, `SELECT pm.id,pm.project_id,pm.user_id,pm.role,pr.name AS role_name
+	if err := r.db.SelectContext(ctx, &members, `SELECT pm.id,pm.project_id,pm.user_id,pm.role,pm.created_at,pr.name AS role_name
 		FROM project_members pm
 		LEFT JOIN project_role pr ON pr.code=pm.role
 		WHERE pm.project_id=?

@@ -580,12 +580,29 @@ CREATE TABLE `user` (
 --
 
 DROP TABLE IF EXISTS `status_notification`;
+DROP TABLE IF EXISTS `project_member_removal`;
+CREATE TABLE `project_member_removal` (
+  `id` BIGINT NOT NULL AUTO_INCREMENT,
+  `user_id` INT NOT NULL,
+  `project_id` INT NOT NULL,
+  `operator_id` INT NOT NULL,
+  `role` VARCHAR(32) NOT NULL,
+  `joined_at` DATETIME NOT NULL,
+  `removed_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `score` INT NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_member_removal_user` (`user_id`,`removed_at`),
+  KEY `idx_member_removal_project` (`project_id`),
+  CONSTRAINT `fk_member_removal_user` FOREIGN KEY (`user_id`) REFERENCES `user` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_member_removal_project` FOREIGN KEY (`project_id`) REFERENCES `project` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Removed project member snapshots';
 CREATE TABLE `status_notification` (
   `id` BIGINT NOT NULL AUTO_INCREMENT,
   `user_id` INT NOT NULL,
   `type` VARCHAR(50) NOT NULL,
 	`application_id` INT NULL,
 	`olive_branch_id` INT NULL,
+	`member_removal_id` BIGINT NULL,
 	`priority` INT NOT NULL DEFAULT 10,
   `displayed_at` TIMESTAMP NULL DEFAULT NULL,
   `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -593,9 +610,11 @@ CREATE TABLE `status_notification` (
   KEY `idx_status_notification_pending` (`user_id`, `displayed_at`, `id`),
   KEY `idx_status_notification_application` (`application_id`),
 	KEY `idx_status_notification_olive` (`olive_branch_id`),
+	KEY `idx_status_notification_member_removal` (`member_removal_id`),
   CONSTRAINT `fk_status_notification_user` FOREIGN KEY (`user_id`) REFERENCES `user` (`id`) ON DELETE CASCADE,
 	CONSTRAINT `fk_status_notification_application` FOREIGN KEY (`application_id`) REFERENCES `project_application` (`id`) ON DELETE CASCADE,
-	CONSTRAINT `fk_status_notification_olive` FOREIGN KEY (`olive_branch_id`) REFERENCES `olive_branch_record` (`id`) ON DELETE CASCADE
+	CONSTRAINT `fk_status_notification_olive` FOREIGN KEY (`olive_branch_id`) REFERENCES `olive_branch_record` (`id`) ON DELETE CASCADE,
+	CONSTRAINT `fk_status_notification_member_removal` FOREIGN KEY (`member_removal_id`) REFERENCES `project_member_removal` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Status notification delivery queue';
 
 DROP TABLE IF EXISTS `collaboration_score`;

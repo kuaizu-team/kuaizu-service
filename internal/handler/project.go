@@ -392,10 +392,11 @@ func (s *Server) DeleteProject(ctx echo.Context, id int) error {
 }
 func (s *Server) RemoveProjectMember(ctx echo.Context, id int, memberId int, params api.RemoveProjectMemberParams) error {
 	userID := GetUserID(ctx)
-	if err := s.svc.Project.RemoveMember(ctx.Request().Context(), id, userID, memberId, params.Score); err != nil {
+	result, err := s.svc.Project.RemoveMember(ctx.Request().Context(), id, userID, memberId, params.Score)
+	if err != nil {
 		return mapServiceError(ctx, err)
 	}
-	return Success(ctx, nil)
+	return Success(ctx, result)
 }
 func (s *Server) RestoreProject(ctx echo.Context, id int) error {
 	userID := GetUserID(ctx)

@@ -30,6 +30,7 @@ func (s *Server) PostSmsSend(ctx echo.Context) error {
 		ReceiverUserID:      req.ReceiverUserId,
 		OliveBranchRecordID: oliveBranchRecordID,
 		ApplicationID:       req.ApplicationId,
+		MemberRemovalID:     req.MemberRemovalId,
 		NoticeType:          noticeType,
 		ProjectID:           req.ProjectId,
 	})

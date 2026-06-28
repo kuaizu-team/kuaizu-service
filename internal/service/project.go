@@ -6,6 +6,7 @@ import (
 	"math"
 	"sort"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/kuaizu-team/kuaizu-service/api"
@@ -674,80 +675,114 @@ func projectMembersContainUser(members []models.ProjectMember, userID int) bool 
 	return false
 }
 
-func (s *ProjectService) RemoveMember(ctx context.Context, projectID int, scorerID int, memberID int, score *int) error {
+type RemovedMemberResult struct {
+	RemovalID   int64     `json:"removalId"`
+	ProjectID   int       `json:"projectId"`
+	ProjectName string    `json:"projectName"`
+	MemberID    int       `json:"memberId"`
+	Role        string    `json:"role"`
+	RoleName    string    `json:"roleName"`
+	JoinedAt    time.Time `json:"joinedAt"`
+	RemovedAt   time.Time `json:"removedAt"`
+	Days        int       `json:"days"`
+}
+
+func (s *ProjectService) RemoveMember(ctx context.Context, projectID int, scorerID int, memberID int, score *int) (*RemovedMemberResult, error) {
 	if projectID <= 0 || memberID <= 0 {
-		return ErrBadRequest("invalid project or member id")
+		return nil, ErrBadRequest("invalid project or member id")
 	}
 	if score != nil && (*score < 0 || *score > 100) {
-		return ErrBadRequest("score must be between 0 and 100")
+		return nil, ErrBadRequest("score must be between 0 and 100")
 	}
 	if scorerID == memberID {
-		return ErrBadRequest("不能移除自己")
+		return nil, ErrBadRequest("不能移除自己")
 	}
 
 	project, err := s.repo.Project.GetByID(ctx, projectID)
 	if err != nil {
 		log.Printf("[ProjectService.RemoveMember] repository error getting project: %v", err)
-		return ErrInternal("获取项目失败")
+		return nil, ErrInternal("获取项目失败")
 	}
 	if project == nil {
-		return ErrNotFound("项目不存在")
+		return nil, ErrNotFound("项目不存在")
 	}
 	members, err := s.repo.Project.ListMembers(ctx, projectID)
 	if err != nil {
 		log.Printf("[ProjectService.RemoveMember] repository error listing members: %v", err)
-		return ErrInternal("获取项目成员失败")
+		return nil, ErrInternal("获取项目成员失败")
 	}
 	currentRole, _ := currentUserProjectRole(project, scorerID, members)
 	if !canOperateAsHighestRole(currentRole, members) {
-		return ErrForbidden("当前角色不能移除项目成员")
+		return nil, ErrForbidden("当前角色不能移除项目成员")
 	}
 
-	found := false
+	var removedMember *models.ProjectMember
 	for _, member := range members {
 		if member.UserID == memberID {
-			found = true
+			copy := member
+			removedMember = &copy
 			break
 		}
 	}
-	if !found {
-		return ErrNotFound("项目成员不存在")
+	if removedMember == nil {
+		return nil, ErrNotFound("项目成员不存在")
 	}
 
 	tx, err := s.repo.DB().BeginTxx(ctx, nil)
 	if err != nil {
-		return ErrInternal("开启事务失败")
+		return nil, ErrInternal("开启事务失败")
 	}
 	defer tx.Rollback()
 
 	result, err := tx.ExecContext(ctx, "DELETE FROM project_members WHERE project_id=? AND user_id=?", projectID, memberID)
 	if err != nil {
 		log.Printf("[ProjectService.RemoveMember] delete member failed: %v", err)
-		return ErrInternal("移除项目成员失败")
+		return nil, ErrInternal("移除项目成员失败")
 	}
 	affected, _ := result.RowsAffected()
 	if affected == 0 {
-		return ErrNotFound("项目成员不存在")
+		return nil, ErrNotFound("项目成员不存在")
 	}
 
 	if score != nil {
 		if _, err := tx.ExecContext(ctx, `INSERT INTO collaboration_score(user_id, project_id, scorer_id, score, created_at)
 			VALUES (?, ?, ?, ?, NOW())`, memberID, projectID, scorerID, *score); err != nil {
 			log.Printf("[ProjectService.RemoveMember] insert score failed: %v", err)
-			return ErrInternal("记录协作评分失败")
+			return nil, ErrInternal("记录协作评分失败")
 		}
 		if _, err := tx.ExecContext(ctx, `UPDATE `+"`user`"+` SET collaboration_score=(
 			SELECT avg_score FROM (SELECT COALESCE(AVG(score), 100) AS avg_score FROM collaboration_score WHERE user_id=?) t
 		) WHERE id=?`, memberID, memberID); err != nil {
 			log.Printf("[ProjectService.RemoveMember] update user score failed: %v", err)
-			return ErrInternal("更新协作指数失败")
+			return nil, ErrInternal("更新协作指数失败")
 		}
+	}
+	joinedAt := removedMember.CreatedAt
+	if joinedAt.IsZero() {
+		joinedAt = time.Now()
+	}
+	removedAt := time.Now()
+	result, err = tx.ExecContext(ctx, `INSERT INTO project_member_removal(user_id,project_id,operator_id,role,joined_at,removed_at,score) VALUES(?,?,?,?,?,?,?)`, memberID, projectID, scorerID, removedMember.Role, joinedAt, removedAt, score)
+	if err != nil {
+		return nil, ErrInternal("记录成员移除信息失败")
+	}
+	removalID, err := result.LastInsertId()
+	if err != nil {
+		return nil, ErrInternal("获取成员移除记录失败")
+	}
+	if err := repository.CreateMemberRemovalStatusNotificationTx(ctx, tx, memberID, removalID); err != nil {
+		return nil, ErrInternal("创建状态通知失败")
 	}
 
 	if err := tx.Commit(); err != nil {
-		return ErrInternal("提交事务失败")
+		return nil, ErrInternal("提交事务失败")
 	}
-	return nil
+	days := int(math.Ceil(removedAt.Sub(joinedAt).Hours() / 24))
+	if days < 1 {
+		days = 1
+	}
+	roleName := applicationSmsRoleName(removedMember.Role)
+	return &RemovedMemberResult{RemovalID: removalID, ProjectID: projectID, ProjectName: project.Name, MemberID: memberID, Role: removedMember.Role, RoleName: roleName, JoinedAt: joinedAt, RemovedAt: removedAt, Days: days}, nil
 }
 
 func (s *ProjectService) resolveProjectSchool(ctx context.Context, creatorID int, schoolID, initiatingSchoolID *int, useCreatorDefault bool) (*int, error) {

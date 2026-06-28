@@ -11,8 +11,11 @@ properties:
     type: integer
   applicationId:
     type: integer
+  memberRemovalId:
+    type: integer
+    format: int64
   noticeType:
     type: string
-    enum: [rejected, accepted]
+    enum: [rejected, accepted, removed]
   projectId:
     type: integer

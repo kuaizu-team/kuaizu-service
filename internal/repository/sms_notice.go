@@ -94,6 +94,30 @@ func (r *SmsNoticeRepository) CreateOutcome(ctx context.Context, notice *models.
 	return nil
 }
 
+func (r *SmsNoticeRepository) CreateMemberRemoval(ctx context.Context, notice *models.SmsNotice, removalID int64) error {
+	result, err := r.db.ExecContext(ctx, `INSERT INTO olive_branch_sms_notice
+		(channel,business_tag,trace_id,order_id,olive_branch_record_id,member_removal_id,project_id,sender_id,receiver_id,sms_content,status,started_at)
+		VALUES (?,?,?,?,NULL,?,?,?,?,?,?,?)`, notice.Channel, notice.BusinessTag, notice.TraceID, notice.OrderID, removalID,
+		notice.ProjectID, notice.SenderID, notice.ReceiverID, notice.SmsContent, notice.Status, notice.StartedAt)
+	if err != nil {
+		return fmt.Errorf("create member removal sms notice: %w", err)
+	}
+	id, err := result.LastInsertId()
+	if err != nil {
+		return fmt.Errorf("get member removal sms notice id: %w", err)
+	}
+	notice.ID = int(id)
+	return nil
+}
+
+func (r *SmsNoticeRepository) CompleteMemberRemoval(ctx context.Context, notice *models.SmsNotice) error {
+	_, err := r.db.ExecContext(ctx, `UPDATE olive_branch_sms_notice SET status=?,error_message=?,completed_at=?,updated_at=NOW() WHERE id=?`, notice.Status, notice.ErrorMessage, notice.CompletedAt, notice.ID)
+	if err != nil {
+		return fmt.Errorf("complete member removal sms notice: %w", err)
+	}
+	return nil
+}
+
 func (r *SmsNoticeRepository) Update(ctx context.Context, notice *models.SmsNotice) error {
 	query := `
 		UPDATE olive_branch_sms_notice SET

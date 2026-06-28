@@ -77,12 +77,13 @@ func (m ProjectMilestone) ToVO() api.ProjectMilestoneVO {
 }
 
 type ProjectMember struct {
-	ID        int     `db:"id"`
-	ProjectID int     `db:"project_id"`
-	UserID    int     `db:"user_id"`
-	Role      string  `db:"role"`
-	RoleName  *string `db:"role_name"`
-	User      *User   `db:"-"`
+	ID        int       `db:"id"`
+	ProjectID int       `db:"project_id"`
+	UserID    int       `db:"user_id"`
+	Role      string    `db:"role"`
+	RoleName  *string   `db:"role_name"`
+	User      *User     `db:"-"`
+	CreatedAt time.Time `db:"created_at"`
 }
 
 func (m ProjectMember) ToVO() api.ProjectMemberVO {
