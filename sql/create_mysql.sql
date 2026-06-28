@@ -293,6 +293,8 @@ CREATE TABLE `order` (
   `id` int(11) NOT NULL AUTO_INCREMENT COMMENT 'ID',
   `user_id` int(11) NOT NULL COMMENT '用户ID',
   `product_id` int(11) NOT NULL COMMENT '商品ID',
+  `template_code` varchar(64) DEFAULT NULL COMMENT 'SMS template code',
+  `template_name` varchar(100) DEFAULT NULL COMMENT 'SMS template display name',
   `price` decimal(10,2) NOT NULL COMMENT '下单时的单价快照',
   `quantity` int(11) NOT NULL COMMENT '数量',
   `actual_paid` decimal(10,2) NOT NULL COMMENT '实付金额',

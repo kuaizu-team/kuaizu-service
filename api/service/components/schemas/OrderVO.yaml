@@ -8,6 +8,14 @@ properties:
   productName:
     type: string
     description: 商品名称
+  templateCode:
+    type: string
+    nullable: true
+    description: SMS template code for this order
+  templateName:
+    type: string
+    nullable: true
+    description: SMS template display name for this order
   refundStatus:
     type: integer
     description: Refund status, 0=none, 1=pending, 2=success, 3=rejected, 4=withdrawn

@@ -104,6 +104,10 @@ func (s *SmsNoticeService) Send(ctx context.Context, userID int, input SendSmsNo
 		return nil, ErrBadRequest("order product is not sms notice")
 	}
 
+	if err := s.recordOrderSmsTemplate(ctx, order.ID, "OLIVE_BRANCH_SMS_NOTICE"); err != nil {
+		return nil, err
+	}
+
 	projectID := branch.RelatedProjectID
 	if input.ProjectID != nil {
 		if *input.ProjectID != branch.RelatedProjectID {
@@ -218,6 +222,9 @@ func (s *SmsNoticeService) sendOliveOutcomeSms(ctx context.Context, userID int, 
 	if noticeType == "accepted" {
 		templateCode = "OLIVE_BRANCH_ACCEPTED"
 	}
+	if err := s.recordOrderSmsTemplate(ctx, order.ID, templateCode); err != nil {
+		return nil, err
+	}
 	taskKey := fmt.Sprintf("OLIVE_BRANCH_RESULT_SMS:%d:%s", input.OrderID, noticeType)
 	if used, err := s.repo.SmsNotice.GetByOrderID(ctx, input.OrderID); err != nil {
 		return nil, ErrInternal("check sms notice order failed")
@@ -282,6 +289,9 @@ func (s *SmsNoticeService) sendMemberRemovalSms(ctx context.Context, userID int,
 	if err != nil || product == nil || !isSmsNoticeProduct(product) {
 		return nil, ErrBadRequest("order product is not sms notice")
 	}
+	if err := s.recordOrderSmsTemplate(ctx, order.ID, "MEMBER_REMOVAL_THANKS"); err != nil {
+		return nil, err
+	}
 	if used, err := s.repo.SmsNotice.GetByOrderID(ctx, input.OrderID); err != nil {
 		return nil, ErrInternal("check sms notice order failed")
 	} else if used != nil {
@@ -332,6 +342,29 @@ func (s *SmsNoticeService) sendMemberRemovalSms(ctx context.Context, userID int,
 		return nil, ErrInternal("complete member removal sms record failed")
 	}
 	return notice, nil
+}
+
+func (s *SmsNoticeService) recordOrderSmsTemplate(ctx context.Context, orderID int, code string) error {
+	names := map[string]string{
+		"OLIVE_BRANCH_SMS_NOTICE":      "橄榄枝短信通知",
+		"OLIVE_BRANCH_REJECTED":        "橄榄枝婉拒通知",
+		"OLIVE_BRANCH_ACCEPTED":        "橄榄枝接受通知",
+		"PROJECT_APPLICATION_REJECTED": "项目申请不合适通知",
+		"PROJECT_APPLICATION_ACCEPTED": "项目申请通过通知",
+		"MEMBER_REMOVAL_THANKS":        "管理团队移除感谢",
+	}
+	name := names[code]
+	if name == "" {
+		name = code
+	}
+	if s.repo.DB() == nil {
+		return nil
+	}
+	if _, err := s.repo.DB().ExecContext(ctx, "UPDATE `order` SET template_code=?, template_name=?, updated_at=NOW() WHERE id=?", code, name, orderID); err != nil {
+		log.Printf("[SmsNoticeService] update order sms template, order_id=%d template_code=%s: %v", orderID, code, err)
+		return ErrInternal("update order sms template failed")
+	}
+	return nil
 }
 
 func valueOrEmpty(value *string) string {
@@ -432,6 +465,9 @@ func (s *SmsNoticeService) sendApplicationSms(ctx context.Context, userID int, i
 	templateCode := "PROJECT_APPLICATION_REJECTED"
 	if noticeType == "accepted" {
 		templateCode = "PROJECT_APPLICATION_ACCEPTED"
+	}
+	if err := s.recordOrderSmsTemplate(ctx, order.ID, templateCode); err != nil {
+		return nil, err
 	}
 	err = applicationSubmitter.SubmitApplicationSms(ctx, messagecenter.ApplicationSmsRequest{
 		TaskKey: fmt.Sprintf("PROJECT_APPLICATION_SMS:%d:%s", input.OrderID, noticeType), TemplateCode: templateCode,
