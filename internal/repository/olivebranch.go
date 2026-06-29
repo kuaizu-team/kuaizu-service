@@ -358,7 +358,9 @@ func (r *OliveBranchRepository) ListBySenderID(ctx context.Context, params Olive
 		LEFT JOIN ` + "`user`" + ` recv ON ob.receiver_id = recv.id
 		LEFT JOIN school sch ON recv.school_id = sch.id
 		LEFT JOIN major m ON recv.major_id = m.id
-		LEFT JOIN olive_branch_sms_notice sn ON sn.olive_branch_record_id = ob.id AND sn.updated_at >= ob.updated_at
+		LEFT JOIN olive_branch_sms_notice sn ON sn.olive_branch_record_id = ob.id
+			AND sn.business_tag = 'olive_branch_sms_notice'
+			AND sn.updated_at >= ob.updated_at
 		WHERE (
 			ob.sender_id = ?
 			OR p.creator_id = ?
