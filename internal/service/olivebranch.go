@@ -307,13 +307,16 @@ func (s *OliveBranchService) HandleOliveBranch(ctx context.Context, userID, bran
 		return ob, nil
 	case "REJECT":
 		wasDiscussing := ob.Status == models.OliveBranchStatusDiscussing
+		rejectedByReceiver := ob.ReceiverID == userID
 		if ob.Status == models.OliveBranchStatusPending {
 			if ob.ReceiverID != userID {
 				return nil, ErrForbidden("\u65e0\u6743\u5904\u7406\u8be5\u6a44\u6984\u679d")
 			}
 		} else if ob.Status == models.OliveBranchStatusDiscussing {
-			if err := s.ensureCanOperateDiscussingBranch(ctx, ob, userID, ""); err != nil {
-				return nil, err
+			if !rejectedByReceiver {
+				if err := s.ensureCanOperateDiscussingBranch(ctx, ob, userID, ""); err != nil {
+					return nil, err
+				}
 			}
 		} else {
 			return nil, ErrBadRequest("\u5f53\u524d\u72b6\u6001\u4e0d\u53ef\u64cd\u4f5c")
@@ -332,8 +335,10 @@ func (s *OliveBranchService) HandleOliveBranch(ctx context.Context, userID, bran
 			if _, err := tx.ExecContext(ctx, `UPDATE olive_branch_record SET status=?, rejected_at=CURRENT_TIMESTAMP, updated_at=CURRENT_TIMESTAMP WHERE id=?`, models.OliveBranchStatusRejected, branchID); err != nil {
 				return nil, ErrInternal("\u66f4\u65b0\u72b6\u6001\u5931\u8d25")
 			}
-			if err := repository.CreateOliveStatusNotificationTx(ctx, tx, ob.ReceiverID, branchID, models.StatusNotificationOliveRejected); err != nil {
-				return nil, ErrInternal("\u521b\u5efa\u72b6\u6001\u901a\u77e5\u5931\u8d25")
+			if !rejectedByReceiver {
+				if err := repository.CreateOliveStatusNotificationTx(ctx, tx, ob.ReceiverID, branchID, models.StatusNotificationOliveRejected); err != nil {
+					return nil, ErrInternal("\u521b\u5efa\u72b6\u6001\u901a\u77e5\u5931\u8d25")
+				}
 			}
 			if err := tx.Commit(); err != nil {
 				return nil, ErrInternal("\u63d0\u4ea4\u4e8b\u52a1\u5931\u8d25")

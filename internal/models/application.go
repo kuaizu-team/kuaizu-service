@@ -23,35 +23,37 @@ type ProjectApplication struct {
 	UpdatedAt    time.Time  `db:"updated_at"`
 
 	// Joined fields
-	ProjectName      *string        `db:"project_name"`
-	ReviewerRoleName *string        `db:"reviewer_role_name"`
-	AssignedRoleName *string        `db:"assigned_role_name"`
-	IsCurrentMember  *bool          `db:"is_current_member"`
-	CanReview        *bool          `db:"-"`
-	Applicant        *User          `db:"-"`
-	TalentProfile    *TalentProfile `db:"-"`
+	ProjectName       *string        `db:"project_name"`
+	ReviewerRoleName  *string        `db:"reviewer_role_name"`
+	AssignedRoleName  *string        `db:"assigned_role_name"`
+	IsCurrentMember   *bool          `db:"is_current_member"`
+	ApplicantRejected *bool          `db:"applicant_rejected"`
+	CanReview         *bool          `db:"-"`
+	Applicant         *User          `db:"-"`
+	TalentProfile     *TalentProfile `db:"-"`
 }
 
 // ToVO converts ProjectApplication to API ProjectApplicationVO
 func (a *ProjectApplication) ToVO() *api.ProjectApplicationVO {
 
 	vo := &api.ProjectApplicationVO{
-		Id:               &a.ID,
-		ProjectId:        &a.ProjectID,
-		ProjectName:      a.ProjectName,
-		Status:           (*api.ApplicationStatus)(&a.Status),
-		IsRead:           &a.IsRead,
-		ReviewerId:       a.ReviewerID,
-		ReviewerRole:     a.ReviewerRole,
-		ReviewerRoleName: a.ReviewerRoleName,
-		AssignedRole:     a.AssignedRole,
-		AssignedRoleName: a.AssignedRoleName,
-		IsCurrentMember:  a.IsCurrentMember,
-		CanReview:        a.CanReview,
-		AppliedAt:        &a.AppliedAt,
-		DiscussingAt:     a.DiscussingAt,
-		RejectedAt:       a.RejectedAt,
-		JoinedAt:         a.JoinedAt,
+		Id:                &a.ID,
+		ProjectId:         &a.ProjectID,
+		ProjectName:       a.ProjectName,
+		Status:            (*api.ApplicationStatus)(&a.Status),
+		IsRead:            &a.IsRead,
+		ReviewerId:        a.ReviewerID,
+		ReviewerRole:      a.ReviewerRole,
+		ReviewerRoleName:  a.ReviewerRoleName,
+		AssignedRole:      a.AssignedRole,
+		AssignedRoleName:  a.AssignedRoleName,
+		IsCurrentMember:   a.IsCurrentMember,
+		ApplicantRejected: a.ApplicantRejected,
+		CanReview:         a.CanReview,
+		AppliedAt:         &a.AppliedAt,
+		DiscussingAt:      a.DiscussingAt,
+		RejectedAt:        a.RejectedAt,
+		JoinedAt:          a.JoinedAt,
 	}
 
 	if a.Applicant != nil {

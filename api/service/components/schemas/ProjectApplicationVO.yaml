@@ -22,6 +22,9 @@ properties:
   isCurrentMember:
     type: boolean
     description: 申请人当前是否仍在该项目团队中；仅已加入团队状态下有展示意义
+  applicantRejected:
+    type: boolean
+    description: 已拒绝状态是否由申请人主动标记不合适触发；仅用于项目方列表展示文案。
   applicant:
     $ref: ./UserVO.yaml
   applyReason:

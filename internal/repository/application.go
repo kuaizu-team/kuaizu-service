@@ -108,7 +108,14 @@ func (r *ApplicationRepository) List(ctx context.Context, params ApplicationList
 			pa.applied_at, pa.discussing_at, pa.rejected_at, pa.joined_at, pa.updated_at,
 			p.name AS project_name,
 			pr.name AS reviewer_role_name, ar.name AS assigned_role_name,
-			CASE WHEN pm.id IS NULL THEN FALSE ELSE TRUE END AS is_current_member
+			CASE WHEN pm.id IS NULL THEN FALSE ELSE TRUE END AS is_current_member,
+			CASE
+				WHEN pa.status = ? AND NOT EXISTS (
+					SELECT 1 FROM status_notification sn
+					WHERE sn.application_id = pa.id AND sn.type = ?
+				) THEN TRUE
+				ELSE FALSE
+			END AS applicant_rejected
 		FROM project_application pa
 		LEFT JOIN project p ON pa.project_id = p.id
 		LEFT JOIN project_role pr ON pr.code = pa.reviewer_role
@@ -118,10 +125,11 @@ func (r *ApplicationRepository) List(ctx context.Context, params ApplicationList
 		ORDER BY pa.applied_at DESC
 		LIMIT ? OFFSET ?
 	`, whereClause)
-	args = append(args, params.Size, offset)
+	queryArgs := append([]interface{}{models.ApplicationStatusRejected, models.StatusNotificationApplicationRejected}, args...)
+	queryArgs = append(queryArgs, params.Size, offset)
 
 	var applications []models.ProjectApplication
-	if err := r.db.SelectContext(ctx, &applications, query, args...); err != nil {
+	if err := r.db.SelectContext(ctx, &applications, query, queryArgs...); err != nil {
 		return nil, 0, fmt.Errorf("query applications: %w", err)
 	}
 
