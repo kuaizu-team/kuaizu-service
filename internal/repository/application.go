@@ -420,6 +420,18 @@ func (r *ApplicationRepository) UpdateStatus(ctx context.Context, id int, status
 	return nil
 }
 
+func (r *ApplicationRepository) DeletePendingByIDAndUser(ctx context.Context, id int, userID int) (bool, error) {
+	result, err := r.db.ExecContext(ctx,
+		`DELETE FROM project_application WHERE id = ? AND user_id = ? AND status = ?`,
+		id, userID, models.ApplicationStatusPending,
+	)
+	if err != nil {
+		return false, fmt.Errorf("delete pending application: %w", err)
+	}
+	rowsAffected, _ := result.RowsAffected()
+	return rowsAffected > 0, nil
+}
+
 func (r *ApplicationRepository) UpdateStatusWithReviewer(ctx context.Context, id int, status int, reviewerID int, reviewerRole *string) error {
 	query := `UPDATE project_application
 		SET status = ?, reviewer_id = ?, reviewer_role = ?,

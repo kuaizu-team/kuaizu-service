@@ -1420,6 +1420,23 @@ func (s *ProjectService) ReviewApplication(ctx context.Context, applicationID, u
 	if app.Status == models.ApplicationStatusRejected || app.Status == models.ApplicationStatusJoined {
 		return ErrBadRequest("当前申请状态不允许操作")
 	}
+	if status == models.ApplicationStatusRejected && app.UserID == userID {
+		if app.Status != models.ApplicationStatusDiscussing {
+			return ErrBadRequest("只有互相了解中的申请可以标记为不合适")
+		}
+		result, err := s.repo.DB().ExecContext(ctx, `UPDATE project_application
+			SET status = ?, rejected_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+			WHERE id = ? AND user_id = ? AND status = ?`,
+			models.ApplicationStatusRejected, applicationID, userID, models.ApplicationStatusDiscussing)
+		if err != nil {
+			log.Printf("[ProjectService.ReviewApplication] repository error applicant rejecting application: %v", err)
+			return ErrInternal("更新申请状态失败")
+		}
+		if rows, _ := result.RowsAffected(); rows == 0 {
+			return ErrBadRequest("当前申请状态不允许操作")
+		}
+		return nil
+	}
 	if status == models.ApplicationStatusDiscussing && app.Status != models.ApplicationStatusPending {
 		return ErrBadRequest("只有待审核申请可以进入互相了解")
 	}
@@ -1495,6 +1512,35 @@ func (s *ProjectService) ReviewApplication(ctx context.Context, applicationID, u
 		}
 	}(context.WithoutCancel(ctx))
 
+	return nil
+}
+
+func (s *ProjectService) WithdrawMyApplication(ctx context.Context, applicationID, userID int) error {
+	if applicationID <= 0 || userID <= 0 {
+		return ErrBadRequest("参数错误")
+	}
+	app, err := s.repo.Application.GetByID(ctx, applicationID)
+	if err != nil {
+		log.Printf("[ProjectService.WithdrawMyApplication] repository error getting application: %v", err)
+		return ErrInternal("获取申请信息失败")
+	}
+	if app == nil {
+		return ErrNotFound("申请不存在")
+	}
+	if app.UserID != userID {
+		return ErrForbidden("无权收回该名片")
+	}
+	if app.Status != models.ApplicationStatusPending {
+		return ErrBadRequest("只有待审核名片可以收回")
+	}
+	deleted, err := s.repo.Application.DeletePendingByIDAndUser(ctx, applicationID, userID)
+	if err != nil {
+		log.Printf("[ProjectService.WithdrawMyApplication] repository error deleting application: %v", err)
+		return ErrInternal("收回名片失败")
+	}
+	if !deleted {
+		return ErrBadRequest("当前申请状态不允许收回")
+	}
 	return nil
 }
 

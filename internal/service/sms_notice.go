@@ -176,14 +176,21 @@ func (s *SmsNoticeService) Send(ctx context.Context, userID int, input SendSmsNo
 
 func (s *SmsNoticeService) sendOliveOutcomeSms(ctx context.Context, userID int, input SendSmsNoticeInput) (*models.SmsNotice, error) {
 	noticeType := strings.TrimSpace(valueOrEmpty(input.NoticeType))
-	if input.OrderID <= 0 || input.ReceiverUserID <= 0 || input.OliveBranchRecordID <= 0 || (noticeType != "accepted" && noticeType != "rejected") {
+	if input.OrderID <= 0 || input.ReceiverUserID <= 0 || input.OliveBranchRecordID <= 0 ||
+		(noticeType != "accepted" && noticeType != "rejected" && noticeType != "talent_rejected") {
 		return nil, ErrBadRequest("invalid olive branch result sms parameters")
 	}
 	branch, err := s.repo.OliveBranch.GetByID(ctx, input.OliveBranchRecordID)
 	if err != nil || branch == nil {
 		return nil, ErrNotFound("olive branch record not found")
 	}
-	if branch.SenderID != userID || branch.ReceiverID != input.ReceiverUserID {
+	smsReceiverID := branch.ReceiverID
+	if noticeType == "talent_rejected" {
+		smsReceiverID = branch.SenderID
+		if branch.ReceiverID != userID || branch.SenderID != input.ReceiverUserID {
+			return nil, ErrForbidden("no permission to send olive branch result sms")
+		}
+	} else if branch.SenderID != userID || branch.ReceiverID != input.ReceiverUserID {
 		return nil, ErrForbidden("no permission to send olive branch result sms")
 	}
 	expectedStatus := models.OliveBranchStatusRejected
@@ -205,13 +212,20 @@ func (s *SmsNoticeService) sendOliveOutcomeSms(ctx context.Context, userID int, 
 	if err != nil || project == nil {
 		return nil, ErrNotFound("project not found")
 	}
-	receiver, err := s.repo.User.GetByID(ctx, branch.ReceiverID)
+	receiver, err := s.repo.User.GetByID(ctx, smsReceiverID)
 	if err != nil || receiver == nil || receiver.Phone == nil || strings.TrimSpace(*receiver.Phone) == "" {
 		return nil, ErrBadRequest("receiver phone is unavailable")
 	}
 	nickname := "同学"
-	if receiver.Nickname != nil && strings.TrimSpace(*receiver.Nickname) != "" {
-		nickname = strings.TrimSpace(*receiver.Nickname)
+	nicknameUser := receiver
+	if noticeType == "talent_rejected" {
+		nicknameUser, err = s.repo.User.GetByID(ctx, userID)
+		if err != nil || nicknameUser == nil {
+			return nil, ErrInternal("get sender failed")
+		}
+	}
+	if nicknameUser.Nickname != nil && strings.TrimSpace(*nicknameUser.Nickname) != "" {
+		nickname = strings.TrimSpace(*nicknameUser.Nickname)
 	}
 	teamRole := applicationSmsRoleName(valueOrEmpty(branch.OperatorRole))
 	submitter, initErr, _ := s.resolveMessageCenter()
@@ -225,6 +239,8 @@ func (s *SmsNoticeService) sendOliveOutcomeSms(ctx context.Context, userID int, 
 	templateCode := "OLIVE_BRANCH_REJECTED"
 	if noticeType == "accepted" {
 		templateCode = "OLIVE_BRANCH_ACCEPTED"
+	} else if noticeType == "talent_rejected" {
+		templateCode = "OLIVE_BRANCH_TALENT_REJECTED"
 	}
 	if err := s.recordOrderSmsTemplate(ctx, order.ID, templateCode); err != nil {
 		return nil, err
@@ -238,7 +254,7 @@ func (s *SmsNoticeService) sendOliveOutcomeSms(ctx context.Context, userID int, 
 	now := time.Now()
 	channel, tag, trace := "SMS", "olive_branch_result_sms_"+noticeType, taskKey
 	notice := &models.SmsNotice{Channel: &channel, BusinessTag: &tag, TraceID: &trace, OrderID: input.OrderID,
-		OliveBranchRecordID: branch.ID, ProjectID: &branch.RelatedProjectID, SenderID: userID, ReceiverID: branch.ReceiverID,
+		OliveBranchRecordID: branch.ID, ProjectID: &branch.RelatedProjectID, SenderID: userID, ReceiverID: smsReceiverID,
 		Status: models.SmsNoticeStatusPending, StartedAt: &now}
 	outcomeRepo, ok := s.repo.SmsNotice.(interface {
 		CreateOutcome(context.Context, *models.SmsNotice) error
@@ -350,12 +366,14 @@ func (s *SmsNoticeService) sendMemberRemovalSms(ctx context.Context, userID int,
 
 func (s *SmsNoticeService) recordOrderSmsTemplate(ctx context.Context, orderID int, code string) error {
 	names := map[string]string{
-		"OLIVE_BRANCH_SMS_NOTICE":      "橄榄枝短信通知",
-		"OLIVE_BRANCH_REJECTED":        "橄榄枝婉拒通知",
-		"OLIVE_BRANCH_ACCEPTED":        "橄榄枝接受通知",
-		"PROJECT_APPLICATION_REJECTED": "项目申请不合适通知",
-		"PROJECT_APPLICATION_ACCEPTED": "项目申请通过通知",
-		"MEMBER_REMOVAL_THANKS":        "管理团队移除感谢",
+		"OLIVE_BRANCH_SMS_NOTICE":                "橄榄枝短信通知",
+		"OLIVE_BRANCH_REJECTED":                  "橄榄枝婉拒通知",
+		"OLIVE_BRANCH_ACCEPTED":                  "橄榄枝接受通知",
+		"OLIVE_BRANCH_TALENT_REJECTED":           "人才婉拒项目橄榄枝",
+		"PROJECT_APPLICATION_REJECTED":           "项目申请不合适通知",
+		"PROJECT_APPLICATION_ACCEPTED":           "项目申请通过通知",
+		"PROJECT_APPLICATION_APPLICANT_REJECTED": "投递名片主动不合适",
+		"MEMBER_REMOVAL_THANKS":                  "管理团队移除感谢",
 	}
 	name := names[code]
 	if name == "" {
@@ -383,7 +401,7 @@ func (s *SmsNoticeService) sendApplicationSms(ctx context.Context, userID int, i
 		return nil, ErrBadRequest("invalid application sms parameters")
 	}
 	noticeType := strings.TrimSpace(*input.NoticeType)
-	if noticeType != "rejected" && noticeType != "accepted" {
+	if noticeType != "rejected" && noticeType != "accepted" && noticeType != "applicant_rejected" {
 		return nil, ErrBadRequest("invalid noticeType")
 	}
 	app, err := s.repo.Application.GetByID(ctx, *input.ApplicationID)
@@ -393,11 +411,22 @@ func (s *SmsNoticeService) sendApplicationSms(ctx context.Context, userID int, i
 	if app == nil {
 		return nil, ErrNotFound("application not found")
 	}
-	if app.UserID != input.ReceiverUserID {
-		return nil, ErrBadRequest("receiverUserId does not match application")
-	}
-	if app.ReviewerID == nil || *app.ReviewerID != userID {
-		return nil, ErrForbidden("no permission to send application sms")
+	smsReceiverID := app.UserID
+	if noticeType == "applicant_rejected" {
+		if app.UserID != userID {
+			return nil, ErrForbidden("no permission to send application sms")
+		}
+		if app.ReviewerID == nil || *app.ReviewerID != input.ReceiverUserID {
+			return nil, ErrBadRequest("receiverUserId does not match application reviewer")
+		}
+		smsReceiverID = *app.ReviewerID
+	} else {
+		if app.UserID != input.ReceiverUserID {
+			return nil, ErrBadRequest("receiverUserId does not match application")
+		}
+		if app.ReviewerID == nil || *app.ReviewerID != userID {
+			return nil, ErrForbidden("no permission to send application sms")
+		}
 	}
 	if input.ProjectID != nil && *input.ProjectID != app.ProjectID {
 		return nil, ErrBadRequest("projectId does not match application")
@@ -407,6 +436,9 @@ func (s *SmsNoticeService) sendApplicationSms(ctx context.Context, userID int, i
 	}
 	if noticeType == "accepted" && app.Status != models.ApplicationStatusJoined {
 		return nil, ErrBadRequest("application is not accepted")
+	}
+	if noticeType == "applicant_rejected" && app.Status != models.ApplicationStatusRejected {
+		return nil, ErrBadRequest("application is not rejected")
 	}
 	order, err := s.repo.Order.GetByID(ctx, input.OrderID)
 	if err != nil {
@@ -440,7 +472,7 @@ func (s *SmsNoticeService) sendApplicationSms(ctx context.Context, userID int, i
 	if project == nil {
 		return nil, ErrNotFound("project not found")
 	}
-	receiver, err := s.repo.User.GetByID(ctx, app.UserID)
+	receiver, err := s.repo.User.GetByID(ctx, smsReceiverID)
 	if err != nil {
 		return nil, ErrInternal("get receiver failed")
 	}
@@ -448,14 +480,24 @@ func (s *SmsNoticeService) sendApplicationSms(ctx context.Context, userID int, i
 		return nil, ErrBadRequest("receiver phone is unavailable")
 	}
 	nickname := "同学"
-	if receiver.Nickname != nil && strings.TrimSpace(*receiver.Nickname) != "" {
-		nickname = strings.TrimSpace(*receiver.Nickname)
+	nicknameUser := receiver
+	if noticeType == "applicant_rejected" {
+		nicknameUser, err = s.repo.User.GetByID(ctx, userID)
+		if err != nil || nicknameUser == nil {
+			return nil, ErrInternal("get sender failed")
+		}
+	}
+	if nicknameUser.Nickname != nil && strings.TrimSpace(*nicknameUser.Nickname) != "" {
+		nickname = strings.TrimSpace(*nicknameUser.Nickname)
 	}
 	teamRole := "团队成员"
 	if noticeType == "accepted" && app.AssignedRole != nil && strings.TrimSpace(*app.AssignedRole) != "" {
 		teamRole = applicationSmsRoleName(strings.TrimSpace(*app.AssignedRole))
 	}
 	if noticeType == "rejected" && app.ReviewerRole != nil && strings.TrimSpace(*app.ReviewerRole) != "" {
+		teamRole = applicationSmsRoleName(strings.TrimSpace(*app.ReviewerRole))
+	}
+	if noticeType == "applicant_rejected" && app.ReviewerRole != nil && strings.TrimSpace(*app.ReviewerRole) != "" {
 		teamRole = applicationSmsRoleName(strings.TrimSpace(*app.ReviewerRole))
 	}
 	submitter, initErr, _ := s.resolveMessageCenter()
@@ -469,6 +511,8 @@ func (s *SmsNoticeService) sendApplicationSms(ctx context.Context, userID int, i
 	templateCode := "PROJECT_APPLICATION_REJECTED"
 	if noticeType == "accepted" {
 		templateCode = "PROJECT_APPLICATION_ACCEPTED"
+	} else if noticeType == "applicant_rejected" {
+		templateCode = "PROJECT_APPLICATION_APPLICANT_REJECTED"
 	}
 	if err := s.recordOrderSmsTemplate(ctx, order.ID, templateCode); err != nil {
 		return nil, err
@@ -484,7 +528,7 @@ func (s *SmsNoticeService) sendApplicationSms(ctx context.Context, userID int, i
 	now := time.Now()
 	channel, tag, trace := "SMS", "project_application_sms_"+noticeType, fmt.Sprintf("PROJECT_APPLICATION_SMS:%d", input.OrderID)
 	return &models.SmsNotice{ID: input.OrderID, Channel: &channel, BusinessTag: &tag, TraceID: &trace, OrderID: input.OrderID,
-		ProjectID: &app.ProjectID, SenderID: userID, ReceiverID: app.UserID, Status: models.SmsNoticeStatusCompleted,
+		ProjectID: &app.ProjectID, SenderID: userID, ReceiverID: smsReceiverID, Status: models.SmsNoticeStatusCompleted,
 		StartedAt: &now, CompletedAt: &now, CreatedAt: now, UpdatedAt: now}, nil
 }
 func applicationSmsRoleName(code string) string {

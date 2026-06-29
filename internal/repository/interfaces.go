@@ -156,6 +156,7 @@ type ApplicationRepo interface {
 	Create(ctx context.Context, app *models.ProjectApplication) error
 	GetByID(ctx context.Context, id int) (*models.ProjectApplication, error)
 	CheckDuplicate(ctx context.Context, projectID, userID int) (bool, error)
+	DeletePendingByIDAndUser(ctx context.Context, id int, userID int) (bool, error)
 	UpdateStatus(ctx context.Context, id int, status int) error
 	UpdateStatusWithReviewer(ctx context.Context, id int, status int, reviewerID int, reviewerRole *string) error
 	GetUnreadApplicationCount(ctx context.Context, userID int) (int, error)

@@ -147,6 +147,7 @@ func main() {
 
 	// Project-application reviewer read status
 	apiGroup.POST("/project-applications/mark-read", server.MarkReviewerApplicationRead)
+	apiGroup.DELETE("/project-applications/:id", server.WithdrawMyApplication)
 
 	// Super-admin invitation feedback
 	apiGroup.POST("/invitation/feedback", server.SubmitInvitationFeedback)
