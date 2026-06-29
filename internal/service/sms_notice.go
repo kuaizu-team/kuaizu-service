@@ -533,7 +533,7 @@ func (s *SmsNoticeService) GetByOliveBranchRecordID(ctx context.Context, userID,
 		return nil, ErrInternal("get sms notice failed")
 	}
 	if notice == nil {
-		return nil, nil
+		return nil, ErrNotFound("sms notice not found")
 	}
 	branch, err := s.repo.OliveBranch.GetByID(ctx, oliveBranchRecordID)
 	if err != nil {
@@ -543,7 +543,7 @@ func (s *SmsNoticeService) GetByOliveBranchRecordID(ctx context.Context, userID,
 		return nil, ErrNotFound("olive branch record not found")
 	}
 	if notice.CreatedAt.Before(branch.UpdatedAt) {
-		return nil, nil
+		return nil, ErrNotFound("sms notice not found")
 	}
 	return s.checkNoticeVisible(notice, userID)
 }

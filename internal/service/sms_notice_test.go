@@ -59,6 +59,19 @@ func (s *smsNoticeRepoStub) GetByOrderID(ctx context.Context, orderID int) (*mod
 	return s.notice, nil
 }
 
+func TestGetSmsNoticeByOliveBranchReturnsNotFoundWhenNoCurrentNoticeExists(t *testing.T) {
+	svc := &SmsNoticeService{
+		repo: &repository.Repository{SmsNotice: &smsNoticeRepoStub{}},
+	}
+
+	notice, err := svc.GetByOliveBranchRecordID(context.Background(), 1, 42)
+
+	require.Nil(t, notice)
+	var serviceErr *ServiceError
+	require.ErrorAs(t, err, &serviceErr)
+	assert.Equal(t, ErrCodeNotFound, serviceErr.Code)
+}
+
 func TestSmsNoticeSubmissionRejectedDoesNotOverwriteMessageCenterFailure(t *testing.T) {
 	accepted := false
 	failedMessage := "receiver phone is missing or invalid"
