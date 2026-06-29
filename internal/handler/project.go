@@ -658,10 +658,9 @@ func (s *Server) ReviewApplication(ctx echo.Context, id int) error {
 	return Success(ctx, nil)
 }
 
-func (s *Server) WithdrawMyApplication(ctx echo.Context) error {
+func (s *Server) WithdrawMyApplication(ctx echo.Context, id int) error {
 	userID := GetUserID(ctx)
-	id, err := strconv.Atoi(ctx.Param("id"))
-	if err != nil || id <= 0 {
+	if id <= 0 {
 		return BadRequest(ctx, "无效的申请ID")
 	}
 	if err := s.svc.Project.WithdrawMyApplication(ctx.Request().Context(), id, userID); err != nil {
