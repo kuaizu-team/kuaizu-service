@@ -13,12 +13,19 @@ import (
 )
 
 type fakeSmsNoticeSubmitter struct {
-	resp *messagecenter.SmsNoticeResponse
-	err  error
+	resp    *messagecenter.SmsNoticeResponse
+	err     error
+	appReqs []messagecenter.ApplicationSmsRequest
+	appErr  error
 }
 
 func (f fakeSmsNoticeSubmitter) SubmitSmsNotice(ctx context.Context, req messagecenter.SmsNoticeRequest) (*messagecenter.SmsNoticeResponse, error) {
 	return f.resp, f.err
+}
+
+func (f *fakeSmsNoticeSubmitter) SubmitApplicationSms(ctx context.Context, req messagecenter.ApplicationSmsRequest) error {
+	f.appReqs = append(f.appReqs, req)
+	return f.appErr
 }
 
 type smsNoticeRepoStub struct {
@@ -26,10 +33,20 @@ type smsNoticeRepoStub struct {
 	noticeByOrder *models.SmsNotice
 	getByIDCalls  chan struct{}
 	updateCalls   chan *models.SmsNotice
+	createApp     chan *models.SmsNotice
 }
 
 func (s *smsNoticeRepoStub) Create(ctx context.Context, notice *models.SmsNotice) error {
 	s.notice = notice
+	return nil
+}
+
+func (s *smsNoticeRepoStub) CreateApplication(ctx context.Context, notice *models.SmsNotice) error {
+	notice.ID = 101
+	s.notice = notice
+	if s.createApp != nil {
+		s.createApp <- notice
+	}
 	return nil
 }
 
@@ -172,6 +189,102 @@ func TestSmsNoticeSendRejectsOrderBoundToAnotherOliveBranch(t *testing.T) {
 	assert.Equal(t, "order has already been used for another sms notice", svcErr.Message)
 }
 
+func TestApplicationSmsCreatesNoticeRecordBeforeSubmitting(t *testing.T) {
+	sceneConfig := `{"scene":"olive_branch_sms_notice"}`
+	phone := "13200000000"
+	nickname := "tester"
+	reviewerID := 1130
+	reviewerRole := "TEAM_LEADER"
+	submitter := &fakeSmsNoticeSubmitter{}
+	noticeRepo := &smsNoticeRepoStub{
+		createApp:   make(chan *models.SmsNotice, 1),
+		updateCalls: make(chan *models.SmsNotice, 1),
+	}
+	repo := &repository.Repository{
+		Application: smsNoticeApplicationRepoStub{
+			application: &models.ProjectApplication{
+				ID:           7,
+				ProjectID:    154,
+				UserID:       1128,
+				Status:       models.ApplicationStatusRejected,
+				ReviewerID:   &reviewerID,
+				ReviewerRole: &reviewerRole,
+			},
+		},
+		Order: smsNoticeOrderRepoStub{
+			order: &models.Order{ID: 52, UserID: reviewerID, ProductID: 2, Status: models.OrderStatusPaid},
+		},
+		Product: smsNoticeProductRepoStub{
+			product: &models.Product{ID: 2, ConfigJSON: &sceneConfig},
+		},
+		Project: smsNoticeProjectRepoStub{
+			project: &models.Project{ID: 154, Name: "test project"},
+		},
+		User: smsNoticeUserRepoStub{
+			user: &models.User{ID: 1128, Phone: &phone, Nickname: &nickname},
+		},
+		SmsNotice: noticeRepo,
+	}
+	svc := &SmsNoticeService{repo: repo, messageCenter: submitter}
+	noticeType := "rejected"
+	projectID := 154
+	applicationID := 7
+
+	notice, err := svc.Send(context.Background(), reviewerID, SendSmsNoticeInput{
+		OrderID:        52,
+		ReceiverUserID: 1128,
+		ApplicationID:  &applicationID,
+		NoticeType:     &noticeType,
+		ProjectID:      &projectID,
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, notice)
+	created := <-noticeRepo.createApp
+	assert.Equal(t, 52, created.OrderID)
+	assert.Equal(t, 0, created.OliveBranchRecordID)
+	assert.Equal(t, "project_application_sms_rejected", *created.BusinessTag)
+	assert.Equal(t, models.SmsNoticeStatusCompleted, notice.Status)
+	assert.Len(t, submitter.appReqs, 1)
+	assert.Equal(t, "PROJECT_APPLICATION_REJECTED", submitter.appReqs[0].TemplateCode)
+}
+
+func TestApplicationSmsRejectsOrderWithTemplateCodeButNoNoticeRecord(t *testing.T) {
+	templateCode := "PROJECT_APPLICATION_APPLICANT_REJECTED"
+	reviewerID := 1130
+	applicationID := 7
+	noticeType := "applicant_rejected"
+	repo := &repository.Repository{
+		Application: smsNoticeApplicationRepoStub{
+			application: &models.ProjectApplication{
+				ID:         applicationID,
+				ProjectID:  154,
+				UserID:     1128,
+				Status:     models.ApplicationStatusRejected,
+				ReviewerID: &reviewerID,
+			},
+		},
+		Order: smsNoticeOrderRepoStub{
+			order: &models.Order{ID: 52, UserID: 1128, ProductID: 2, Status: models.OrderStatusPaid, TemplateCode: &templateCode},
+		},
+		SmsNotice: &smsNoticeRepoStub{},
+	}
+	svc := &SmsNoticeService{repo: repo}
+
+	notice, err := svc.Send(context.Background(), 1128, SendSmsNoticeInput{
+		OrderID:        52,
+		ReceiverUserID: reviewerID,
+		ApplicationID:  &applicationID,
+		NoticeType:     &noticeType,
+	})
+
+	require.Nil(t, notice)
+	var svcErr *ServiceError
+	require.ErrorAs(t, err, &svcErr)
+	assert.Equal(t, ErrCodeBadRequest, svcErr.Code)
+	assert.Equal(t, "order has already been used for another sms notice", svcErr.Message)
+}
+
 type smsNoticeOliveBranchRepoStub struct {
 	repository.OliveBranchRepo
 	branch *models.OliveBranch
@@ -217,12 +330,22 @@ func (s smsNoticeUserRepoStub) GetByID(ctx context.Context, id int) (*models.Use
 	return s.user, nil
 }
 
+type smsNoticeApplicationRepoStub struct {
+	repository.ApplicationRepo
+	application *models.ProjectApplication
+}
+
+func (s smsNoticeApplicationRepoStub) GetByID(ctx context.Context, id int) (*models.ProjectApplication, error) {
+	return s.application, nil
+}
+
 var (
 	_ repository.OliveBranchRepo = smsNoticeOliveBranchRepoStub{}
 	_ repository.OrderRepo       = smsNoticeOrderRepoStub{}
 	_ repository.ProductRepo     = smsNoticeProductRepoStub{}
 	_ repository.ProjectRepo     = smsNoticeProjectRepoStub{}
 	_ repository.UserRepo        = smsNoticeUserRepoStub{}
+	_ repository.ApplicationRepo = smsNoticeApplicationRepoStub{}
 )
 
 func intPtr(v int) *int {

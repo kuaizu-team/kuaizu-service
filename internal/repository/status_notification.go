@@ -82,7 +82,7 @@ func (r *StatusNotificationRepository) GetPending(ctx context.Context, userID in
 }
 
 func (r *StatusNotificationRepository) MarkDisplayed(ctx context.Context, id int64, userID int) error {
-	result, err := r.db.ExecContext(ctx, `UPDATE status_notification SET displayed_at=CURRENT_TIMESTAMP WHERE user_id=? AND displayed_at IS NULL AND EXISTS (SELECT 1 FROM (SELECT id FROM status_notification WHERE id=? AND user_id=?) owned)`, userID, id, userID)
+	result, err := r.db.ExecContext(ctx, `UPDATE status_notification SET displayed_at=CURRENT_TIMESTAMP WHERE id=? AND user_id=? AND displayed_at IS NULL`, id, userID)
 	if err != nil {
 		return fmt.Errorf("mark status notification displayed: %w", err)
 	}

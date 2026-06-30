@@ -458,6 +458,9 @@ func (s *SmsNoticeService) sendApplicationSms(ctx context.Context, userID int, i
 	} else if used != nil {
 		return nil, ErrBadRequest("order has already been used for another sms notice")
 	}
+	if order.TemplateCode != nil && strings.TrimSpace(*order.TemplateCode) != "" {
+		return nil, ErrBadRequest("order has already been used for another sms notice")
+	}
 	product, err := s.repo.Product.GetByID(ctx, order.ProductID)
 	if err != nil {
 		return nil, ErrInternal("get product failed")
@@ -517,19 +520,44 @@ func (s *SmsNoticeService) sendApplicationSms(ctx context.Context, userID int, i
 	if err := s.recordOrderSmsTemplate(ctx, order.ID, templateCode); err != nil {
 		return nil, err
 	}
-	err = applicationSubmitter.SubmitApplicationSms(ctx, messagecenter.ApplicationSmsRequest{
-		TaskKey: fmt.Sprintf("PROJECT_APPLICATION_SMS:%d:%s", input.OrderID, noticeType), TemplateCode: templateCode,
-		Phone: strings.TrimSpace(*receiver.Phone), Nickname: nickname, ProjectTitle: project.Name, TeamRole: teamRole,
-		BusinessTag: "project_application_sms_" + noticeType, TraceID: fmt.Sprintf("PROJECT_APPLICATION_SMS:%d", input.OrderID),
-	})
-	if err != nil {
-		return nil, ErrInternal("submit application sms failed")
-	}
+	taskKey := fmt.Sprintf("PROJECT_APPLICATION_SMS:%d:%s", input.OrderID, noticeType)
 	now := time.Now()
 	channel, tag, trace := "SMS", "project_application_sms_"+noticeType, fmt.Sprintf("PROJECT_APPLICATION_SMS:%d", input.OrderID)
-	return &models.SmsNotice{ID: input.OrderID, Channel: &channel, BusinessTag: &tag, TraceID: &trace, OrderID: input.OrderID,
-		ProjectID: &app.ProjectID, SenderID: userID, ReceiverID: smsReceiverID, Status: models.SmsNoticeStatusCompleted,
-		StartedAt: &now, CompletedAt: &now, CreatedAt: now, UpdatedAt: now}, nil
+	content := fmt.Sprintf("PROJECT_APPLICATION_SMS:%d:%s", *input.ApplicationID, noticeType)
+	notice := &models.SmsNotice{Channel: &channel, BusinessTag: &tag, TraceID: &trace, OrderID: input.OrderID,
+		ProjectID: &app.ProjectID, SenderID: userID, ReceiverID: smsReceiverID, SmsContent: content,
+		Status: models.SmsNoticeStatusPending, StartedAt: &now}
+	applicationRepo, ok := s.repo.SmsNotice.(interface {
+		CreateApplication(context.Context, *models.SmsNotice) error
+	})
+	if !ok {
+		return nil, ErrInternal("sms repository does not support application records")
+	}
+	if err := applicationRepo.CreateApplication(ctx, notice); err != nil {
+		return nil, ErrInternal("create application sms record failed")
+	}
+	if !notice.CreatedAt.IsZero() {
+		return nil, ErrBadRequest("order has already been used for another sms notice")
+	}
+	err = applicationSubmitter.SubmitApplicationSms(ctx, messagecenter.ApplicationSmsRequest{
+		TaskKey: taskKey, TemplateCode: templateCode,
+		Phone: strings.TrimSpace(*receiver.Phone), Nickname: nickname, ProjectTitle: project.Name, TeamRole: teamRole,
+		BusinessTag: tag, TraceID: trace,
+	})
+	if err != nil {
+		notice.Status = models.SmsNoticeStatusFailed
+		message := err.Error()
+		notice.ErrorMessage = &message
+		notice.CompletedAt = &now
+		_ = s.repo.SmsNotice.Update(ctx, notice)
+		return nil, ErrInternal("submit application sms failed")
+	}
+	notice.Status = models.SmsNoticeStatusCompleted
+	notice.CompletedAt = &now
+	if err := s.repo.SmsNotice.Update(ctx, notice); err != nil {
+		return nil, ErrInternal("complete application sms record failed")
+	}
+	return notice, nil
 }
 func applicationSmsRoleName(code string) string {
 	names := map[string]string{
