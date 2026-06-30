@@ -1,12 +1,29 @@
 package models
 
 import (
+	"strings"
 	"time"
 
 	"github.com/kuaizu-team/kuaizu-service/api"
 	"github.com/kuaizu-team/kuaizu-service/internal/oss"
 	openapi_types "github.com/oapi-codegen/runtime/types"
 )
+
+const DefaultUserNickname = "快组儿"
+
+// DisplayNickname keeps persisted data unchanged while providing one branded
+// fallback for every API and notification representation.
+func DisplayNickname(nickname *string) *string {
+	if nickname == nil {
+		value := DefaultUserNickname
+		return &value
+	}
+	value := strings.TrimSpace(*nickname)
+	if value == "" || value == "匿名用户" {
+		value = DefaultUserNickname
+	}
+	return &value
+}
 
 // User represents a user in the database
 type User struct {
@@ -49,7 +66,7 @@ type User struct {
 func (u *User) ToVO() *api.UserVO {
 	vo := &api.UserVO{
 		Id:                  &u.ID,
-		Nickname:            u.Nickname,
+		Nickname:            DisplayNickname(u.Nickname),
 		Phone:               u.Phone,
 		Email:               u.Email,
 		Grade:               u.Grade,

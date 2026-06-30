@@ -25,3 +25,25 @@ func TestCollaborationLevelThresholds(t *testing.T) {
 		}
 	}
 }
+
+func TestDisplayNickname(t *testing.T) {
+	tests := []struct {
+		name string
+		in   *string
+		want string
+	}{
+		{name: "nil", want: DefaultUserNickname},
+		{name: "blank", in: stringPtr("  "), want: DefaultUserNickname},
+		{name: "legacy", in: stringPtr("匿名用户"), want: DefaultUserNickname},
+		{name: "custom", in: stringPtr("  小明  "), want: "小明"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := *DisplayNickname(tt.in); got != tt.want {
+				t.Fatalf("DisplayNickname() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func stringPtr(value string) *string { return &value }

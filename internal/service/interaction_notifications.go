@@ -37,13 +37,10 @@ func talentDashboardPagePath(talentID int) string {
 }
 
 func notificationUserName(user *models.User) string {
-	if user == nil || user.Nickname == nil {
-		return "用户"
+	if user == nil {
+		return models.DefaultUserNickname
 	}
-	name := strings.TrimSpace(*user.Nickname)
-	if name == "" {
-		return "用户"
-	}
+	name := *models.DisplayNickname(user.Nickname)
 	return truncate20WithEllipsis(name)
 }
 
@@ -55,7 +52,7 @@ func notificationGroupUserName(userName string, count int) string {
 	}
 	name := strings.TrimSpace(userName)
 	if name == "" {
-		name = "用户"
+		name = models.DefaultUserNickname
 	}
 	runes := []rune(name)
 	if len(runes) > maxNameLen {

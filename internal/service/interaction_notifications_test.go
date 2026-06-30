@@ -137,11 +137,11 @@ func TestBuildVisitNotifications(t *testing.T) {
 }
 
 func TestNotificationUserNameFallback(t *testing.T) {
-	if got := notificationUserName(nil); got != "用户" {
+	if got := notificationUserName(nil); got != models.DefaultUserNickname {
 		t.Fatalf("nil user name = %q", got)
 	}
 	blank := "  "
-	if got := notificationUserName(&models.User{Nickname: &blank}); got != "用户" {
+	if got := notificationUserName(&models.User{Nickname: &blank}); got != models.DefaultUserNickname {
 		t.Fatalf("blank user name = %q", got)
 	}
 	name := "  user  "

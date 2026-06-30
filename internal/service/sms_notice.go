@@ -215,7 +215,7 @@ func (s *SmsNoticeService) sendOliveOutcomeSms(ctx context.Context, userID int, 
 	if err != nil || receiver == nil || receiver.Phone == nil || strings.TrimSpace(*receiver.Phone) == "" {
 		return nil, ErrBadRequest("receiver phone is unavailable")
 	}
-	nickname := "同学"
+	nickname := models.DefaultUserNickname
 	nicknameUser := receiver
 	if noticeType == "talent_rejected" {
 		nicknameUser, err = s.repo.User.GetByID(ctx, userID)
@@ -317,7 +317,7 @@ func (s *SmsNoticeService) sendMemberRemovalSms(ctx context.Context, userID int,
 	if err != nil || receiver == nil || receiver.Phone == nil || strings.TrimSpace(*receiver.Phone) == "" {
 		return nil, ErrBadRequest("receiver phone is unavailable")
 	}
-	nickname := "同学"
+	nickname := models.DefaultUserNickname
 	if receiver.Nickname != nil && strings.TrimSpace(*receiver.Nickname) != "" {
 		nickname = strings.TrimSpace(*receiver.Nickname)
 	}
@@ -490,7 +490,7 @@ func (s *SmsNoticeService) sendApplicationSms(ctx context.Context, userID int, i
 	if receiver == nil || receiver.Phone == nil || strings.TrimSpace(*receiver.Phone) == "" {
 		return nil, ErrBadRequest("receiver phone is unavailable")
 	}
-	nickname := "同学"
+	nickname := models.DefaultUserNickname
 	nicknameUser := receiver
 	if noticeType == "applicant_rejected" {
 		nicknameUser, err = s.repo.User.GetByID(ctx, userID)

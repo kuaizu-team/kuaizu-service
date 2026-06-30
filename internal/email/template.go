@@ -36,15 +36,13 @@ func (r *TemplateRenderer) RenderProjectPromotion(project *models.Project, nickn
 
 	// 准备数据
 	data := ProjectPromotionData{
-		Nickname:       "同学",
+		Nickname:       models.DefaultUserNickname,
 		ProjectName:    project.Name,
 		ProjectURL:     fmt.Sprintf("%s/projects/%d", r.baseURL, project.ID),
 		UnsubscribeURL: fmt.Sprintf("%s/email/unsubscribe?token=%s", r.baseURL, unsubscribeToken),
 	}
 
-	if nickname != nil && *nickname != "" {
-		data.Nickname = *nickname
-	}
+	data.Nickname = *models.DisplayNickname(nickname)
 
 	if project.Description != nil {
 		data.ProjectDesc = *project.Description

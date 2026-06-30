@@ -69,13 +69,13 @@ type TalentProfile struct {
 	UpdatedAt         *time.Time      `db:"updated_at"`
 
 	// Joined fields from user table
-	Nickname   *string `db:"nickname"`
-	Phone      *string `db:"phone"`
-	Email      *string `db:"email"`
-	WechatID   *string `db:"wechat_id"`
-	AvatarUrl  *string `db:"avatar_url"`
-	Grade      *int    `db:"grade"`
-	AuthStatus *int    `db:"auth_status"`
+	Nickname           *string  `db:"nickname"`
+	Phone              *string  `db:"phone"`
+	Email              *string  `db:"email"`
+	WechatID           *string  `db:"wechat_id"`
+	AvatarUrl          *string  `db:"avatar_url"`
+	Grade              *int     `db:"grade"`
+	AuthStatus         *int     `db:"auth_status"`
 	CollaborationScore *float64 `db:"collaboration_score"`
 	// SchoolID/MajorID are fetched from user table and used for follow-up lookups
 	SchoolID *int `db:"school_id"`
@@ -100,7 +100,7 @@ func (t *TalentProfile) ToVO() *api.TalentProfileVO {
 	vo := &api.TalentProfileVO{
 		Id:           &t.ID,
 		UserId:       &t.UserID,
-		Nickname:     t.Nickname,
+		Nickname:     DisplayNickname(t.Nickname),
 		SchoolName:   t.SchoolName,
 		MajorName:    t.MajorName,
 		Mbti:         t.MBTI,
@@ -125,7 +125,7 @@ func (t *TalentProfile) ToDetailVO() *api.TalentProfileDetailVO {
 	vo := &api.TalentProfileDetailVO{
 		Id:                &t.ID,
 		UserId:            &t.UserID,
-		Nickname:          t.Nickname,
+		Nickname:          DisplayNickname(t.Nickname),
 		SchoolName:        t.SchoolName,
 		MajorName:         t.MajorName,
 		Mbti:              t.MBTI,
