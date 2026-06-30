@@ -225,6 +225,7 @@ func (r *TalentViewLogRepository) GetViewers(ctx context.Context, talentID, limi
 		return nil, 0, fmt.Errorf("get talent viewers: %w", err)
 	}
 	for i := range viewers {
+		viewers[i].Nickname = models.DisplayNickname(viewers[i].Nickname)
 		if viewers[i].AvatarUrl != nil && *viewers[i].AvatarUrl != "" {
 			fullURL := oss.FullURL(*viewers[i].AvatarUrl)
 			viewers[i].AvatarUrl = &fullURL
@@ -250,6 +251,7 @@ func (r *TalentViewLogRepository) GetTopViewersToday(ctx context.Context, talent
 		return nil, fmt.Errorf("get talent top viewers today: %w", err)
 	}
 	for i := range viewers {
+		viewers[i].Nickname = models.DisplayNickname(viewers[i].Nickname)
 		if viewers[i].AvatarUrl != nil && *viewers[i].AvatarUrl != "" {
 			fullURL := oss.FullURL(*viewers[i].AvatarUrl)
 			viewers[i].AvatarUrl = &fullURL

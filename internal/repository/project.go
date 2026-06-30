@@ -305,7 +305,6 @@ func (r *ProjectRepository) enrichCreatorsBatch(ctx context.Context, projects []
 		return fmt.Errorf("query project creators: %w", err)
 	}
 	for i := range creators {
-		creators[i].Nickname = models.DisplayNickname(creators[i].Nickname)
 		for _, projectIndex := range index[creators[i].ID] {
 			creator := creators[i]
 			projects[projectIndex].Creator = &creator
@@ -385,7 +384,7 @@ func (r *ProjectRepository) GetByID(ctx context.Context, id int) (*models.Projec
 	p.Creator = &models.User{
 		ID:              row.UID,
 		OpenID:          row.UOpenID,
-		Nickname:        models.DisplayNickname(row.UNickname),
+		Nickname:        row.UNickname,
 		Phone:           row.UPhone,
 		Email:           row.UEmail,
 		WechatID:        row.UWechatID,

@@ -300,6 +300,7 @@ func (r *ProjectViewLogRepository) GetViewers(ctx context.Context, projectID, li
 		return nil, 0, fmt.Errorf("get viewers: %w", err)
 	}
 	for i := range viewers {
+		viewers[i].Nickname = models.DisplayNickname(viewers[i].Nickname)
 		if viewers[i].AvatarUrl != nil && *viewers[i].AvatarUrl != "" {
 			fullURL := oss.FullURL(*viewers[i].AvatarUrl)
 			viewers[i].AvatarUrl = &fullURL

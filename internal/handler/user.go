@@ -46,6 +46,9 @@ func (s *Server) GetMyCollaborationHistory(ctx echo.Context) error {
 	`, userID); err != nil {
 		return InternalError(ctx, "get collaboration history failed")
 	}
+	for i := range list {
+		list[i].ScorerNickname = models.DisplayNickname(list[i].ScorerNickname)
+	}
 
 	return Success(ctx, list)
 }

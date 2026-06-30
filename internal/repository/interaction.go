@@ -255,6 +255,7 @@ func (r *InteractionRepository) ListUsers(ctx context.Context, target, kind stri
 		return nil, 0, err
 	}
 	for i := range users {
+		users[i].Nickname = models.DisplayNickname(users[i].Nickname)
 		if users[i].AvatarURL != nil && *users[i].AvatarURL != "" {
 			fullURL := oss.FullURL(*users[i].AvatarURL)
 			users[i].AvatarURL = &fullURL
@@ -303,6 +304,7 @@ func (r *InteractionRepository) listVisitUsers(ctx context.Context, target strin
 		return nil, 0, err
 	}
 	for i := range users {
+		users[i].Nickname = models.DisplayNickname(users[i].Nickname)
 		if users[i].AvatarURL != nil && *users[i].AvatarURL != "" {
 			fullURL := oss.FullURL(*users[i].AvatarURL)
 			users[i].AvatarURL = &fullURL

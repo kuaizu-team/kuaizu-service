@@ -169,7 +169,7 @@ func (r *ApplicationRepository) List(ctx context.Context, params ApplicationList
 		userMap[row.ID] = &models.User{
 			ID:                 row.ID,
 			OpenID:             row.OpenID,
-			Nickname:           models.DisplayNickname(row.Nickname),
+			Nickname:           row.Nickname,
 			Phone:              row.Phone,
 			Email:              row.Email,
 			AvatarUrl:          row.AvatarUrl,

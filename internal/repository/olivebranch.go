@@ -146,7 +146,7 @@ func (r *OliveBranchRepository) ListByReceiverID(ctx context.Context, params Oli
 		ob := row.OliveBranch
 		ob.Sender = &models.User{
 			ID:                 row.UID,
-			Nickname:           models.DisplayNickname(row.UNickname),
+			Nickname:           row.UNickname,
 			Phone:              row.UPhone,
 			Email:              row.UEmail,
 			Grade:              row.UGrade,
@@ -392,7 +392,7 @@ func (r *OliveBranchRepository) ListBySenderID(ctx context.Context, params Olive
 		ob := row.OliveBranch
 		ob.Receiver = &models.User{
 			ID:                 row.UID,
-			Nickname:           models.DisplayNickname(row.UNickname),
+			Nickname:           row.UNickname,
 			Phone:              row.UPhone,
 			Email:              row.UEmail,
 			Grade:              row.UGrade,
@@ -582,7 +582,7 @@ func (r *OliveBranchRepository) ListByRelatedProjectID(ctx context.Context, para
 		ob := row.OliveBranch
 		ob.Receiver = &models.User{
 			ID:                 row.UID,
-			Nickname:           models.DisplayNickname(row.UNickname),
+			Nickname:           row.UNickname,
 			Phone:              row.UPhone,
 			Email:              row.UEmail,
 			Grade:              row.UGrade,
