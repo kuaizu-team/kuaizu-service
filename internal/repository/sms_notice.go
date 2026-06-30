@@ -68,6 +68,82 @@ func (r *SmsNoticeRepository) Create(ctx context.Context, notice *models.SmsNoti
 	return nil
 }
 
+func (r *SmsNoticeRepository) CreateOutcome(ctx context.Context, notice *models.SmsNotice) error {
+	query := `INSERT INTO olive_branch_sms_notice
+		(channel,business_tag,trace_id,order_id,olive_branch_record_id,project_id,sender_id,receiver_id,sms_content,status,started_at)
+		VALUES (:channel,:business_tag,:trace_id,:order_id,:olive_branch_record_id,:project_id,:sender_id,:receiver_id,:sms_content,:status,:started_at)`
+	result, err := r.db.NamedExecContext(ctx, query, notice)
+	if err != nil {
+		if isDuplicateEntryError(err) {
+			existing, getErr := r.GetByOrderID(ctx, notice.OrderID)
+			if getErr != nil {
+				return getErr
+			}
+			if existing != nil {
+				*notice = *existing
+				return nil
+			}
+		}
+		return fmt.Errorf("create outcome sms notice: %w", err)
+	}
+	id, err := result.LastInsertId()
+	if err != nil {
+		return fmt.Errorf("get outcome sms notice id: %w", err)
+	}
+	notice.ID = int(id)
+	return nil
+}
+
+func (r *SmsNoticeRepository) CreateMemberRemoval(ctx context.Context, notice *models.SmsNotice, removalID int64) error {
+	result, err := r.db.ExecContext(ctx, `INSERT INTO olive_branch_sms_notice
+		(channel,business_tag,trace_id,order_id,olive_branch_record_id,member_removal_id,project_id,sender_id,receiver_id,sms_content,status,started_at)
+		VALUES (?,?,?,?,NULL,?,?,?,?,?,?,?)`, notice.Channel, notice.BusinessTag, notice.TraceID, notice.OrderID, removalID,
+		notice.ProjectID, notice.SenderID, notice.ReceiverID, notice.SmsContent, notice.Status, notice.StartedAt)
+	if err != nil {
+		return fmt.Errorf("create member removal sms notice: %w", err)
+	}
+	id, err := result.LastInsertId()
+	if err != nil {
+		return fmt.Errorf("get member removal sms notice id: %w", err)
+	}
+	notice.ID = int(id)
+	return nil
+}
+
+func (r *SmsNoticeRepository) CreateApplication(ctx context.Context, notice *models.SmsNotice) error {
+	result, err := r.db.ExecContext(ctx, `INSERT INTO olive_branch_sms_notice
+		(channel,business_tag,trace_id,order_id,olive_branch_record_id,member_removal_id,project_id,sender_id,receiver_id,sms_content,status,started_at)
+		VALUES (?,?,?,?,NULL,NULL,?,?,?,?,?,?)`, notice.Channel, notice.BusinessTag, notice.TraceID, notice.OrderID,
+		notice.ProjectID, notice.SenderID, notice.ReceiverID, notice.SmsContent, notice.Status, notice.StartedAt)
+	if err != nil {
+		if isDuplicateEntryError(err) {
+			existing, getErr := r.GetByOrderID(ctx, notice.OrderID)
+			if getErr != nil {
+				return getErr
+			}
+			if existing != nil {
+				*notice = *existing
+				return nil
+			}
+		}
+		return fmt.Errorf("create application sms notice: %w", err)
+	}
+	id, err := result.LastInsertId()
+	if err != nil {
+		return fmt.Errorf("get application sms notice id: %w", err)
+	}
+	notice.ID = int(id)
+	return nil
+}
+
+func (r *SmsNoticeRepository) CompleteMemberRemoval(ctx context.Context, notice *models.SmsNotice) error {
+	_, err := r.db.ExecContext(ctx, `UPDATE olive_branch_sms_notice SET status=?,error_message=?,completed_at=?,updated_at=NOW() WHERE id=?`, notice.Status, notice.ErrorMessage, notice.CompletedAt, notice.ID)
+	if err != nil {
+		return fmt.Errorf("complete member removal sms notice: %w", err)
+	}
+	return nil
+}
+
 func (r *SmsNoticeRepository) Update(ctx context.Context, notice *models.SmsNotice) error {
 	query := `
 		UPDATE olive_branch_sms_notice SET
@@ -105,7 +181,7 @@ func (r *SmsNoticeRepository) GetByID(ctx context.Context, id int) (*models.SmsN
 }
 
 func (r *SmsNoticeRepository) GetByOliveBranchRecordID(ctx context.Context, oliveBranchRecordID int) (*models.SmsNotice, error) {
-	return r.getOne(ctx, `SELECT `+smsNoticeSelectColumns+` FROM olive_branch_sms_notice WHERE olive_branch_record_id = ?`, oliveBranchRecordID)
+	return r.getOne(ctx, `SELECT `+smsNoticeSelectColumns+` FROM olive_branch_sms_notice WHERE olive_branch_record_id = ? AND business_tag = 'olive_branch_sms_notice' ORDER BY id DESC LIMIT 1`, oliveBranchRecordID)
 }
 
 func (r *SmsNoticeRepository) GetByOrderID(ctx context.Context, orderID int) (*models.SmsNotice, error) {

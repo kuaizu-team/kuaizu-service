@@ -30,6 +30,7 @@ type ListParams struct {
 	Status        *int
 	Statuses      []int
 	Direction     *int
+	EventID       *int
 	CreatorID     *int
 	MemberUserID  *int
 	IsCrossSchool *int
@@ -52,6 +53,8 @@ type ListParams struct {
 	// When true, adds a pending_count column to SELECT (sum of pending applications
 	// and pending olive branches for each project). Required for SortBy="pendingCount".
 	IncludePendingCount bool
+	// RandomSeed keeps within-tier ordering stable for one pagination session.
+	RandomSeed string
 }
 
 // List retrieves paginated projects with optional filters
@@ -85,6 +88,10 @@ func (r *ProjectRepository) List(ctx context.Context, params ListParams) ([]mode
 	if params.Direction != nil {
 		conditions = append(conditions, "p.direction = ?")
 		whereArgs = append(whereArgs, *params.Direction)
+	}
+	if params.EventID != nil {
+		conditions = append(conditions, "EXISTS (SELECT 1 FROM project_event pe WHERE pe.project_id = p.id AND pe.event_id = ?)")
+		whereArgs = append(whereArgs, *params.EventID)
 	}
 	if params.CreatorID != nil {
 		conditions = append(conditions, "p.creator_id = ?")
@@ -136,7 +143,7 @@ func (r *ProjectRepository) List(ctx context.Context, params ListParams) ([]mode
 		if params.Order != nil && strings.EqualFold(*params.Order, "asc") {
 			dir = "ASC"
 		}
-		orderClause = fmt.Sprintf("p.created_at %s", dir)
+		orderClause = fmt.Sprintf("p.created_at %s, p.id %s", dir, dir)
 	} else if params.SortBy != nil && *params.SortBy == "id" {
 		dir := "DESC"
 		if params.Order != nil && strings.EqualFold(*params.Order, "asc") {
@@ -185,14 +192,16 @@ func (r *ProjectRepository) List(ctx context.Context, params ListParams) ([]mode
 
 			tierExpr := "CASE\n" + strings.Join(tierWHENs, "\n") + "\nELSE 5\nEND"
 
-			// Cross-school sub-sort within each tier:
-			//   P1 rows → sub-sort 0 (no distinction; every P1 project is already "same school")
-			//   Other tiers → is_cross_school=1 sorts before is_cross_school=0
-			//     (1 - COALESCE(is_cross_school,0)): cross=1→0, cross=0→1
-			const crossExpr = "CASE WHEN p.school_id = ? THEN 0 ELSE (1 - COALESCE(p.is_cross_school, 0)) END"
-			orderArgs = append(orderArgs, schoolID)
-
-			orderClause = fmt.Sprintf("%s ASC, %s ASC, p.created_at DESC", tierExpr, crossExpr)
+			// Every 10 heat points (like + 2*favorite) promotes one tier.
+			// The cap prevents promotion above P1; the request seed keeps
+			// pagination stable and changes on an explicit refresh.
+			const heatScoreExpr = "COALESCE(plc.like_count, 0) + COALESCE(pfc.favorite_count, 0) * 2"
+			finalTierExpr := fmt.Sprintf("GREATEST(1, (%s) - FLOOR((%s) / 10))", tierExpr, heatScoreExpr)
+			orderClause = fmt.Sprintf(`%s ASC,
+				ROW_NUMBER() OVER (PARTITION BY p.creator_id ORDER BY CRC32(CONCAT(?, ':item:', p.id))) ASC,
+				CRC32(CONCAT(?, ':owner:', p.creator_id)) ASC,
+				CRC32(CONCAT(?, ':item:', p.id)) ASC, p.id ASC`, finalTierExpr)
+			orderArgs = append(orderArgs, params.RandomSeed, params.RandomSeed, params.RandomSeed)
 		}
 		// If schoolID == 0 (no user school context), fall through to default created_at DESC
 	}
@@ -204,6 +213,20 @@ func (r *ProjectRepository) List(ctx context.Context, params ListParams) ([]mode
 
 	pendingCountSelect := ""
 	pendingCountJoin := ""
+	heatJoin := ""
+	if params.SortBy != nil && *params.SortBy == "school_priority" && params.UserSchoolID != nil && *params.UserSchoolID != 0 {
+		heatJoin = `
+		LEFT JOIN (
+			SELECT project_id, COUNT(*) AS like_count
+			FROM project_like
+			GROUP BY project_id
+		) plc ON plc.project_id = p.id
+		LEFT JOIN (
+			SELECT project_id, COUNT(*) AS favorite_count
+			FROM project_favorite
+			GROUP BY project_id
+		) pfc ON pfc.project_id = p.id`
+	}
 	if params.IncludePendingCount {
 		pendingCountSelect = `,
 			COALESCE(pa_counts.pending_count, 0) + COALESCE(ob_counts.pending_count, 0) AS pending_count`
@@ -221,7 +244,7 @@ func (r *ProjectRepository) List(ctx context.Context, params ListParams) ([]mode
 			p.id, p.creator_id, p.name, p.description, p.school_id,
 			p.direction, p.member_count, p.status,
 			p.promotion_status, p.promotion_expire_time, p.view_count,
-			p.created_at, p.updated_at, p.reject_reason, p.deleted_at, p.is_cross_school,
+			p.created_at, p.updated_at, p.recruit_completed_at, p.ended_at, p.reject_reason, p.deleted_at, p.is_cross_school,
 			p.education_requirement, p.skill_requirement,
 			p.publisher_role, p.initiating_school_id,
 			s.school_name, pr.name AS publisher_role_name, ins.school_name AS initiating_school_name,
@@ -229,7 +252,7 @@ func (r *ProjectRepository) List(ctx context.Context, params ListParams) ([]mode
 		FROM project p
 		LEFT JOIN school s ON p.school_id = s.id
 		LEFT JOIN project_role pr ON p.publisher_role = pr.code
-		LEFT JOIN school ins ON p.initiating_school_id = ins.id
+		LEFT JOIN school ins ON p.initiating_school_id = ins.id%s
 		LEFT JOIN (
 			SELECT project_id, COUNT(*) AS pending_count
 			FROM project_application
@@ -239,7 +262,7 @@ func (r *ProjectRepository) List(ctx context.Context, params ListParams) ([]mode
 		WHERE %s
 		ORDER BY %s
 		LIMIT ? OFFSET ?
-	`, pendingCountSelect, pendingCountJoin, whereClause, orderClause)
+	`, pendingCountSelect, heatJoin, pendingCountJoin, whereClause, orderClause)
 
 	// Combine: WHERE args → ORDER BY args → LIMIT/OFFSET args
 	dataArgs := make([]interface{}, 0, len(whereArgs)+len(orderArgs)+2)
@@ -321,7 +344,7 @@ func (r *ProjectRepository) GetByID(ctx context.Context, id int) (*models.Projec
 			p.id, p.creator_id, p.name, p.description, p.school_id,
 			p.direction, p.member_count, p.status,
 			p.promotion_status, p.promotion_expire_time, p.view_count,
-			p.created_at, p.updated_at, p.reject_reason, p.deleted_at, p.is_cross_school,
+			p.created_at, p.updated_at, p.recruit_completed_at, p.ended_at, p.reject_reason, p.deleted_at, p.is_cross_school,
 			p.education_requirement, p.skill_requirement,
 			p.publisher_role, p.initiating_school_id,
 			s.school_name, pr.name AS publisher_role_name, ins.school_name AS initiating_school_name,
@@ -611,7 +634,7 @@ func (r *ProjectRepository) ListMilestones(ctx context.Context, projectID int) (
 
 func (r *ProjectRepository) ListMembers(ctx context.Context, projectID int) ([]models.ProjectMember, error) {
 	var members []models.ProjectMember
-	if err := r.db.SelectContext(ctx, &members, `SELECT pm.id,pm.project_id,pm.user_id,pm.role,pr.name AS role_name
+	if err := r.db.SelectContext(ctx, &members, `SELECT pm.id,pm.project_id,pm.user_id,pm.role,pm.created_at,pr.name AS role_name
 		FROM project_members pm
 		LEFT JOIN project_role pr ON pr.code=pm.role
 		WHERE pm.project_id=?
@@ -782,9 +805,23 @@ func (r *ProjectRepository) IsOwner(ctx context.Context, projectID, userID int) 
 
 // UpdateStatus updates the review status of a project
 func (r *ProjectRepository) UpdateStatus(ctx context.Context, id int, status int) error {
-	query := `UPDATE project SET status = ?, reject_reason = CASE WHEN ? = ? THEN reject_reason ELSE NULL END, deleted_at = CASE WHEN ? = ? THEN deleted_at ELSE NULL END, updated_at = CURRENT_TIMESTAMP WHERE id = ?`
+	query := `UPDATE project
+		SET status = ?,
+			reject_reason = CASE WHEN ? = ? THEN reject_reason ELSE NULL END,
+			deleted_at = CASE WHEN ? = ? THEN deleted_at ELSE NULL END,
+			recruit_completed_at = CASE WHEN ? = ? THEN CURRENT_TIMESTAMP ELSE recruit_completed_at END,
+			ended_at = CASE WHEN ? = ? THEN CURRENT_TIMESTAMP ELSE ended_at END,
+			updated_at = CURRENT_TIMESTAMP
+		WHERE id = ?`
 
-	result, err := r.db.ExecContext(ctx, query, status, status, models.ProjectStatusRejected, status, models.ProjectStatusDeleting, id)
+	result, err := r.db.ExecContext(ctx, query,
+		status,
+		status, models.ProjectStatusRejected,
+		status, models.ProjectStatusDeleting,
+		status, models.ProjectStatusRecruitCompleted,
+		status, models.ProjectStatusEnded,
+		id,
+	)
 	if err != nil {
 		return fmt.Errorf("update project status: %w", err)
 	}
@@ -819,7 +856,7 @@ func (r *ProjectRepository) CompleteRecruit(ctx context.Context, id int) (int64,
 	defer tx.Rollback()
 
 	result, err := tx.ExecContext(ctx,
-		`UPDATE project SET status = ?, reject_reason = NULL, deleted_at = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+		`UPDATE project SET status = ?, reject_reason = NULL, deleted_at = NULL, recruit_completed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
 		models.ProjectStatusRecruitCompleted, id,
 	)
 	if err != nil {
@@ -831,7 +868,7 @@ func (r *ProjectRepository) CompleteRecruit(ctx context.Context, id int) (int64,
 	}
 
 	result, err = tx.ExecContext(ctx,
-		`UPDATE project_application SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE project_id = ? AND status IN (?, ?)`,
+		`UPDATE project_application SET status = ?, rejected_at = COALESCE(rejected_at, CURRENT_TIMESTAMP), updated_at = CURRENT_TIMESTAMP WHERE project_id = ? AND status IN (?, ?)`,
 		models.ApplicationStatusRejected, id, models.ApplicationStatusPending, models.ApplicationStatusDiscussing,
 	)
 	if err != nil {

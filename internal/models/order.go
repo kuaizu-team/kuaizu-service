@@ -11,6 +11,8 @@ type Order struct {
 	ID                        int        `db:"id"`
 	UserID                    int        `db:"user_id"`
 	ProductID                 int        `db:"product_id"`
+	TemplateCode              *string    `db:"template_code"`
+	TemplateName              *string    `db:"template_name"`
 	Price                     float64    `db:"price"`
 	Quantity                  int        `db:"quantity"`
 	ActualPaid                float64    `db:"actual_paid"`
@@ -52,6 +54,8 @@ func (o *Order) ToVO() *api.OrderVO {
 	return &api.OrderVO{
 		Id:                 &o.ID,
 		ProductId:          &o.ProductID,
+		TemplateCode:       o.TemplateCode,
+		TemplateName:       o.TemplateName,
 		ActualPaid:         &o.ActualPaid,
 		Status:             &status,
 		RefundStatus:       &o.RefundStatus,

@@ -69,7 +69,19 @@ properties:
   pendingApplicationCount:
     type: integer
     description: 待处理申请数量（status=0 的申请记录数），无申请时为 0
+  createdAt:
+    type: string
+    format: date-time
+    description: Project creation time (ISO 8601).
   updatedAt:
     type: string
     format: date-time
     description: 项目最后更新时间（ISO 8601），列表按此字段降序排列
+  recruitCompletedAt:
+    type: string
+    format: date-time
+    description: Recruit completed timestamp.
+  endedAt:
+    type: string
+    format: date-time
+    description: Project ended timestamp.

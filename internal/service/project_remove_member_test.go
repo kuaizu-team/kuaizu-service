@@ -30,7 +30,7 @@ func TestRemoveMemberRejectsInvalidInputBeforeRepository(t *testing.T) {
 		{name: "self remove", projectID: 1, scorerID: 2, memberID: 2, score: removeScorePtr(80), message: "不能移除自己"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			err := svc.RemoveMember(context.Background(), tc.projectID, tc.scorerID, tc.memberID, tc.score)
+			_, err := svc.RemoveMember(context.Background(), tc.projectID, tc.scorerID, tc.memberID, tc.score)
 
 			var serviceErr *ServiceError
 			require.ErrorAs(t, err, &serviceErr)
@@ -57,7 +57,7 @@ func TestRemoveMemberRejectsNonHighestRole(t *testing.T) {
 	}, nil).Once()
 
 	svc := NewProjectService(&repository.Repository{Project: projectRepo}, nil, nil)
-	err := svc.RemoveMember(context.Background(), projectID, scorerID, memberID, removeScorePtr(80))
+	_, err := svc.RemoveMember(context.Background(), projectID, scorerID, memberID, removeScorePtr(80))
 
 	var serviceErr *ServiceError
 	require.ErrorAs(t, err, &serviceErr)

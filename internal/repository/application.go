@@ -105,10 +105,17 @@ func (r *ApplicationRepository) List(ctx context.Context, params ApplicationList
 		SELECT
 			pa.id, pa.project_id, pa.user_id,
 			pa.status, pa.is_read, pa.reviewer_id, pa.reviewer_role, pa.assigned_role,
-			pa.applied_at, pa.updated_at,
+			pa.applied_at, pa.discussing_at, pa.rejected_at, pa.joined_at, pa.updated_at,
 			p.name AS project_name,
 			pr.name AS reviewer_role_name, ar.name AS assigned_role_name,
-			CASE WHEN pm.id IS NULL THEN FALSE ELSE TRUE END AS is_current_member
+			CASE WHEN pm.id IS NULL THEN FALSE ELSE TRUE END AS is_current_member,
+			CASE
+				WHEN pa.status = ? AND NOT EXISTS (
+					SELECT 1 FROM status_notification sn
+					WHERE sn.application_id = pa.id AND sn.type = ?
+				) THEN TRUE
+				ELSE FALSE
+			END AS applicant_rejected
 		FROM project_application pa
 		LEFT JOIN project p ON pa.project_id = p.id
 		LEFT JOIN project_role pr ON pr.code = pa.reviewer_role
@@ -118,10 +125,11 @@ func (r *ApplicationRepository) List(ctx context.Context, params ApplicationList
 		ORDER BY pa.applied_at DESC
 		LIMIT ? OFFSET ?
 	`, whereClause)
-	args = append(args, params.Size, offset)
+	queryArgs := append([]interface{}{models.ApplicationStatusRejected, models.StatusNotificationApplicationRejected}, args...)
+	queryArgs = append(queryArgs, params.Size, offset)
 
 	var applications []models.ProjectApplication
-	if err := r.db.SelectContext(ctx, &applications, query, args...); err != nil {
+	if err := r.db.SelectContext(ctx, &applications, query, queryArgs...); err != nil {
 		return nil, 0, fmt.Errorf("query applications: %w", err)
 	}
 
@@ -246,7 +254,7 @@ func (r *ApplicationRepository) GetByID(ctx context.Context, id int) (*models.Pr
 		SELECT
 			pa.id, pa.project_id, pa.user_id,
 			pa.status, pa.is_read, pa.reviewer_id, pa.reviewer_role, pa.assigned_role,
-			pa.applied_at, pa.updated_at
+			pa.applied_at, pa.discussing_at, pa.rejected_at, pa.joined_at, pa.updated_at
 		FROM project_application pa
 		WHERE pa.id = ?
 	`
@@ -420,12 +428,32 @@ func (r *ApplicationRepository) UpdateStatus(ctx context.Context, id int, status
 	return nil
 }
 
+func (r *ApplicationRepository) DeletePendingByIDAndUser(ctx context.Context, id int, userID int) (bool, error) {
+	result, err := r.db.ExecContext(ctx,
+		`DELETE FROM project_application WHERE id = ? AND user_id = ? AND status = ?`,
+		id, userID, models.ApplicationStatusPending,
+	)
+	if err != nil {
+		return false, fmt.Errorf("delete pending application: %w", err)
+	}
+	rowsAffected, _ := result.RowsAffected()
+	return rowsAffected > 0, nil
+}
+
 func (r *ApplicationRepository) UpdateStatusWithReviewer(ctx context.Context, id int, status int, reviewerID int, reviewerRole *string) error {
 	query := `UPDATE project_application
-		SET status = ?, reviewer_id = ?, reviewer_role = ?, updated_at = CURRENT_TIMESTAMP
+		SET status = ?, reviewer_id = ?, reviewer_role = ?,
+			discussing_at = CASE WHEN ? = ? THEN CURRENT_TIMESTAMP ELSE discussing_at END,
+			rejected_at = CASE WHEN ? = ? THEN CURRENT_TIMESTAMP ELSE rejected_at END,
+			updated_at = CURRENT_TIMESTAMP
 		WHERE id = ?`
 
-	result, err := r.db.ExecContext(ctx, query, status, reviewerID, reviewerRole, id)
+	result, err := r.db.ExecContext(ctx, query,
+		status, reviewerID, reviewerRole,
+		status, models.ApplicationStatusDiscussing,
+		status, models.ApplicationStatusRejected,
+		id,
+	)
 	if err != nil {
 		return fmt.Errorf("update application status with reviewer: %w", err)
 	}

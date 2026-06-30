@@ -209,8 +209,43 @@ func (s *OliveBranchService) ResendOliveBranch(ctx context.Context, userID, bran
 		}
 	}
 
-	if _, err := s.repo.DB().ExecContext(ctx, `UPDATE olive_branch_record SET status=?, is_read=FALSE, updated_at=CURRENT_TIMESTAMP WHERE id=?`, models.OliveBranchStatusPending, branchID); err != nil {
-		log.Printf("[OliveBranchService.ResendOliveBranch] update status failed: %v", err)
+	tx, err := s.repo.DB().BeginTxx(ctx, nil)
+	if err != nil {
+		return nil, ErrInternal("再次发送橄榄枝失败")
+	}
+	defer tx.Rollback()
+	if err := s.repo.User.ResetDailyFreeBranchQuotaIfNeededTx(ctx, tx, userID); err != nil {
+		return nil, ErrInternal("更新额度失败")
+	}
+	sender, err := s.repo.User.GetByIDForUpdateTx(ctx, tx, userID)
+	if err != nil || sender == nil {
+		return nil, ErrInternal("获取用户额度失败")
+	}
+	freeUsed, paidBalance := 0, 0
+	if sender.FreeBranchUsedToday != nil {
+		freeUsed = *sender.FreeBranchUsedToday
+	}
+	if sender.OliveBranchCount != nil {
+		paidBalance = *sender.OliveBranchCount
+	}
+	if freeUsed < models.OliveBranchDailyFreeQuota {
+		freeUsed++
+		sender.FreeBranchUsedToday = &freeUsed
+		ob.CostType = models.OliveBranchCostFree
+	} else if paidBalance > 0 {
+		paidBalance--
+		sender.OliveBranchCount = &paidBalance
+		ob.CostType = models.OliveBranchCostPaid
+	} else {
+		return nil, &ServiceError{Code: ErrorCode(4002), Message: "橄榄枝额度不足，今日免费额度已用完且无付费余额"}
+	}
+	if err := s.repo.User.UpdateQuotaTx(ctx, tx, sender); err != nil {
+		return nil, ErrInternal("更新额度失败")
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE olive_branch_record SET status=?, cost_type=?, is_read=FALSE, updated_at=CURRENT_TIMESTAMP WHERE id=?`, models.OliveBranchStatusPending, ob.CostType, branchID); err != nil {
+		return nil, ErrInternal("再次发送橄榄枝失败")
+	}
+	if err := tx.Commit(); err != nil {
 		return nil, ErrInternal("再次发送橄榄枝失败")
 	}
 
@@ -271,20 +306,43 @@ func (s *OliveBranchService) HandleOliveBranch(ctx context.Context, userID, bran
 		s.notifyOliveBranchResult(ctx, ob.SenderID, userID, ob.Status)
 		return ob, nil
 	case "REJECT":
+		wasDiscussing := ob.Status == models.OliveBranchStatusDiscussing
+		rejectedByReceiver := ob.ReceiverID == userID
 		if ob.Status == models.OliveBranchStatusPending {
 			if ob.ReceiverID != userID {
 				return nil, ErrForbidden("\u65e0\u6743\u5904\u7406\u8be5\u6a44\u6984\u679d")
 			}
 		} else if ob.Status == models.OliveBranchStatusDiscussing {
-			if err := s.ensureCanOperateDiscussingBranch(ctx, ob, userID, ""); err != nil {
-				return nil, err
+			if !rejectedByReceiver {
+				if err := s.ensureCanOperateDiscussingBranch(ctx, ob, userID, ""); err != nil {
+					return nil, err
+				}
 			}
 		} else {
 			return nil, ErrBadRequest("\u5f53\u524d\u72b6\u6001\u4e0d\u53ef\u64cd\u4f5c")
 		}
-		if err := s.repo.OliveBranch.UpdateStatus(ctx, branchID, models.OliveBranchStatusRejected); err != nil {
-			log.Printf("[OliveBranchService.HandleOliveBranch] repository error updating status: %v", err)
-			return nil, ErrInternal("\u66f4\u65b0\u72b6\u6001\u5931\u8d25")
+		if !wasDiscussing {
+			if err := s.repo.OliveBranch.UpdateStatus(ctx, branchID, models.OliveBranchStatusRejected); err != nil {
+				log.Printf("[OliveBranchService.HandleOliveBranch] repository error updating status: %v", err)
+				return nil, ErrInternal("\u66f4\u65b0\u72b6\u6001\u5931\u8d25")
+			}
+		} else {
+			tx, err := s.repo.DB().BeginTxx(ctx, nil)
+			if err != nil {
+				return nil, ErrInternal("\u5f00\u542f\u4e8b\u52a1\u5931\u8d25")
+			}
+			defer tx.Rollback()
+			if _, err := tx.ExecContext(ctx, `UPDATE olive_branch_record SET status=?, rejected_at=CURRENT_TIMESTAMP, updated_at=CURRENT_TIMESTAMP WHERE id=?`, models.OliveBranchStatusRejected, branchID); err != nil {
+				return nil, ErrInternal("\u66f4\u65b0\u72b6\u6001\u5931\u8d25")
+			}
+			if !rejectedByReceiver {
+				if err := repository.CreateOliveStatusNotificationTx(ctx, tx, ob.ReceiverID, branchID, models.StatusNotificationOliveRejected); err != nil {
+					return nil, ErrInternal("\u521b\u5efa\u72b6\u6001\u901a\u77e5\u5931\u8d25")
+				}
+			}
+			if err := tx.Commit(); err != nil {
+				return nil, ErrInternal("\u63d0\u4ea4\u4e8b\u52a1\u5931\u8d25")
+			}
 		}
 		ob.Status = models.OliveBranchStatusRejected
 		s.notifyOliveBranchResult(ctx, ob.SenderID, userID, ob.Status)
@@ -308,9 +366,12 @@ func (s *OliveBranchService) HandleOliveBranch(ctx context.Context, userID, bran
 			log.Printf("[OliveBranchService.HandleOliveBranch] add member failed: %v", err)
 			return nil, ErrInternal("\u52a0\u5165\u56e2\u961f\u5931\u8d25")
 		}
-		if _, err := tx.ExecContext(ctx, `UPDATE olive_branch_record SET status=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`, models.OliveBranchStatusAccepted, branchID); err != nil {
+		if _, err := tx.ExecContext(ctx, `UPDATE olive_branch_record SET status=?, assigned_role=?, admitted_at=CURRENT_TIMESTAMP, updated_at=CURRENT_TIMESTAMP WHERE id=?`, models.OliveBranchStatusAccepted, role, branchID); err != nil {
 			log.Printf("[OliveBranchService.HandleOliveBranch] update status failed: %v", err)
 			return nil, ErrInternal("\u66f4\u65b0\u72b6\u6001\u5931\u8d25")
+		}
+		if err := repository.CreateOliveStatusNotificationTx(ctx, tx, ob.ReceiverID, branchID, models.StatusNotificationOliveAccepted); err != nil {
+			return nil, ErrInternal("\u521b\u5efa\u72b6\u6001\u901a\u77e5\u5931\u8d25")
 		}
 		if err := tx.Commit(); err != nil {
 			return nil, ErrInternal("\u63d0\u4ea4\u4e8b\u52a1\u5931\u8d25")

@@ -3,8 +3,10 @@ package service
 import (
 	"context"
 	"fmt"
+	"io"
 	"log"
 	"mime/multipart"
+	"net/http"
 	"path/filepath"
 	"strings"
 
@@ -38,6 +40,9 @@ func (s *CommonsService) UploadFile(file multipart.File, header *multipart.FileH
 	if !allowedExts[ext] {
 		return nil, ErrBadRequest("不支持的文件类型，仅支持 JPG 和 PNG")
 	}
+	if err := validateImageContent(file, ext); err != nil {
+		return nil, err
+	}
 
 	filename := uuid.New().String() + ext
 	result, err := s.ossClient.Upload(file, filename)
@@ -46,6 +51,29 @@ func (s *CommonsService) UploadFile(file multipart.File, header *multipart.FileH
 		return nil, ErrInternal("文件上传失败")
 	}
 	return result, nil
+}
+
+// validateImageContent verifies the actual bytes instead of trusting the file
+// extension. In particular, iOS may provide HEIC data carrying a .jpg name;
+// such a file uploads successfully but cannot be rendered by common browsers.
+func validateImageContent(file multipart.File, ext string) error {
+	header := make([]byte, 512)
+	n, err := file.Read(header)
+	if err != nil && err != io.EOF {
+		return ErrBadRequest("无法读取图片，请重新选择后上传")
+	}
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		return ErrBadRequest("无法读取图片，请重新选择后上传")
+	}
+
+	expectedType := "image/jpeg"
+	if ext == ".png" {
+		expectedType = "image/png"
+	}
+	if http.DetectContentType(header[:n]) != expectedType {
+		return ErrBadRequest("请使用 JPG/PNG 格式的图片，不支持 HEIC/HEIF")
+	}
+	return nil
 }
 
 // DeleteFile removes a file from OSS by its key. Errors are logged but treated as

@@ -2,7 +2,6 @@ type: object
 required:
   - orderId
   - receiverUserId
-  - oliveBranchRecordId
 properties:
   orderId:
     type: integer
@@ -10,5 +9,13 @@ properties:
     type: integer
   oliveBranchRecordId:
     type: integer
+  applicationId:
+    type: integer
+  memberRemovalId:
+    type: integer
+    format: int64
+  noticeType:
+    type: string
+    enum: [rejected, accepted, removed, talent_rejected, applicant_rejected]
   projectId:
     type: integer

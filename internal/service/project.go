@@ -6,6 +6,7 @@ import (
 	"math"
 	"sort"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/kuaizu-team/kuaizu-service/api"
@@ -80,11 +81,11 @@ func (s *ProjectService) ListProjects(ctx context.Context, params repository.Lis
 }
 
 // ListMyProjects returns a paginated list of projects created by the given user,
-// sorted by updated_at descending so recently-modified projects appear first.
+// sorted by creation time descending so the newest projects always appear first.
 func (s *ProjectService) ListMyProjects(ctx context.Context, userID int, params repository.ListParams) (*ProjectListResult, error) {
 	params.Page, params.Size = normalizePageParams(params.Page, params.Size)
 	params.MemberUserID = &userID
-	sortBy := "updated_at"
+	sortBy := "createdAt"
 	params.SortBy = &sortBy
 	if params.Status == nil && len(params.Statuses) == 0 {
 		params.Statuses = []int{
@@ -674,80 +675,114 @@ func projectMembersContainUser(members []models.ProjectMember, userID int) bool 
 	return false
 }
 
-func (s *ProjectService) RemoveMember(ctx context.Context, projectID int, scorerID int, memberID int, score *int) error {
+type RemovedMemberResult struct {
+	RemovalID   int64     `json:"removalId"`
+	ProjectID   int       `json:"projectId"`
+	ProjectName string    `json:"projectName"`
+	MemberID    int       `json:"memberId"`
+	Role        string    `json:"role"`
+	RoleName    string    `json:"roleName"`
+	JoinedAt    time.Time `json:"joinedAt"`
+	RemovedAt   time.Time `json:"removedAt"`
+	Days        int       `json:"days"`
+}
+
+func (s *ProjectService) RemoveMember(ctx context.Context, projectID int, scorerID int, memberID int, score *int) (*RemovedMemberResult, error) {
 	if projectID <= 0 || memberID <= 0 {
-		return ErrBadRequest("invalid project or member id")
+		return nil, ErrBadRequest("invalid project or member id")
 	}
 	if score != nil && (*score < 0 || *score > 100) {
-		return ErrBadRequest("score must be between 0 and 100")
+		return nil, ErrBadRequest("score must be between 0 and 100")
 	}
 	if scorerID == memberID {
-		return ErrBadRequest("不能移除自己")
+		return nil, ErrBadRequest("不能移除自己")
 	}
 
 	project, err := s.repo.Project.GetByID(ctx, projectID)
 	if err != nil {
 		log.Printf("[ProjectService.RemoveMember] repository error getting project: %v", err)
-		return ErrInternal("获取项目失败")
+		return nil, ErrInternal("获取项目失败")
 	}
 	if project == nil {
-		return ErrNotFound("项目不存在")
+		return nil, ErrNotFound("项目不存在")
 	}
 	members, err := s.repo.Project.ListMembers(ctx, projectID)
 	if err != nil {
 		log.Printf("[ProjectService.RemoveMember] repository error listing members: %v", err)
-		return ErrInternal("获取项目成员失败")
+		return nil, ErrInternal("获取项目成员失败")
 	}
 	currentRole, _ := currentUserProjectRole(project, scorerID, members)
 	if !canOperateAsHighestRole(currentRole, members) {
-		return ErrForbidden("当前角色不能移除项目成员")
+		return nil, ErrForbidden("当前角色不能移除项目成员")
 	}
 
-	found := false
+	var removedMember *models.ProjectMember
 	for _, member := range members {
 		if member.UserID == memberID {
-			found = true
+			copy := member
+			removedMember = &copy
 			break
 		}
 	}
-	if !found {
-		return ErrNotFound("项目成员不存在")
+	if removedMember == nil {
+		return nil, ErrNotFound("项目成员不存在")
 	}
 
 	tx, err := s.repo.DB().BeginTxx(ctx, nil)
 	if err != nil {
-		return ErrInternal("开启事务失败")
+		return nil, ErrInternal("开启事务失败")
 	}
 	defer tx.Rollback()
 
 	result, err := tx.ExecContext(ctx, "DELETE FROM project_members WHERE project_id=? AND user_id=?", projectID, memberID)
 	if err != nil {
 		log.Printf("[ProjectService.RemoveMember] delete member failed: %v", err)
-		return ErrInternal("移除项目成员失败")
+		return nil, ErrInternal("移除项目成员失败")
 	}
 	affected, _ := result.RowsAffected()
 	if affected == 0 {
-		return ErrNotFound("项目成员不存在")
+		return nil, ErrNotFound("项目成员不存在")
 	}
 
 	if score != nil {
 		if _, err := tx.ExecContext(ctx, `INSERT INTO collaboration_score(user_id, project_id, scorer_id, score, created_at)
 			VALUES (?, ?, ?, ?, NOW())`, memberID, projectID, scorerID, *score); err != nil {
 			log.Printf("[ProjectService.RemoveMember] insert score failed: %v", err)
-			return ErrInternal("记录协作评分失败")
+			return nil, ErrInternal("记录协作评分失败")
 		}
 		if _, err := tx.ExecContext(ctx, `UPDATE `+"`user`"+` SET collaboration_score=(
 			SELECT avg_score FROM (SELECT COALESCE(AVG(score), 100) AS avg_score FROM collaboration_score WHERE user_id=?) t
 		) WHERE id=?`, memberID, memberID); err != nil {
 			log.Printf("[ProjectService.RemoveMember] update user score failed: %v", err)
-			return ErrInternal("更新协作指数失败")
+			return nil, ErrInternal("更新协作指数失败")
 		}
+	}
+	joinedAt := removedMember.CreatedAt
+	if joinedAt.IsZero() {
+		joinedAt = time.Now()
+	}
+	removedAt := time.Now()
+	result, err = tx.ExecContext(ctx, `INSERT INTO project_member_removal(user_id,project_id,operator_id,role,joined_at,removed_at,score) VALUES(?,?,?,?,?,?,?)`, memberID, projectID, scorerID, removedMember.Role, joinedAt, removedAt, score)
+	if err != nil {
+		return nil, ErrInternal("记录成员移除信息失败")
+	}
+	removalID, err := result.LastInsertId()
+	if err != nil {
+		return nil, ErrInternal("获取成员移除记录失败")
+	}
+	if err := repository.CreateMemberRemovalStatusNotificationTx(ctx, tx, memberID, removalID); err != nil {
+		return nil, ErrInternal("创建状态通知失败")
 	}
 
 	if err := tx.Commit(); err != nil {
-		return ErrInternal("提交事务失败")
+		return nil, ErrInternal("提交事务失败")
 	}
-	return nil
+	days := int(math.Ceil(removedAt.Sub(joinedAt).Hours() / 24))
+	if days < 1 {
+		days = 1
+	}
+	roleName := applicationSmsRoleName(removedMember.Role)
+	return &RemovedMemberResult{RemovalID: removalID, ProjectID: projectID, ProjectName: project.Name, MemberID: memberID, Role: removedMember.Role, RoleName: roleName, JoinedAt: joinedAt, RemovedAt: removedAt, Days: days}, nil
 }
 
 func (s *ProjectService) resolveProjectSchool(ctx context.Context, creatorID int, schoolID, initiatingSchoolID *int, useCreatorDefault bool) (*int, error) {
@@ -1385,6 +1420,23 @@ func (s *ProjectService) ReviewApplication(ctx context.Context, applicationID, u
 	if app.Status == models.ApplicationStatusRejected || app.Status == models.ApplicationStatusJoined {
 		return ErrBadRequest("当前申请状态不允许操作")
 	}
+	if status == models.ApplicationStatusRejected && app.UserID == userID {
+		if app.Status != models.ApplicationStatusDiscussing {
+			return ErrBadRequest("只有互相了解中的申请可以标记为不合适")
+		}
+		result, err := s.repo.DB().ExecContext(ctx, `UPDATE project_application
+			SET status = ?, rejected_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+			WHERE id = ? AND user_id = ? AND status = ?`,
+			models.ApplicationStatusRejected, applicationID, userID, models.ApplicationStatusDiscussing)
+		if err != nil {
+			log.Printf("[ProjectService.ReviewApplication] repository error applicant rejecting application: %v", err)
+			return ErrInternal("更新申请状态失败")
+		}
+		if rows, _ := result.RowsAffected(); rows == 0 {
+			return ErrBadRequest("当前申请状态不允许操作")
+		}
+		return nil
+	}
 	if status == models.ApplicationStatusDiscussing && app.Status != models.ApplicationStatusPending {
 		return ErrBadRequest("只有待审核申请可以进入互相了解")
 	}
@@ -1410,21 +1462,46 @@ func (s *ProjectService) ReviewApplication(ctx context.Context, applicationID, u
 		return ErrForbidden("当前角色无权操作该申请")
 	}
 
-	if err := s.repo.Application.UpdateStatusWithReviewer(ctx, applicationID, int(status), userID, reviewerRole); err != nil {
+	tx, err := s.repo.DB().BeginTxx(ctx, nil)
+	if err != nil {
+		return ErrInternal("开启事务失败")
+	}
+	defer tx.Rollback()
+	result, err := tx.ExecContext(ctx, `UPDATE project_application
+		SET status = ?, reviewer_id = ?, reviewer_role = ?,
+			discussing_at = CASE WHEN ? = ? THEN CURRENT_TIMESTAMP ELSE discussing_at END,
+			rejected_at = CASE WHEN ? = ? THEN CURRENT_TIMESTAMP ELSE rejected_at END,
+			updated_at = CURRENT_TIMESTAMP
+		WHERE id = ?`, status, userID, reviewerRole,
+		status, models.ApplicationStatusDiscussing,
+		status, models.ApplicationStatusRejected, applicationID)
+	if err != nil {
 		log.Printf("[ProjectService.ReviewApplication] repository error updating status: %v", err)
 		return ErrInternal("更新申请状态失败")
 	}
+	if rows, _ := result.RowsAffected(); rows == 0 {
+		return ErrNotFound("申请不存在")
+	}
+	if status == models.ApplicationStatusRejected {
+		if err := repository.CreateTx(ctx, tx, app.UserID, applicationID, models.StatusNotificationApplicationRejected); err != nil {
+			log.Printf("[ProjectService.ReviewApplication] create status notification failed: %v", err)
+			return ErrInternal("创建状态通知失败")
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return ErrInternal("提交事务失败")
+	}
 
 	go func(asyncCtx context.Context) {
-		resultStr := "正在互相了解"
-		remark := "请在名片-投递名片管理及时处理哦。"
+		resultStr := "互相了解"
+		remark := "请及时查看投递进展。"
 		if status == models.ApplicationStatusRejected {
-			resultStr = "被拒绝"
-			remark = "别灰心，更多优质校园项目待您探索。"
+			resultStr = "不合适"
+			remark = "更多校园项目等你探索。"
 		}
 
 		data := map[string]string{
-			"project_name":    project.Name,
+			"project_name":    truncate20(project.Name),
 			"delivery_result": resultStr,
 			"remark":          remark,
 		}
@@ -1435,6 +1512,35 @@ func (s *ProjectService) ReviewApplication(ctx context.Context, applicationID, u
 		}
 	}(context.WithoutCancel(ctx))
 
+	return nil
+}
+
+func (s *ProjectService) WithdrawMyApplication(ctx context.Context, applicationID, userID int) error {
+	if applicationID <= 0 || userID <= 0 {
+		return ErrBadRequest("参数错误")
+	}
+	app, err := s.repo.Application.GetByID(ctx, applicationID)
+	if err != nil {
+		log.Printf("[ProjectService.WithdrawMyApplication] repository error getting application: %v", err)
+		return ErrInternal("获取申请信息失败")
+	}
+	if app == nil {
+		return ErrNotFound("申请不存在")
+	}
+	if app.UserID != userID {
+		return ErrForbidden("无权收回该名片")
+	}
+	if app.Status != models.ApplicationStatusPending {
+		return ErrBadRequest("只有待审核名片可以收回")
+	}
+	deleted, err := s.repo.Application.DeletePendingByIDAndUser(ctx, applicationID, userID)
+	if err != nil {
+		log.Printf("[ProjectService.WithdrawMyApplication] repository error deleting application: %v", err)
+		return ErrInternal("收回名片失败")
+	}
+	if !deleted {
+		return ErrBadRequest("当前申请状态不允许收回")
+	}
 	return nil
 }
 
@@ -1501,7 +1607,7 @@ func (s *ProjectService) AssignApplicationRole(ctx context.Context, input Assign
 		return ErrInternal("添加项目成员失败")
 	}
 	result, err := tx.ExecContext(ctx, `UPDATE project_application
-		SET status=?, assigned_role=?, updated_at=CURRENT_TIMESTAMP
+		SET status=?, assigned_role=?, joined_at=CURRENT_TIMESTAMP, updated_at=CURRENT_TIMESTAMP
 		WHERE id=?`, models.ApplicationStatusJoined, role, input.ApplicationID)
 	if err != nil {
 		log.Printf("[ProjectService.AssignApplicationRole] update application failed: %v", err)
@@ -1510,9 +1616,23 @@ func (s *ProjectService) AssignApplicationRole(ctx context.Context, input Assign
 	if rows, _ := result.RowsAffected(); rows == 0 {
 		return ErrNotFound("申请不存在")
 	}
+	if err := repository.CreateTx(ctx, tx, app.UserID, input.ApplicationID, models.StatusNotificationApplicationAccepted); err != nil {
+		log.Printf("[ProjectService.AssignApplicationRole] create status notification failed: %v", err)
+		return ErrInternal("创建状态通知失败")
+	}
 	if err := tx.Commit(); err != nil {
 		return ErrInternal("提交事务失败")
 	}
+	go func(asyncCtx context.Context) {
+		data := map[string]string{
+			"project_name":    truncate20(project.Name),
+			"delivery_result": "同意入队",
+			"remark":          "恭喜加入团队，请及时查看项目。",
+		}
+		if err := s.message.SendSubscribeMsgByBizKey(asyncCtx, app.UserID, models.MsgBizKeyCardDeliveryResult, data); err != nil {
+			log.Printf("[ProjectService.AssignApplicationRole] notification error: %v", err)
+		}
+	}(context.WithoutCancel(ctx))
 	return nil
 }
 

@@ -99,7 +99,7 @@ func (r *OrderRepository) ListByUserID(ctx context.Context, params OrderListPara
 	offset := (params.Page - 1) * params.Size
 	query := fmt.Sprintf(`
 		SELECT
-			o.id, o.user_id, o.product_id, o.price, o.quantity, o.actual_paid, o.status,
+			o.id, o.user_id, o.product_id, o.template_code, o.template_name, o.price, o.quantity, o.actual_paid, o.status,
 			%s,
 			o.wx_pay_no, o.pay_time, o.created_at, o.updated_at,
 			p.name as product_name
@@ -166,7 +166,7 @@ func (r *OrderRepository) Create(ctx context.Context, order *models.Order) (*mod
 func (r *OrderRepository) GetByID(ctx context.Context, id int) (*models.Order, error) {
 	query := `
 		SELECT
-			o.id, o.user_id, o.product_id, o.price, o.quantity, o.actual_paid, o.status,
+			o.id, o.user_id, o.product_id, o.template_code, o.template_name, o.price, o.quantity, o.actual_paid, o.status,
 			` + orderFinanceCols + `,
 			o.wx_pay_no, o.pay_time, o.created_at, o.updated_at,
 			p.name as product_name
@@ -420,7 +420,7 @@ func (r *OrderRepository) AdminList(ctx context.Context, params AdminOrderListPa
 	offset := (params.Page - 1) * params.Size
 	query := fmt.Sprintf(`
 		SELECT
-			o.id, o.user_id, o.product_id, o.price, o.quantity, o.actual_paid, o.status,
+			o.id, o.user_id, o.product_id, o.template_code, o.template_name, o.price, o.quantity, o.actual_paid, o.status,
 			%s,
 			o.wx_pay_no, o.pay_time, o.created_at, o.updated_at,
 			p.name AS product_name,
@@ -449,7 +449,7 @@ func (r *OrderRepository) AdminList(ctx context.Context, params AdminOrderListPa
 func (r *OrderRepository) AdminGetByID(ctx context.Context, id int) (*models.Order, error) {
 	query := `
 		SELECT
-			o.id, o.user_id, o.product_id, o.price, o.quantity, o.actual_paid, o.status,
+			o.id, o.user_id, o.product_id, o.template_code, o.template_name, o.price, o.quantity, o.actual_paid, o.status,
 			` + orderFinanceCols + `,
 			o.wx_pay_no, o.pay_time, o.created_at, o.updated_at,
 			p.name AS product_name,

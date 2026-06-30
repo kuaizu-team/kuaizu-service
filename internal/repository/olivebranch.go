@@ -265,9 +265,12 @@ func (r *OliveBranchRepository) ExistsPending(ctx context.Context, senderID, rec
 
 // UpdateStatus updates the status of an olive branch
 func (r *OliveBranchRepository) UpdateStatus(ctx context.Context, id int, status int) error {
-	query := `UPDATE olive_branch_record SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`
+	query := `UPDATE olive_branch_record SET status = ?,
+		discussing_at=CASE WHEN ?=? THEN CURRENT_TIMESTAMP ELSE discussing_at END,
+		rejected_at=CASE WHEN ?=? THEN CURRENT_TIMESTAMP ELSE rejected_at END,
+		updated_at = CURRENT_TIMESTAMP WHERE id = ?`
 
-	result, err := r.db.ExecContext(ctx, query, status, id)
+	result, err := r.db.ExecContext(ctx, query, status, status, models.OliveBranchStatusDiscussing, status, models.OliveBranchStatusRejected, id)
 	if err != nil {
 		return fmt.Errorf("update olive branch status: %w", err)
 	}
@@ -355,7 +358,9 @@ func (r *OliveBranchRepository) ListBySenderID(ctx context.Context, params Olive
 		LEFT JOIN ` + "`user`" + ` recv ON ob.receiver_id = recv.id
 		LEFT JOIN school sch ON recv.school_id = sch.id
 		LEFT JOIN major m ON recv.major_id = m.id
-		LEFT JOIN olive_branch_sms_notice sn ON sn.olive_branch_record_id = ob.id AND sn.updated_at >= ob.updated_at
+		LEFT JOIN olive_branch_sms_notice sn ON sn.olive_branch_record_id = ob.id
+			AND sn.business_tag = 'olive_branch_sms_notice'
+			AND sn.updated_at >= ob.updated_at
 		WHERE (
 			ob.sender_id = ?
 			OR p.creator_id = ?

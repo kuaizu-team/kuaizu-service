@@ -266,6 +266,9 @@ CREATE TABLE `olive_branch_record` (
   `cost_type` int(11) NOT NULL COMMENT '消耗类型:1-免费额度,2-付费额度',
   `message` text COMMENT '邀请留言(已弃用)',
   `status` int(11) DEFAULT '0' COMMENT '状态:0-待处理,1-已接受,2-已拒绝,3-已忽略',
+	`discussing_at` timestamp NULL DEFAULT NULL COMMENT '进入互相了解时间',
+	`rejected_at` timestamp NULL DEFAULT NULL COMMENT '标记不合适时间',
+	`admitted_at` timestamp NULL DEFAULT NULL COMMENT '同意入队时间',
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   PRIMARY KEY (`id`),
@@ -290,6 +293,8 @@ CREATE TABLE `order` (
   `id` int(11) NOT NULL AUTO_INCREMENT COMMENT 'ID',
   `user_id` int(11) NOT NULL COMMENT '用户ID',
   `product_id` int(11) NOT NULL COMMENT '商品ID',
+  `template_code` varchar(64) DEFAULT NULL COMMENT 'SMS template code',
+  `template_name` varchar(100) DEFAULT NULL COMMENT 'SMS template display name',
   `price` decimal(10,2) NOT NULL COMMENT '下单时的单价快照',
   `quantity` int(11) NOT NULL COMMENT '数量',
   `actual_paid` decimal(10,2) NOT NULL COMMENT '实付金额',
@@ -367,6 +372,8 @@ CREATE TABLE `project` (
   `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   `reject_reason` varchar(255) DEFAULT NULL COMMENT '驳回原因',
   `passive_status_changed_at` timestamp NULL DEFAULT NULL COMMENT '待审核项目被动审核为通过/拒绝的时间，用于我的项目红点',
+  `recruit_completed_at` timestamp NULL DEFAULT NULL COMMENT 'Recruit completed timestamp',
+  `ended_at` timestamp NULL DEFAULT NULL COMMENT 'Project ended timestamp',
   `deleted_at` timestamp NULL DEFAULT NULL COMMENT '删除时间',
   `is_cross_school` tinyint(4) DEFAULT '1' COMMENT '是否跨校: 1-可以,0-不可以',
   `education_requirement` tinyint(4) DEFAULT '1' COMMENT '学历要求1-大专2-本科',
@@ -397,6 +404,9 @@ CREATE TABLE `project_application` (
   `status` int(11) DEFAULT '0' COMMENT '状态:0-待审核,1-已通过,2-已拒绝',
   `reply_msg` text COMMENT '队长回复',
   `applied_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP COMMENT '申请时间',
+  `discussing_at` timestamp NULL DEFAULT NULL COMMENT 'Discussing status timestamp',
+  `rejected_at` timestamp NULL DEFAULT NULL COMMENT 'Rejected timestamp',
+  `joined_at` timestamp NULL DEFAULT NULL COMMENT 'Joined/admitted timestamp',
   `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_project_user` (`project_id`,`user_id`),
@@ -570,6 +580,44 @@ CREATE TABLE `user` (
 --
 -- Table structure for table `collaboration_score`
 --
+
+DROP TABLE IF EXISTS `status_notification`;
+DROP TABLE IF EXISTS `project_member_removal`;
+CREATE TABLE `project_member_removal` (
+  `id` BIGINT NOT NULL AUTO_INCREMENT,
+  `user_id` INT NOT NULL,
+  `project_id` INT NOT NULL,
+  `operator_id` INT NOT NULL,
+  `role` VARCHAR(32) NOT NULL,
+  `joined_at` DATETIME NOT NULL,
+  `removed_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `score` INT NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_member_removal_user` (`user_id`,`removed_at`),
+  KEY `idx_member_removal_project` (`project_id`),
+  CONSTRAINT `fk_member_removal_user` FOREIGN KEY (`user_id`) REFERENCES `user` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_member_removal_project` FOREIGN KEY (`project_id`) REFERENCES `project` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Removed project member snapshots';
+CREATE TABLE `status_notification` (
+  `id` BIGINT NOT NULL AUTO_INCREMENT,
+  `user_id` INT NOT NULL,
+  `type` VARCHAR(50) NOT NULL,
+	`application_id` INT NULL,
+	`olive_branch_id` INT NULL,
+	`member_removal_id` BIGINT NULL,
+	`priority` INT NOT NULL DEFAULT 10,
+  `displayed_at` TIMESTAMP NULL DEFAULT NULL,
+  `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_status_notification_pending` (`user_id`, `displayed_at`, `id`),
+  KEY `idx_status_notification_application` (`application_id`),
+	KEY `idx_status_notification_olive` (`olive_branch_id`),
+	KEY `idx_status_notification_member_removal` (`member_removal_id`),
+  CONSTRAINT `fk_status_notification_user` FOREIGN KEY (`user_id`) REFERENCES `user` (`id`) ON DELETE CASCADE,
+	CONSTRAINT `fk_status_notification_application` FOREIGN KEY (`application_id`) REFERENCES `project_application` (`id`) ON DELETE CASCADE,
+	CONSTRAINT `fk_status_notification_olive` FOREIGN KEY (`olive_branch_id`) REFERENCES `olive_branch_record` (`id`) ON DELETE CASCADE,
+	CONSTRAINT `fk_status_notification_member_removal` FOREIGN KEY (`member_removal_id`) REFERENCES `project_member_removal` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Status notification delivery queue';
 
 DROP TABLE IF EXISTS `collaboration_score`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;

@@ -22,6 +22,9 @@ properties:
   isCurrentMember:
     type: boolean
     description: 申请人当前是否仍在该项目团队中；仅已加入团队状态下有展示意义
+  applicantRejected:
+    type: boolean
+    description: 已拒绝状态是否由申请人主动标记不合适触发；仅用于项目方列表展示文案。
   applicant:
     $ref: ./UserVO.yaml
   applyReason:
@@ -37,6 +40,18 @@ properties:
   appliedAt:
     type: string
     format: date-time
+  discussingAt:
+    type: string
+    format: date-time
+    description: 进入互相了解状态的时间
+  rejectedAt:
+    type: string
+    format: date-time
+    description: 被拒绝时间
+  joinedAt:
+    type: string
+    format: date-time
+    description: 同意入队/录用时间
   isRead:
     type: boolean
     description: 项目方是否已读(仅待审核状态有意义)

@@ -33,3 +33,17 @@ patch:
         application/json:
           schema:
             $ref: ../components/schemas/BaseResponse.yaml
+
+delete:
+  tags:
+    - ProjectApplications
+  summary: 收回名片
+  description: 申请人收回待审核的投递名片，记录将从双方页面移除。
+  operationId: withdrawMyApplication
+  responses:
+    '200':
+      description: 操作成功
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/BaseResponse.yaml

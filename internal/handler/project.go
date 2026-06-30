@@ -2,9 +2,11 @@ package handler
 
 import (
 	"errors"
+	"fmt"
 	"log"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/kuaizu-team/kuaizu-service/api"
 	"github.com/kuaizu-team/kuaizu-service/internal/repository"
@@ -29,6 +31,7 @@ func (s *Server) ListProjects(ctx echo.Context, params api.ListProjectsParams) e
 		Size:     10,
 		Keyword:  params.Keyword,
 		SchoolID: params.SchoolId,
+		EventID:  params.EventId,
 	}
 
 	if params.Page != nil {
@@ -51,6 +54,10 @@ func (s *Server) ListProjects(ctx echo.Context, params api.ListProjectsParams) e
 	}
 	listParams.SortBy = params.SortBy
 	listParams.UserSchoolID = params.UserSchoolId
+	listParams.RandomSeed = fmt.Sprintf("%d:%s", GetOptionalUserID(ctx), time.Now().Format("2006-01-02"))
+	if params.RandomSeed != nil && *params.RandomSeed != "" {
+		listParams.RandomSeed = *params.RandomSeed
+	}
 
 	result, err := s.svc.Project.ListProjects(ctx.Request().Context(), listParams)
 	if err != nil {
@@ -386,10 +393,11 @@ func (s *Server) DeleteProject(ctx echo.Context, id int) error {
 }
 func (s *Server) RemoveProjectMember(ctx echo.Context, id int, memberId int, params api.RemoveProjectMemberParams) error {
 	userID := GetUserID(ctx)
-	if err := s.svc.Project.RemoveMember(ctx.Request().Context(), id, userID, memberId, params.Score); err != nil {
+	result, err := s.svc.Project.RemoveMember(ctx.Request().Context(), id, userID, memberId, params.Score)
+	if err != nil {
 		return mapServiceError(ctx, err)
 	}
-	return Success(ctx, nil)
+	return Success(ctx, result)
 }
 func (s *Server) RestoreProject(ctx echo.Context, id int) error {
 	userID := GetUserID(ctx)
@@ -647,5 +655,16 @@ func (s *Server) ReviewApplication(ctx echo.Context, id int) error {
 		return mapServiceError(ctx, err)
 	}
 
+	return Success(ctx, nil)
+}
+
+func (s *Server) WithdrawMyApplication(ctx echo.Context, id int) error {
+	userID := GetUserID(ctx)
+	if id <= 0 {
+		return BadRequest(ctx, "无效的申请ID")
+	}
+	if err := s.svc.Project.WithdrawMyApplication(ctx.Request().Context(), id, userID); err != nil {
+		return mapServiceError(ctx, err)
+	}
 	return Success(ctx, nil)
 }

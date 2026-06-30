@@ -13,6 +13,7 @@ import (
 )
 
 const defaultTimeout = 3 * time.Second
+const applicationSmsTimeout = 12 * time.Second
 
 // Client submits marketing tasks to the independent message center.
 type Client struct {
@@ -465,4 +466,58 @@ func (c *Client) CountAdminSms(ctx context.Context, userID int, templateKey stri
 		return nil, fmt.Errorf("message center response data is empty")
 	}
 	return envelope.Data, nil
+}
+
+type ApplicationSmsRequest struct {
+	TaskKey      string
+	TemplateCode string
+	Phone        string
+	Nickname     string
+	ProjectTitle string
+	TeamRole     string
+	BusinessTag  string
+	TraceID      string
+}
+
+func (c *Client) SubmitApplicationSms(ctx context.Context, req ApplicationSmsRequest) error {
+	if c == nil {
+		return fmt.Errorf("message center client is nil")
+	}
+	payload := map[string]interface{}{
+		"taskKey": req.TaskKey, "templateCode": req.TemplateCode,
+		"businessTag": req.BusinessTag, "traceId": req.TraceID,
+		"recipients": []map[string]interface{}{{
+			"phone": req.Phone,
+			"vars":  map[string]interface{}{"nickname": req.Nickname, "projectTitle": req.ProjectTitle, "teamRole": req.TeamRole},
+		}},
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("marshal application sms: %w", err)
+	}
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/api/sms/send", bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("create application sms request: %w", err)
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Authorization", "Bearer "+c.apiToken)
+	httpClient := c.httpClient
+	if httpClient.Timeout < applicationSmsTimeout {
+		clientCopy := *httpClient
+		clientCopy.Timeout = applicationSmsTimeout
+		httpClient = &clientCopy
+	}
+	resp, err := httpClient.Do(httpReq)
+	if err != nil {
+		return fmt.Errorf("post application sms: %w", err)
+	}
+	defer resp.Body.Close()
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("read application sms response: %w", err)
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("unexpected status %d: %s", resp.StatusCode, string(respBody))
+	}
+	return nil
 }

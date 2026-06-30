@@ -32,6 +32,7 @@ type Repository struct {
 	ProjectViewLog     ProjectViewLogRepo
 	TalentViewLog      TalentViewLogRepo
 	Interaction        *InteractionRepository
+	StatusNotification *StatusNotificationRepository
 }
 
 // DB returns the underlying database connection for transaction support
@@ -68,5 +69,6 @@ func New(db *sqlx.DB) *Repository {
 		ProjectViewLog:     NewProjectViewLogRepository(db),
 		TalentViewLog:      NewTalentViewLogRepository(db),
 		Interaction:        NewInteractionRepository(db),
+		StatusNotification: NewStatusNotificationRepository(db),
 	}
 }
