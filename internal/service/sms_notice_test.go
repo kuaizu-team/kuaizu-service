@@ -254,14 +254,16 @@ func TestApplicationSmsRejectsOrderWithTemplateCodeButNoNoticeRecord(t *testing.
 	reviewerID := 1130
 	applicationID := 7
 	noticeType := "applicant_rejected"
+	applicantRejected := true
 	repo := &repository.Repository{
 		Application: smsNoticeApplicationRepoStub{
 			application: &models.ProjectApplication{
-				ID:         applicationID,
-				ProjectID:  154,
-				UserID:     1128,
-				Status:     models.ApplicationStatusRejected,
-				ReviewerID: &reviewerID,
+				ID:                applicationID,
+				ProjectID:         154,
+				UserID:            1128,
+				Status:            models.ApplicationStatusRejected,
+				ReviewerID:        &reviewerID,
+				ApplicantRejected: &applicantRejected,
 			},
 		},
 		Order: smsNoticeOrderRepoStub{
@@ -283,6 +285,40 @@ func TestApplicationSmsRejectsOrderWithTemplateCodeButNoNoticeRecord(t *testing.
 	require.ErrorAs(t, err, &svcErr)
 	assert.Equal(t, ErrCodeBadRequest, svcErr.Code)
 	assert.Equal(t, "order has already been used for another sms notice", svcErr.Message)
+}
+
+func TestApplicationSmsRejectsApplicantRejectedWhenReviewerRejected(t *testing.T) {
+	reviewerID := 1130
+	applicationID := 7
+	noticeType := "applicant_rejected"
+	applicantRejected := false
+	repo := &repository.Repository{
+		Application: smsNoticeApplicationRepoStub{
+			application: &models.ProjectApplication{
+				ID:                applicationID,
+				ProjectID:         154,
+				UserID:            1128,
+				Status:            models.ApplicationStatusRejected,
+				ReviewerID:        &reviewerID,
+				ApplicantRejected: &applicantRejected,
+			},
+		},
+		SmsNotice: &smsNoticeRepoStub{},
+	}
+	svc := &SmsNoticeService{repo: repo}
+
+	notice, err := svc.Send(context.Background(), 1128, SendSmsNoticeInput{
+		OrderID:        52,
+		ReceiverUserID: reviewerID,
+		ApplicationID:  &applicationID,
+		NoticeType:     &noticeType,
+	})
+
+	require.Nil(t, notice)
+	var svcErr *ServiceError
+	require.ErrorAs(t, err, &svcErr)
+	assert.Equal(t, ErrCodeBadRequest, svcErr.Code)
+	assert.Equal(t, "application was not rejected by applicant", svcErr.Message)
 }
 
 type smsNoticeOliveBranchRepoStub struct {

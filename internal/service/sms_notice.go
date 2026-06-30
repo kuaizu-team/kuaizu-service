@@ -107,10 +107,6 @@ func (s *SmsNoticeService) Send(ctx context.Context, userID int, input SendSmsNo
 		return nil, ErrBadRequest("order product is not sms notice")
 	}
 
-	if err := s.recordOrderSmsTemplate(ctx, order.ID, "OLIVE_BRANCH_SMS_NOTICE"); err != nil {
-		return nil, err
-	}
-
 	projectID := branch.RelatedProjectID
 	if input.ProjectID != nil {
 		if *input.ProjectID != branch.RelatedProjectID {
@@ -165,6 +161,9 @@ func (s *SmsNoticeService) Send(ctx context.Context, userID int, input SendSmsNo
 	}
 	if !notice.CreatedAt.IsZero() {
 		return notice, nil
+	}
+	if err := s.recordOrderSmsTemplate(ctx, order.ID, "OLIVE_BRANCH_SMS_NOTICE"); err != nil {
+		return nil, err
 	}
 	s.startAsyncSubmission(notice)
 	fresh, err := s.repo.SmsNotice.GetByID(ctx, notice.ID)
@@ -242,9 +241,6 @@ func (s *SmsNoticeService) sendOliveOutcomeSms(ctx context.Context, userID int, 
 	} else if noticeType == "talent_rejected" {
 		templateCode = "OLIVE_BRANCH_TALENT_REJECTED"
 	}
-	if err := s.recordOrderSmsTemplate(ctx, order.ID, templateCode); err != nil {
-		return nil, err
-	}
 	taskKey := fmt.Sprintf("OLIVE_BRANCH_RESULT_SMS:%d:%s", input.OrderID, noticeType)
 	if used, err := s.repo.SmsNotice.GetByOrderID(ctx, input.OrderID); err != nil {
 		return nil, ErrInternal("check sms notice order failed")
@@ -264,6 +260,9 @@ func (s *SmsNoticeService) sendOliveOutcomeSms(ctx context.Context, userID int, 
 	}
 	if err := outcomeRepo.CreateOutcome(ctx, notice); err != nil {
 		return nil, ErrInternal("create olive branch result sms record failed")
+	}
+	if err := s.recordOrderSmsTemplate(ctx, order.ID, templateCode); err != nil {
+		return nil, err
 	}
 	if err := applicationSubmitter.SubmitApplicationSms(ctx, messagecenter.ApplicationSmsRequest{
 		TaskKey: taskKey, TemplateCode: templateCode, Phone: strings.TrimSpace(*receiver.Phone), Nickname: nickname,
@@ -309,9 +308,6 @@ func (s *SmsNoticeService) sendMemberRemovalSms(ctx context.Context, userID int,
 	if err != nil || product == nil || !isSmsNoticeProduct(product) {
 		return nil, ErrBadRequest("order product is not sms notice")
 	}
-	if err := s.recordOrderSmsTemplate(ctx, order.ID, "MEMBER_REMOVAL_THANKS"); err != nil {
-		return nil, err
-	}
 	if used, err := s.repo.SmsNotice.GetByOrderID(ctx, input.OrderID); err != nil {
 		return nil, ErrInternal("check sms notice order failed")
 	} else if used != nil {
@@ -345,6 +341,9 @@ func (s *SmsNoticeService) sendMemberRemovalSms(ctx context.Context, userID int,
 	})
 	if !ok || memberRemovalRepo.CreateMemberRemoval(ctx, notice, removal.ID) != nil {
 		return nil, ErrInternal("create member removal sms record failed")
+	}
+	if err := s.recordOrderSmsTemplate(ctx, order.ID, "MEMBER_REMOVAL_THANKS"); err != nil {
+		return nil, err
 	}
 	if err := applicationSubmitter.SubmitApplicationSms(ctx, messagecenter.ApplicationSmsRequest{
 		TaskKey: taskKey, TemplateCode: "MEMBER_REMOVAL_THANKS", Phone: strings.TrimSpace(*receiver.Phone), Nickname: nickname,
@@ -440,6 +439,15 @@ func (s *SmsNoticeService) sendApplicationSms(ctx context.Context, userID int, i
 	if noticeType == "applicant_rejected" && app.Status != models.ApplicationStatusRejected {
 		return nil, ErrBadRequest("application is not rejected")
 	}
+	if noticeType == "applicant_rejected" {
+		isApplicantRejected, err := s.isApplicantInitiatedRejection(ctx, app)
+		if err != nil {
+			return nil, ErrInternal("check application rejection source failed")
+		}
+		if !isApplicantRejected {
+			return nil, ErrBadRequest("application was not rejected by applicant")
+		}
+	}
 	order, err := s.repo.Order.GetByID(ctx, input.OrderID)
 	if err != nil {
 		return nil, ErrInternal("get order failed")
@@ -517,9 +525,6 @@ func (s *SmsNoticeService) sendApplicationSms(ctx context.Context, userID int, i
 	} else if noticeType == "applicant_rejected" {
 		templateCode = "PROJECT_APPLICATION_APPLICANT_REJECTED"
 	}
-	if err := s.recordOrderSmsTemplate(ctx, order.ID, templateCode); err != nil {
-		return nil, err
-	}
 	taskKey := fmt.Sprintf("PROJECT_APPLICATION_SMS:%d:%s", input.OrderID, noticeType)
 	now := time.Now()
 	channel, tag, trace := "SMS", "project_application_sms_"+noticeType, fmt.Sprintf("PROJECT_APPLICATION_SMS:%d", input.OrderID)
@@ -538,6 +543,9 @@ func (s *SmsNoticeService) sendApplicationSms(ctx context.Context, userID int, i
 	}
 	if !notice.CreatedAt.IsZero() {
 		return nil, ErrBadRequest("order has already been used for another sms notice")
+	}
+	if err := s.recordOrderSmsTemplate(ctx, order.ID, templateCode); err != nil {
+		return nil, err
 	}
 	err = applicationSubmitter.SubmitApplicationSms(ctx, messagecenter.ApplicationSmsRequest{
 		TaskKey: taskKey, TemplateCode: templateCode,
@@ -559,6 +567,27 @@ func (s *SmsNoticeService) sendApplicationSms(ctx context.Context, userID int, i
 	}
 	return notice, nil
 }
+
+func (s *SmsNoticeService) isApplicantInitiatedRejection(ctx context.Context, app *models.ProjectApplication) (bool, error) {
+	if app == nil || app.Status != models.ApplicationStatusRejected {
+		return false, nil
+	}
+	if app.ApplicantRejected != nil {
+		return *app.ApplicantRejected, nil
+	}
+	if s.repo == nil || s.repo.DB() == nil {
+		return false, nil
+	}
+	var reviewerRejectedCount int
+	if err := s.repo.DB().GetContext(ctx, &reviewerRejectedCount,
+		`SELECT COUNT(*) FROM status_notification WHERE application_id = ? AND type = ?`,
+		app.ID, models.StatusNotificationApplicationRejected,
+	); err != nil {
+		return false, err
+	}
+	return reviewerRejectedCount == 0, nil
+}
+
 func applicationSmsRoleName(code string) string {
 	names := map[string]string{
 		"TEAM_LEADER": "团队负责人", "RECRUITMENT_LEADER": "招募负责人",
