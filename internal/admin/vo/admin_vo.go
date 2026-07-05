@@ -38,31 +38,32 @@ type AdminProjectVO struct {
 
 // AdminUserVO is the admin-facing user response model.
 type AdminUserVO struct {
-	ID                  int        `json:"id"`
-	OpenID              string     `json:"openId"`
-	Nickname            *string    `json:"nickname"`
-	Phone               *string    `json:"phone"`
-	Email               *string    `json:"email"`
-	SchoolID            *int       `json:"schoolId"`
-	MajorID             *int       `json:"majorId"`
-	Grade               *int       `json:"grade"`
-	LastActiveDate      *time.Time `json:"lastActiveDate"`
-	AuthStatus          *int       `json:"authStatus"`
-	AuthImgUrl          *string    `json:"authImgUrl"`
-	AvatarUrl           *string    `json:"avatarUrl"`
-	Wechat              *string    `json:"wechat"`
-	EmailOptOut         *bool      `json:"emailOptOut"`
-	CreatedAt           *time.Time `json:"createdAt"`
-	SchoolName          *string    `json:"schoolName"`
-	SchoolCode          *string    `json:"schoolCode"`
-	MajorName           *string    `json:"majorName"`
-	ClassID             *int       `json:"classId"`
-	TalentProfileStatus *int       `json:"talentProfileStatus"`
-	PendingCount        *int       `json:"pendingCount"` // 待审核投递数+待处理橄榄枝数
-	UserStatus          int        `json:"userStatus"`   // 0=正常, 1=封禁, 2=已毕业
-	BanReason           *string    `json:"banReason"`    // 封禁原因
-	CollaborationScore  *float64   `json:"collaborationScore"`
-	CollaborationLevel  *string    `json:"collaborationLevel"`
+	ID                       int        `json:"id"`
+	OpenID                   string     `json:"openId"`
+	Nickname                 *string    `json:"nickname"`
+	Phone                    *string    `json:"phone"`
+	Email                    *string    `json:"email"`
+	SchoolID                 *int       `json:"schoolId"`
+	MajorID                  *int       `json:"majorId"`
+	Grade                    *int       `json:"grade"`
+	LastActiveDate           *time.Time `json:"lastActiveDate"`
+	AuthStatus               *int       `json:"authStatus"`
+	AuthImgUrl               *string    `json:"authImgUrl"`
+	AvatarUrl                *string    `json:"avatarUrl"`
+	Wechat                   *string    `json:"wechat"`
+	EmailOptOut              *bool      `json:"emailOptOut"`
+	CreatedAt                *time.Time `json:"createdAt"`
+	SchoolName               *string    `json:"schoolName"`
+	SchoolCode               *string    `json:"schoolCode"`
+	MajorName                *string    `json:"majorName"`
+	ClassID                  *int       `json:"classId"`
+	TalentProfileStatus      *int       `json:"talentProfileStatus"`
+	InvitationFeedbackStatus *string    `json:"invitationFeedbackStatus,omitempty"`
+	PendingCount             *int       `json:"pendingCount"` // 待审核投递数+待处理橄榄枝数
+	UserStatus               int        `json:"userStatus"`   // 0=正常, 1=封禁, 2=已毕业
+	BanReason                *string    `json:"banReason"`    // 封禁原因
+	CollaborationScore       *float64   `json:"collaborationScore"`
+	CollaborationLevel       *string    `json:"collaborationLevel"`
 }
 
 // AdminTalentProfileVO is the admin-facing talent profile (business card) response model.

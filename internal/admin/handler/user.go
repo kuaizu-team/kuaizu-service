@@ -100,6 +100,7 @@ func (s *AdminServer) ListUsers(ctx echo.Context) error {
 
 	// Batch-query talent_profile status for all users in this page
 	talentStatusMap := make(map[int]int, len(result.List))
+	invitationFeedbackStatusMap := make(map[int]string, len(result.List))
 	if len(result.List) > 0 {
 		userIDs := make([]int, len(result.List))
 		for i, u := range result.List {
@@ -119,6 +120,34 @@ func (s *AdminServer) ListUsers(ctx echo.Context) error {
 				}
 			}
 		}
+
+		// 邀请反馈只对平台超级管理员和校区超级管理员返回。数据库分别记录
+		// 初始意向与后续沟通状态，这里归一化为列表展示所需的四种状态。
+		if adminRole(ctx) != models.AdminRoleSchoolAdmin {
+			type invitationFeedbackRow struct {
+				UserID int    `db:"user_id"`
+				Status string `db:"status"`
+			}
+			q, args, err := sqlx.In(`
+				SELECT user_id,
+					CASE
+						WHEN conversation_status IS NOT NULL THEN conversation_status
+						WHEN status = 'interested' THEN 'in_progress'
+						WHEN status = 'not_interested' THEN 'rejected'
+						ELSE 'pending'
+					END AS status
+				FROM invitation_feedback
+				WHERE user_id IN (?)`, userIDs)
+			if err == nil {
+				q = s.repo.DB().Rebind(q)
+				var rows []invitationFeedbackRow
+				if err := s.repo.DB().SelectContext(ctx.Request().Context(), &rows, q, args...); err == nil {
+					for _, row := range rows {
+						invitationFeedbackStatusMap[row.UserID] = row.Status
+					}
+				}
+			}
+		}
 	}
 
 	list := make([]adminvo.AdminUserVO, len(result.List))
@@ -129,6 +158,10 @@ func (s *AdminServer) ListUsers(ctx echo.Context) error {
 			talentStatus = &s
 		}
 		list[i] = *adminvo.NewAdminUserVO(&result.List[i], talentStatus)
+		if status, ok := invitationFeedbackStatusMap[result.List[i].ID]; ok {
+			s := status
+			list[i].InvitationFeedbackStatus = &s
+		}
 	}
 
 	return response.Success(ctx, map[string]interface{}{
