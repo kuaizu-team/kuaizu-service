@@ -1,0 +1,16 @@
+patch:
+  tags: [Projects]
+  summary: 更新项目管理员备注（仅超级管理员）
+  parameters:
+    - { name: id, in: path, required: true, schema: { type: integer } }
+  requestBody:
+    required: true
+    content:
+      application/json:
+        schema:
+          type: object
+          properties:
+            adminNote: { type: string, nullable: true }
+  responses:
+    '200': { description: 保存成功 }
+    '403': { description: 权限不足 }

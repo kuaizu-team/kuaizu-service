@@ -31,6 +31,8 @@ type Project struct {
 	SkillRequirement     *string    `db:"skill_requirement"`
 	PublisherRole        *string    `db:"publisher_role"`
 	InitiatingSchoolID   *int       `db:"initiating_school_id"`
+	AdminNote            *string    `db:"admin_note"`
+	AdminNoteUpdatedAt   *time.Time `db:"admin_note_updated_at"`
 
 	// Joined fields
 	SchoolName                 *string            `db:"school_name"`

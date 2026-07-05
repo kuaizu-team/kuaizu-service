@@ -53,3 +53,42 @@ properties:
   skillRequirement:
     type: string
     nullable: true
+  milestones:
+    type: array
+    items:
+      type: object
+      properties:
+        id: { type: integer }
+        milestoneDate: { type: string, format: date }
+        description: { type: string }
+        sortOrder: { type: integer }
+  members:
+    type: array
+    items:
+      type: object
+      properties:
+        id: { type: integer }
+        userId: { type: integer }
+        role: { type: string }
+        roleName: { type: string, nullable: true }
+  tags:
+    type: array
+    items:
+      type: object
+      properties:
+        id: { type: integer }
+        name: { type: string }
+  events:
+    type: array
+    items:
+      type: object
+      properties:
+        id: { type: integer }
+        name: { type: string }
+  adminNote:
+    type: string
+    nullable: true
+  adminNoteUpdatedAt:
+    type: string
+    format: date-time
+    nullable: true

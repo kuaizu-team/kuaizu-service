@@ -375,6 +375,8 @@ CREATE TABLE `project` (
   `recruit_completed_at` timestamp NULL DEFAULT NULL COMMENT 'Recruit completed timestamp',
   `ended_at` timestamp NULL DEFAULT NULL COMMENT 'Project ended timestamp',
   `deleted_at` timestamp NULL DEFAULT NULL COMMENT '删除时间',
+  `admin_note` text COMMENT '管理员跟进备注',
+  `admin_note_updated_at` timestamp NULL DEFAULT NULL COMMENT '管理员备注更新时间',
   `is_cross_school` tinyint(4) DEFAULT '1' COMMENT '是否跨校: 1-可以,0-不可以',
   `education_requirement` tinyint(4) DEFAULT '1' COMMENT '学历要求1-大专2-本科',
   `skill_requirement` text COMMENT '技能要求',

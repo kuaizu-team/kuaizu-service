@@ -246,7 +246,7 @@ func (r *ProjectRepository) List(ctx context.Context, params ListParams) ([]mode
 			p.promotion_status, p.promotion_expire_time, p.view_count,
 			p.created_at, p.updated_at, p.recruit_completed_at, p.ended_at, p.reject_reason, p.deleted_at, p.is_cross_school,
 			p.education_requirement, p.skill_requirement,
-			p.publisher_role, p.initiating_school_id,
+			p.publisher_role, p.initiating_school_id, p.admin_note, p.admin_note_updated_at,
 			s.school_name, pr.name AS publisher_role_name, ins.school_name AS initiating_school_name,
 			COALESCE(pa_counts.pending_count, 0) AS pending_application_count%s
 		FROM project p
@@ -346,7 +346,7 @@ func (r *ProjectRepository) GetByID(ctx context.Context, id int) (*models.Projec
 			p.promotion_status, p.promotion_expire_time, p.view_count,
 			p.created_at, p.updated_at, p.recruit_completed_at, p.ended_at, p.reject_reason, p.deleted_at, p.is_cross_school,
 			p.education_requirement, p.skill_requirement,
-			p.publisher_role, p.initiating_school_id,
+			p.publisher_role, p.initiating_school_id, p.admin_note, p.admin_note_updated_at,
 			s.school_name, pr.name AS publisher_role_name, ins.school_name AS initiating_school_name,
 			u.id          AS u_id,
 			u.openid      AS u_openid,

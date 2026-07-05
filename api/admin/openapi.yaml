@@ -54,6 +54,16 @@ paths:
     $ref: paths/projects_{id}.yaml
   /projects/{id}/permanent:
     $ref: paths/projects_{id}_permanent.yaml
+  /projects/{id}/milestones:
+    $ref: paths/projects_{id}_milestones.yaml
+  /projects/{id}/members/{memberId}/role:
+    $ref: paths/projects_{id}_members_{memberId}_role.yaml
+  /projects/{id}/events:
+    $ref: paths/projects_{id}_events.yaml
+  /projects/{id}/admin-note:
+    $ref: paths/projects_{id}_admin-note.yaml
+  /projects/{id}/status:
+    $ref: paths/projects_{id}_status.yaml
   /talent-profiles/{id}:
     $ref: paths/talent-profiles_{id}.yaml
   /users:
