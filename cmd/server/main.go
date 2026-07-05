@@ -62,7 +62,6 @@ func main() {
 	}
 
 	svc := service.New(repo, deps)
-	service.StartProjectCleanupScheduler(context.Background(), repo)
 	server := handler.NewServer(repo, svc)
 
 	// Register API routes with /api/v2 prefix

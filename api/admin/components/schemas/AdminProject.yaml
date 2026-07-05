@@ -37,6 +37,10 @@ properties:
   updatedAt:
     type: string
     format: date-time
+  deletedAt:
+    type: string
+    format: date-time
+    nullable: true
   schoolName:
     type: string
     nullable: true

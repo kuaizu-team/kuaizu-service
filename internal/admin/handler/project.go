@@ -1,9 +1,11 @@
 package handler
 
 import (
+	"database/sql"
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/jmoiron/sqlx"
 	adminvo "github.com/kuaizu-team/kuaizu-service/internal/admin/vo"
@@ -335,4 +337,24 @@ func (s *AdminServer) RestoreProject(ctx echo.Context) error {
 		return mapServiceError(ctx, err)
 	}
 	return response.SuccessMessage(ctx, "操作成功")
+}
+
+// PermanentlyDeleteProject handles DELETE /admin/projects/:id/permanent.
+func (s *AdminServer) PermanentlyDeleteProject(ctx echo.Context) error {
+	if adminRole(ctx) != models.AdminRoleSuperAdmin {
+		return response.Forbidden(ctx, "权限不足")
+	}
+	id, err := strconv.Atoi(ctx.Param("id"))
+	if err != nil || id <= 0 {
+		return response.BadRequest(ctx, "invalid project id")
+	}
+
+	cutoff := time.Now().Add(-7 * 24 * time.Hour)
+	if _, err := s.repo.PurgeDeletedProjectBefore(ctx.Request().Context(), id, cutoff); err != nil {
+		if err == sql.ErrNoRows {
+			return response.BadRequest(ctx, "项目不存在或尚未满足永久删除条件")
+		}
+		return response.InternalError(ctx, "永久删除项目失败")
+	}
+	return response.SuccessMessage(ctx, "永久删除成功")
 }

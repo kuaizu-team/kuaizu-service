@@ -52,6 +52,8 @@ paths:
     $ref: paths/projects.yaml
   /projects/{id}:
     $ref: paths/projects_{id}.yaml
+  /projects/{id}/permanent:
+    $ref: paths/projects_{id}_permanent.yaml
   /talent-profiles/{id}:
     $ref: paths/talent-profiles_{id}.yaml
   /users:
