@@ -199,6 +199,61 @@ func (s *AdminServer) GetUser(ctx echo.Context) error {
 	return response.Success(ctx, adminvo.NewAdminUserDetailVO(user, profile))
 }
 
+// GetUserActivitySummary returns compact counters used by the admin user detail page.
+func (s *AdminServer) GetUserActivitySummary(ctx echo.Context) error {
+	id, err := strconv.Atoi(ctx.Param("id"))
+	if err != nil || id <= 0 {
+		return response.BadRequest(ctx, "invalid user id")
+	}
+
+	user, err := s.svc.User.GetUser(ctx.Request().Context(), id)
+	if err != nil {
+		return mapServiceError(ctx, err)
+	}
+	if sid := adminSchoolID(ctx); sid != nil && (user == nil || user.SchoolID == nil || *user.SchoolID != *sid) {
+		return response.Forbidden(ctx, "权限不足")
+	}
+
+	type activitySummary struct {
+		ProjectsTotal            int   `db:"projects_total" json:"projectsTotal"`
+		ProjectsPending          int   `db:"projects_pending" json:"projectsPending"`
+		ProjectsApproved         int   `db:"projects_approved" json:"projectsApproved"`
+		ProjectsCompleted        int   `db:"projects_completed" json:"projectsCompleted"`
+		ProjectsEnded            int   `db:"projects_ended" json:"projectsEnded"`
+		ApplicationsTotal        int   `db:"applications_total" json:"applicationsTotal"`
+		ApplicationsPending      int   `db:"applications_pending" json:"applicationsPending"`
+		ApplicationsPassed       int   `db:"applications_passed" json:"applicationsPassed"`
+		ApplicationsRejected     int   `db:"applications_rejected" json:"applicationsRejected"`
+		OliveBranchesTotal       int   `db:"olive_branches_total" json:"oliveBranchesTotal"`
+		OliveBranchesPending     int   `db:"olive_branches_pending" json:"oliveBranchesPending"`
+		OliveBranchesReadPending int   `db:"olive_branches_read_pending" json:"oliveBranchesReadPending"`
+		OrdersTotal              int   `db:"orders_total" json:"ordersTotal"`
+		PaidAmount               int64 `db:"paid_amount" json:"paidAmount"`
+	}
+	var summary activitySummary
+	err = s.repo.DB().GetContext(ctx.Request().Context(), &summary, `
+		SELECT
+		 (SELECT COUNT(*) FROM project WHERE creator_id = ?) projects_total,
+		 (SELECT COUNT(*) FROM project WHERE creator_id = ? AND status = 0) projects_pending,
+		 (SELECT COUNT(*) FROM project WHERE creator_id = ? AND status = 1) projects_approved,
+		 (SELECT COUNT(*) FROM project WHERE creator_id = ? AND status = 3) projects_completed,
+		 (SELECT COUNT(*) FROM project WHERE creator_id = ? AND status = 5) projects_ended,
+		 (SELECT COUNT(*) FROM project_application WHERE user_id = ?) applications_total,
+		 (SELECT COUNT(*) FROM project_application WHERE user_id = ? AND status = 0) applications_pending,
+		 (SELECT COUNT(*) FROM project_application WHERE user_id = ? AND status = 1) applications_passed,
+		 (SELECT COUNT(*) FROM project_application WHERE user_id = ? AND status = 2) applications_rejected,
+		 (SELECT COUNT(*) FROM olive_branch_record WHERE receiver_id = ?) olive_branches_total,
+		 (SELECT COUNT(*) FROM olive_branch_record WHERE receiver_id = ? AND status = 0) olive_branches_pending,
+		 (SELECT COUNT(*) FROM olive_branch_record WHERE receiver_id = ? AND status = 0 AND is_read = TRUE) olive_branches_read_pending,
+		 (SELECT COUNT(*) FROM `+"`order`"+` WHERE user_id = ?) orders_total,
+		 (SELECT CAST(COALESCE(ROUND(SUM(actual_paid) * 100), 0) AS SIGNED) FROM `+"`order`"+` WHERE user_id = ? AND status = 1) paid_amount
+	`, id, id, id, id, id, id, id, id, id, id, id, id, id, id)
+	if err != nil {
+		return response.InternalError(ctx, "获取用户活动统计失败")
+	}
+	return response.Success(ctx, summary)
+}
+
 func (s *AdminServer) GetUserCollaborationHistory(ctx echo.Context) error {
 	id, err := strconv.Atoi(ctx.Param("id"))
 	if err != nil || id <= 0 {
