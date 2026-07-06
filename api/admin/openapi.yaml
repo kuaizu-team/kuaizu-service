@@ -72,6 +72,8 @@ paths:
     $ref: paths/users.yaml
   /users/{id}:
     $ref: paths/users_{id}.yaml
+  /users/{id}/activity-summary:
+    $ref: paths/users_{id}_activity-summary.yaml
   /users/{userId}/orders:
     $ref: paths/users_{id}_orders.yaml
   /users/{id}/auth:
