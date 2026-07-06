@@ -251,6 +251,10 @@ func (s *AdminServer) GetUserActivitySummary(ctx echo.Context) error {
 	if err != nil {
 		return response.InternalError(ctx, "获取用户活动统计失败")
 	}
+	if adminRole(ctx) == models.AdminRoleSchoolAdmin {
+		summary.OrdersTotal = 0
+		summary.PaidAmount = 0
+	}
 	return response.Success(ctx, summary)
 }
 
