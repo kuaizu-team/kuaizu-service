@@ -64,6 +64,8 @@ paths:
     $ref: paths/projects_{id}_admin-note.yaml
   /projects/{id}/status:
     $ref: paths/projects_{id}_status.yaml
+  /projects/{id}/activity-summary:
+    $ref: paths/projects_{id}_activity-summary.yaml
   /talent-profiles/{id}:
     $ref: paths/talent-profiles_{id}.yaml
   /users:

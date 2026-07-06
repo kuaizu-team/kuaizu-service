@@ -1,0 +1,17 @@
+get:
+  tags: [Projects]
+  summary: 获取项目投递和橄榄枝汇总
+  parameters:
+    - { name: id, in: path, required: true, schema: { type: integer } }
+  responses:
+    '200':
+      description: 汇总数据
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              applicationsTotal: { type: integer }
+              applicationsPending: { type: integer }
+              oliveBranchesTotal: { type: integer }
+              oliveBranchesPending: { type: integer }

@@ -84,6 +84,7 @@ func main() {
 	adminGroup.DELETE("/projects/:id/permanent", server.PermanentlyDeleteProject)
 	adminGroup.GET("/projects/:id/applications", server.ListProjectApplications)
 	adminGroup.GET("/projects/:id/olive-branches", server.ListProjectOliveBranches)
+	adminGroup.GET("/projects/:id/activity-summary", server.GetProjectActivitySummary)
 	adminGroup.PATCH("/talent-profiles/:id", server.ReviewTalentProfile)
 	adminGroup.PATCH("/talent-profiles/:id/takedown", server.TakedownTalentProfile)
 

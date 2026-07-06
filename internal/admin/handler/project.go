@@ -526,3 +526,36 @@ func (s *AdminServer) PermanentlyDeleteProject(ctx echo.Context) error {
 	}
 	return response.SuccessMessage(ctx, "永久删除成功")
 }
+
+// GetProjectActivitySummary returns lightweight project activity counts.
+func (s *AdminServer) GetProjectActivitySummary(ctx echo.Context) error {
+	id, err := strconv.Atoi(ctx.Param("id"))
+	if err != nil || id <= 0 {
+		return response.BadRequest(ctx, "invalid project id")
+	}
+	if sid := adminSchoolID(ctx); sid != nil {
+		project, err := s.svc.Project.GetProject(ctx.Request().Context(), id)
+		if err != nil {
+			return mapServiceError(ctx, err)
+		}
+		if project == nil || project.SchoolID == nil || *project.SchoolID != *sid {
+			return response.Forbidden(ctx, "权限不足")
+		}
+	}
+	var summary struct {
+		ApplicationsTotal    int `db:"applications_total" json:"applicationsTotal"`
+		ApplicationsPending  int `db:"applications_pending" json:"applicationsPending"`
+		OliveBranchesTotal   int `db:"olive_branches_total" json:"oliveBranchesTotal"`
+		OliveBranchesPending int `db:"olive_branches_pending" json:"oliveBranchesPending"`
+	}
+	if err := s.repo.DB().GetContext(ctx.Request().Context(), &summary, `
+		SELECT
+			(SELECT COUNT(*) FROM project_application WHERE project_id = ?) AS applications_total,
+			(SELECT COUNT(*) FROM project_application WHERE project_id = ? AND status = 0) AS applications_pending,
+			(SELECT COUNT(*) FROM olive_branch_record WHERE related_project_id = ?) AS olive_branches_total,
+			(SELECT COUNT(*) FROM olive_branch_record WHERE related_project_id = ? AND status = 0) AS olive_branches_pending
+	`, id, id, id, id); err != nil {
+		return response.InternalError(ctx, "获取项目业务统计失败")
+	}
+	return response.Success(ctx, summary)
+}
