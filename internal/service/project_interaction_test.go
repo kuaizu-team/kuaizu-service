@@ -7,6 +7,10 @@ func TestValidateProjectTags(t *testing.T) {
 	if err := validateProjectTags(&valid); err != nil {
 		t.Fatalf("valid tags rejected: %v", err)
 	}
+	empty := []string{}
+	if err := validateProjectTags(&empty); err != nil {
+		t.Fatalf("empty tags rejected: %v", err)
+	}
 	duplicate := []string{"AI", "AI"}
 	if err := validateProjectTags(&duplicate); err == nil {
 		t.Fatal("expected duplicate tags error")

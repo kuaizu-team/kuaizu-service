@@ -7,7 +7,6 @@ required:
 properties:
   tags:
     type: array
-    minItems: 1
     maxItems: 5
     items: { type: string, maxLength: 12 }
   publisherRole: { type: string }

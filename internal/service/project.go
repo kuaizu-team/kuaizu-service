@@ -567,8 +567,8 @@ func validateProjectTags(tags *[]string) error {
 	if tags == nil {
 		return nil
 	}
-	if len(*tags) < 1 || len(*tags) > 5 {
-		return ErrBadRequest("tags must contain 1-5 items")
+	if len(*tags) > 5 {
+		return ErrBadRequest("tags must contain 0-5 items")
 	}
 	seen := map[string]struct{}{}
 	for i := range *tags {
