@@ -1,0 +1,18 @@
+patch:
+  tags: [Projects]
+  summary: 调整项目成员角色（仅超级管理员）
+  parameters:
+    - { name: id, in: path, required: true, schema: { type: integer } }
+    - { name: memberId, in: path, required: true, schema: { type: integer } }
+  requestBody:
+    required: true
+    content:
+      application/json:
+        schema:
+          type: object
+          required: [role]
+          properties:
+            role: { type: string }
+  responses:
+    '200': { description: 更新成功 }
+    '403': { description: 权限不足 }

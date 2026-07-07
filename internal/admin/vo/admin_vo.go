@@ -13,56 +13,78 @@ func intPtr(v int) *int { return &v }
 
 // AdminProjectVO is the admin-facing project response model.
 type AdminProjectVO struct {
-	ID                   int          `json:"id"`
-	CreatorID            int          `json:"creatorId"`
-	Name                 string       `json:"name"`
-	Description          *string      `json:"description"`
-	SchoolID             *int         `json:"schoolId"`
-	Direction            *int         `json:"direction"`
-	MemberCount          *int         `json:"memberCount"`
-	Status               int          `json:"status"`
-	PromotionStatus      int          `json:"promotionStatus"`
-	PromotionExpireTime  *time.Time   `json:"promotionExpireTime"`
-	ViewCount            int          `json:"viewCount"`
-	CreatedAt            time.Time    `json:"createdAt"`
-	UpdatedAt            time.Time    `json:"updatedAt"`
-	RejectReason         *string      `json:"rejectReason"`
-	DeletedAt            *time.Time   `json:"deletedAt"`
-	SchoolName           *string      `json:"schoolName"`
-	IsCrossSchool        *int         `json:"isCrossSchool"`
-	EducationRequirement *int         `json:"educationRequirement"`
-	SkillRequirement     *string      `json:"skillRequirement"`
-	Creator              *AdminUserVO `json:"creator,omitempty"`
-	PendingCount         int          `json:"pendingCount"` // 投递+橄榄枝待处理总数
+	ID                   int                       `json:"id"`
+	CreatorID            int                       `json:"creatorId"`
+	Name                 string                    `json:"name"`
+	Description          *string                   `json:"description"`
+	SchoolID             *int                      `json:"schoolId"`
+	Direction            *int                      `json:"direction"`
+	MemberCount          *int                      `json:"memberCount"`
+	Status               int                       `json:"status"`
+	PromotionStatus      int                       `json:"promotionStatus"`
+	PromotionExpireTime  *time.Time                `json:"promotionExpireTime"`
+	ViewCount            int                       `json:"viewCount"`
+	CreatedAt            time.Time                 `json:"createdAt"`
+	UpdatedAt            time.Time                 `json:"updatedAt"`
+	RejectReason         *string                   `json:"rejectReason"`
+	DeletedAt            *time.Time                `json:"deletedAt"`
+	SchoolName           *string                   `json:"schoolName"`
+	IsCrossSchool        *int                      `json:"isCrossSchool"`
+	EducationRequirement *int                      `json:"educationRequirement"`
+	SkillRequirement     *string                   `json:"skillRequirement"`
+	Creator              *AdminUserVO              `json:"creator,omitempty"`
+	PendingCount         int                       `json:"pendingCount"` // 投递+橄榄枝待处理总数
+	Milestones           []AdminProjectMilestoneVO `json:"milestones"`
+	Members              []AdminProjectMemberVO    `json:"members"`
+	Tags                 []models.ProjectTag       `json:"tags"`
+	Events               []AdminEventVO            `json:"events"`
+	AdminNote            *string                   `json:"adminNote"`
+	AdminNoteUpdatedAt   *time.Time                `json:"adminNoteUpdatedAt"`
+}
+
+type AdminProjectMilestoneVO struct {
+	ID            int       `json:"id"`
+	MilestoneDate time.Time `json:"milestoneDate"`
+	Description   string    `json:"description"`
+	SortOrder     int       `json:"sortOrder"`
+}
+
+type AdminProjectMemberVO struct {
+	ID       int          `json:"id"`
+	UserID   int          `json:"userId"`
+	Role     string       `json:"role"`
+	RoleName *string      `json:"roleName"`
+	User     *AdminUserVO `json:"user"`
 }
 
 // AdminUserVO is the admin-facing user response model.
 type AdminUserVO struct {
-	ID                  int        `json:"id"`
-	OpenID              string     `json:"openId"`
-	Nickname            *string    `json:"nickname"`
-	Phone               *string    `json:"phone"`
-	Email               *string    `json:"email"`
-	SchoolID            *int       `json:"schoolId"`
-	MajorID             *int       `json:"majorId"`
-	Grade               *int       `json:"grade"`
-	LastActiveDate      *time.Time `json:"lastActiveDate"`
-	AuthStatus          *int       `json:"authStatus"`
-	AuthImgUrl          *string    `json:"authImgUrl"`
-	AvatarUrl           *string    `json:"avatarUrl"`
-	Wechat              *string    `json:"wechat"`
-	EmailOptOut         *bool      `json:"emailOptOut"`
-	CreatedAt           *time.Time `json:"createdAt"`
-	SchoolName          *string    `json:"schoolName"`
-	SchoolCode          *string    `json:"schoolCode"`
-	MajorName           *string    `json:"majorName"`
-	ClassID             *int       `json:"classId"`
-	TalentProfileStatus *int       `json:"talentProfileStatus"`
-	PendingCount        *int       `json:"pendingCount"` // 待审核投递数+待处理橄榄枝数
-	UserStatus          int        `json:"userStatus"`   // 0=正常, 1=封禁, 2=已毕业
-	BanReason           *string    `json:"banReason"`    // 封禁原因
-	CollaborationScore  *float64   `json:"collaborationScore"`
-	CollaborationLevel  *string    `json:"collaborationLevel"`
+	ID                       int        `json:"id"`
+	OpenID                   string     `json:"openId"`
+	Nickname                 *string    `json:"nickname"`
+	Phone                    *string    `json:"phone"`
+	Email                    *string    `json:"email"`
+	SchoolID                 *int       `json:"schoolId"`
+	MajorID                  *int       `json:"majorId"`
+	Grade                    *int       `json:"grade"`
+	LastActiveDate           *time.Time `json:"lastActiveDate"`
+	AuthStatus               *int       `json:"authStatus"`
+	AuthImgUrl               *string    `json:"authImgUrl"`
+	AvatarUrl                *string    `json:"avatarUrl"`
+	Wechat                   *string    `json:"wechat"`
+	EmailOptOut              *bool      `json:"emailOptOut"`
+	CreatedAt                *time.Time `json:"createdAt"`
+	SchoolName               *string    `json:"schoolName"`
+	SchoolCode               *string    `json:"schoolCode"`
+	MajorName                *string    `json:"majorName"`
+	ClassID                  *int       `json:"classId"`
+	TalentProfileStatus      *int       `json:"talentProfileStatus"`
+	InvitationFeedbackStatus *string    `json:"invitationFeedbackStatus,omitempty"`
+	PendingCount             *int       `json:"pendingCount"` // 待审核投递数+待处理橄榄枝数
+	UserStatus               int        `json:"userStatus"`   // 0=正常, 1=封禁, 2=已毕业
+	BanReason                *string    `json:"banReason"`    // 封禁原因
+	CollaborationScore       *float64   `json:"collaborationScore"`
+	CollaborationLevel       *string    `json:"collaborationLevel"`
 }
 
 // AdminTalentProfileVO is the admin-facing talent profile (business card) response model.
@@ -181,6 +203,21 @@ func NewAdminProjectVO(p *models.Project) *AdminProjectVO {
 		EducationRequirement: p.EducationRequirement,
 		SkillRequirement:     p.SkillRequirement,
 		PendingCount:         p.PendingCount, // 0 when not computed (IncludePendingCount=false)
+		Tags:                 p.Tags,
+		AdminNote:            p.AdminNote,
+		AdminNoteUpdatedAt:   p.AdminNoteUpdatedAt,
+	}
+	adminProjectVo.Milestones = make([]AdminProjectMilestoneVO, len(p.Milestones))
+	for i, milestone := range p.Milestones {
+		adminProjectVo.Milestones[i] = AdminProjectMilestoneVO{ID: milestone.ID, MilestoneDate: milestone.MilestoneDate, Description: milestone.Description, SortOrder: milestone.SortOrder}
+	}
+	adminProjectVo.Members = make([]AdminProjectMemberVO, len(p.Members))
+	for i, member := range p.Members {
+		adminProjectVo.Members[i] = AdminProjectMemberVO{ID: member.ID, UserID: member.UserID, Role: member.Role, RoleName: member.RoleName, User: NewAdminUserVO(member.User, nil)}
+	}
+	adminProjectVo.Events = make([]AdminEventVO, len(p.Events))
+	for i := range p.Events {
+		adminProjectVo.Events[i] = *NewAdminEventVO(&p.Events[i])
 	}
 	if p.Creator != nil {
 		adminProjectVo.Creator = NewAdminUserVO(p.Creator, p.CreatorTalentProfileStatus)

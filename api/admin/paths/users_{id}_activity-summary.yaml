@@ -1,0 +1,58 @@
+get:
+  tags: [Users]
+  summary: Get user activity summary
+  operationId: getUserActivitySummary
+  parameters:
+    - { name: id, in: path, required: true, schema: { type: integer } }
+  responses:
+    '200':
+      description: User activity summary
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/BaseResponse.yaml
+              - type: object
+                properties:
+                  data:
+                    type: object
+                    required:
+                      - projectsTotal
+                      - projectsPending
+                      - projectsApproved
+                      - projectsCompleted
+                      - projectsEnded
+                      - applicationsTotal
+                      - applicationsPending
+                      - applicationsPassed
+                      - applicationsRejected
+                      - oliveBranchesTotal
+                      - oliveBranchesPending
+                      - oliveBranchesReadPending
+                      - ordersTotal
+                      - paidAmount
+                    properties:
+                      projectsTotal: { type: integer }
+                      projectsPending: { type: integer }
+                      projectsApproved: { type: integer }
+                      projectsCompleted: { type: integer }
+                      projectsEnded: { type: integer }
+                      applicationsTotal: { type: integer }
+                      applicationsPending: { type: integer }
+                      applicationsPassed: { type: integer }
+                      applicationsRejected: { type: integer }
+                      oliveBranchesTotal: { type: integer }
+                      oliveBranchesPending: { type: integer }
+                      oliveBranchesReadPending: { type: integer }
+                      ordersTotal: { type: integer }
+                      paidAmount: { type: integer, format: int64, description: Paid amount in cents }
+    '400':
+      $ref: ../components/responses/BadRequest.yaml
+    '401':
+      $ref: ../components/responses/Unauthorized.yaml
+    '403':
+      $ref: ../components/responses/Forbidden.yaml
+    '404':
+      $ref: ../components/responses/NotFound.yaml
+    '500':
+      $ref: ../components/responses/InternalError.yaml

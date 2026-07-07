@@ -56,3 +56,8 @@ properties:
   classId:
     type: integer
     nullable: true
+  invitationFeedbackStatus:
+    type: string
+    enum: [pending, in_progress, accepted, rejected]
+    nullable: true
+    description: 校区超级管理员邀请反馈状态，仅超级管理员和校区超级管理员可见

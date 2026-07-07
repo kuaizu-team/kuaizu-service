@@ -1,0 +1,17 @@
+put:
+  tags: [Projects]
+  summary: 替换项目赛事关联（仅超级管理员）
+  parameters:
+    - { name: id, in: path, required: true, schema: { type: integer } }
+  requestBody:
+    required: true
+    content:
+      application/json:
+        schema:
+          type: object
+          required: [eventIds]
+          properties:
+            eventIds: { type: array, items: { type: integer } }
+  responses:
+    '200': { description: 更新成功 }
+    '403': { description: 权限不足 }

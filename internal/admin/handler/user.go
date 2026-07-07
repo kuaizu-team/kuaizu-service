@@ -100,6 +100,7 @@ func (s *AdminServer) ListUsers(ctx echo.Context) error {
 
 	// Batch-query talent_profile status for all users in this page
 	talentStatusMap := make(map[int]int, len(result.List))
+	invitationFeedbackStatusMap := make(map[int]string, len(result.List))
 	if len(result.List) > 0 {
 		userIDs := make([]int, len(result.List))
 		for i, u := range result.List {
@@ -119,6 +120,34 @@ func (s *AdminServer) ListUsers(ctx echo.Context) error {
 				}
 			}
 		}
+
+		// 邀请反馈只对平台超级管理员和校区超级管理员返回。数据库分别记录
+		// 初始意向与后续沟通状态，这里归一化为列表展示所需的四种状态。
+		if adminRole(ctx) != models.AdminRoleSchoolAdmin {
+			type invitationFeedbackRow struct {
+				UserID int    `db:"user_id"`
+				Status string `db:"status"`
+			}
+			q, args, err := sqlx.In(`
+				SELECT user_id,
+					CASE
+						WHEN conversation_status IS NOT NULL THEN conversation_status
+						WHEN status = 'interested' THEN 'in_progress'
+						WHEN status = 'not_interested' THEN 'rejected'
+						ELSE 'pending'
+					END AS status
+				FROM invitation_feedback
+				WHERE user_id IN (?)`, userIDs)
+			if err == nil {
+				q = s.repo.DB().Rebind(q)
+				var rows []invitationFeedbackRow
+				if err := s.repo.DB().SelectContext(ctx.Request().Context(), &rows, q, args...); err == nil {
+					for _, row := range rows {
+						invitationFeedbackStatusMap[row.UserID] = row.Status
+					}
+				}
+			}
+		}
 	}
 
 	list := make([]adminvo.AdminUserVO, len(result.List))
@@ -129,6 +158,10 @@ func (s *AdminServer) ListUsers(ctx echo.Context) error {
 			talentStatus = &s
 		}
 		list[i] = *adminvo.NewAdminUserVO(&result.List[i], talentStatus)
+		if status, ok := invitationFeedbackStatusMap[result.List[i].ID]; ok {
+			s := status
+			list[i].InvitationFeedbackStatus = &s
+		}
 	}
 
 	return response.Success(ctx, map[string]interface{}{
@@ -164,6 +197,65 @@ func (s *AdminServer) GetUser(ctx echo.Context) error {
 	}
 
 	return response.Success(ctx, adminvo.NewAdminUserDetailVO(user, profile))
+}
+
+// GetUserActivitySummary returns compact counters used by the admin user detail page.
+func (s *AdminServer) GetUserActivitySummary(ctx echo.Context) error {
+	id, err := strconv.Atoi(ctx.Param("id"))
+	if err != nil || id <= 0 {
+		return response.BadRequest(ctx, "invalid user id")
+	}
+
+	user, err := s.svc.User.GetUser(ctx.Request().Context(), id)
+	if err != nil {
+		return mapServiceError(ctx, err)
+	}
+	if sid := adminSchoolID(ctx); sid != nil && (user == nil || user.SchoolID == nil || *user.SchoolID != *sid) {
+		return response.Forbidden(ctx, "权限不足")
+	}
+
+	type activitySummary struct {
+		ProjectsTotal            int   `db:"projects_total" json:"projectsTotal"`
+		ProjectsPending          int   `db:"projects_pending" json:"projectsPending"`
+		ProjectsApproved         int   `db:"projects_approved" json:"projectsApproved"`
+		ProjectsCompleted        int   `db:"projects_completed" json:"projectsCompleted"`
+		ProjectsEnded            int   `db:"projects_ended" json:"projectsEnded"`
+		ApplicationsTotal        int   `db:"applications_total" json:"applicationsTotal"`
+		ApplicationsPending      int   `db:"applications_pending" json:"applicationsPending"`
+		ApplicationsPassed       int   `db:"applications_passed" json:"applicationsPassed"`
+		ApplicationsRejected     int   `db:"applications_rejected" json:"applicationsRejected"`
+		OliveBranchesTotal       int   `db:"olive_branches_total" json:"oliveBranchesTotal"`
+		OliveBranchesPending     int   `db:"olive_branches_pending" json:"oliveBranchesPending"`
+		OliveBranchesReadPending int   `db:"olive_branches_read_pending" json:"oliveBranchesReadPending"`
+		OrdersTotal              int   `db:"orders_total" json:"ordersTotal"`
+		PaidAmount               int64 `db:"paid_amount" json:"paidAmount"`
+	}
+	var summary activitySummary
+	err = s.repo.DB().GetContext(ctx.Request().Context(), &summary, `
+		SELECT
+		 (SELECT COUNT(*) FROM project WHERE creator_id = ?) projects_total,
+		 (SELECT COUNT(*) FROM project WHERE creator_id = ? AND status = 0) projects_pending,
+		 (SELECT COUNT(*) FROM project WHERE creator_id = ? AND status = 1) projects_approved,
+		 (SELECT COUNT(*) FROM project WHERE creator_id = ? AND status = 3) projects_completed,
+		 (SELECT COUNT(*) FROM project WHERE creator_id = ? AND status = 5) projects_ended,
+		 (SELECT COUNT(*) FROM project_application WHERE user_id = ?) applications_total,
+		 (SELECT COUNT(*) FROM project_application WHERE user_id = ? AND status = 0) applications_pending,
+		 (SELECT COUNT(*) FROM project_application WHERE user_id = ? AND status = 3) applications_passed,
+		 (SELECT COUNT(*) FROM project_application WHERE user_id = ? AND status = 2) applications_rejected,
+		 (SELECT COUNT(*) FROM olive_branch_record WHERE receiver_id = ?) olive_branches_total,
+		 (SELECT COUNT(*) FROM olive_branch_record WHERE receiver_id = ? AND status = 0) olive_branches_pending,
+		 (SELECT COUNT(*) FROM olive_branch_record WHERE receiver_id = ? AND status = 0 AND is_read = TRUE) olive_branches_read_pending,
+		 (SELECT COUNT(*) FROM `+"`order`"+` WHERE user_id = ?) orders_total,
+		 (SELECT CAST(COALESCE(ROUND(SUM(actual_paid) * 100), 0) AS SIGNED) FROM `+"`order`"+` WHERE user_id = ? AND status = 1) paid_amount
+	`, id, id, id, id, id, id, id, id, id, id, id, id, id, id)
+	if err != nil {
+		return response.InternalError(ctx, "获取用户活动统计失败")
+	}
+	if adminRole(ctx) == models.AdminRoleSchoolAdmin {
+		summary.OrdersTotal = 0
+		summary.PaidAmount = 0
+	}
+	return response.Success(ctx, summary)
 }
 
 func (s *AdminServer) GetUserCollaborationHistory(ctx echo.Context) error {
