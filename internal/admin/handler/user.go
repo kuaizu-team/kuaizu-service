@@ -240,7 +240,7 @@ func (s *AdminServer) GetUserActivitySummary(ctx echo.Context) error {
 		 (SELECT COUNT(*) FROM project WHERE creator_id = ? AND status = 5) projects_ended,
 		 (SELECT COUNT(*) FROM project_application WHERE user_id = ?) applications_total,
 		 (SELECT COUNT(*) FROM project_application WHERE user_id = ? AND status = 0) applications_pending,
-		 (SELECT COUNT(*) FROM project_application WHERE user_id = ? AND status = 1) applications_passed,
+		 (SELECT COUNT(*) FROM project_application WHERE user_id = ? AND status = 3) applications_passed,
 		 (SELECT COUNT(*) FROM project_application WHERE user_id = ? AND status = 2) applications_rejected,
 		 (SELECT COUNT(*) FROM olive_branch_record WHERE receiver_id = ?) olive_branches_total,
 		 (SELECT COUNT(*) FROM olive_branch_record WHERE receiver_id = ? AND status = 0) olive_branches_pending,

@@ -33,30 +33,8 @@ func (r *Repository) PurgeDeletedProjectsBefore(ctx context.Context, cutoff time
 	}
 	defer tx.Rollback()
 
-	projectTables := []string{
-		"email_promotion_recipient",
-		"project_view_log",
-		"project_like",
-		"project_favorite",
-		"project_share",
-		"project_tag_relation",
-		"project_milestones",
-		"project_members",
-		"project_event",
-		"project_recommendation",
-		"collaboration_score",
-		"sms_notice",
-	}
-	for _, table := range projectTables {
-		if err := execDeleteInTx(ctx, tx, "DELETE FROM "+table+" WHERE project_id IN (?)", ids); err != nil {
-			return 0, fmt.Errorf("delete %s for expired projects: %w", table, err)
-		}
-	}
-	if err := execDeleteInTx(ctx, tx, "DELETE FROM interaction_dashboard_view_state WHERE target_type = 'projects' AND target_id IN (?)", ids); err != nil {
-		return 0, fmt.Errorf("delete interaction_dashboard_view_state for expired projects: %w", err)
-	}
-	if err := execDeleteInTx(ctx, tx, "DELETE FROM olive_branch_record WHERE related_project_id IN (?)", ids); err != nil {
-		return 0, fmt.Errorf("delete olive_branch_record for expired projects: %w", err)
+	if err := deleteProjectRelations(ctx, tx, ids); err != nil {
+		return 0, err
 	}
 
 	result, err := execInTx(ctx, tx, `
