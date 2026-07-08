@@ -65,11 +65,15 @@ func TestInvitationFeedbackSubmitNotInterestedClearsText(t *testing.T) {
 	}
 }
 
-func TestInvitationFeedbackSetConversationCreatesPendingWhenMissing(t *testing.T) {
+func TestInvitationFeedbackSetConversationInProgressCreatesPendingInvitation(t *testing.T) {
 	repo := &fakeInvitationFeedbackRepo{}
-	svc := NewInvitationFeedbackService(&repository.Repository{InvitationFeedback: repo})
+	pendingRepo := &fakePendingInvitationRepo{}
+	svc := NewInvitationFeedbackService(&repository.Repository{
+		InvitationFeedback: repo,
+		PendingInvitation:  pendingRepo,
+	})
 
-	got, err := svc.SetConversationStatus(context.Background(), 1001, models.InvitationConversationStatusAccepted)
+	got, err := svc.SetConversationStatus(context.Background(), 1001, models.InvitationConversationStatusInProgress)
 	if err != nil {
 		t.Fatalf("SetConversationStatus returned error: %v", err)
 	}
@@ -79,8 +83,31 @@ func TestInvitationFeedbackSetConversationCreatesPendingWhenMissing(t *testing.T
 	if got.Status != models.InvitationFeedbackStatusPending {
 		t.Fatalf("status = %s, want pending", got.Status)
 	}
+	if got.ConversationStatus == nil || *got.ConversationStatus != models.InvitationConversationStatusInProgress {
+		t.Fatalf("conversation_status = %v", got.ConversationStatus)
+	}
+	if pendingRepo.userID != 1001 || pendingRepo.inviteType != models.PendingInvitationTypeSuperAdmin {
+		t.Fatalf("pending invitation = (%d, %s), want (1001, SUPER_ADMIN)", pendingRepo.userID, pendingRepo.inviteType)
+	}
+}
+
+func TestInvitationFeedbackSetConversationAcceptedDoesNotCreatePendingInvitation(t *testing.T) {
+	repo := &fakeInvitationFeedbackRepo{}
+	pendingRepo := &fakePendingInvitationRepo{}
+	svc := NewInvitationFeedbackService(&repository.Repository{
+		InvitationFeedback: repo,
+		PendingInvitation:  pendingRepo,
+	})
+
+	got, err := svc.SetConversationStatus(context.Background(), 1001, models.InvitationConversationStatusAccepted)
+	if err != nil {
+		t.Fatalf("SetConversationStatus returned error: %v", err)
+	}
 	if got.ConversationStatus == nil || *got.ConversationStatus != models.InvitationConversationStatusAccepted {
 		t.Fatalf("conversation_status = %v", got.ConversationStatus)
+	}
+	if pendingRepo.userID != 0 {
+		t.Fatalf("pending user_id = %d, want 0", pendingRepo.userID)
 	}
 }
 

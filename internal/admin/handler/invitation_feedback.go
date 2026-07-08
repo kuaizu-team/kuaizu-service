@@ -36,6 +36,10 @@ func (s *AdminServer) GetUserInvitationStatus(ctx echo.Context) error {
 }
 
 func (s *AdminServer) UpdateUserInvitationConversationStatus(ctx echo.Context) error {
+	if role := adminRole(ctx); role != models.AdminRoleSuperAdmin && role != models.AdminRoleSchoolSuperAdmin {
+		return response.Forbidden(ctx, "permission denied")
+	}
+
 	userID, err := parseIDParam(ctx, "id", "user")
 	if err != nil {
 		return err

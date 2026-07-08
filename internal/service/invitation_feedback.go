@@ -94,6 +94,11 @@ func (s *InvitationFeedbackService) SetConversationStatus(ctx context.Context, u
 		log.Printf("[InvitationFeedbackService.SetConversationStatus] repository error: %v", err)
 		return nil, ErrInternal("update invitation conversation status failed")
 	}
+	if normalized == models.InvitationConversationStatusInProgress {
+		if err := s.CreatePendingSuperAdminInvitation(ctx, userID); err != nil {
+			return nil, err
+		}
+	}
 	return f, nil
 }
 
