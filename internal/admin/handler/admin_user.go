@@ -3,6 +3,7 @@ package handler
 import (
 	"database/sql"
 	"errors"
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -149,6 +150,62 @@ func (s *AdminServer) UpdateAdminFinanceRemark(ctx echo.Context) error {
 	target, _ := s.repo.AdminUser.GetByID(ctx.Request().Context(), id)
 	vo := adminvo.NewAdminUserAccountVO(target)
 	s.enrichAdminFinance(ctx, vo, target, true)
+	return response.Success(ctx, vo)
+}
+
+type updateCommissionRateRequest struct {
+	CommissionRate float64 `json:"commissionRate"`
+}
+
+func (s *AdminServer) UpdateAdminCommissionRate(ctx echo.Context) error {
+	callerRole := adminRole(ctx)
+	callerID := currentAdminID(ctx)
+	callerSchoolID := adminSchoolID(ctx)
+
+	if callerRole == models.AdminRoleSchoolAdmin {
+		return response.Forbidden(ctx, adminCenterForbiddenMessage)
+	}
+	if callerRole == models.AdminRoleSchoolSuperAdmin && callerSchoolID == nil {
+		return response.Forbidden(ctx, schoolSuperAdminNoSchoolMessage)
+	}
+
+	id, err := strconv.Atoi(ctx.Param("id"))
+	if err != nil {
+		return response.BadRequest(ctx, "invalid admin id")
+	}
+
+	var req updateCommissionRateRequest
+	if err := ctx.Bind(&req); err != nil {
+		return response.BadRequest(ctx, "invalid request body")
+	}
+	if math.IsNaN(req.CommissionRate) || math.IsInf(req.CommissionRate, 0) || req.CommissionRate < 0 || req.CommissionRate > 100 {
+		return response.BadRequest(ctx, "commissionRate must be between 0 and 100")
+	}
+
+	target, err := s.repo.AdminUser.GetByID(ctx.Request().Context(), id)
+	if err != nil {
+		return response.InternalError(ctx, "鏌ヨ绠＄悊鍛樺け璐?")
+	}
+	if target == nil {
+		return response.NotFound(ctx, "绠＄悊鍛樹笉瀛樺湪")
+	}
+	if target.Role == models.AdminRoleSchoolAdmin {
+		return response.BadRequest(ctx, "校区管理员不参与分成结算")
+	}
+	if callerRole == models.AdminRoleSchoolSuperAdmin && target.ID != callerID {
+		return response.Forbidden(ctx, "鏉冮檺涓嶈冻")
+	}
+
+	if err := s.repo.AdminUser.UpdateCommissionRate(ctx.Request().Context(), id, req.CommissionRate); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return response.NotFound(ctx, "绠＄悊鍛樹笉瀛樺湪")
+		}
+		return response.InternalError(ctx, "更新分成比例失败")
+	}
+
+	updated, _ := s.repo.AdminUser.GetByID(ctx.Request().Context(), id)
+	vo := adminvo.NewAdminUserAccountVO(updated)
+	s.enrichAdminFinance(ctx, vo, updated, callerRole == models.AdminRoleSuperAdmin)
 	return response.Success(ctx, vo)
 }
 

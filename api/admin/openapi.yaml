@@ -98,6 +98,8 @@ paths:
     $ref: paths/admins_{id}.yaml
   /admins/{id}/finance-remark:
     $ref: paths/admins_{id}_finance-remark.yaml
+  /admins/{id}/commission-rate:
+    $ref: paths/admins_{id}_commission-rate.yaml
   /admins/{id}/settle:
     $ref: paths/admins_{id}_settle.yaml
   /feedbacks:

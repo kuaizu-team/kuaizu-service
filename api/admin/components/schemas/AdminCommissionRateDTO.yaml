@@ -1,0 +1,10 @@
+type: object
+required:
+  - commissionRate
+properties:
+  commissionRate:
+    type: number
+    format: double
+    minimum: 0
+    maximum: 100
+    description: Commission rate percentage, e.g. 30.5 means 30.5%

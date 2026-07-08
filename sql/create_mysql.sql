@@ -38,6 +38,7 @@ CREATE TABLE `admin_user` (
   `role` tinyint(4) NOT NULL DEFAULT '3' COMMENT 'admin role:1-super,2-school super,3-school admin',
   `school_id` int(11) DEFAULT NULL COMMENT 'bound school id',
   `finance_remark` varchar(500) DEFAULT NULL COMMENT 'finance remark',
+  `commission_rate` decimal(5,2) NOT NULL DEFAULT '0.00' COMMENT 'commission rate percent',
   `status` tinyint(4) DEFAULT '1' COMMENT '状态:1-启用,0-禁用',
   `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',

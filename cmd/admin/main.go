@@ -154,6 +154,7 @@ func main() {
 	adminGroup.POST("/admins", server.CreateAdmin)
 	adminGroup.GET("/admins/:id", server.GetAdmin)
 	adminGroup.PATCH("/admins/:id/finance-remark", server.UpdateAdminFinanceRemark)
+	adminGroup.PUT("/admins/:id/commission-rate", server.UpdateAdminCommissionRate)
 	adminGroup.POST("/admins/:id/settle", server.SettleAdminOrders)
 	adminGroup.PUT("/admins/:id", server.UpdateAdmin)
 	adminGroup.PATCH("/admins/:id/status", server.UpdateAdminStatus)

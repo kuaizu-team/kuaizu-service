@@ -218,6 +218,7 @@ type AdminUserRepo interface {
 	Update(ctx context.Context, admin *models.AdminUser) error
 	UpdateStatus(ctx context.Context, id int, status int) error
 	UpdateFinanceRemark(ctx context.Context, id int, remark *string) error
+	UpdateCommissionRate(ctx context.Context, id int, rate float64) error
 	Delete(ctx context.Context, id int) error
 }
 

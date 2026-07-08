@@ -496,6 +496,7 @@ type AdminUserAccountVO struct {
 	PendingSettlementAmount int64     `json:"pendingSettlementAmount"`
 	PendingRefundOrderCount int64     `json:"pendingRefundOrderCount"`
 	FinanceRemark           *string   `json:"financeRemark"`
+	CommissionRate          float64   `json:"commissionRate"`
 	CreatedAt               time.Time `json:"createdAt"`
 	UpdatedAt               time.Time `json:"updatedAt"`
 }
@@ -506,16 +507,17 @@ func NewAdminUserAccountVO(a *models.AdminUser) *AdminUserAccountVO {
 		return nil
 	}
 	return &AdminUserAccountVO{
-		ID:            a.ID,
-		Username:      a.Username,
-		Nickname:      a.Nickname,
-		Role:          a.Role,
-		SchoolID:      a.SchoolID,
-		SchoolName:    a.SchoolName,
-		Status:        a.Status,
-		FinanceRemark: a.FinanceRemark,
-		CreatedAt:     a.CreatedAt,
-		UpdatedAt:     a.UpdatedAt,
+		ID:             a.ID,
+		Username:       a.Username,
+		Nickname:       a.Nickname,
+		Role:           a.Role,
+		SchoolID:       a.SchoolID,
+		SchoolName:     a.SchoolName,
+		Status:         a.Status,
+		FinanceRemark:  a.FinanceRemark,
+		CommissionRate: a.CommissionRate,
+		CreatedAt:      a.CreatedAt,
+		UpdatedAt:      a.UpdatedAt,
 	}
 }
 

@@ -23,7 +23,7 @@ func NewAdminUserRepository(db *sqlx.DB) *AdminUserRepository {
 // adminUserCols is the common SELECT column list (requires LEFT JOIN school s ON au.school_id = s.id)
 const adminUserCols = `
 	au.id, au.username, au.password_hash, au.nickname,
-	au.role, au.school_id, au.status, au.finance_remark, au.created_at, au.updated_at,
+	au.role, au.school_id, au.status, au.finance_remark, au.commission_rate, au.created_at, au.updated_at,
 	s.school_name`
 
 const adminUserFrom = `
@@ -188,6 +188,19 @@ func (r *AdminUserRepository) UpdateFinanceRemark(ctx context.Context, id int, r
 		`UPDATE admin_user SET finance_remark = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, remark, id)
 	if err != nil {
 		return fmt.Errorf("update admin finance remark: %w", err)
+	}
+	if rows, _ := result.RowsAffected(); rows == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
+// UpdateCommissionRate updates only the commission rate percentage.
+func (r *AdminUserRepository) UpdateCommissionRate(ctx context.Context, id int, rate float64) error {
+	result, err := r.db.ExecContext(ctx,
+		`UPDATE admin_user SET commission_rate = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, rate, id)
+	if err != nil {
+		return fmt.Errorf("update admin commission rate: %w", err)
 	}
 	if rows, _ := result.RowsAffected(); rows == 0 {
 		return sql.ErrNoRows
