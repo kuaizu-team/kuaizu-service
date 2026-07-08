@@ -66,7 +66,13 @@ func TestInvitationFeedbackSubmitNotInterestedClearsText(t *testing.T) {
 }
 
 func TestInvitationFeedbackSetConversationInProgressCreatesPendingInvitation(t *testing.T) {
-	repo := &fakeInvitationFeedbackRepo{}
+	repo := &fakeInvitationFeedbackRepo{
+		existing: &models.InvitationFeedback{
+			UserID:        1001,
+			Status:        models.InvitationFeedbackStatusInterested,
+			IntentionText: stringPtr("old feedback"),
+		},
+	}
 	pendingRepo := &fakePendingInvitationRepo{}
 	svc := NewInvitationFeedbackService(&repository.Repository{
 		InvitationFeedback: repo,
@@ -83,11 +89,21 @@ func TestInvitationFeedbackSetConversationInProgressCreatesPendingInvitation(t *
 	if got.Status != models.InvitationFeedbackStatusPending {
 		t.Fatalf("status = %s, want pending", got.Status)
 	}
+	if got.IntentionText != nil {
+		t.Fatalf("intention_text = %v, want nil", got.IntentionText)
+	}
 	if got.ConversationStatus == nil || *got.ConversationStatus != models.InvitationConversationStatusInProgress {
 		t.Fatalf("conversation_status = %v", got.ConversationStatus)
 	}
 	if pendingRepo.userID != 1001 || pendingRepo.inviteType != models.PendingInvitationTypeSuperAdmin {
 		t.Fatalf("pending invitation = (%d, %s), want (1001, SUPER_ADMIN)", pendingRepo.userID, pendingRepo.inviteType)
+	}
+	pending, err := svc.GetPendingInvitation(context.Background(), 1001)
+	if err != nil {
+		t.Fatalf("GetPendingInvitation returned error: %v", err)
+	}
+	if pending == nil || pending.InviteType != models.PendingInvitationTypeSuperAdmin {
+		t.Fatalf("pending invitation after reset = %#v", pending)
 	}
 }
 
@@ -202,12 +218,29 @@ func (f *fakeInvitationFeedbackRepo) UpsertConversationStatus(_ context.Context,
 	f.conversationUserID = userID
 	f.conversationStatus = conversationStatus
 	now := time.Now()
-	return &models.InvitationFeedback{
+	status := models.InvitationFeedbackStatusPending
+	var intentionText *string
+	if f.existing != nil && f.existing.UserID == userID {
+		status = f.existing.Status
+		intentionText = f.existing.IntentionText
+	}
+	if conversationStatus == models.InvitationConversationStatusInProgress {
+		status = models.InvitationFeedbackStatusPending
+		intentionText = nil
+	}
+	next := &models.InvitationFeedback{
 		UserID:             userID,
-		Status:             models.InvitationFeedbackStatusPending,
+		Status:             status,
+		IntentionText:      intentionText,
 		ConversationStatus: &conversationStatus,
 		UpdatedAt:          &now,
-	}, nil
+	}
+	f.existing = next
+	return next, nil
+}
+
+func stringPtr(v string) *string {
+	return &v
 }
 
 type fakePendingInvitationRepo struct {
