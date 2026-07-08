@@ -131,9 +131,35 @@ func TestInvitationFeedbackCreateAndGetPendingInvitation(t *testing.T) {
 	}
 }
 
+func TestInvitationFeedbackGetPendingClearsWhenUserResponded(t *testing.T) {
+	repo := &fakeInvitationFeedbackRepo{
+		existing: &models.InvitationFeedback{
+			UserID: 1001,
+			Status: models.InvitationFeedbackStatusInterested,
+		},
+	}
+	pendingRepo := &fakePendingInvitationRepo{}
+	svc := NewInvitationFeedbackService(&repository.Repository{
+		InvitationFeedback: repo,
+		PendingInvitation:  pendingRepo,
+	})
+
+	got, err := svc.GetPendingInvitation(context.Background(), 1001)
+	if err != nil {
+		t.Fatalf("GetPendingInvitation returned error: %v", err)
+	}
+	if got != nil {
+		t.Fatalf("pending invitation = %#v, want nil", got)
+	}
+	if pendingRepo.clearUserID != 1001 {
+		t.Fatalf("clear pending user_id = %d, want 1001", pendingRepo.clearUserID)
+	}
+}
+
 type fakeInvitationFeedbackRepo struct {
 	repository.InvitationFeedbackRepo
 
+	existing           *models.InvitationFeedback
 	upsertUserID       int
 	upsertStatus       string
 	upsertText         *string
@@ -143,6 +169,9 @@ type fakeInvitationFeedbackRepo struct {
 }
 
 func (f *fakeInvitationFeedbackRepo) GetByUserID(_ context.Context, userID int) (*models.InvitationFeedback, error) {
+	if f.existing != nil && f.existing.UserID == userID {
+		return f.existing, nil
+	}
 	return nil, nil
 }
 

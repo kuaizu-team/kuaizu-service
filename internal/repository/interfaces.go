@@ -257,6 +257,12 @@ type PendingInvitationRepo interface {
 	ClearByUserID(ctx context.Context, userID int) error
 }
 
+type StatusNotificationRepo interface {
+	GetPending(ctx context.Context, userID int) (*models.StatusNotification, error)
+	MarkDisplayed(ctx context.Context, id int64, userID int) error
+	MarkAllPendingDisplayed(ctx context.Context, userID int) error
+}
+
 // SubscribeConfigRepo defines the interface for subscribe config repository operations.
 type SubscribeConfigRepo interface {
 	GetByUserIDAndBizKey(ctx context.Context, userID int, bizKey string) (*models.SubscribeConfig, error)
@@ -315,6 +321,7 @@ var _ FeedbackRepo = (*FeedbackRepository)(nil)
 var _ InvitationFeedbackRepo = (*InvitationFeedbackRepository)(nil)
 var _ InvitationRecordRepo = (*InvitationRecordRepository)(nil)
 var _ PendingInvitationRepo = (*PendingInvitationRepository)(nil)
+var _ StatusNotificationRepo = (*StatusNotificationRepository)(nil)
 var _ SubscribeConfigRepo = (*SubscribeConfigRepository)(nil)
 var _ MsgTemplateConfigRepo = (*MsgTemplateConfigRepository)(nil)
 var _ ProjectViewLogRepo = (*ProjectViewLogRepository)(nil)

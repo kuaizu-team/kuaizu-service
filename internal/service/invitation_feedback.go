@@ -135,6 +135,20 @@ func (s *InvitationFeedbackService) GetPendingInvitation(ctx context.Context, us
 	if s.repo.PendingInvitation == nil {
 		return nil, ErrInternal("pending invitation repository is nil")
 	}
+	if s.repo.InvitationFeedback != nil {
+		feedback, err := s.repo.InvitationFeedback.GetByUserID(ctx, userID)
+		if err != nil {
+			log.Printf("[InvitationFeedbackService.GetPendingInvitation] feedback repository error: %v", err)
+			return nil, ErrInternal("get invitation feedback failed")
+		}
+		if feedback != nil && feedback.Status != models.InvitationFeedbackStatusPending {
+			if err := s.repo.PendingInvitation.ClearByUserID(ctx, userID); err != nil {
+				log.Printf("[InvitationFeedbackService.GetPendingInvitation] clear responded pending invitation error: %v", err)
+				return nil, ErrInternal("clear pending invitation failed")
+			}
+			return nil, nil
+		}
+	}
 	item, err := s.repo.PendingInvitation.GetActiveByUserID(ctx, userID, time.Now())
 	if err != nil {
 		log.Printf("[InvitationFeedbackService.GetPendingInvitation] repository error: %v", err)
