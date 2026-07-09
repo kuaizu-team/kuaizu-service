@@ -83,6 +83,8 @@ type AdminUserVO struct {
 	PendingCount             *int       `json:"pendingCount"` // 待审核投递数+待处理橄榄枝数
 	UserStatus               int        `json:"userStatus"`   // 0=正常, 1=封禁, 2=已毕业
 	BanReason                *string    `json:"banReason"`    // 封禁原因
+	CompetitionGroupStatus   *string    `json:"competitionGroupStatus"`
+	CompetitionGroupNote     *string    `json:"competitionGroupNote"`
 	CollaborationScore       *float64   `json:"collaborationScore"`
 	CollaborationLevel       *string    `json:"collaborationLevel"`
 }
@@ -234,29 +236,31 @@ func NewAdminUserVO(u *models.User, talentProfileStatus *int) *AdminUserVO {
 
 	pendingCount := u.PendingCount // 0 when not computed (IncludePendingCount=false)
 	vo := AdminUserVO{
-		ID:                  u.ID,
-		OpenID:              u.OpenID,
-		Nickname:            u.Nickname,
-		Phone:               u.Phone,
-		Email:               u.Email,
-		SchoolID:            u.SchoolID,
-		MajorID:             u.MajorID,
-		Grade:               u.Grade,
-		LastActiveDate:      u.LastActiveDate,
-		AuthImgUrl:          ossFullURLPtr(u.AuthImgUrl),
-		AvatarUrl:           ossFullURLPtr(u.AvatarUrl),
-		Wechat:              u.WechatID,
-		EmailOptOut:         u.EmailOptOut,
-		CreatedAt:           u.CreatedAt,
-		SchoolName:          u.SchoolName,
-		SchoolCode:          u.SchoolCode,
-		MajorName:           u.MajorName,
-		ClassID:             u.ClassID,
-		TalentProfileStatus: talentProfileStatus,
-		PendingCount:        &pendingCount,
-		UserStatus:          u.UserStatus,
-		BanReason:           u.BanReason,
-		CollaborationScore:  u.CollaborationScore,
+		ID:                     u.ID,
+		OpenID:                 u.OpenID,
+		Nickname:               u.Nickname,
+		Phone:                  u.Phone,
+		Email:                  u.Email,
+		SchoolID:               u.SchoolID,
+		MajorID:                u.MajorID,
+		Grade:                  u.Grade,
+		LastActiveDate:         u.LastActiveDate,
+		AuthImgUrl:             ossFullURLPtr(u.AuthImgUrl),
+		AvatarUrl:              ossFullURLPtr(u.AvatarUrl),
+		Wechat:                 u.WechatID,
+		EmailOptOut:            u.EmailOptOut,
+		CreatedAt:              u.CreatedAt,
+		SchoolName:             u.SchoolName,
+		SchoolCode:             u.SchoolCode,
+		MajorName:              u.MajorName,
+		ClassID:                u.ClassID,
+		TalentProfileStatus:    talentProfileStatus,
+		PendingCount:           &pendingCount,
+		UserStatus:             u.UserStatus,
+		BanReason:              u.BanReason,
+		CompetitionGroupStatus: u.CompetitionGroupStatus,
+		CompetitionGroupNote:   u.CompetitionGroupNote,
+		CollaborationScore:     u.CollaborationScore,
 	}
 	if u.CollaborationScore != nil {
 		level := models.CollaborationLevel(*u.CollaborationScore)

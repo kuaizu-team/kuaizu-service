@@ -98,6 +98,7 @@ func main() {
 	adminGroup.GET("/users/:id/activity-summary", server.GetUserActivitySummary)
 	adminGroup.PATCH("/users/:id/auth", server.ReviewUserAuth)
 	adminGroup.PUT("/users/:id/status", server.UpdateUserStatus)
+	adminGroup.PUT("/users/:id/competition-group", server.UpdateUserCompetitionGroup)
 	adminGroup.GET("/users/:id/applications", server.ListUserApplications)
 	adminGroup.GET("/users/:id/olive-branches", server.ListUserOliveBranches)
 

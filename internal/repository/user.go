@@ -29,12 +29,13 @@ func (r *UserRepository) GetByID(ctx context.Context, id int) (*models.User, err
 			u.free_branch_used_today, u.last_active_date,
 			u.auth_status, u.auth_img_url, u.avatar_url, u.cover_image,
 			u.wechat_id, u.sent_olive_viewed_at, u.applications_last_viewed_at, u.last_viewed_my_projects_at,
-			u.user_status, u.ban_reason, u.collaboration_score, u.created_at,
+			u.user_status, u.ban_reason, ucg.status AS competition_group_status, ucg.note AS competition_group_note, u.collaboration_score, u.created_at,
 			s.school_name, s.school_code,
 			m.major_name, m.class_id
 		FROM ` + "`user`" + ` u
 		LEFT JOIN school s ON u.school_id = s.id
 		LEFT JOIN major m ON u.major_id = m.id
+        LEFT JOIN user_competition_group ucg ON ucg.user_id = u.id
 		WHERE u.id = ?
 	`
 
@@ -62,6 +63,7 @@ func (r *UserRepository) GetByPhone(ctx context.Context, phone string) (*models.
 		FROM ` + "`user`" + ` u
 		LEFT JOIN school s ON u.school_id = s.id
 		LEFT JOIN major m ON u.major_id = m.id
+        LEFT JOIN user_competition_group ucg ON ucg.user_id = u.id
 		LEFT JOIN talent_profile tp ON u.id = tp.user_id
 		WHERE u.phone = ?
 		LIMIT 1
@@ -87,12 +89,13 @@ func (r *UserRepository) GetByIDForUpdateTx(ctx context.Context, tx *sqlx.Tx, id
 			u.free_branch_used_today, u.last_active_date,
 			u.auth_status, u.auth_img_url, u.avatar_url, u.cover_image,
 			u.wechat_id, u.sent_olive_viewed_at, u.applications_last_viewed_at, u.last_viewed_my_projects_at,
-			u.user_status, u.ban_reason, u.collaboration_score, u.created_at,
+			u.user_status, u.ban_reason, ucg.status AS competition_group_status, ucg.note AS competition_group_note, u.collaboration_score, u.created_at,
 			s.school_name, s.school_code,
 			m.major_name, m.class_id
 		FROM ` + "`user`" + ` u
 		LEFT JOIN school s ON u.school_id = s.id
 		LEFT JOIN major m ON u.major_id = m.id
+        LEFT JOIN user_competition_group ucg ON ucg.user_id = u.id
 		WHERE u.id = ?
 		FOR UPDATE
 	`
@@ -117,12 +120,13 @@ func (r *UserRepository) GetByOpenID(ctx context.Context, openid string) (*model
 			u.free_branch_used_today, u.last_active_date,
 			u.auth_status, u.auth_img_url, u.avatar_url, u.cover_image,
 			u.wechat_id, u.sent_olive_viewed_at, u.applications_last_viewed_at, u.last_viewed_my_projects_at,
-			u.user_status, u.ban_reason, u.collaboration_score, u.created_at,
+			u.user_status, u.ban_reason, ucg.status AS competition_group_status, ucg.note AS competition_group_note, u.collaboration_score, u.created_at,
 			s.school_name, s.school_code,
 			m.major_name, m.class_id
 		FROM ` + "`user`" + ` u
 		LEFT JOIN school s ON u.school_id = s.id
 		LEFT JOIN major m ON u.major_id = m.id
+        LEFT JOIN user_competition_group ucg ON ucg.user_id = u.id
 		WHERE u.openid = ?
 	`
 
@@ -471,12 +475,13 @@ func (r *UserRepository) ListUsers(ctx context.Context, params UserListParams) (
 			u.school_id, u.major_id, u.grade, u.olive_branch_count,
 			u.free_branch_used_today, u.last_active_date,
 			u.auth_status, u.auth_img_url, u.avatar_url, u.cover_image,
-			u.wechat_id, u.user_status, u.ban_reason, u.collaboration_score, u.created_at,
+			u.wechat_id, u.user_status, u.ban_reason, ucg.status AS competition_group_status, ucg.note AS competition_group_note, u.collaboration_score, u.created_at,
 			s.school_name, s.school_code,
 			m.major_name, m.class_id%s
 		FROM `+"`user`"+` u
 		LEFT JOIN school s ON u.school_id = s.id
 		LEFT JOIN major m ON u.major_id = m.id
+        LEFT JOIN user_competition_group ucg ON ucg.user_id = u.id
 		WHERE %s
 		ORDER BY %s
 		LIMIT ? OFFSET ?
@@ -608,6 +613,26 @@ func (r *UserRepository) UpdateCoverImage(ctx context.Context, userID int, cover
 // This is designed to be called on every user login / app launch.
 func (r *UserRepository) TouchLastActiveDate(ctx context.Context, userID int) error {
 	return r.ResetDailyFreeBranchQuotaIfNeeded(ctx, userID)
+}
+
+// UpdateCompetitionGroup stores the admin-managed competition group status.
+func (r *UserRepository) UpdateCompetitionGroup(ctx context.Context, userID int, status *string, note *string, adminID int) error {
+	if status == nil {
+		note = nil
+	}
+	query := `
+		INSERT INTO user_competition_group (user_id, status, note, updated_by_admin_id, updated_at)
+		VALUES (?, ?, ?, ?, NOW())
+		ON DUPLICATE KEY UPDATE
+			status = VALUES(status),
+			note = VALUES(note),
+			updated_by_admin_id = VALUES(updated_by_admin_id),
+			updated_at = NOW()
+	`
+	if _, err := r.db.ExecContext(ctx, query, userID, status, note, adminID); err != nil {
+		return fmt.Errorf("update user competition group: %w", err)
+	}
+	return nil
 }
 
 // UpdateUserStatus updates user_status and ban_reason for the given user.

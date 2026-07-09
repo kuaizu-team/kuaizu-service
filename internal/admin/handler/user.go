@@ -497,6 +497,49 @@ func (s *AdminServer) UpdateUserStatus(ctx echo.Context) error {
 	return response.SuccessMessage(ctx, "操作成功")
 }
 
+type updateCompetitionGroupRequest struct {
+	Status *string `json:"status"`
+	Note   *string `json:"note"`
+}
+
+// UpdateUserCompetitionGroup handles PUT /admin/users/:id/competition-group.
+func (s *AdminServer) UpdateUserCompetitionGroup(ctx echo.Context) error {
+	id, err := strconv.Atoi(ctx.Param("id"))
+	if err != nil {
+		return response.BadRequest(ctx, "invalid user id")
+	}
+
+	var req updateCompetitionGroupRequest
+	if err := ctx.Bind(&req); err != nil {
+		return response.BadRequest(ctx, "invalid request body")
+	}
+	if req.Status != nil && *req.Status != "entered" && *req.Status != "rejected" {
+		return response.BadRequest(ctx, "invalid status, must be entered, rejected or null")
+	}
+	if req.Status == nil {
+		req.Note = nil
+	}
+
+	user, err := s.svc.User.GetUser(ctx.Request().Context(), id)
+	if err != nil {
+		return mapServiceError(ctx, err)
+	}
+	if sid := adminSchoolID(ctx); sid != nil {
+		if user == nil || user.SchoolID == nil || *user.SchoolID != *sid {
+			return response.Forbidden(ctx, "权限不足")
+		}
+	}
+
+	if err := s.repo.User.UpdateCompetitionGroup(ctx.Request().Context(), id, req.Status, req.Note, currentAdminID(ctx)); err != nil {
+		if err == sql.ErrNoRows {
+			return response.NotFound(ctx, "用户不存在")
+		}
+		return response.InternalError(ctx, "操作失败")
+	}
+
+	return response.SuccessMessage(ctx, "操作成功")
+}
+
 type reviewAuthRequest struct {
 	AuthStatus int `json:"authStatus"`
 }

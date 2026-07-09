@@ -147,6 +147,7 @@ type UserRepo interface {
 	UpdateApplicationsLastViewedAt(ctx context.Context, userID int) error
 	UpdateLastViewedMyProjectsAt(ctx context.Context, userID int) error
 	UpdateUserStatus(ctx context.Context, userID int, status int, banReason *string) error
+	UpdateCompetitionGroup(ctx context.Context, userID int, status *string, note *string, adminID int) error
 	TouchLastActiveDate(ctx context.Context, userID int) error
 }
 

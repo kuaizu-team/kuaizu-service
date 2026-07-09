@@ -78,6 +78,8 @@ paths:
     $ref: paths/users_{id}_orders.yaml
   /users/{id}/auth:
     $ref: paths/users_{id}_auth.yaml
+  /users/{id}/competition-group:
+    $ref: paths/users_{id}_competition-group.yaml
   /sms/send:
     $ref: paths/sms_send.yaml
   /sms/send-count:
