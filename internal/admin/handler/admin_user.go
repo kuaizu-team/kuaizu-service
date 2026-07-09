@@ -159,14 +159,9 @@ type updateCommissionRateRequest struct {
 
 func (s *AdminServer) UpdateAdminCommissionRate(ctx echo.Context) error {
 	callerRole := adminRole(ctx)
-	callerID := currentAdminID(ctx)
-	callerSchoolID := adminSchoolID(ctx)
 
-	if callerRole == models.AdminRoleSchoolAdmin {
-		return response.Forbidden(ctx, adminCenterForbiddenMessage)
-	}
-	if callerRole == models.AdminRoleSchoolSuperAdmin && callerSchoolID == nil {
-		return response.Forbidden(ctx, schoolSuperAdminNoSchoolMessage)
+	if callerRole != models.AdminRoleSuperAdmin {
+		return response.Forbidden(ctx, "权限不足")
 	}
 
 	id, err := strconv.Atoi(ctx.Param("id"))
@@ -191,9 +186,6 @@ func (s *AdminServer) UpdateAdminCommissionRate(ctx echo.Context) error {
 	}
 	if target.Role == models.AdminRoleSchoolAdmin {
 		return response.BadRequest(ctx, "校区管理员不参与分成结算")
-	}
-	if callerRole == models.AdminRoleSchoolSuperAdmin && target.ID != callerID {
-		return response.Forbidden(ctx, "鏉冮檺涓嶈冻")
 	}
 
 	if err := s.repo.AdminUser.UpdateCommissionRate(ctx.Request().Context(), id, req.CommissionRate); err != nil {
