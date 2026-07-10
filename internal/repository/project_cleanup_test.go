@@ -82,3 +82,18 @@ func TestPurgeDeletedProjectsBeforeHardDeletesOnlyExpiredDeletingProjects(t *tes
 		t.Fatalf("delete args = %#v", deleteArgs)
 	}
 }
+
+func TestProjectCleanupUsesActualSMSNoticeTable(t *testing.T) {
+	found := false
+	for _, table := range projectRelationTables {
+		if table == "sms_notice" {
+			t.Fatal("project cleanup references obsolete table sms_notice")
+		}
+		if table == "olive_branch_sms_notice" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("project cleanup must clear olive_branch_sms_notice")
+	}
+}
