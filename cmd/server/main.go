@@ -75,6 +75,7 @@ func main() {
 
 		// Public endpoints that don't require authentication
 		publicEndpoints := []string{
+			"/api/v2/auth/precheck/wechat",              // WeChat login precheck
 			"/api/v2/auth/login/wechat",                 // WeChat login
 			"/api/v2/auth/register/phone",               // WeChat phone registration
 			"/api/v2/dictionaries/schools",              // School list
