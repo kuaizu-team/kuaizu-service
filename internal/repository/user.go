@@ -63,7 +63,6 @@ func (r *UserRepository) GetByPhone(ctx context.Context, phone string) (*models.
 		FROM ` + "`user`" + ` u
 		LEFT JOIN school s ON u.school_id = s.id
 		LEFT JOIN major m ON u.major_id = m.id
-        LEFT JOIN user_competition_group ucg ON ucg.user_id = u.id
 		LEFT JOIN talent_profile tp ON u.id = tp.user_id
 		WHERE u.phone = ?
 		LIMIT 1
