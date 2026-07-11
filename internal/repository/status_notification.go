@@ -78,6 +78,9 @@ func (r *StatusNotificationRepository) GetPending(ctx context.Context, userID in
 		}
 		return nil, fmt.Errorf("get pending status notification: %w", err)
 	}
+	if _, err := r.db.ExecContext(ctx, `UPDATE status_notification SET displayed_at=CURRENT_TIMESTAMP WHERE user_id=? AND displayed_at IS NULL AND id<>?`, userID, notification.ID); err != nil {
+		return nil, fmt.Errorf("mark lower priority status notifications displayed: %w", err)
+	}
 	return &notification, nil
 }
 
@@ -89,6 +92,13 @@ func (r *StatusNotificationRepository) MarkDisplayed(ctx context.Context, id int
 	rows, _ := result.RowsAffected()
 	if rows == 0 {
 		return sql.ErrNoRows
+	}
+	return nil
+}
+
+func (r *StatusNotificationRepository) MarkAllPendingDisplayed(ctx context.Context, userID int) error {
+	if _, err := r.db.ExecContext(ctx, `UPDATE status_notification SET displayed_at=CURRENT_TIMESTAMP WHERE user_id=? AND displayed_at IS NULL`, userID); err != nil {
+		return fmt.Errorf("mark all pending status notifications displayed: %w", err)
 	}
 	return nil
 }

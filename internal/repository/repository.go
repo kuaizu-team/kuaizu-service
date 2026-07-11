@@ -32,7 +32,7 @@ type Repository struct {
 	ProjectViewLog     ProjectViewLogRepo
 	TalentViewLog      TalentViewLogRepo
 	Interaction        *InteractionRepository
-	StatusNotification *StatusNotificationRepository
+	StatusNotification StatusNotificationRepo
 }
 
 // DB returns the underlying database connection for transaction support

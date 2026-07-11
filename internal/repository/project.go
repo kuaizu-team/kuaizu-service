@@ -36,9 +36,9 @@ type ListParams struct {
 	IsCrossSchool *int
 	// SortBy controls the primary sort key.
 	// Public values: "school_priority" (geo-priority), "updated_at"
-	// Admin values:  "pendingCount" (combined admin pending count), "createdAt"
+	// Admin values:  "pendingCount" (combined admin pending count), "updatedAt"
 	SortBy *string
-	// Order controls asc/desc direction for "pendingCount" and "createdAt" sortBy.
+	// Order controls asc/desc direction for "pendingCount" and "updatedAt" sortBy.
 	// Values: "asc" | "desc" (case-insensitive). Defaults to DESC.
 	Order        *string
 	UserSchoolID *int // used when SortBy == "school_priority"
@@ -138,12 +138,12 @@ func (r *ProjectRepository) List(ctx context.Context, params ListParams) ([]mode
 			dir = "ASC"
 		}
 		orderClause = fmt.Sprintf("pending_count %s, p.created_at DESC", dir)
-	} else if params.SortBy != nil && *params.SortBy == "createdAt" {
+	} else if params.SortBy != nil && *params.SortBy == "updatedAt" {
 		dir := "DESC"
 		if params.Order != nil && strings.EqualFold(*params.Order, "asc") {
 			dir = "ASC"
 		}
-		orderClause = fmt.Sprintf("p.created_at %s, p.id %s", dir, dir)
+		orderClause = fmt.Sprintf("p.updated_at %s, p.id %s", dir, dir)
 	} else if params.SortBy != nil && *params.SortBy == "id" {
 		dir := "DESC"
 		if params.Order != nil && strings.EqualFold(*params.Order, "asc") {

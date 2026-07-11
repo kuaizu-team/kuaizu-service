@@ -22,7 +22,7 @@ type OrderRepo interface {
 	AdminRejectRefund(ctx context.Context, id int, reason string, adminID int) (bool, error)
 	WithdrawRefund(ctx context.Context, id int) (bool, error)
 	RevenueStats(ctx context.Context, schoolID *int) (*RevenueStats, error)
-	SettleSchoolPendingOrders(ctx context.Context, schoolID int, adminID int, remark *string) (*SettlementResult, error)
+	SettleSchoolPendingOrders(ctx context.Context, schoolID int, adminID int, commissionRate float64, remark *string) (*SettlementResult, error)
 	// Admin-only queries
 	AdminList(ctx context.Context, params AdminOrderListParams) ([]*models.Order, int64, error)
 	AdminGetByID(ctx context.Context, id int) (*models.Order, error)
@@ -147,6 +147,7 @@ type UserRepo interface {
 	UpdateApplicationsLastViewedAt(ctx context.Context, userID int) error
 	UpdateLastViewedMyProjectsAt(ctx context.Context, userID int) error
 	UpdateUserStatus(ctx context.Context, userID int, status int, banReason *string) error
+	UpdateCompetitionGroup(ctx context.Context, userID int, status *string, note *string, adminID int) error
 	TouchLastActiveDate(ctx context.Context, userID int) error
 }
 
@@ -218,6 +219,7 @@ type AdminUserRepo interface {
 	Update(ctx context.Context, admin *models.AdminUser) error
 	UpdateStatus(ctx context.Context, id int, status int) error
 	UpdateFinanceRemark(ctx context.Context, id int, remark *string) error
+	UpdateCommissionRate(ctx context.Context, id int, rate float64) error
 	Delete(ctx context.Context, id int) error
 }
 
@@ -254,6 +256,12 @@ type PendingInvitationRepo interface {
 	Upsert(ctx context.Context, userID int, inviteType string, expireAt time.Time) error
 	GetActiveByUserID(ctx context.Context, userID int, now time.Time) (*models.PendingInvitation, error)
 	ClearByUserID(ctx context.Context, userID int) error
+}
+
+type StatusNotificationRepo interface {
+	GetPending(ctx context.Context, userID int) (*models.StatusNotification, error)
+	MarkDisplayed(ctx context.Context, id int64, userID int) error
+	MarkAllPendingDisplayed(ctx context.Context, userID int) error
 }
 
 // SubscribeConfigRepo defines the interface for subscribe config repository operations.
@@ -314,6 +322,7 @@ var _ FeedbackRepo = (*FeedbackRepository)(nil)
 var _ InvitationFeedbackRepo = (*InvitationFeedbackRepository)(nil)
 var _ InvitationRecordRepo = (*InvitationRecordRepository)(nil)
 var _ PendingInvitationRepo = (*PendingInvitationRepository)(nil)
+var _ StatusNotificationRepo = (*StatusNotificationRepository)(nil)
 var _ SubscribeConfigRepo = (*SubscribeConfigRepository)(nil)
 var _ MsgTemplateConfigRepo = (*MsgTemplateConfigRepository)(nil)
 var _ ProjectViewLogRepo = (*ProjectViewLogRepository)(nil)

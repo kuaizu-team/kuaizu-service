@@ -98,6 +98,7 @@ func main() {
 	adminGroup.GET("/users/:id/activity-summary", server.GetUserActivitySummary)
 	adminGroup.PATCH("/users/:id/auth", server.ReviewUserAuth)
 	adminGroup.PUT("/users/:id/status", server.UpdateUserStatus)
+	adminGroup.PUT("/users/:id/competition-group", server.UpdateUserCompetitionGroup)
 	adminGroup.GET("/users/:id/applications", server.ListUserApplications)
 	adminGroup.GET("/users/:id/olive-branches", server.ListUserOliveBranches)
 
@@ -154,6 +155,7 @@ func main() {
 	adminGroup.POST("/admins", server.CreateAdmin)
 	adminGroup.GET("/admins/:id", server.GetAdmin)
 	adminGroup.PATCH("/admins/:id/finance-remark", server.UpdateAdminFinanceRemark)
+	adminGroup.PUT("/admins/:id/commission-rate", server.UpdateAdminCommissionRate)
 	adminGroup.POST("/admins/:id/settle", server.SettleAdminOrders)
 	adminGroup.PUT("/admins/:id", server.UpdateAdmin)
 	adminGroup.PATCH("/admins/:id/status", server.UpdateAdminStatus)

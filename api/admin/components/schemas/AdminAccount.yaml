@@ -27,6 +27,10 @@ properties:
   financeRemark:
     type: string
     nullable: true
+  commissionRate:
+    type: number
+    format: double
+    description: Commission rate percentage, e.g. 30.5 means 30.5%
   createdAt:
     type: string
     format: date-time

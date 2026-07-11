@@ -65,11 +65,21 @@ func TestInvitationFeedbackSubmitNotInterestedClearsText(t *testing.T) {
 	}
 }
 
-func TestInvitationFeedbackSetConversationCreatesPendingWhenMissing(t *testing.T) {
-	repo := &fakeInvitationFeedbackRepo{}
-	svc := NewInvitationFeedbackService(&repository.Repository{InvitationFeedback: repo})
+func TestInvitationFeedbackSetConversationInProgressCreatesPendingInvitation(t *testing.T) {
+	repo := &fakeInvitationFeedbackRepo{
+		existing: &models.InvitationFeedback{
+			UserID:        1001,
+			Status:        models.InvitationFeedbackStatusInterested,
+			IntentionText: stringPtr("old feedback"),
+		},
+	}
+	pendingRepo := &fakePendingInvitationRepo{}
+	svc := NewInvitationFeedbackService(&repository.Repository{
+		InvitationFeedback: repo,
+		PendingInvitation:  pendingRepo,
+	})
 
-	got, err := svc.SetConversationStatus(context.Background(), 1001, models.InvitationConversationStatusAccepted)
+	got, err := svc.SetConversationStatus(context.Background(), 1001, models.InvitationConversationStatusInProgress)
 	if err != nil {
 		t.Fatalf("SetConversationStatus returned error: %v", err)
 	}
@@ -79,8 +89,41 @@ func TestInvitationFeedbackSetConversationCreatesPendingWhenMissing(t *testing.T
 	if got.Status != models.InvitationFeedbackStatusPending {
 		t.Fatalf("status = %s, want pending", got.Status)
 	}
+	if got.IntentionText != nil {
+		t.Fatalf("intention_text = %v, want nil", got.IntentionText)
+	}
+	if got.ConversationStatus == nil || *got.ConversationStatus != models.InvitationConversationStatusInProgress {
+		t.Fatalf("conversation_status = %v", got.ConversationStatus)
+	}
+	if pendingRepo.userID != 1001 || pendingRepo.inviteType != models.PendingInvitationTypeSuperAdmin {
+		t.Fatalf("pending invitation = (%d, %s), want (1001, SUPER_ADMIN)", pendingRepo.userID, pendingRepo.inviteType)
+	}
+	pending, err := svc.GetPendingInvitation(context.Background(), 1001)
+	if err != nil {
+		t.Fatalf("GetPendingInvitation returned error: %v", err)
+	}
+	if pending == nil || pending.InviteType != models.PendingInvitationTypeSuperAdmin {
+		t.Fatalf("pending invitation after reset = %#v", pending)
+	}
+}
+
+func TestInvitationFeedbackSetConversationAcceptedDoesNotCreatePendingInvitation(t *testing.T) {
+	repo := &fakeInvitationFeedbackRepo{}
+	pendingRepo := &fakePendingInvitationRepo{}
+	svc := NewInvitationFeedbackService(&repository.Repository{
+		InvitationFeedback: repo,
+		PendingInvitation:  pendingRepo,
+	})
+
+	got, err := svc.SetConversationStatus(context.Background(), 1001, models.InvitationConversationStatusAccepted)
+	if err != nil {
+		t.Fatalf("SetConversationStatus returned error: %v", err)
+	}
 	if got.ConversationStatus == nil || *got.ConversationStatus != models.InvitationConversationStatusAccepted {
 		t.Fatalf("conversation_status = %v", got.ConversationStatus)
+	}
+	if pendingRepo.userID != 0 {
+		t.Fatalf("pending user_id = %d, want 0", pendingRepo.userID)
 	}
 }
 
@@ -104,9 +147,35 @@ func TestInvitationFeedbackCreateAndGetPendingInvitation(t *testing.T) {
 	}
 }
 
+func TestInvitationFeedbackGetPendingClearsWhenUserResponded(t *testing.T) {
+	repo := &fakeInvitationFeedbackRepo{
+		existing: &models.InvitationFeedback{
+			UserID: 1001,
+			Status: models.InvitationFeedbackStatusInterested,
+		},
+	}
+	pendingRepo := &fakePendingInvitationRepo{}
+	svc := NewInvitationFeedbackService(&repository.Repository{
+		InvitationFeedback: repo,
+		PendingInvitation:  pendingRepo,
+	})
+
+	got, err := svc.GetPendingInvitation(context.Background(), 1001)
+	if err != nil {
+		t.Fatalf("GetPendingInvitation returned error: %v", err)
+	}
+	if got != nil {
+		t.Fatalf("pending invitation = %#v, want nil", got)
+	}
+	if pendingRepo.clearUserID != 1001 {
+		t.Fatalf("clear pending user_id = %d, want 1001", pendingRepo.clearUserID)
+	}
+}
+
 type fakeInvitationFeedbackRepo struct {
 	repository.InvitationFeedbackRepo
 
+	existing           *models.InvitationFeedback
 	upsertUserID       int
 	upsertStatus       string
 	upsertText         *string
@@ -116,6 +185,9 @@ type fakeInvitationFeedbackRepo struct {
 }
 
 func (f *fakeInvitationFeedbackRepo) GetByUserID(_ context.Context, userID int) (*models.InvitationFeedback, error) {
+	if f.existing != nil && f.existing.UserID == userID {
+		return f.existing, nil
+	}
 	return nil, nil
 }
 
@@ -146,12 +218,29 @@ func (f *fakeInvitationFeedbackRepo) UpsertConversationStatus(_ context.Context,
 	f.conversationUserID = userID
 	f.conversationStatus = conversationStatus
 	now := time.Now()
-	return &models.InvitationFeedback{
+	status := models.InvitationFeedbackStatusPending
+	var intentionText *string
+	if f.existing != nil && f.existing.UserID == userID {
+		status = f.existing.Status
+		intentionText = f.existing.IntentionText
+	}
+	if conversationStatus == models.InvitationConversationStatusInProgress {
+		status = models.InvitationFeedbackStatusPending
+		intentionText = nil
+	}
+	next := &models.InvitationFeedback{
 		UserID:             userID,
-		Status:             models.InvitationFeedbackStatusPending,
+		Status:             status,
+		IntentionText:      intentionText,
 		ConversationStatus: &conversationStatus,
 		UpdatedAt:          &now,
-	}, nil
+	}
+	f.existing = next
+	return next, nil
+}
+
+func stringPtr(v string) *string {
+	return &v
 }
 
 type fakePendingInvitationRepo struct {

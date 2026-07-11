@@ -506,18 +506,22 @@ func (r *OrderRepository) RevenueStats(ctx context.Context, schoolID *int) (*Rev
 	return stats, nil
 }
 
-func (r *OrderRepository) SettleSchoolPendingOrders(ctx context.Context, schoolID int, adminID int, remark *string) (*SettlementResult, error) {
+type settlementOrderRow struct {
+	ID         int     `db:"id"`
+	ActualPaid float64 `db:"actual_paid"`
+}
+
+func (r *OrderRepository) SettleSchoolPendingOrders(ctx context.Context, schoolID int, adminID int, commissionRate float64, remark *string) (*SettlementResult, error) {
+	if commissionRate <= 0 || commissionRate > 100 || math.IsNaN(commissionRate) || math.IsInf(commissionRate, 0) {
+		return nil, fmt.Errorf("commission rate must be greater than 0 and at most 100")
+	}
 	tx, err := r.db.BeginTxx(ctx, nil)
 	if err != nil {
 		return nil, fmt.Errorf("begin settle transaction: %w", err)
 	}
 	defer tx.Rollback()
 
-	type row struct {
-		ID         int     `db:"id"`
-		ActualPaid float64 `db:"actual_paid"`
-	}
-	var rows []row
+	var rows []settlementOrderRow
 	if err := tx.SelectContext(ctx, &rows, `
 		SELECT o.id, o.actual_paid
 		FROM `+"`order`"+` o
@@ -534,10 +538,7 @@ func (r *OrderRepository) SettleSchoolPendingOrders(ctx context.Context, schoolI
 		return &SettlementResult{BatchNo: "", OrderCount: 0, TotalAmount: 0}, nil
 	}
 
-	totalAmount := int64(0)
-	for _, row := range rows {
-		totalAmount += int64(math.Round(row.ActualPaid * 100))
-	}
+	orderAmounts, totalAmount := calculateCommissionAmounts(rows, commissionRate)
 
 	batchNo := fmt.Sprintf("SETTLE-%s-%d", time.Now().Format("20060102150405"), schoolID)
 	result, err := tx.ExecContext(ctx, `
@@ -552,8 +553,8 @@ func (r *OrderRepository) SettleSchoolPendingOrders(ctx context.Context, schoolI
 		return nil, fmt.Errorf("get settlement record id: %w", err)
 	}
 
-	for _, row := range rows {
-		amount := int64(math.Round(row.ActualPaid * 100))
+	for i, row := range rows {
+		amount := orderAmounts[i]
 		if _, err := tx.ExecContext(ctx, `
 			INSERT INTO settlement_record_order (settlement_record_id, order_id, amount, created_at)
 			VALUES (?, ?, ?, NOW())
@@ -577,4 +578,21 @@ func (r *OrderRepository) SettleSchoolPendingOrders(ctx context.Context, schoolI
 		return nil, fmt.Errorf("commit settle transaction: %w", err)
 	}
 	return &SettlementResult{BatchNo: batchNo, OrderCount: len(rows), TotalAmount: totalAmount}, nil
+}
+
+func calculateCommissionAmounts(rows []settlementOrderRow, commissionRate float64) ([]int64, int64) {
+	amounts := make([]int64, len(rows))
+	fullAmount := int64(0)
+	allocatedAmount := int64(0)
+	for i, row := range rows {
+		paidFen := int64(math.Round(row.ActualPaid * 100))
+		fullAmount += paidFen
+		amounts[i] = int64(math.Round(float64(paidFen) * commissionRate / 100))
+		allocatedAmount += amounts[i]
+	}
+	totalAmount := int64(math.Round(float64(fullAmount) * commissionRate / 100))
+	if len(amounts) > 0 {
+		amounts[len(amounts)-1] += totalAmount - allocatedAmount
+	}
+	return amounts, totalAmount
 }

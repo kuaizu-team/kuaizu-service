@@ -91,14 +91,15 @@ func (r *Repository) PurgeDeletedProjectBefore(ctx context.Context, id int, cuto
 	return deleted, nil
 }
 
+var projectRelationTables = []string{
+	"email_promotion_recipient", "project_view_log", "project_like",
+	"project_favorite", "project_share", "project_tag_relation",
+	"project_milestones", "project_members", "project_event",
+	"project_recommendation", "collaboration_score", "olive_branch_sms_notice",
+}
+
 func deleteProjectRelations(ctx context.Context, tx *sqlx.Tx, ids []int) error {
-	projectTables := []string{
-		"email_promotion_recipient", "project_view_log", "project_like",
-		"project_favorite", "project_share", "project_tag_relation",
-		"project_milestones", "project_members", "project_event",
-		"project_recommendation", "collaboration_score", "sms_notice",
-	}
-	for _, table := range projectTables {
+	for _, table := range projectRelationTables {
 		if err := execDeleteInTx(ctx, tx, "DELETE FROM "+table+" WHERE project_id IN (?)", ids); err != nil {
 			return fmt.Errorf("delete %s for project: %w", table, err)
 		}

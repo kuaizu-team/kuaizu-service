@@ -78,6 +78,8 @@ paths:
     $ref: paths/users_{id}_orders.yaml
   /users/{id}/auth:
     $ref: paths/users_{id}_auth.yaml
+  /users/{id}/competition-group:
+    $ref: paths/users_{id}_competition-group.yaml
   /sms/send:
     $ref: paths/sms_send.yaml
   /sms/send-count:
@@ -98,6 +100,8 @@ paths:
     $ref: paths/admins_{id}.yaml
   /admins/{id}/finance-remark:
     $ref: paths/admins_{id}_finance-remark.yaml
+  /admins/{id}/commission-rate:
+    $ref: paths/admins_{id}_commission-rate.yaml
   /admins/{id}/settle:
     $ref: paths/admins_{id}_settle.yaml
   /feedbacks:

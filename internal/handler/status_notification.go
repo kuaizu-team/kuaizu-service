@@ -9,7 +9,21 @@ import (
 )
 
 func (s *Server) GetMyPendingStatusNotification(ctx echo.Context) error {
-	notification, err := s.repo.StatusNotification.GetPending(ctx.Request().Context(), GetUserID(ctx))
+	userID := GetUserID(ctx)
+	if s.svc != nil && s.svc.Invitation != nil && s.repo.StatusNotification != nil {
+		pendingInvitation, err := s.svc.Invitation.GetPendingInvitation(ctx.Request().Context(), userID)
+		if err != nil {
+			return mapServiceError(ctx, err)
+		}
+		if pendingInvitation != nil {
+			if err := s.repo.StatusNotification.MarkAllPendingDisplayed(ctx.Request().Context(), userID); err != nil {
+				return InternalError(ctx, "更新状态通知失败")
+			}
+			return Success(ctx, nil)
+		}
+	}
+
+	notification, err := s.repo.StatusNotification.GetPending(ctx.Request().Context(), userID)
 	if err != nil {
 		return InternalError(ctx, "获取状态通知失败")
 	}

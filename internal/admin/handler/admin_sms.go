@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/kuaizu-team/kuaizu-service/internal/messagecenter"
+	"github.com/kuaizu-team/kuaizu-service/internal/models"
 	"github.com/kuaizu-team/kuaizu-service/internal/response"
 	"github.com/labstack/echo/v4"
 )
@@ -39,10 +40,7 @@ func (s *AdminServer) SendAdminSms(ctx echo.Context) error {
 		return mapServiceError(ctx, err)
 	}
 	if resp != nil && resp.Success && isInviteSuperAdminTemplate(req.TemplateKey) {
-		if err := s.svc.Invitation.ResetAfterInviteSent(ctx.Request().Context(), req.UserID); err != nil {
-			return mapServiceError(ctx, err)
-		}
-		if err := s.svc.Invitation.CreatePendingSuperAdminInvitation(ctx.Request().Context(), req.UserID); err != nil {
+		if _, err := s.svc.Invitation.SetConversationStatus(ctx.Request().Context(), req.UserID, models.InvitationConversationStatusInProgress); err != nil {
 			return mapServiceError(ctx, err)
 		}
 	}

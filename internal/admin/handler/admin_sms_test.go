@@ -55,7 +55,7 @@ func TestEnsureAdminCanAccessUserAllowsUnscopedAdminWithoutLookup(t *testing.T) 
 	}
 }
 
-func TestSendAdminSmsResetsInvitationAfterSuccessfulInvite(t *testing.T) {
+func TestSendAdminSmsMarksInvitationInProgressAfterSuccessfulInvite(t *testing.T) {
 	resetRepo := &fakeAdminSmsInvitationFeedbackRepo{}
 	pendingRepo := &fakeAdminSmsPendingInvitationRepo{}
 	server := newAdminSmsSendServer(t, http.StatusOK, responseEnvelope(map[string]interface{}{
@@ -79,8 +79,11 @@ func TestSendAdminSmsResetsInvitationAfterSuccessfulInvite(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
 	}
-	if resetRepo.resetUserID != 1001 {
-		t.Fatalf("reset user_id = %d, want 1001", resetRepo.resetUserID)
+	if resetRepo.conversationUserID != 1001 {
+		t.Fatalf("conversation user_id = %d, want 1001", resetRepo.conversationUserID)
+	}
+	if resetRepo.conversationStatus != models.InvitationConversationStatusInProgress {
+		t.Fatalf("conversation status = %s, want in_progress", resetRepo.conversationStatus)
 	}
 	if pendingRepo.userID != 1001 || pendingRepo.inviteType != models.PendingInvitationTypeSuperAdmin {
 		t.Fatalf("pending invitation = (%d, %s), want (1001, SUPER_ADMIN)", pendingRepo.userID, pendingRepo.inviteType)
@@ -103,8 +106,8 @@ func TestSendAdminSmsDoesNotResetInvitationOnSendFailure(t *testing.T) {
 	if err := server.SendAdminSms(ctx); err != nil {
 		t.Fatalf("SendAdminSms returned error: %v", err)
 	}
-	if resetRepo.resetUserID != 0 {
-		t.Fatalf("reset user_id = %d, want 0", resetRepo.resetUserID)
+	if resetRepo.conversationUserID != 0 {
+		t.Fatalf("conversation user_id = %d, want 0", resetRepo.conversationUserID)
 	}
 	if pendingRepo.userID != 0 {
 		t.Fatalf("pending user_id = %d, want 0", pendingRepo.userID)
@@ -168,16 +171,19 @@ func (f fakeAdminSmsUserRepo) GetByID(_ context.Context, _ int) (*models.User, e
 
 type fakeAdminSmsInvitationFeedbackRepo struct {
 	repository.InvitationFeedbackRepo
-	resetUserID int
+	conversationUserID int
+	conversationStatus string
 }
 
-func (f *fakeAdminSmsInvitationFeedbackRepo) ResetAfterInviteSent(_ context.Context, userID int) (*models.InvitationFeedback, error) {
-	f.resetUserID = userID
+func (f *fakeAdminSmsInvitationFeedbackRepo) UpsertConversationStatus(_ context.Context, userID int, conversationStatus string) (*models.InvitationFeedback, error) {
+	f.conversationUserID = userID
+	f.conversationStatus = conversationStatus
 	now := time.Now()
 	return &models.InvitationFeedback{
-		UserID:    userID,
-		Status:    models.InvitationFeedbackStatusPending,
-		UpdatedAt: &now,
+		UserID:             userID,
+		Status:             models.InvitationFeedbackStatusPending,
+		ConversationStatus: &conversationStatus,
+		UpdatedAt:          &now,
 	}, nil
 }
 

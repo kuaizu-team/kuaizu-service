@@ -29,7 +29,7 @@ get:
       name: sortBy
       schema:
         type: string
-        enum: [pendingCount, createdAt, id]
+        enum: [pendingCount, updatedAt, id]
       description: Sort field for admin project list
     - in: query
       name: order

@@ -89,8 +89,8 @@ func (m *MockOrderRepo) RevenueStats(ctx context.Context, schoolID *int) (*repos
 	return args.Get(0).(*repository.RevenueStats), args.Error(1)
 }
 
-func (m *MockOrderRepo) SettleSchoolPendingOrders(ctx context.Context, schoolID int, adminID int, remark *string) (*repository.SettlementResult, error) {
-	args := m.Called(ctx, schoolID, adminID, remark)
+func (m *MockOrderRepo) SettleSchoolPendingOrders(ctx context.Context, schoolID int, adminID int, commissionRate float64, remark *string) (*repository.SettlementResult, error) {
+	args := m.Called(ctx, schoolID, adminID, commissionRate, remark)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}

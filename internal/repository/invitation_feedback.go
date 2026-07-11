@@ -71,6 +71,8 @@ func (r *InvitationFeedbackRepository) UpsertConversationStatus(ctx context.Cont
 		INSERT INTO invitation_feedback (user_id, status, conversation_status)
 		VALUES (?, ?, ?)
 		ON DUPLICATE KEY UPDATE
+			status = IF(VALUES(conversation_status) = 'in_progress', VALUES(status), status),
+			intention_text = IF(VALUES(conversation_status) = 'in_progress', NULL, intention_text),
 			conversation_status = VALUES(conversation_status),
 			updated_at = CURRENT_TIMESTAMP
 	`

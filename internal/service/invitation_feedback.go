@@ -94,6 +94,11 @@ func (s *InvitationFeedbackService) SetConversationStatus(ctx context.Context, u
 		log.Printf("[InvitationFeedbackService.SetConversationStatus] repository error: %v", err)
 		return nil, ErrInternal("update invitation conversation status failed")
 	}
+	if normalized == models.InvitationConversationStatusInProgress {
+		if err := s.CreatePendingSuperAdminInvitation(ctx, userID); err != nil {
+			return nil, err
+		}
+	}
 	return f, nil
 }
 
@@ -129,6 +134,20 @@ func (s *InvitationFeedbackService) GetPendingInvitation(ctx context.Context, us
 	}
 	if s.repo.PendingInvitation == nil {
 		return nil, ErrInternal("pending invitation repository is nil")
+	}
+	if s.repo.InvitationFeedback != nil {
+		feedback, err := s.repo.InvitationFeedback.GetByUserID(ctx, userID)
+		if err != nil {
+			log.Printf("[InvitationFeedbackService.GetPendingInvitation] feedback repository error: %v", err)
+			return nil, ErrInternal("get invitation feedback failed")
+		}
+		if feedback != nil && feedback.Status != models.InvitationFeedbackStatusPending {
+			if err := s.repo.PendingInvitation.ClearByUserID(ctx, userID); err != nil {
+				log.Printf("[InvitationFeedbackService.GetPendingInvitation] clear responded pending invitation error: %v", err)
+				return nil, ErrInternal("clear pending invitation failed")
+			}
+			return nil, nil
+		}
 	}
 	item, err := s.repo.PendingInvitation.GetActiveByUserID(ctx, userID, time.Now())
 	if err != nil {

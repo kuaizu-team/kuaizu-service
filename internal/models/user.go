@@ -49,6 +49,8 @@ type User struct {
 	LastViewedMyProjectsAt   *time.Time `db:"last_viewed_my_projects_at"`  // 最后查看我的项目页的时间
 	UserStatus               int        `db:"user_status"`                 // 0=正常, 1=封禁, 2=已毕业
 	BanReason                *string    `db:"ban_reason"`                  // 封禁原因（仅 user_status=1 时有意义）
+	CompetitionGroupStatus   *string    `db:"competition_group_status"`
+	CompetitionGroupNote     *string    `db:"competition_group_note"`
 	CollaborationScore       *float64   `db:"collaboration_score"`
 	CreatedAt                *time.Time `db:"created_at"`
 

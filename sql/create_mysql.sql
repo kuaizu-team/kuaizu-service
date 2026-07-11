@@ -38,6 +38,7 @@ CREATE TABLE `admin_user` (
   `role` tinyint(4) NOT NULL DEFAULT '3' COMMENT 'admin role:1-super,2-school super,3-school admin',
   `school_id` int(11) DEFAULT NULL COMMENT 'bound school id',
   `finance_remark` varchar(500) DEFAULT NULL COMMENT 'finance remark',
+  `commission_rate` decimal(5,2) NOT NULL DEFAULT '0.00' COMMENT 'commission rate percent',
   `status` tinyint(4) DEFAULT '1' COMMENT '状态:1-启用,0-禁用',
   `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
@@ -577,6 +578,27 @@ CREATE TABLE `user` (
   CONSTRAINT `fk_user_major` FOREIGN KEY (`major_id`) REFERENCES `major` (`id`) ON DELETE SET NULL,
   CONSTRAINT `fk_user_school` FOREIGN KEY (`school_id`) REFERENCES `school` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB AUTO_INCREMENT=2153 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='用户表';
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `user_competition_group`
+--
+
+DROP TABLE IF EXISTS `user_competition_group`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `user_competition_group` (
+  `user_id` int(11) NOT NULL COMMENT '用户ID',
+  `status` varchar(20) DEFAULT NULL COMMENT '比赛交流群状态：entered/rejected',
+  `note` text COMMENT '比赛交流群备注',
+  `updated_by_admin_id` int(11) DEFAULT NULL COMMENT '最后更新管理员ID',
+  `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  PRIMARY KEY (`user_id`),
+  KEY `idx_user_competition_group_status` (`status`),
+  KEY `idx_user_competition_group_updated_by` (`updated_by_admin_id`),
+  CONSTRAINT `fk_user_competition_group_user` FOREIGN KEY (`user_id`) REFERENCES `user` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_user_competition_group_admin` FOREIGN KEY (`updated_by_admin_id`) REFERENCES `admin_user` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='用户比赛交流群状态';
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
