@@ -512,6 +512,9 @@ type settlementOrderRow struct {
 }
 
 func (r *OrderRepository) SettleSchoolPendingOrders(ctx context.Context, schoolID int, adminID int, commissionRate float64, remark *string) (*SettlementResult, error) {
+	if commissionRate <= 0 || commissionRate > 100 || math.IsNaN(commissionRate) || math.IsInf(commissionRate, 0) {
+		return nil, fmt.Errorf("commission rate must be greater than 0 and at most 100")
+	}
 	tx, err := r.db.BeginTxx(ctx, nil)
 	if err != nil {
 		return nil, fmt.Errorf("begin settle transaction: %w", err)

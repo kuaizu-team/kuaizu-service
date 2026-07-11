@@ -223,6 +223,9 @@ func (s *AdminServer) SettleAdminOrders(ctx echo.Context) error {
 	if target.SchoolID == nil {
 		return response.BadRequest(ctx, "管理员未绑定学校，无法一键结算")
 	}
+	if target.CommissionRate <= 0 {
+		return response.BadRequest(ctx, "请先设置大于 0 的分成比例再进行结算")
+	}
 	var req settleAdminRequest
 	if err := ctx.Bind(&req); err != nil {
 		return response.BadRequest(ctx, "invalid request body")
