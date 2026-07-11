@@ -231,7 +231,7 @@ func (s *AdminServer) SettleAdminOrders(ctx echo.Context) error {
 		v := strings.TrimSpace(*req.Remark)
 		req.Remark = &v
 	}
-	result, err := s.repo.Order.SettleSchoolPendingOrders(ctx.Request().Context(), *target.SchoolID, currentAdminID(ctx), req.Remark)
+	result, err := s.repo.Order.SettleSchoolPendingOrders(ctx.Request().Context(), *target.SchoolID, currentAdminID(ctx), target.CommissionRate, req.Remark)
 	if err != nil {
 		return response.InternalError(ctx, "一键结算失败")
 	}

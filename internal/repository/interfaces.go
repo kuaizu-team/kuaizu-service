@@ -22,7 +22,7 @@ type OrderRepo interface {
 	AdminRejectRefund(ctx context.Context, id int, reason string, adminID int) (bool, error)
 	WithdrawRefund(ctx context.Context, id int) (bool, error)
 	RevenueStats(ctx context.Context, schoolID *int) (*RevenueStats, error)
-	SettleSchoolPendingOrders(ctx context.Context, schoolID int, adminID int, remark *string) (*SettlementResult, error)
+	SettleSchoolPendingOrders(ctx context.Context, schoolID int, adminID int, commissionRate float64, remark *string) (*SettlementResult, error)
 	// Admin-only queries
 	AdminList(ctx context.Context, params AdminOrderListParams) ([]*models.Order, int64, error)
 	AdminGetByID(ctx context.Context, id int) (*models.Order, error)
