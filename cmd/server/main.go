@@ -153,6 +153,7 @@ func main() {
 	apiGroup.GET("/users/me/pending-invitation", server.GetMyPendingInvitation)
 	apiGroup.POST("/users/me/pending-invitation/clear", server.ClearMyPendingInvitation)
 	apiGroup.GET("/events", server.ListEvents)
+	apiGroup.GET("/website/team", server.ListWebsiteTeam)
 	apiGroup.POST("/events", server.CreateEvent)
 	apiGroup.GET("/events/:id", server.GetEvent)
 	apiGroup.GET("/info-center/events", server.ListInfoCenterEvents)

@@ -308,11 +308,14 @@ func (s *AdminServer) CreateAdmin(ctx echo.Context) error {
 }
 
 type updateAdminRequest struct {
-	Nickname *string `json:"nickname"`
-	Password string  `json:"password"`
-	Role     *int    `json:"role"`
-	SchoolID **int   `json:"schoolId"`
-	Status   *int    `json:"status"`
+	Nickname   *string `json:"nickname"`
+	Password   string  `json:"password"`
+	Role       *int    `json:"role"`
+	SchoolID   **int   `json:"schoolId"`
+	Status     *int    `json:"status"`
+	JoinDate   *string `json:"joinDate"`
+	Intro      *string `json:"intro"`
+	ArticleURL *string `json:"articleUrl"`
 }
 
 // UpdateAdmin handles PUT /admin/admins/:id
@@ -371,6 +374,25 @@ func (s *AdminServer) UpdateAdmin(ctx echo.Context) error {
 	}
 	if req.Status != nil {
 		target.Status = *req.Status
+	}
+	if req.JoinDate != nil {
+		if strings.TrimSpace(*req.JoinDate) == "" {
+			target.JoinDate = nil
+		} else {
+			parsed, err := time.Parse("2006-01-02", *req.JoinDate)
+			if err != nil {
+				return response.BadRequest(ctx, "joinDate must use YYYY-MM-DD")
+			}
+			target.JoinDate = &parsed
+		}
+	}
+	if req.Intro != nil {
+		value := strings.TrimSpace(*req.Intro)
+		target.Intro = &value
+	}
+	if req.ArticleURL != nil {
+		value := strings.TrimSpace(*req.ArticleURL)
+		target.ArticleURL = &value
 	}
 	if callerRole == models.AdminRoleSchoolSuperAdmin && id != callerID {
 		if target.Role != models.AdminRoleSchoolAdmin || !schoolIDsMatch(callerSchoolID, target.SchoolID) {

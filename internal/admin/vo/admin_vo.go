@@ -490,19 +490,22 @@ func NewAdminProjectOliveBranchVO(ob *models.OliveBranch, talentProfileStatus *i
 
 // AdminUserAccountVO is the admin-facing admin-user response model (管理员账号).
 type AdminUserAccountVO struct {
-	ID                      int       `json:"id"`
-	Username                string    `json:"username"`
-	Nickname                *string   `json:"nickname"`
-	Role                    int       `json:"role"`
-	SchoolID                *int      `json:"schoolId"`
-	SchoolName              *string   `json:"schoolName"`
-	Status                  int       `json:"status"`
-	PendingSettlementAmount int64     `json:"pendingSettlementAmount"`
-	PendingRefundOrderCount int64     `json:"pendingRefundOrderCount"`
-	FinanceRemark           *string   `json:"financeRemark"`
-	CommissionRate          float64   `json:"commissionRate"`
-	CreatedAt               time.Time `json:"createdAt"`
-	UpdatedAt               time.Time `json:"updatedAt"`
+	ID                      int        `json:"id"`
+	Username                string     `json:"username"`
+	Nickname                *string    `json:"nickname"`
+	Role                    int        `json:"role"`
+	SchoolID                *int       `json:"schoolId"`
+	SchoolName              *string    `json:"schoolName"`
+	Status                  int        `json:"status"`
+	PendingSettlementAmount int64      `json:"pendingSettlementAmount"`
+	PendingRefundOrderCount int64      `json:"pendingRefundOrderCount"`
+	FinanceRemark           *string    `json:"financeRemark"`
+	CommissionRate          float64    `json:"commissionRate"`
+	JoinDate                *time.Time `json:"joinDate"`
+	Intro                   *string    `json:"intro"`
+	ArticleURL              *string    `json:"articleUrl"`
+	CreatedAt               time.Time  `json:"createdAt"`
+	UpdatedAt               time.Time  `json:"updatedAt"`
 }
 
 // NewAdminUserAccountVO converts an AdminUser model to AdminUserAccountVO (no password).
@@ -520,6 +523,9 @@ func NewAdminUserAccountVO(a *models.AdminUser) *AdminUserAccountVO {
 		Status:         a.Status,
 		FinanceRemark:  a.FinanceRemark,
 		CommissionRate: a.CommissionRate,
+		JoinDate:       a.JoinDate,
+		Intro:          a.Intro,
+		ArticleURL:     a.ArticleURL,
 		CreatedAt:      a.CreatedAt,
 		UpdatedAt:      a.UpdatedAt,
 	}

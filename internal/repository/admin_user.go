@@ -23,7 +23,7 @@ func NewAdminUserRepository(db *sqlx.DB) *AdminUserRepository {
 // adminUserCols is the common SELECT column list (requires LEFT JOIN school s ON au.school_id = s.id)
 const adminUserCols = `
 	au.id, au.username, au.password_hash, au.nickname,
-	au.role, au.school_id, au.status, au.finance_remark, au.commission_rate, au.created_at, au.updated_at,
+	au.role, au.school_id, au.status, au.finance_remark, au.commission_rate, au.join_date, au.intro, au.article_url, au.created_at, au.updated_at,
 	s.school_name`
 
 const adminUserFrom = `
@@ -149,14 +149,14 @@ func (r *AdminUserRepository) Update(ctx context.Context, admin *models.AdminUse
 	)
 	if admin.PasswordHash != "" {
 		query = `UPDATE admin_user
-			SET nickname = ?, role = ?, school_id = ?, status = ?, password_hash = ?, updated_at = CURRENT_TIMESTAMP
+			SET nickname = ?, role = ?, school_id = ?, status = ?, join_date = ?, intro = ?, article_url = ?, password_hash = ?, updated_at = CURRENT_TIMESTAMP
 			WHERE id = ?`
-		args = []interface{}{admin.Nickname, admin.Role, admin.SchoolID, admin.Status, admin.PasswordHash, admin.ID}
+		args = []interface{}{admin.Nickname, admin.Role, admin.SchoolID, admin.Status, admin.JoinDate, admin.Intro, admin.ArticleURL, admin.PasswordHash, admin.ID}
 	} else {
 		query = `UPDATE admin_user
-			SET nickname = ?, role = ?, school_id = ?, status = ?, updated_at = CURRENT_TIMESTAMP
+			SET nickname = ?, role = ?, school_id = ?, status = ?, join_date = ?, intro = ?, article_url = ?, updated_at = CURRENT_TIMESTAMP
 			WHERE id = ?`
-		args = []interface{}{admin.Nickname, admin.Role, admin.SchoolID, admin.Status, admin.ID}
+		args = []interface{}{admin.Nickname, admin.Role, admin.SchoolID, admin.Status, admin.JoinDate, admin.Intro, admin.ArticleURL, admin.ID}
 	}
 
 	result, err := r.db.ExecContext(ctx, query, args...)
