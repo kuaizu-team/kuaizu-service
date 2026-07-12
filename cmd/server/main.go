@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 
 	"github.com/joho/godotenv"
 	"github.com/kuaizu-team/kuaizu-service/api"
@@ -93,6 +94,9 @@ func main() {
 		}
 
 		// Check exact matches
+		if method == "GET" && strings.HasPrefix(path, "/api/v2/website/") {
+			return true
+		}
 		for _, endpoint := range publicEndpoints {
 			if path == endpoint {
 				return true
@@ -154,6 +158,10 @@ func main() {
 	apiGroup.POST("/users/me/pending-invitation/clear", server.ClearMyPendingInvitation)
 	apiGroup.GET("/events", server.ListEvents)
 	apiGroup.GET("/website/team", server.ListWebsiteTeam)
+	apiGroup.GET("/website/podcast", server.ListWebsitePodcast)
+	apiGroup.GET("/website/events", server.ListWebsiteEvents)
+	apiGroup.GET("/website/projects", server.ListWebsiteProjects)
+	apiGroup.GET("/website/talent", server.ListWebsiteTalent)
 	apiGroup.POST("/events", server.CreateEvent)
 	apiGroup.GET("/events/:id", server.GetEvent)
 	apiGroup.GET("/info-center/events", server.ListInfoCenterEvents)

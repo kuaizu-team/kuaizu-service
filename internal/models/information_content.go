@@ -11,6 +11,7 @@ const (
 	InformationCategoryCampusProject   = "campus_project"
 	InformationCategoryKuaizuTalking   = "kuaizu_talking"
 	InformationCategoryDeveloperWeekly = "developer_weekly"
+	InformationCategoryTalent          = "talent"
 )
 
 // InformationContent represents a published information-center item.
@@ -32,7 +33,8 @@ func IsValidInformationCategory(category string) bool {
 	case InformationCategoryCampusEvent,
 		InformationCategoryCampusProject,
 		InformationCategoryKuaizuTalking,
-		InformationCategoryDeveloperWeekly:
+		InformationCategoryDeveloperWeekly,
+		InformationCategoryTalent:
 		return true
 	default:
 		return false
