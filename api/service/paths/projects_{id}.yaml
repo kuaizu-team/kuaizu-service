@@ -19,6 +19,12 @@ get:
         type: integer
         minimum: 0
         maximum: 2
+    - name: recordView
+      in: query
+      description: 'Whether to record this request as a project view. Defaults to true. False is honored only when an authenticated project creator refreshes their own project.'
+      schema:
+        type: boolean
+        default: true
   responses:
     '200':
       description: 成功

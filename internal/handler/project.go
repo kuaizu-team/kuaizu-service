@@ -200,8 +200,12 @@ func (s *Server) GetProject(ctx echo.Context, id int, params api.GetProjectParam
 	if params.Source != nil {
 		source = *params.Source
 	}
+	recordView := true
+	if params.RecordView != nil {
+		recordView = *params.RecordView
+	}
 
-	project, err := s.svc.Project.GetProjectWithView(ctx.Request().Context(), id, userID, source)
+	project, err := s.svc.Project.GetProjectDetail(ctx.Request().Context(), id, userID, source, recordView)
 	if err != nil {
 		return mapServiceError(ctx, err)
 	}

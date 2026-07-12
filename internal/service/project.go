@@ -172,15 +172,18 @@ func (s *ProjectService) GetProject(ctx context.Context, id int) (*models.Projec
 	return project, nil
 }
 
-// GetProjectWithView retrieves a project and asynchronously records a real user view.
-func (s *ProjectService) GetProjectWithView(ctx context.Context, id, viewerUserID, source int) (*models.Project, error) {
+// GetProjectDetail retrieves a project and optionally records a real user view.
+func (s *ProjectService) GetProjectDetail(ctx context.Context, id, viewerUserID, source int, recordView bool) (*models.Project, error) {
 	project, err := s.GetProject(ctx, id)
 	if err != nil {
 		return nil, err
 	}
 	if err := s.attachProjectPermission(ctx, project, viewerUserID); err != nil {
-		log.Printf("[ProjectService.GetProjectWithView] permission enrichment error: %v", err)
+		log.Printf("[ProjectService.GetProjectDetail] permission enrichment error: %v", err)
 		return nil, ErrInternal("获取项目详情失败")
+	}
+	if !shouldRecordProjectView(recordView, viewerUserID, project.CreatorID) {
+		return project, nil
 	}
 
 	go func(asyncCtx context.Context) {
@@ -207,7 +210,7 @@ func (s *ProjectService) GetProjectWithView(ctx context.Context, id, viewerUserI
 		}
 		progress, err := s.repo.ProjectViewLog.NotifyProgress(asyncCtx, id, viewerUserID, project.CreatorID)
 		if err != nil {
-			log.Printf("[ProjectService.GetProjectWithView] get visit notify progress error (non-fatal): %v", err)
+			log.Printf("[ProjectService.GetProjectDetail] get visit notify progress error (non-fatal): %v", err)
 			return
 		}
 		if !shouldSendGroupedInteractionNotification(progress) {
@@ -215,7 +218,7 @@ func (s *ProjectService) GetProjectWithView(ctx context.Context, id, viewerUserI
 		}
 		viewer, err := s.repo.User.GetByID(asyncCtx, viewerUserID)
 		if err != nil {
-			log.Printf("[ProjectService.GetProjectWithView] get viewer error (non-fatal): %v", err)
+			log.Printf("[ProjectService.GetProjectDetail] get viewer error (non-fatal): %v", err)
 		}
 		notification, ok := buildProjectVisitNotification(viewerUserID, project, notificationUserName(viewer), progress.DistinctUserCount)
 		if ok {
@@ -224,6 +227,10 @@ func (s *ProjectService) GetProjectWithView(ctx context.Context, id, viewerUserI
 	}(context.WithoutCancel(ctx))
 
 	return project, nil
+}
+
+func shouldRecordProjectView(recordView bool, viewerUserID, creatorUserID int) bool {
+	return recordView || viewerUserID <= 0 || viewerUserID != creatorUserID
 }
 
 func isProjectLeaderRole(role string) bool {
