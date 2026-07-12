@@ -162,6 +162,7 @@ func main() {
 	apiGroup.GET("/website/events", server.ListWebsiteEvents)
 	apiGroup.GET("/website/projects", server.ListWebsiteProjects)
 	apiGroup.GET("/website/talent", server.ListWebsiteTalent)
+	apiGroup.GET("/website/overview", server.GetWebsiteOverview)
 	apiGroup.POST("/events", server.CreateEvent)
 	apiGroup.GET("/events/:id", server.GetEvent)
 	apiGroup.GET("/info-center/events", server.ListInfoCenterEvents)

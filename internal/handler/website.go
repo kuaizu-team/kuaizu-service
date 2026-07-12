@@ -61,6 +61,73 @@ func (s *Server) ListWebsiteEvents(ctx echo.Context) error {
 	return response.Success(ctx, items)
 }
 
+// GetWebsiteOverview returns the homepage highlights in one request.
+func (s *Server) GetWebsiteOverview(ctx echo.Context) error {
+	requestCtx := ctx.Request().Context()
+	loadContent := func(category string) ([]websiteContentItem, error) {
+		items := make([]websiteContentItem, 0, 3)
+		err := s.repo.DB().SelectContext(requestCtx, &items, `
+			SELECT id, title, content, url, display_order
+			FROM information_content
+			WHERE category = ? AND is_published = 1
+			ORDER BY display_order DESC, created_at DESC, id DESC
+			LIMIT 3`, category)
+		return items, err
+	}
+
+	podcast, err := loadContent("kuaizu_talking")
+	if err != nil {
+		return response.InternalError(ctx, "获取播客精选失败")
+	}
+	projects, err := loadContent("campus_project")
+	if err != nil {
+		return response.InternalError(ctx, "获取项目精选失败")
+	}
+	talent, err := loadContent("talent")
+	if err != nil {
+		return response.InternalError(ctx, "获取人才精选失败")
+	}
+
+	events := make([]websiteEventItem, 0, 3)
+	err = s.repo.DB().SelectContext(requestCtx, &events, `
+		SELECT id, name, is_ranking, registration_deadline, NULLIF(article_url, '') AS article_url
+		FROM event
+		WHERE registration_deadline IS NULL OR registration_deadline >= CURDATE()
+		ORDER BY CASE WHEN registration_deadline IS NULL THEN 1 ELSE 0 END,
+		registration_deadline ASC, display_order DESC, id DESC
+		LIMIT 3`)
+	if err != nil {
+		return response.InternalError(ctx, "获取赛事精选失败")
+	}
+
+	team := make([]struct {
+		ID         int        `db:"id" json:"id"`
+		Nickname   *string    `db:"nickname" json:"nickname"`
+		Role       int        `db:"role" json:"role"`
+		SchoolName *string    `db:"school_name" json:"schoolName"`
+		JoinDate   *time.Time `db:"join_date" json:"joinDate"`
+		Intro      *string    `db:"intro" json:"intro"`
+		ArticleURL *string    `db:"article_url" json:"articleUrl"`
+	}, 0, 5)
+	err = s.repo.DB().SelectContext(requestCtx, &team, `
+		SELECT au.id, au.nickname, au.role, s.school_name, au.join_date, au.intro,
+		       NULLIF(au.article_url, '') AS article_url
+		FROM admin_user au
+		LEFT JOIN school s ON s.id = au.school_id
+		WHERE au.status = 1 AND au.role = ?
+		ORDER BY CASE WHEN au.article_url IS NULL OR au.article_url = '' THEN 1 ELSE 0 END,
+		         au.join_date ASC, au.created_at ASC
+		LIMIT 5`, models.AdminRoleSchoolSuperAdmin)
+	if err != nil {
+		return response.InternalError(ctx, "获取团队精选失败")
+	}
+
+	return response.Success(ctx, map[string]interface{}{
+		"podcast": podcast, "team": team, "events": events,
+		"projects": projects, "talent": talent,
+	})
+}
+
 // ListWebsiteTeam only exposes fields intentionally used by the public website.
 func (s *Server) ListWebsiteTeam(ctx echo.Context) error {
 	status := 1
