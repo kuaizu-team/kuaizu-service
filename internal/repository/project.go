@@ -323,6 +323,7 @@ type creatorRow struct {
 	UEmail               *string    `db:"u_email"`
 	UWechatID            *string    `db:"u_wechat_id"`
 	UAuthStatus          *int       `db:"u_auth_status"`
+	UCollaborationScore  *float64   `db:"u_collaboration_score"`
 	UAvatarUrl           *string    `db:"u_avatar_url"`
 	UCreatedAt           *time.Time `db:"u_created_at"`
 	USchoolName          *string    `db:"u_school_name"`
@@ -355,6 +356,7 @@ func (r *ProjectRepository) GetByID(ctx context.Context, id int) (*models.Projec
 			u.email       AS u_email,
 			u.wechat_id   AS u_wechat_id,
 			u.auth_status AS u_auth_status,
+			u.collaboration_score AS u_collaboration_score,
 			u.avatar_url  AS u_avatar_url,
 			u.created_at  AS u_created_at,
 			us.school_name AS u_school_name,
@@ -382,18 +384,19 @@ func (r *ProjectRepository) GetByID(ctx context.Context, id int) (*models.Projec
 
 	p := row.Project
 	p.Creator = &models.User{
-		ID:              row.UID,
-		OpenID:          row.UOpenID,
-		Nickname:        row.UNickname,
-		Phone:           row.UPhone,
-		Email:           row.UEmail,
-		WechatID:        row.UWechatID,
-		AuthStatus:      row.UAuthStatus,
-		AvatarUrl:       row.UAvatarUrl,
-		CreatedAt:       row.UCreatedAt,
-		SchoolName:      row.USchoolName,
-		TalentProfileID: row.UTalentProfileID,
-		MajorName:       row.UMajorName,
+		ID:                 row.UID,
+		OpenID:             row.UOpenID,
+		Nickname:           row.UNickname,
+		Phone:              row.UPhone,
+		Email:              row.UEmail,
+		WechatID:           row.UWechatID,
+		AuthStatus:         row.UAuthStatus,
+		CollaborationScore: row.UCollaborationScore,
+		AvatarUrl:          row.UAvatarUrl,
+		CreatedAt:          row.UCreatedAt,
+		SchoolName:         row.USchoolName,
+		TalentProfileID:    row.UTalentProfileID,
+		MajorName:          row.UMajorName,
 	}
 	p.CreatorTalentProfileStatus = row.UTalentProfileStatus
 	items := []models.Project{p}
