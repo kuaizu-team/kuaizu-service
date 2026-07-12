@@ -154,6 +154,10 @@ type AdminEventVO struct {
 	IsRanking            bool       `json:"isRanking"`
 	RegistrationDeadline *time.Time `json:"registrationDeadline"`
 	ArticleURL           *string    `json:"articleUrl"`
+	Level                *string    `json:"level"`
+	Summary              *string    `json:"summary"`
+	SchoolID             *int       `json:"schoolId"`
+	SchoolName           *string    `json:"schoolName"`
 	DisplayOrder         int        `json:"displayOrder"`
 	ProjectCount         int        `json:"projectCount"`
 	CreatedAt            time.Time  `json:"createdAt"`
@@ -171,6 +175,10 @@ func NewAdminEventVO(e *models.Event) *AdminEventVO {
 		IsRanking:            e.IsRanking == 1,
 		RegistrationDeadline: e.RegistrationDeadline,
 		ArticleURL:           e.ArticleURL,
+		Level:                e.Level,
+		Summary:              e.Summary,
+		SchoolID:             e.SchoolID,
+		SchoolName:           e.SchoolName,
 		DisplayOrder:         e.DisplayOrder,
 		ProjectCount:         e.ProjectCount,
 		CreatedAt:            e.CreatedAt,

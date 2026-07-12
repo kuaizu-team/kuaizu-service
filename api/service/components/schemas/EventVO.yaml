@@ -13,6 +13,16 @@ properties:
   articleUrl:
     type: string
     nullable: true
+  level:
+    type: string
+    enum: [national, regional, school]
+    nullable: true
+  summary:
+    type: string
+    nullable: true
+  schoolName:
+    type: string
+    nullable: true
   displayOrder:
     type: integer
   createdAt:

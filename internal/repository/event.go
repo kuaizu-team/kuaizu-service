@@ -38,8 +38,12 @@ func normalizeEventPage(page, size int) (int, int) {
 	return page, size
 }
 
-func eventSelectColumns() string {
-	return `id, name, is_ranking, registration_deadline, article_url, display_order, created_at, updated_at`
+func eventSelectColumns(alias string) string {
+	prefix := ""
+	if alias != "" {
+		prefix = alias + "."
+	}
+	return prefix + `id, ` + prefix + `name, ` + prefix + `is_ranking, ` + prefix + `registration_deadline, ` + prefix + `article_url, ` + prefix + `level, ` + prefix + `summary, ` + prefix + `school_id, (SELECT school_name FROM school WHERE id = ` + prefix + `school_id) AS school_name, ` + prefix + `display_order, ` + prefix + `created_at, ` + prefix + `updated_at`
 }
 
 func (r *EventRepository) List(ctx context.Context, params EventListParams) ([]models.Event, int64, error) {
@@ -73,7 +77,7 @@ func (r *EventRepository) List(ctx context.Context, params EventListParams) ([]m
 		return nil, 0, fmt.Errorf("count events: %w", err)
 	}
 
-	query := fmt.Sprintf(`SELECT e.%s, COALESCE(COUNT(DISTINCT pe.project_id), 0) AS project_count FROM event e LEFT JOIN project_event pe ON pe.event_id = e.id WHERE %s GROUP BY e.id, e.name, e.is_ranking, e.registration_deadline, e.article_url, e.display_order, e.created_at, e.updated_at ORDER BY CASE WHEN e.registration_deadline IS NULL THEN 1 ELSE 0 END ASC, e.registration_deadline ASC, e.display_order DESC, e.created_at DESC, e.id DESC LIMIT ? OFFSET ?`, strings.ReplaceAll(eventSelectColumns(), ", ", ", e."), where)
+	query := fmt.Sprintf(`SELECT %s, COALESCE(COUNT(DISTINCT pe.project_id), 0) AS project_count FROM event e LEFT JOIN project_event pe ON pe.event_id = e.id WHERE %s GROUP BY e.id ORDER BY CASE WHEN e.registration_deadline IS NULL THEN 1 ELSE 0 END ASC, e.registration_deadline ASC, e.display_order DESC, e.created_at DESC, e.id DESC LIMIT ? OFFSET ?`, eventSelectColumns("e"), where)
 	args = append(args, params.Size, (params.Page-1)*params.Size)
 	var events []models.Event
 	if err := r.db.SelectContext(ctx, &events, query, args...); err != nil {
@@ -86,7 +90,7 @@ func (r *EventRepository) ListTimeline(ctx context.Context, limit int) ([]models
 	if limit <= 0 || limit > 100 {
 		limit = 20
 	}
-	query := fmt.Sprintf(`SELECT %s FROM event ORDER BY display_order ASC, created_at ASC, id ASC LIMIT ?`, eventSelectColumns())
+	query := fmt.Sprintf(`SELECT %s FROM event ORDER BY display_order ASC, created_at ASC, id ASC LIMIT ?`, eventSelectColumns("event"))
 	var events []models.Event
 	if err := r.db.SelectContext(ctx, &events, query, limit); err != nil {
 		return nil, fmt.Errorf("query event timeline: %w", err)
@@ -95,7 +99,7 @@ func (r *EventRepository) ListTimeline(ctx context.Context, limit int) ([]models
 }
 
 func (r *EventRepository) GetByID(ctx context.Context, id int) (*models.Event, error) {
-	query := fmt.Sprintf(`SELECT %s FROM event WHERE id = ?`, eventSelectColumns())
+	query := fmt.Sprintf(`SELECT %s FROM event WHERE id = ?`, eventSelectColumns("event"))
 	var event models.Event
 	if err := r.db.QueryRowxContext(ctx, query, id).StructScan(&event); err != nil {
 		if err == sql.ErrNoRows {
@@ -108,13 +112,13 @@ func (r *EventRepository) GetByID(ctx context.Context, id int) (*models.Event, e
 
 func (r *EventRepository) Create(ctx context.Context, event *models.Event) error {
 	query := `
-		INSERT INTO event (name, is_ranking, registration_deadline, article_url, display_order)
-		VALUES (:name, :is_ranking, :registration_deadline, :article_url, :display_order)
+		INSERT INTO event (name, is_ranking, registration_deadline, article_url, level, summary, school_id, display_order)
+		VALUES (:name, :is_ranking, :registration_deadline, :article_url, :level, :summary, :school_id, :display_order)
 	`
 	if !event.CreatedAt.IsZero() {
 		query = `
-			INSERT INTO event (name, is_ranking, registration_deadline, article_url, display_order, created_at)
-			VALUES (:name, :is_ranking, :registration_deadline, :article_url, :display_order, :created_at)
+			INSERT INTO event (name, is_ranking, registration_deadline, article_url, level, summary, school_id, display_order, created_at)
+			VALUES (:name, :is_ranking, :registration_deadline, :article_url, :level, :summary, :school_id, :display_order, :created_at)
 		`
 	}
 	result, err := r.db.NamedExecContext(ctx, query, event)
@@ -133,6 +137,9 @@ func (r *EventRepository) Update(ctx context.Context, event *models.Event) error
 		    is_ranking = :is_ranking,
 		    registration_deadline = :registration_deadline,
 		    article_url = :article_url,
+		    level = :level,
+		    summary = :summary,
+		    school_id = :school_id,
 		    display_order = :display_order,
 		    updated_at = CURRENT_TIMESTAMP
 		WHERE id = :id
@@ -144,6 +151,9 @@ func (r *EventRepository) Update(ctx context.Context, event *models.Event) error
 			    is_ranking = :is_ranking,
 			    registration_deadline = :registration_deadline,
 			    article_url = :article_url,
+			    level = :level,
+			    summary = :summary,
+			    school_id = :school_id,
 			    display_order = :display_order,
 			    created_at = :created_at,
 			    updated_at = CURRENT_TIMESTAMP

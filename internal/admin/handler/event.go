@@ -21,6 +21,9 @@ type adminEventRequest struct {
 	ArticleURL           *string `json:"articleUrl"`
 	DisplayOrder         *int    `json:"displayOrder"`
 	CreatedAt            *string `json:"createdAt"`
+	Level                *string `json:"level"`
+	Summary              *string `json:"summary"`
+	SchoolID             *int    `json:"schoolId"`
 }
 
 type adminEventMergeRequest struct {
@@ -28,9 +31,6 @@ type adminEventMergeRequest struct {
 }
 
 func (s *AdminServer) ListEvents(ctx echo.Context) error {
-	if err := requireSuperAdmin(ctx); err != nil {
-		return err
-	}
 	page, _ := strconv.Atoi(ctx.QueryParam("page"))
 	size, _ := strconv.Atoi(ctx.QueryParam("size"))
 	keyword := strings.TrimSpace(ctx.QueryParam("keyword"))
@@ -54,14 +54,11 @@ func (s *AdminServer) ListEvents(ctx echo.Context) error {
 }
 
 func (s *AdminServer) CreateEvent(ctx echo.Context) error {
-	if err := requireSuperAdmin(ctx); err != nil {
-		return err
-	}
 	var req adminEventRequest
 	if err := ctx.Bind(&req); err != nil {
 		return response.BadRequest(ctx, "invalid request body")
 	}
-	event, err := buildAdminEventModel(req)
+	event, err := buildAdminEventModel(req, adminRole(ctx), adminSchoolID(ctx))
 	if err != nil {
 		return response.BadRequest(ctx, err.Error())
 	}
@@ -84,7 +81,7 @@ func (s *AdminServer) UpdateEvent(ctx echo.Context) error {
 	if err := ctx.Bind(&req); err != nil {
 		return response.BadRequest(ctx, "invalid request body")
 	}
-	event, err := buildAdminEventModel(req)
+	event, err := buildAdminEventModel(req, adminRole(ctx), adminSchoolID(ctx))
 	if err != nil {
 		return response.BadRequest(ctx, err.Error())
 	}
@@ -114,9 +111,6 @@ func (s *AdminServer) DeleteEvent(ctx echo.Context) error {
 }
 
 func (s *AdminServer) MergeEvent(ctx echo.Context) error {
-	if err := requireSuperAdmin(ctx); err != nil {
-		return err
-	}
 	id, err := parseIDParam(ctx, "id", "event")
 	if err != nil {
 		return err
@@ -125,6 +119,18 @@ func (s *AdminServer) MergeEvent(ctx echo.Context) error {
 	if err := ctx.Bind(&req); err != nil {
 		return response.BadRequest(ctx, "invalid request body")
 	}
+	source, err := s.repo.Event.GetByID(ctx.Request().Context(), id)
+	if err != nil || source == nil {
+		return response.NotFound(ctx, "event not found")
+	}
+	target, err := s.repo.Event.GetByID(ctx.Request().Context(), req.TargetEventID)
+	if err != nil || target == nil {
+		return response.NotFound(ctx, "target event not found")
+	}
+	levelRank := map[string]int{"school": 1, "regional": 2, "national": 3}
+	if source.Level == nil || target.Level == nil || levelRank[*target.Level] <= levelRank[*source.Level] {
+		return response.BadRequest(ctx, "events can only be merged upward: school to regional to national")
+	}
 	merged, err := s.svc.Event.MergeEvent(ctx.Request().Context(), id, req.TargetEventID)
 	if err != nil {
 		return mapServiceError(ctx, err)
@@ -132,8 +138,34 @@ func (s *AdminServer) MergeEvent(ctx echo.Context) error {
 	return response.Success(ctx, adminvo.NewAdminEventVO(merged))
 }
 
-func buildAdminEventModel(req adminEventRequest) (*models.Event, error) {
+func buildAdminEventModel(req adminEventRequest, role int, adminSchoolID *int) (*models.Event, error) {
 	event := &models.Event{Name: strings.TrimSpace(req.Name)}
+	if req.Level != nil && strings.TrimSpace(*req.Level) != "" {
+		level := strings.TrimSpace(*req.Level)
+		if level != "national" && level != "regional" && level != "school" {
+			return nil, errors.New("level must be national, regional, or school")
+		}
+		event.Level = &level
+		if level == "school" {
+			if role == models.AdminRoleSuperAdmin {
+				if req.SchoolID == nil || *req.SchoolID <= 0 {
+					return nil, errors.New("schoolId is required for school-level events")
+				}
+				event.SchoolID = req.SchoolID
+			} else {
+				if adminSchoolID == nil {
+					return nil, errors.New("current admin is not associated with a school")
+				}
+				event.SchoolID = adminSchoolID
+			}
+		}
+	}
+	if req.Summary != nil {
+		value := strings.TrimSpace(*req.Summary)
+		if value != "" {
+			event.Summary = &value
+		}
+	}
 	if req.IsRanking != nil && *req.IsRanking {
 		event.IsRanking = 1
 	}

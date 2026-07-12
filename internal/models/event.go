@@ -14,6 +14,10 @@ type Event struct {
 	IsRanking            int        `db:"is_ranking"`
 	RegistrationDeadline *time.Time `db:"registration_deadline"`
 	ArticleURL           *string    `db:"article_url"`
+	Level                *string    `db:"level"`
+	Summary              *string    `db:"summary"`
+	SchoolID             *int       `db:"school_id"`
+	SchoolName           *string    `db:"school_name"`
 	DisplayOrder         int        `db:"display_order"`
 	ProjectCount         int        `db:"project_count"`
 	CreatedAt            time.Time  `db:"created_at"`
@@ -27,9 +31,15 @@ func (e *Event) ToVO() api.EventVO {
 		Name:         &e.Name,
 		IsRanking:    &isRanking,
 		ArticleUrl:   e.ArticleURL,
+		Summary:      e.Summary,
+		SchoolName:   e.SchoolName,
 		DisplayOrder: &e.DisplayOrder,
 		CreatedAt:    &e.CreatedAt,
 		UpdatedAt:    &e.UpdatedAt,
+	}
+	if e.Level != nil {
+		level := api.EventVOLevel(*e.Level)
+		vo.Level = &level
 	}
 	if e.RegistrationDeadline != nil {
 		date := openapi_types.Date{Time: *e.RegistrationDeadline}
