@@ -69,6 +69,7 @@ func (s *AdminServer) ListAdmins(ctx echo.Context) error {
 			return response.Forbidden(ctx, schoolSuperAdminNoSchoolMessage)
 		}
 		params.SchoolID = sid
+		params.IncludeAllEventManagers = true
 	}
 
 	admins, total, err := s.repo.AdminUser.List(ctx.Request().Context(), params)
@@ -395,8 +396,8 @@ func (s *AdminServer) UpdateAdmin(ctx echo.Context) error {
 		target.ArticleURL = &value
 	}
 	if callerRole == models.AdminRoleSchoolSuperAdmin && id != callerID {
-		if target.Role != models.AdminRoleSchoolAdmin || !schoolIDsMatch(callerSchoolID, target.SchoolID) {
-			return response.Forbidden(ctx, "校区超级管理员只能编辑本校校区管理员")
+		if (target.Role != models.AdminRoleSchoolAdmin && target.Role != models.AdminRoleEventManager) || !schoolIDsMatch(callerSchoolID, target.SchoolID) {
+			return response.Forbidden(ctx, "校区超级管理员只能编辑本校管理员")
 		}
 	}
 

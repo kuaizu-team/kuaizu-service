@@ -18,6 +18,10 @@ type Event struct {
 	Summary              *string    `db:"summary"`
 	SchoolID             *int       `db:"school_id"`
 	SchoolName           *string    `db:"school_name"`
+	AdminID              *int       `db:"admin_id"`
+	CreatorID            *int       `db:"creator_id"`
+	ManagerUsername      *string    `db:"manager_username"`
+	ManagerNickname      *string    `db:"manager_nickname"`
 	DisplayOrder         int        `db:"display_order"`
 	ProjectCount         int        `db:"project_count"`
 	CreatedAt            time.Time  `db:"created_at"`

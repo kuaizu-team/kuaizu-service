@@ -43,7 +43,7 @@ func eventSelectColumns(alias string) string {
 	if alias != "" {
 		prefix = alias + "."
 	}
-	return prefix + `id, ` + prefix + `name, ` + prefix + `is_ranking, ` + prefix + `registration_deadline, ` + prefix + `article_url, ` + prefix + `level, ` + prefix + `summary, ` + prefix + `school_id, (SELECT school_name FROM school WHERE id = ` + prefix + `school_id) AS school_name, ` + prefix + `display_order, ` + prefix + `created_at, ` + prefix + `updated_at`
+	return prefix + `id, ` + prefix + `name, ` + prefix + `is_ranking, ` + prefix + `registration_deadline, ` + prefix + `article_url, ` + prefix + `level, ` + prefix + `summary, ` + prefix + `school_id, (SELECT school_name FROM school WHERE id = ` + prefix + `school_id) AS school_name, ` + prefix + `admin_id, ` + prefix + `creator_id, (SELECT username FROM admin_user WHERE id = ` + prefix + `admin_id) AS manager_username, (SELECT nickname FROM admin_user WHERE id = ` + prefix + `admin_id) AS manager_nickname, ` + prefix + `display_order, ` + prefix + `created_at, ` + prefix + `updated_at`
 }
 
 func (r *EventRepository) List(ctx context.Context, params EventListParams) ([]models.Event, int64, error) {
@@ -112,13 +112,13 @@ func (r *EventRepository) GetByID(ctx context.Context, id int) (*models.Event, e
 
 func (r *EventRepository) Create(ctx context.Context, event *models.Event) error {
 	query := `
-		INSERT INTO event (name, is_ranking, registration_deadline, article_url, level, summary, school_id, display_order)
-		VALUES (:name, :is_ranking, :registration_deadline, :article_url, :level, :summary, :school_id, :display_order)
+		INSERT INTO event (name, is_ranking, registration_deadline, article_url, level, summary, school_id, admin_id, creator_id, display_order)
+		VALUES (:name, :is_ranking, :registration_deadline, :article_url, :level, :summary, :school_id, :admin_id, :creator_id, :display_order)
 	`
 	if !event.CreatedAt.IsZero() {
 		query = `
-			INSERT INTO event (name, is_ranking, registration_deadline, article_url, level, summary, school_id, display_order, created_at)
-			VALUES (:name, :is_ranking, :registration_deadline, :article_url, :level, :summary, :school_id, :display_order, :created_at)
+			INSERT INTO event (name, is_ranking, registration_deadline, article_url, level, summary, school_id, admin_id, creator_id, display_order, created_at)
+			VALUES (:name, :is_ranking, :registration_deadline, :article_url, :level, :summary, :school_id, :admin_id, :creator_id, :display_order, :created_at)
 		`
 	}
 	result, err := r.db.NamedExecContext(ctx, query, event)
@@ -177,6 +177,8 @@ func (r *EventRepository) Merge(ctx context.Context, sourceID, targetID int) err
 		return err
 	}
 	defer tx.Rollback()
+	var sourceAdminID sql.NullInt64
+	_ = tx.QueryRowxContext(ctx, `SELECT admin_id FROM event WHERE id=?`, sourceID).Scan(&sourceAdminID)
 
 	if _, err := tx.ExecContext(ctx, `INSERT IGNORE INTO project_event(project_id, event_id) SELECT project_id, ? FROM project_event WHERE event_id = ?`, targetID, sourceID); err != nil {
 		return fmt.Errorf("merge project event relations: %w", err)
@@ -198,6 +200,11 @@ func (r *EventRepository) Merge(ctx context.Context, sourceID, targetID int) err
 	if rows == 0 {
 		return sql.ErrNoRows
 	}
+	if sourceAdminID.Valid {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM admin_user WHERE id=? AND role=?`, sourceAdminID.Int64, models.AdminRoleEventManager); err != nil {
+			return fmt.Errorf("delete source event manager: %w", err)
+		}
+	}
 	return tx.Commit()
 }
 
@@ -207,6 +214,8 @@ func (r *EventRepository) Delete(ctx context.Context, id int) error {
 		return err
 	}
 	defer tx.Rollback()
+	var adminID sql.NullInt64
+	_ = tx.QueryRowxContext(ctx, `SELECT admin_id FROM event WHERE id=?`, id).Scan(&adminID)
 	if _, err := tx.ExecContext(ctx, "DELETE FROM project_event WHERE event_id = ?", id); err != nil {
 		return fmt.Errorf("delete project event relations: %w", err)
 	}
@@ -215,6 +224,11 @@ func (r *EventRepository) Delete(ctx context.Context, id int) error {
 	}
 	if _, err := tx.ExecContext(ctx, "DELETE FROM event WHERE id = ?", id); err != nil {
 		return fmt.Errorf("delete event: %w", err)
+	}
+	if adminID.Valid {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM admin_user WHERE id=? AND role=?`, adminID.Int64, models.AdminRoleEventManager); err != nil {
+			return fmt.Errorf("delete event manager: %w", err)
+		}
 	}
 	return tx.Commit()
 }

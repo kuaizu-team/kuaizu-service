@@ -12,6 +12,7 @@ import (
 	"github.com/kuaizu-team/kuaizu-service/internal/repository"
 	"github.com/kuaizu-team/kuaizu-service/internal/response"
 	"github.com/labstack/echo/v4"
+	"golang.org/x/crypto/bcrypt"
 )
 
 type adminEventRequest struct {
@@ -24,6 +25,8 @@ type adminEventRequest struct {
 	Level                *string `json:"level"`
 	Summary              *string `json:"summary"`
 	SchoolID             *int    `json:"schoolId"`
+	ManagerAccount       *string `json:"managerAccount"`
+	ManagerPassword      *string `json:"managerPassword"`
 }
 
 type adminEventMergeRequest struct {
@@ -62,17 +65,21 @@ func (s *AdminServer) CreateEvent(ctx echo.Context) error {
 	if err != nil {
 		return response.BadRequest(ctx, err.Error())
 	}
+	creatorID := currentAdminID(ctx)
+	event.CreatorID = &creatorID
 	created, err := s.svc.Event.CreateEvent(ctx.Request().Context(), event)
 	if err != nil {
 		return mapServiceError(ctx, err)
 	}
+	if err := s.upsertEventManager(ctx, created, req); err != nil {
+		_ = s.svc.Event.DeleteEvent(ctx.Request().Context(), created.ID)
+		return err
+	}
+	created, _ = s.repo.Event.GetByID(ctx.Request().Context(), created.ID)
 	return response.Success(ctx, adminvo.NewAdminEventVO(created))
 }
 
 func (s *AdminServer) UpdateEvent(ctx echo.Context) error {
-	if err := requireSuperAdmin(ctx); err != nil {
-		return err
-	}
 	id, err := parseIDParam(ctx, "id", "event")
 	if err != nil {
 		return err
@@ -80,6 +87,13 @@ func (s *AdminServer) UpdateEvent(ctx echo.Context) error {
 	var req adminEventRequest
 	if err := ctx.Bind(&req); err != nil {
 		return response.BadRequest(ctx, "invalid request body")
+	}
+	existing, err := s.repo.Event.GetByID(ctx.Request().Context(), id)
+	if err != nil || existing == nil {
+		return response.NotFound(ctx, "event not found")
+	}
+	if !canManageEventManager(adminRole(ctx), adminSchoolID(ctx), existing) {
+		return response.Forbidden(ctx, "只能编辑本校学校层级赛事")
 	}
 	event, err := buildAdminEventModel(req, adminRole(ctx), adminSchoolID(ctx))
 	if err != nil {
@@ -93,7 +107,74 @@ func (s *AdminServer) UpdateEvent(ctx echo.Context) error {
 		}
 		return mapServiceError(ctx, err)
 	}
+	updated.AdminID = existing.AdminID
+	if err := s.upsertEventManager(ctx, updated, req); err != nil {
+		return err
+	}
+	updated, _ = s.repo.Event.GetByID(ctx.Request().Context(), id)
 	return response.Success(ctx, adminvo.NewAdminEventVO(updated))
+}
+
+func canManageEventManager(role int, schoolID *int, event *models.Event) bool {
+	if role == models.AdminRoleSuperAdmin {
+		return true
+	}
+	return role == models.AdminRoleSchoolSuperAdmin && schoolID != nil && event.Level != nil && *event.Level == "school" && event.SchoolID != nil && *event.SchoolID == *schoolID
+}
+
+func (s *AdminServer) upsertEventManager(ctx echo.Context, event *models.Event, req adminEventRequest) error {
+	account := ""
+	password := ""
+	if req.ManagerAccount != nil {
+		account = strings.TrimSpace(*req.ManagerAccount)
+	}
+	if req.ManagerPassword != nil {
+		password = strings.TrimSpace(*req.ManagerPassword)
+	}
+	if account == "" && password == "" {
+		return nil
+	}
+	if !canManageEventManager(adminRole(ctx), adminSchoolID(ctx), event) {
+		return response.Forbidden(ctx, "无权管理该赛事的赛事管理员")
+	}
+	if event.AdminID == nil && (account == "" || password == "") {
+		return response.BadRequest(ctx, "新建赛事管理员时账号和密码均为必填")
+	}
+	if password != "" && len(password) < 6 {
+		return response.BadRequest(ctx, "密码至少 6 位")
+	}
+	nickname := event.Name + "管理员"
+	if event.AdminID == nil {
+		hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+		if err != nil {
+			return response.InternalError(ctx, "密码加密失败")
+		}
+		result, err := s.repo.DB().ExecContext(ctx.Request().Context(), `INSERT INTO admin_user(username,password_hash,nickname,role,school_id,status) VALUES(?,?,?,?,?,1)`, account, string(hash), nickname, models.AdminRoleEventManager, event.SchoolID)
+		if err != nil {
+			return response.BadRequest(ctx, "赛事管理员账号已存在")
+		}
+		id, _ := result.LastInsertId()
+		if _, err = s.repo.DB().ExecContext(ctx.Request().Context(), `UPDATE event SET admin_id=? WHERE id=? AND admin_id IS NULL`, id, event.ID); err != nil {
+			return response.InternalError(ctx, "关联赛事管理员失败")
+		}
+		return nil
+	}
+	sets := []string{"nickname=?"}
+	args := []interface{}{nickname}
+	if account != "" {
+		sets = append(sets, "username=?")
+		args = append(args, account)
+	}
+	if password != "" {
+		hash, _ := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+		sets = append(sets, "password_hash=?")
+		args = append(args, string(hash))
+	}
+	args = append(args, *event.AdminID)
+	if _, err := s.repo.DB().ExecContext(ctx.Request().Context(), `UPDATE admin_user SET `+strings.Join(sets, ",")+`,updated_at=CURRENT_TIMESTAMP WHERE id=? AND role=4`, args...); err != nil {
+		return response.BadRequest(ctx, "赛事管理员账号更新失败")
+	}
+	return nil
 }
 
 func (s *AdminServer) DeleteEvent(ctx echo.Context) error {

@@ -25,6 +25,16 @@ func (s *AdminServer) GetDashboardStats(ctx echo.Context) error {
 	sid := adminSchoolID(ctx) // nil for super admin
 
 	var userCount, projectCount, pendingProjectCount, deletingProjectCount, pendingAuthCount, pendingFeedbackCount, pendingTalentProfileCount int64
+	if adminRole(ctx) == models.AdminRoleEventManager {
+		eventID, err := s.eventIDForManager(ctx)
+		if err != nil {
+			return err
+		}
+		if err := db.QueryRowxContext(rctx, `SELECT COUNT(*), COALESCE(SUM(p.status=0),0), COALESCE(SUM(p.status=4),0) FROM project p JOIN project_event pe ON pe.project_id=p.id WHERE pe.event_id=?`, eventID).Scan(&projectCount, &pendingProjectCount, &deletingProjectCount); err != nil {
+			return response.InternalError(ctx, "failed to count event projects")
+		}
+		return response.Success(ctx, DashboradStatsResponse{ProjectCount: projectCount, PendingProjectCount: pendingProjectCount, DeletingProjectCount: deletingProjectCount})
+	}
 
 	if sid == nil {
 		// Super admin — global counts

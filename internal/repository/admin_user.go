@@ -62,12 +62,13 @@ func (r *AdminUserRepository) GetByID(ctx context.Context, id int) (*models.Admi
 
 // AdminUserListParams contains parameters for listing admin users
 type AdminUserListParams struct {
-	Page     int
-	Size     int
-	Keyword  *string // 按 username/nickname 模糊搜索
-	Role     *int    // 按角色筛选（1/2/3）
-	Status   *int    // 按状态筛选（0/1）
-	SchoolID *int    // 校区管理员只能看本校，超级管理员不传
+	Page                    int
+	Size                    int
+	Keyword                 *string // 按 username/nickname 模糊搜索
+	Role                    *int    // 按角色筛选（1/2/3）
+	Status                  *int    // 按状态筛选（0/1）
+	SchoolID                *int    // 校区管理员只能看本校，超级管理员不传
+	IncludeAllEventManagers bool    // 校区超级管理员还可只读查看其他赛事管理员
 }
 
 // List retrieves paginated admin users with optional filters
@@ -88,8 +89,13 @@ func (r *AdminUserRepository) List(ctx context.Context, params AdminUserListPara
 		args = append(args, *params.Status)
 	}
 	if params.SchoolID != nil {
-		conditions = append(conditions, "au.school_id = ?")
-		args = append(args, *params.SchoolID)
+		if params.IncludeAllEventManagers {
+			conditions = append(conditions, "(au.school_id = ? OR au.role = ?)")
+			args = append(args, *params.SchoolID, models.AdminRoleEventManager)
+		} else {
+			conditions = append(conditions, "au.school_id = ?")
+			args = append(args, *params.SchoolID)
+		}
 	}
 
 	whereClause := strings.Join(conditions, " AND ")

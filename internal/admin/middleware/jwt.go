@@ -1,6 +1,8 @@
 package middleware
 
 import (
+	"net/http"
+	"regexp"
 	"strings"
 
 	adminauth "github.com/kuaizu-team/kuaizu-service/internal/admin/auth"
@@ -52,8 +54,24 @@ func AdminJWTAuth(config *AdminJWTConfig) echo.MiddlewareFunc {
 			c.Set("adminUsername", claims.Username)
 			c.Set("adminRole", claims.Role)
 			c.Set("adminSchoolID", claims.SchoolID) // 0 表示超级管理员（无学校绑定）
+			if claims.Role == 4 && !eventManagerRouteAllowed(c.Request().Method, c.Request().URL.Path) {
+				return echo.NewHTTPError(http.StatusForbidden, "赛事管理员仅可访问数据看板和项目大厅")
+			}
 
 			return next(c)
 		}
 	}
+}
+
+var eventManagerProjectPath = regexp.MustCompile(`^/admin/projects/[0-9]+$`)
+var eventManagerRestorePath = regexp.MustCompile(`^/admin/projects/[0-9]+/restore$`)
+
+func eventManagerRouteAllowed(method, path string) bool {
+	if method == http.MethodGet && (path == "/admin/dashboard/stats" || path == "/admin/projects" || eventManagerProjectPath.MatchString(path)) {
+		return true
+	}
+	if method == http.MethodPatch && (eventManagerProjectPath.MatchString(path) || eventManagerRestorePath.MatchString(path)) {
+		return true
+	}
+	return false
 }

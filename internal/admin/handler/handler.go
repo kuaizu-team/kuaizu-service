@@ -78,9 +78,10 @@ func adminSchoolID(ctx echo.Context) *int {
 // canEditAdmin reports whether the caller may edit/delete the target admin.
 //
 // Permission matrix:
-//   role=1 (super admin)         → can edit self and any role=2/3; cannot edit other role=1.
-//   role=2 (school super admin)  → can edit self and same-school role=3; cannot edit role=1/2 (non-self).
-//   role=3 (school admin)        → can only edit self; cannot edit anyone else.
+//
+//	role=1 (super admin)         → can edit self and any role=2/3; cannot edit other role=1.
+//	role=2 (school super admin)  → can edit self and same-school role=3; cannot edit role=1/2 (non-self).
+//	role=3 (school admin)        → can only edit self; cannot edit anyone else.
 func canEditAdmin(callerRole, callerID, targetRole, targetID int, callerSchoolID, targetSchoolID *int) bool {
 	switch callerRole {
 	case models.AdminRoleSuperAdmin: // role=1
@@ -94,7 +95,7 @@ func canEditAdmin(callerRole, callerID, targetRole, targetID int, callerSchoolID
 			return true // always allowed to edit self
 		}
 		// may edit role=3 in the same school
-		return targetRole == models.AdminRoleSchoolAdmin && schoolIDsMatch(callerSchoolID, targetSchoolID)
+		return (targetRole == models.AdminRoleSchoolAdmin || targetRole == models.AdminRoleEventManager) && schoolIDsMatch(callerSchoolID, targetSchoolID)
 	case models.AdminRoleSchoolAdmin: // role=3
 		return targetID == callerID // only self
 	}
@@ -106,3 +107,26 @@ func schoolIDsMatch(a, b *int) bool {
 	return a != nil && b != nil && *a == *b
 }
 
+func (s *AdminServer) eventIDForManager(ctx echo.Context) (int, error) {
+	var eventID int
+	err := s.repo.DB().QueryRowxContext(ctx.Request().Context(), `SELECT id FROM event WHERE admin_id=?`, currentAdminID(ctx)).Scan(&eventID)
+	if err != nil {
+		return 0, response.Forbidden(ctx, "当前赛事管理员未关联赛事")
+	}
+	return eventID, nil
+}
+
+func (s *AdminServer) requireProjectAccess(ctx echo.Context, projectID int) error {
+	if adminRole(ctx) != models.AdminRoleEventManager {
+		return nil
+	}
+	eventID, err := s.eventIDForManager(ctx)
+	if err != nil {
+		return err
+	}
+	var exists bool
+	if err := s.repo.DB().QueryRowxContext(ctx.Request().Context(), `SELECT EXISTS(SELECT 1 FROM project_event WHERE project_id=? AND event_id=?)`, projectID, eventID).Scan(&exists); err != nil || !exists {
+		return response.Forbidden(ctx, "无权访问非本赛事项目")
+	}
+	return nil
+}

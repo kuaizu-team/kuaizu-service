@@ -158,6 +158,9 @@ type AdminEventVO struct {
 	Summary              *string    `json:"summary"`
 	SchoolID             *int       `json:"schoolId"`
 	SchoolName           *string    `json:"schoolName"`
+	AdminID              *int       `json:"adminId"`
+	ManagerUsername      *string    `json:"managerAccount"`
+	ManagerNickname      *string    `json:"managerNickname"`
 	DisplayOrder         int        `json:"displayOrder"`
 	ProjectCount         int        `json:"projectCount"`
 	CreatedAt            time.Time  `json:"createdAt"`
@@ -179,6 +182,9 @@ func NewAdminEventVO(e *models.Event) *AdminEventVO {
 		Summary:              e.Summary,
 		SchoolID:             e.SchoolID,
 		SchoolName:           e.SchoolName,
+		AdminID:              e.AdminID,
+		ManagerUsername:      e.ManagerUsername,
+		ManagerNickname:      e.ManagerNickname,
 		DisplayOrder:         e.DisplayOrder,
 		ProjectCount:         e.ProjectCount,
 		CreatedAt:            e.CreatedAt,

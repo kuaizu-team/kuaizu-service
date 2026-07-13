@@ -8,7 +8,7 @@ type AdminUser struct {
 	Username       string     `db:"username"`
 	PasswordHash   string     `db:"password_hash"`
 	Nickname       *string    `db:"nickname"`
-	Role           int        `db:"role"`      // 1=超级管理员 2=校区超级管理员 3=校区管理员
+	Role           int        `db:"role"`      // 1=超级管理员 2=校区超级管理员 3=校区管理员 4=赛事管理员
 	SchoolID       *int       `db:"school_id"` // 校区角色必填，超级管理员为NULL
 	Status         int        `db:"status"`    // 1=enabled, 0=disabled
 	FinanceRemark  *string    `db:"finance_remark"`
