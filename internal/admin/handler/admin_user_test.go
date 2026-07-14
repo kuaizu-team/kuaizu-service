@@ -29,3 +29,22 @@ func TestUpdateAdminCommissionRateRequiresSuperAdmin(t *testing.T) {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusForbidden)
 	}
 }
+
+func TestDeleteAdminRejectsSelfBeforeRepositoryAccess(t *testing.T) {
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodDelete, "/admin/admins/7", nil)
+	rec := httptest.NewRecorder()
+	ctx := e.NewContext(req, rec)
+	ctx.SetParamNames("id")
+	ctx.SetParamValues("7")
+	ctx.Set("adminID", 7)
+	ctx.Set("adminRole", models.AdminRoleSuperAdmin)
+
+	server := &AdminServer{}
+	if err := server.DeleteAdmin(ctx); err != nil {
+		t.Fatalf("DeleteAdmin returned error: %v", err)
+	}
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusBadRequest)
+	}
+}

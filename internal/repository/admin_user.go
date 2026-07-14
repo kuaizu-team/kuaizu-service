@@ -22,7 +22,7 @@ func NewAdminUserRepository(db *sqlx.DB) *AdminUserRepository {
 
 // adminUserCols is the common SELECT column list (requires LEFT JOIN school s ON au.school_id = s.id)
 const adminUserCols = `
-	au.id, au.username, au.password_hash, au.nickname,
+	au.id, au.username, au.password_hash, au.password_encrypted, au.nickname,
 	au.role, au.school_id, au.status, au.finance_remark, au.commission_rate, au.join_date, au.intro, au.article_url, au.created_at, au.updated_at,
 	s.school_name`
 
@@ -68,7 +68,7 @@ type AdminUserListParams struct {
 	Role                    *int    // 按角色筛选（1/2/3）
 	Status                  *int    // 按状态筛选（0/1）
 	SchoolID                *int    // 校区管理员只能看本校，超级管理员不传
-	IncludeAllEventManagers bool    // 校区超级管理员还可只读查看其他赛事管理员
+	IncludeAllEventManagers bool    // legacy compatibility; normally false to preserve school isolation
 }
 
 // List retrieves paginated admin users with optional filters
@@ -129,11 +129,11 @@ var ErrDuplicateUsername = fmt.Errorf("账号已存在")
 // Create inserts a new admin user and populates its ID
 func (r *AdminUserRepository) Create(ctx context.Context, admin *models.AdminUser) error {
 	query := `
-		INSERT INTO admin_user (username, password_hash, nickname, role, school_id, status)
-		VALUES (?, ?, ?, ?, ?, ?)
+		INSERT INTO admin_user (username, password_hash, password_encrypted, nickname, role, school_id, status)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
 	`
 	result, err := r.db.ExecContext(ctx, query,
-		admin.Username, admin.PasswordHash, admin.Nickname,
+		admin.Username, admin.PasswordHash, admin.PasswordEncrypted, admin.Nickname,
 		admin.Role, admin.SchoolID, admin.Status)
 	if err != nil {
 		if strings.Contains(err.Error(), "Duplicate entry") || strings.Contains(err.Error(), "duplicate key") {
@@ -155,9 +155,9 @@ func (r *AdminUserRepository) Update(ctx context.Context, admin *models.AdminUse
 	)
 	if admin.PasswordHash != "" {
 		query = `UPDATE admin_user
-			SET nickname = ?, role = ?, school_id = ?, status = ?, join_date = ?, intro = ?, article_url = ?, password_hash = ?, updated_at = CURRENT_TIMESTAMP
+			SET nickname = ?, role = ?, school_id = ?, status = ?, join_date = ?, intro = ?, article_url = ?, password_hash = ?, password_encrypted = ?, updated_at = CURRENT_TIMESTAMP
 			WHERE id = ?`
-		args = []interface{}{admin.Nickname, admin.Role, admin.SchoolID, admin.Status, admin.JoinDate, admin.Intro, admin.ArticleURL, admin.PasswordHash, admin.ID}
+		args = []interface{}{admin.Nickname, admin.Role, admin.SchoolID, admin.Status, admin.JoinDate, admin.Intro, admin.ArticleURL, admin.PasswordHash, admin.PasswordEncrypted, admin.ID}
 	} else {
 		query = `UPDATE admin_user
 			SET nickname = ?, role = ?, school_id = ?, status = ?, join_date = ?, intro = ?, article_url = ?, updated_at = CURRENT_TIMESTAMP

@@ -149,7 +149,11 @@ func (s *AdminServer) upsertEventManager(ctx echo.Context, event *models.Event, 
 		if err != nil {
 			return response.InternalError(ctx, "密码加密失败")
 		}
-		result, err := s.repo.DB().ExecContext(ctx.Request().Context(), `INSERT INTO admin_user(username,password_hash,nickname,role,school_id,status) VALUES(?,?,?,?,?,1)`, account, string(hash), nickname, models.AdminRoleEventManager, event.SchoolID)
+		encrypted, err := encryptAdminCredential(password)
+		if err != nil {
+			return response.InternalError(ctx, "赛事管理员密码安全存储失败")
+		}
+		result, err := s.repo.DB().ExecContext(ctx.Request().Context(), `INSERT INTO admin_user(username,password_hash,password_encrypted,nickname,role,school_id,status) VALUES(?,?,?,?,?,?,1)`, account, string(hash), encrypted, nickname, models.AdminRoleEventManager, event.SchoolID)
 		if err != nil {
 			return response.BadRequest(ctx, "赛事管理员账号已存在")
 		}
@@ -167,8 +171,12 @@ func (s *AdminServer) upsertEventManager(ctx echo.Context, event *models.Event, 
 	}
 	if password != "" {
 		hash, _ := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
-		sets = append(sets, "password_hash=?")
-		args = append(args, string(hash))
+		encrypted, err := encryptAdminCredential(password)
+		if err != nil {
+			return response.InternalError(ctx, "赛事管理员密码安全存储失败")
+		}
+		sets = append(sets, "password_hash=?", "password_encrypted=?")
+		args = append(args, string(hash), encrypted)
 	}
 	args = append(args, *event.AdminID)
 	if _, err := s.repo.DB().ExecContext(ctx.Request().Context(), `UPDATE admin_user SET `+strings.Join(sets, ",")+`,updated_at=CURRENT_TIMESTAMP WHERE id=? AND role=4`, args...); err != nil {

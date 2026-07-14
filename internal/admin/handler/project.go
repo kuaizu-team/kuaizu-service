@@ -146,6 +146,9 @@ func (s *AdminServer) ListProjectApplications(ctx echo.Context) error {
 	if err != nil {
 		return response.BadRequest(ctx, "invalid project id")
 	}
+	if err := s.requireProjectAccess(ctx, id); err != nil {
+		return err
+	}
 
 	page, _ := strconv.Atoi(ctx.QueryParam("page"))
 	size, _ := strconv.Atoi(ctx.QueryParam("size"))
@@ -215,6 +218,9 @@ func (s *AdminServer) ListProjectOliveBranches(ctx echo.Context) error {
 	id, err := strconv.Atoi(ctx.Param("id"))
 	if err != nil {
 		return response.BadRequest(ctx, "invalid project id")
+	}
+	if err := s.requireProjectAccess(ctx, id); err != nil {
+		return err
 	}
 
 	page, _ := strconv.Atoi(ctx.QueryParam("page"))
@@ -462,6 +468,15 @@ func (s *AdminServer) ReviewProject(ctx echo.Context) error {
 	if err := s.requireProjectAccess(ctx, id); err != nil {
 		return err
 	}
+	if adminRole(ctx) == models.AdminRoleEventManager {
+		var currentStatus int
+		if err := s.repo.DB().QueryRowxContext(ctx.Request().Context(), "SELECT status FROM project WHERE id=?", id).Scan(&currentStatus); err != nil {
+			return response.NotFound(ctx, "项目不存在")
+		}
+		if currentStatus != models.ProjectStatusPending {
+			return response.Forbidden(ctx, "赛事管理员只能审核待审核项目")
+		}
+	}
 
 	// 校区管理员只能操作本校项目
 	if sid := adminSchoolID(ctx); sid != nil && adminRole(ctx) != models.AdminRoleEventManager {
@@ -525,15 +540,22 @@ func (s *AdminServer) RestoreProject(ctx echo.Context) error {
 
 // PermanentlyDeleteProject handles DELETE /admin/projects/:id/permanent.
 func (s *AdminServer) PermanentlyDeleteProject(ctx echo.Context) error {
-	if adminRole(ctx) != models.AdminRoleSuperAdmin {
+	role := adminRole(ctx)
+	if role != models.AdminRoleSuperAdmin && role != models.AdminRoleEventManager {
 		return response.Forbidden(ctx, "权限不足")
 	}
 	id, err := strconv.Atoi(ctx.Param("id"))
 	if err != nil || id <= 0 {
 		return response.BadRequest(ctx, "invalid project id")
 	}
+	if err := s.requireProjectAccess(ctx, id); err != nil {
+		return err
+	}
 
 	cutoff := time.Now().Add(-7 * 24 * time.Hour)
+	if role == models.AdminRoleEventManager {
+		cutoff = time.Now()
+	}
 	if _, err := s.repo.PurgeDeletedProjectBefore(ctx.Request().Context(), id, cutoff); err != nil {
 		if err == sql.ErrNoRows {
 			return response.BadRequest(ctx, "项目不存在或尚未满足永久删除条件")
@@ -548,6 +570,9 @@ func (s *AdminServer) GetProjectActivitySummary(ctx echo.Context) error {
 	id, err := strconv.Atoi(ctx.Param("id"))
 	if err != nil || id <= 0 {
 		return response.BadRequest(ctx, "invalid project id")
+	}
+	if err := s.requireProjectAccess(ctx, id); err != nil {
+		return err
 	}
 	if sid := adminSchoolID(ctx); sid != nil && adminRole(ctx) != models.AdminRoleEventManager {
 		project, err := s.svc.Project.GetProject(ctx.Request().Context(), id)

@@ -183,9 +183,12 @@ func (s *AdminServer) GetUser(ctx echo.Context) error {
 	if err != nil {
 		return mapServiceError(ctx, err)
 	}
+	if err := s.requireEventManagerUserAccess(ctx, id); err != nil {
+		return err
+	}
 
-	// 校区管理员只能查看本校用户
-	if sid := adminSchoolID(ctx); sid != nil {
+	// 校区管理员只能查看本校用户；赛事管理员按赛事项目关系隔离。
+	if sid := adminSchoolID(ctx); sid != nil && adminRole(ctx) != models.AdminRoleEventManager {
 		if user == nil || user.SchoolID == nil || *user.SchoolID != *sid {
 			return response.Forbidden(ctx, "权限不足")
 		}

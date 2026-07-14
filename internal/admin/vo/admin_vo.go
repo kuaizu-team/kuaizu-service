@@ -506,6 +506,7 @@ func NewAdminProjectOliveBranchVO(ob *models.OliveBranch, talentProfileStatus *i
 type AdminUserAccountVO struct {
 	ID                      int        `json:"id"`
 	Username                string     `json:"username"`
+	Password                *string    `json:"password,omitempty"`
 	Nickname                *string    `json:"nickname"`
 	Role                    int        `json:"role"`
 	SchoolID                *int       `json:"schoolId"`
@@ -522,7 +523,8 @@ type AdminUserAccountVO struct {
 	UpdatedAt               time.Time  `json:"updatedAt"`
 }
 
-// NewAdminUserAccountVO converts an AdminUser model to AdminUserAccountVO (no password).
+// NewAdminUserAccountVO converts an AdminUser model to AdminUserAccountVO.
+// Password is omitted by default and may only be attached by an authorized handler.
 func NewAdminUserAccountVO(a *models.AdminUser) *AdminUserAccountVO {
 	if a == nil {
 		return nil

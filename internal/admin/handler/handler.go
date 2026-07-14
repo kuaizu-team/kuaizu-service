@@ -130,3 +130,32 @@ func (s *AdminServer) requireProjectAccess(ctx echo.Context, projectID int) erro
 	}
 	return nil
 }
+
+// requireEventManagerUserAccess limits read-only user details to people tied
+// to one of the current event manager's projects.
+func (s *AdminServer) requireEventManagerUserAccess(ctx echo.Context, userID int) error {
+	if adminRole(ctx) != models.AdminRoleEventManager {
+		return nil
+	}
+	eventID, err := s.eventIDForManager(ctx)
+	if err != nil {
+		return err
+	}
+	var allowed bool
+	err = s.repo.DB().QueryRowxContext(ctx.Request().Context(), `
+		SELECT EXISTS(
+			SELECT 1
+			FROM project p
+			JOIN project_event pe ON pe.project_id = p.id
+			WHERE pe.event_id = ? AND (
+				p.creator_id = ?
+				OR EXISTS(SELECT 1 FROM project_members pm WHERE pm.project_id = p.id AND pm.user_id = ?)
+				OR EXISTS(SELECT 1 FROM project_application pa WHERE pa.project_id = p.id AND pa.user_id = ?)
+				OR EXISTS(SELECT 1 FROM olive_branch_record obr WHERE obr.related_project_id = p.id AND obr.receiver_id = ?)
+			)
+		)`, eventID, userID, userID, userID, userID).Scan(&allowed)
+	if err != nil || !allowed {
+		return response.Forbidden(ctx, "无权查看非关联赛事项目的用户")
+	}
+	return nil
+}

@@ -69,7 +69,7 @@ func (s *AdminServer) ListAdmins(ctx echo.Context) error {
 			return response.Forbidden(ctx, schoolSuperAdminNoSchoolMessage)
 		}
 		params.SchoolID = sid
-		params.IncludeAllEventManagers = true
+		params.IncludeAllEventManagers = false
 	}
 
 	admins, total, err := s.repo.AdminUser.List(ctx.Request().Context(), params)
@@ -118,6 +118,11 @@ func (s *AdminServer) GetAdmin(ctx echo.Context) error {
 	}
 
 	vo := adminvo.NewAdminUserAccountVO(target)
+	if target.Role == models.AdminRoleEventManager && target.PasswordEncrypted != nil {
+		if password, decryptErr := decryptAdminCredential(*target.PasswordEncrypted); decryptErr == nil {
+			vo.Password = &password
+		}
+	}
 	s.enrichAdminFinance(ctx, vo, target, callerRole == models.AdminRoleSuperAdmin)
 	return response.Success(ctx, vo)
 }
@@ -408,6 +413,13 @@ func (s *AdminServer) UpdateAdmin(ctx echo.Context) error {
 			return response.InternalError(ctx, "密码加密失败")
 		}
 		target.PasswordHash = string(hash)
+		if target.Role == models.AdminRoleEventManager {
+			encrypted, encryptErr := encryptAdminCredential(req.Password)
+			if encryptErr != nil {
+				return response.InternalError(ctx, "赛事管理员密码安全存储失败")
+			}
+			target.PasswordEncrypted = &encrypted
+		}
 	}
 
 	if err := s.repo.AdminUser.Update(ctx.Request().Context(), target); err != nil {
@@ -442,7 +454,6 @@ func (s *AdminServer) UpdateAdminStatus(ctx echo.Context) error {
 	if err != nil {
 		return response.BadRequest(ctx, "invalid admin id")
 	}
-
 	var req updateAdminStatusRequest
 	if err := ctx.Bind(&req); err != nil {
 		return response.BadRequest(ctx, "invalid request body")
@@ -493,6 +504,9 @@ func (s *AdminServer) DeleteAdmin(ctx echo.Context) error {
 	id, err := strconv.Atoi(ctx.Param("id"))
 	if err != nil {
 		return response.BadRequest(ctx, "invalid admin id")
+	}
+	if id == callerID {
+		return response.BadRequest(ctx, "不能删除自己的管理员账号")
 	}
 
 	target, err := s.repo.AdminUser.GetByID(ctx.Request().Context(), id)

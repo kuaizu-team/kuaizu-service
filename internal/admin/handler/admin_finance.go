@@ -17,7 +17,7 @@ func canViewAdminDetail(callerRole, callerID int, target *models.AdminUser, call
 		if target.ID == callerID {
 			return true
 		}
-		return target.Role == models.AdminRoleEventManager || (target.Role == models.AdminRoleSchoolAdmin && schoolIDsMatch(callerSchoolID, target.SchoolID))
+		return (target.Role == models.AdminRoleEventManager || target.Role == models.AdminRoleSchoolAdmin) && schoolIDsMatch(callerSchoolID, target.SchoolID)
 	default:
 		return false
 	}
