@@ -268,7 +268,7 @@ func buildAdminEventModel(req adminEventRequest, role int, adminSchoolID *int) (
 		}
 	}
 	if req.RegistrationDeadline != nil && strings.TrimSpace(*req.RegistrationDeadline) != "" {
-		t, err := time.Parse("2006-01-02", strings.TrimSpace(*req.RegistrationDeadline))
+		t, err := models.ParseEventDate(strings.TrimSpace(*req.RegistrationDeadline))
 		if err != nil {
 			return nil, err
 		}

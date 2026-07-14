@@ -9,6 +9,11 @@ import (
 
 var eventRegistrationLocation = time.FixedZone("Asia/Shanghai", 8*60*60)
 
+// ParseEventDate parses a DATE value in the event registration business zone.
+func ParseEventDate(value string) (time.Time, error) {
+	return time.ParseInLocation("2006-01-02", value, eventRegistrationLocation)
+}
+
 // Event represents a campus competition/event.
 type Event struct {
 	ID                   int        `db:"id"`
