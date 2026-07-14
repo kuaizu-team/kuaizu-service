@@ -10,6 +10,12 @@ properties:
     type: string
     format: date
     nullable: true
+  isOpen:
+    type: boolean
+    description: Whether registration is open. The deadline date remains open through the end of that day.
+  isExpired:
+    type: boolean
+    description: Whether registration has expired. Events without a deadline are not expired.
   articleUrl:
     type: string
     nullable: true

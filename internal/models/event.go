@@ -7,6 +7,8 @@ import (
 	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
+var eventRegistrationLocation = time.FixedZone("Asia/Shanghai", 8*60*60)
+
 // Event represents a campus competition/event.
 type Event struct {
 	ID                   int        `db:"id"`
@@ -30,10 +32,14 @@ type Event struct {
 
 func (e *Event) ToVO() api.EventVO {
 	isRanking := e.IsRanking == 1
+	isOpen := IsEventRegistrationOpen(e.RegistrationDeadline, time.Now())
+	isExpired := !isOpen
 	vo := api.EventVO{
 		Id:           &e.ID,
 		Name:         &e.Name,
 		IsRanking:    &isRanking,
+		IsOpen:       &isOpen,
+		IsExpired:    &isExpired,
 		ArticleUrl:   e.ArticleURL,
 		Summary:      e.Summary,
 		SchoolName:   e.SchoolName,
@@ -50,4 +56,17 @@ func (e *Event) ToVO() api.EventVO {
 		vo.RegistrationDeadline = &date
 	}
 	return vo
+}
+
+// IsEventRegistrationOpen reports whether registration is still open at now.
+// A DATE deadline is treated as an exclusive boundary at midnight of the next
+// day, so the full deadline date remains available for registration.
+func IsEventRegistrationOpen(deadline *time.Time, now time.Time) bool {
+	if deadline == nil {
+		return true
+	}
+
+	year, month, day := deadline.Date()
+	expiresAt := time.Date(year, month, day+1, 0, 0, 0, 0, eventRegistrationLocation)
+	return now.Before(expiresAt)
 }

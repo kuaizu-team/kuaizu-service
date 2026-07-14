@@ -92,7 +92,8 @@ func (s *Server) GetWebsiteOverview(ctx echo.Context) error {
 	err = s.repo.DB().SelectContext(requestCtx, &events, `
 		SELECT id, name, is_ranking, registration_deadline, NULLIF(article_url, '') AS article_url
 		FROM event
-		WHERE registration_deadline IS NULL OR registration_deadline >= CURDATE()
+		WHERE registration_deadline IS NULL
+		   OR DATE_ADD(registration_deadline, INTERVAL 1 DAY) > NOW()
 		ORDER BY CASE WHEN registration_deadline IS NULL THEN 1 ELSE 0 END,
 		registration_deadline ASC, display_order DESC, id DESC
 		LIMIT 3`)
