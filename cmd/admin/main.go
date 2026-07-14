@@ -65,6 +65,7 @@ func main() {
 	// Protected routes
 	adminGroup := e.Group("/admin")
 	adminGroup.Use(adminmw.AdminJWTAuth(adminmw.DefaultAdminJWTConfig()))
+	adminGroup.GET("/auth/me", server.GetCurrentAdmin)
 
 	adminGroup.GET("/dashboard/stats", server.GetDashboardStats)
 	adminGroup.GET("/stats/revenue", server.GetRevenueStats)

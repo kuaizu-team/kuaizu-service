@@ -23,6 +23,34 @@ func canViewAdminDetail(callerRole, callerID int, target *models.AdminUser, call
 	}
 }
 
+func canViewAdminPassword(callerRole, callerID int, target *models.AdminUser, callerSchoolID *int) bool {
+	if target == nil {
+		return false
+	}
+	if target.ID == callerID {
+		return true
+	}
+	switch callerRole {
+	case models.AdminRoleSuperAdmin:
+		return true
+	case models.AdminRoleSchoolSuperAdmin:
+		return (target.Role == models.AdminRoleSchoolAdmin || target.Role == models.AdminRoleEventManager) && schoolIDsMatch(callerSchoolID, target.SchoolID)
+	default:
+		return false
+	}
+}
+
+func attachAdminPassword(vo *adminvo.AdminUserAccountVO, target *models.AdminUser) {
+	if vo == nil || target == nil || target.PasswordEncrypted == nil {
+		return
+	}
+	password, err := decryptAdminCredential(*target.PasswordEncrypted)
+	if err != nil {
+		return
+	}
+	vo.Password = &password
+}
+
 func (s *AdminServer) enrichAdminFinance(ctx echo.Context, vo *adminvo.AdminUserAccountVO, admin *models.AdminUser, includeRemark bool) {
 	if vo == nil || admin == nil {
 		return

@@ -7,6 +7,7 @@ import (
 
 func TestEventManagerRouteAllowed(t *testing.T) {
 	allowed := []struct{ method, path string }{
+		{http.MethodGet, "/admin/auth/me"},
 		{http.MethodGet, "/admin/dashboard/stats"},
 		{http.MethodGet, "/admin/projects/12"},
 		{http.MethodGet, "/admin/projects/12/applications"},

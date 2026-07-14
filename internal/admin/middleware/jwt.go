@@ -70,7 +70,7 @@ var eventManagerPermanentDeletePath = regexp.MustCompile(`^/admin/projects/[0-9]
 var eventManagerUserDetailPath = regexp.MustCompile(`^/admin/users/[0-9]+$`)
 
 func eventManagerRouteAllowed(method, path string) bool {
-	if method == http.MethodGet && (path == "/admin/dashboard/stats" || path == "/admin/projects" || eventManagerProjectPath.MatchString(path) || eventManagerProjectReadPath.MatchString(path) || eventManagerUserDetailPath.MatchString(path)) {
+	if method == http.MethodGet && (path == "/admin/auth/me" || path == "/admin/dashboard/stats" || path == "/admin/projects" || eventManagerProjectPath.MatchString(path) || eventManagerProjectReadPath.MatchString(path) || eventManagerUserDetailPath.MatchString(path)) {
 		return true
 	}
 	if method == http.MethodPatch && (eventManagerProjectPath.MatchString(path) || eventManagerRestorePath.MatchString(path)) {

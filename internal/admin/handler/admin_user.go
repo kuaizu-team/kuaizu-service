@@ -24,6 +24,8 @@ const (
 // ListAdmins handles GET /admin/admins
 func (s *AdminServer) ListAdmins(ctx echo.Context) error {
 	callerRole := adminRole(ctx)
+	callerID := currentAdminID(ctx)
+	callerSchoolID := adminSchoolID(ctx)
 
 	if callerRole == models.AdminRoleSchoolAdmin {
 		return response.Forbidden(ctx, adminCenterForbiddenMessage)
@@ -80,6 +82,9 @@ func (s *AdminServer) ListAdmins(ctx echo.Context) error {
 	list := make([]adminvo.AdminUserAccountVO, len(admins))
 	for i, a := range admins {
 		vo := adminvo.NewAdminUserAccountVO(a)
+		if canViewAdminPassword(callerRole, callerID, a, callerSchoolID) {
+			attachAdminPassword(vo, a)
+		}
 		s.enrichAdminFinance(ctx, vo, a, callerRole == models.AdminRoleSuperAdmin)
 		list[i] = *vo
 	}
@@ -118,12 +123,28 @@ func (s *AdminServer) GetAdmin(ctx echo.Context) error {
 	}
 
 	vo := adminvo.NewAdminUserAccountVO(target)
-	if target.Role == models.AdminRoleEventManager && target.PasswordEncrypted != nil {
-		if password, decryptErr := decryptAdminCredential(*target.PasswordEncrypted); decryptErr == nil {
-			vo.Password = &password
-		}
+	if canViewAdminPassword(callerRole, callerID, target, callerSchoolID) {
+		attachAdminPassword(vo, target)
 	}
 	s.enrichAdminFinance(ctx, vo, target, callerRole == models.AdminRoleSuperAdmin)
+	return response.Success(ctx, vo)
+}
+
+// GetCurrentAdmin handles GET /admin/auth/me.
+func (s *AdminServer) GetCurrentAdmin(ctx echo.Context) error {
+	callerID := currentAdminID(ctx)
+	target, err := s.repo.AdminUser.GetByID(ctx.Request().Context(), callerID)
+	if err != nil {
+		return response.InternalError(ctx, "查询管理员信息失败")
+	}
+	if target == nil {
+		return response.NotFound(ctx, "管理员不存在")
+	}
+
+	vo := adminvo.NewAdminUserAccountVO(target)
+	if canViewAdminPassword(adminRole(ctx), callerID, target, adminSchoolID(ctx)) {
+		attachAdminPassword(vo, target)
+	}
 	return response.Success(ctx, vo)
 }
 
@@ -290,16 +311,21 @@ func (s *AdminServer) CreateAdmin(ctx echo.Context) error {
 	if err != nil {
 		return response.InternalError(ctx, "密码加密失败")
 	}
+	encrypted, err := encryptAdminCredential(req.Password)
+	if err != nil {
+		return response.InternalError(ctx, "管理员密码安全存储失败")
+	}
 
 	admin := &models.AdminUser{
-		Username:     req.Username,
-		PasswordHash: string(hash),
-		Nickname:     req.Nickname,
-		Role:         req.Role,
-		SchoolID:     req.SchoolID,
-		Status:       req.Status,
-		CreatedAt:    time.Now(),
-		UpdatedAt:    time.Now(),
+		Username:          req.Username,
+		PasswordHash:      string(hash),
+		PasswordEncrypted: &encrypted,
+		Nickname:          req.Nickname,
+		Role:              req.Role,
+		SchoolID:          req.SchoolID,
+		Status:            req.Status,
+		CreatedAt:         time.Now(),
+		UpdatedAt:         time.Now(),
 	}
 
 	if err := s.repo.AdminUser.Create(ctx.Request().Context(), admin); err != nil {
@@ -413,13 +439,11 @@ func (s *AdminServer) UpdateAdmin(ctx echo.Context) error {
 			return response.InternalError(ctx, "密码加密失败")
 		}
 		target.PasswordHash = string(hash)
-		if target.Role == models.AdminRoleEventManager {
-			encrypted, encryptErr := encryptAdminCredential(req.Password)
-			if encryptErr != nil {
-				return response.InternalError(ctx, "赛事管理员密码安全存储失败")
-			}
-			target.PasswordEncrypted = &encrypted
+		encrypted, encryptErr := encryptAdminCredential(req.Password)
+		if encryptErr != nil {
+			return response.InternalError(ctx, "管理员密码安全存储失败")
 		}
+		target.PasswordEncrypted = &encrypted
 	}
 
 	if err := s.repo.AdminUser.Update(ctx.Request().Context(), target); err != nil {
