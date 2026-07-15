@@ -79,17 +79,17 @@ func adminSchoolID(ctx echo.Context) *int {
 	return &schoolID
 }
 
-// adminSchoolIDs resolves the authoritative school scope. Role=2 reads owned
-// relations from the database on every request so delegation takes effect
+// adminSchoolIDs resolves the authoritative school scope. Role=2 reads all
+// positive-rate relations from the database on every request so delegation takes effect
 // immediately even when the JWT still contains a legacy schoolId claim.
 // A nil slice means unrestricted (platform super admin); an empty slice means
-// the school super admin currently owns no school.
+// the school super admin currently has no positive-rate school relation.
 func (s *AdminServer) adminSchoolIDs(ctx echo.Context) ([]int, error) {
 	switch adminRole(ctx) {
 	case models.AdminRoleSuperAdmin:
 		return nil, nil
 	case models.AdminRoleSchoolSuperAdmin:
-		return s.repo.AdminUser.OwnedSchoolIDs(ctx.Request().Context(), currentAdminID(ctx))
+		return s.repo.AdminUser.AccessibleSchoolIDs(ctx.Request().Context(), currentAdminID(ctx))
 	default:
 		if schoolID := adminSchoolID(ctx); schoolID != nil {
 			return []int{*schoolID}, nil

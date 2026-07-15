@@ -28,9 +28,9 @@ type AdminUser struct {
 	Schools []AdminSchoolRelation `db:"-"`
 }
 
-// AdminSchoolRelation separates operational ownership from settlement rights.
-// Only IsOwner relations grant data access; a delegated administrator may leave
-// a non-owner relation behind with a residual commission rate.
+// AdminSchoolRelation separates unique operational ownership from school access.
+// IsOwner identifies the one delegation owner; every positive commission rate
+// grants data and operational access to that school.
 type AdminSchoolRelation struct {
 	ID                      int64     `db:"id"`
 	AdminUserID             int       `db:"admin_user_id"`

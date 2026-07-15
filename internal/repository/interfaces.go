@@ -227,8 +227,9 @@ type AdminUserRepo interface {
 	UpdateSchoolCommission(ctx context.Context, adminID, schoolID int, rate float64) error
 	SchoolCommissionTotalExcluding(ctx context.Context, schoolID, adminID int) (float64, error)
 	ListSchoolRelations(ctx context.Context, adminID int, ownersOnly bool) ([]models.AdminSchoolRelation, error)
-	OwnedSchoolIDs(ctx context.Context, adminID int) ([]int, error)
+	AccessibleSchoolIDs(ctx context.Context, adminID int) ([]int, error)
 	HasOwnedSchool(ctx context.Context, adminID, schoolID int) (bool, error)
+	RemoveSchoolRelation(ctx context.Context, adminID, schoolID int) error
 	DelegateSchool(ctx context.Context, sourceAdminID int, target *models.AdminUser, targetUserID *int, schoolID int, rate float64) (int, error)
 	Delete(ctx context.Context, id int) error
 }

@@ -584,7 +584,7 @@ func (r *OrderRepository) AdminRevenueStats(ctx context.Context, adminID int) (*
 		FROM admin_school_relation rel
 		JOIN `+"`user`"+` u ON u.school_id = rel.school_id
 		JOIN `+"`order`"+` o ON o.user_id = u.id
-		WHERE rel.admin_user_id = ? AND rel.is_owner = 1 AND o.refund_status = 1`, adminID).Scan(&stats.PendingRefundOrderCount); err != nil {
+		WHERE rel.admin_user_id = ? AND rel.commission_rate > 0 AND o.refund_status = 1`, adminID).Scan(&stats.PendingRefundOrderCount); err != nil {
 		return nil, fmt.Errorf("query admin pending refunds: %w", err)
 	}
 	return stats, nil

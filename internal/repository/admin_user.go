@@ -207,18 +207,29 @@ func (r *AdminUserRepository) ListSchoolRelations(ctx context.Context, adminID i
 	return relations, nil
 }
 
-func (r *AdminUserRepository) OwnedSchoolIDs(ctx context.Context, adminID int) ([]int, error) {
+func (r *AdminUserRepository) AccessibleSchoolIDs(ctx context.Context, adminID int) ([]int, error) {
 	var ids []int
 	if err := r.db.SelectContext(ctx, &ids, `
 		SELECT school_id FROM admin_school_relation
-		WHERE admin_user_id = ? AND is_owner = 1
+		WHERE admin_user_id = ? AND commission_rate > 0
 		ORDER BY id`, adminID); err != nil {
-		return nil, fmt.Errorf("query owned school ids: %w", err)
+		return nil, fmt.Errorf("query accessible school ids: %w", err)
 	}
 	if ids == nil {
 		ids = []int{}
 	}
 	return ids, nil
+}
+
+func (r *AdminUserRepository) RemoveSchoolRelation(ctx context.Context, adminID, schoolID int) error {
+	result, err := r.db.ExecContext(ctx, `DELETE FROM admin_school_relation WHERE admin_user_id=? AND school_id=?`, adminID, schoolID)
+	if err != nil {
+		return fmt.Errorf("remove admin school relation: %w", err)
+	}
+	if rows, _ := result.RowsAffected(); rows == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
 }
 
 func (r *AdminUserRepository) HasOwnedSchool(ctx context.Context, adminID, schoolID int) (bool, error) {

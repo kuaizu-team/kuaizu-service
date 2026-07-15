@@ -237,7 +237,10 @@ func (s *AdminServer) UpdateAdminCommissionRate(ctx echo.Context) error {
 			}
 			return response.InternalError(ctx, "更新学校分成比例失败")
 		}
-		updated, _ := s.repo.AdminUser.GetByID(ctx.Request().Context(), id)
+		updated, err := s.repo.AdminUser.GetByID(ctx.Request().Context(), id)
+		if err != nil || updated == nil {
+			return response.InternalError(ctx, "读取更新后的管理员失败")
+		}
 		vo := adminvo.NewAdminUserAccountVO(updated)
 		s.enrichAdminFinance(ctx, vo, updated, true)
 		return response.Success(ctx, vo)
@@ -570,15 +573,16 @@ func (s *AdminServer) CreateAdmin(ctx echo.Context) error {
 }
 
 type updateAdminRequest struct {
-	Nickname   *string               `json:"nickname"`
-	Password   string                `json:"password"`
-	Role       *int                  `json:"role"`
-	SchoolID   **int                 `json:"schoolId"`
-	Status     *int                  `json:"status"`
-	JoinDate   *string               `json:"joinDate"`
-	Intro      *string               `json:"intro"`
-	ArticleURL *string               `json:"articleUrl"`
-	Schools    *[]adminSchoolRequest `json:"schools"`
+	Nickname       *string               `json:"nickname"`
+	Password       string                `json:"password"`
+	Role           *int                  `json:"role"`
+	SchoolID       **int                 `json:"schoolId"`
+	Status         *int                  `json:"status"`
+	JoinDate       *string               `json:"joinDate"`
+	Intro          *string               `json:"intro"`
+	ArticleURL     *string               `json:"articleUrl"`
+	Schools        *[]adminSchoolRequest `json:"schools"`
+	RemoveSchoolID *int                  `json:"removeSchoolId"`
 }
 
 // UpdateAdmin handles PUT /admin/admins/:id
@@ -611,6 +615,27 @@ func (s *AdminServer) UpdateAdmin(ctx echo.Context) error {
 	var req updateAdminRequest
 	if err := ctx.Bind(&req); err != nil {
 		return response.BadRequest(ctx, "invalid request body")
+	}
+	if req.RemoveSchoolID != nil {
+		if callerRole != models.AdminRoleSuperAdmin {
+			return response.Forbidden(ctx, "只有平台超级管理员可以删除管理员学校关系")
+		}
+		if target.Role != models.AdminRoleSchoolSuperAdmin || *req.RemoveSchoolID <= 0 {
+			return response.BadRequest(ctx, "只能删除校区超级管理员的有效学校关系")
+		}
+		if err := s.repo.AdminUser.RemoveSchoolRelation(ctx.Request().Context(), target.ID, *req.RemoveSchoolID); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return response.NotFound(ctx, "管理员未关联该学校")
+			}
+			return response.InternalError(ctx, "删除管理员学校关系失败")
+		}
+		updated, err := s.repo.AdminUser.GetByID(ctx.Request().Context(), id)
+		if err != nil || updated == nil {
+			return response.InternalError(ctx, "读取删除学校后的管理员失败")
+		}
+		vo := adminvo.NewAdminUserAccountVO(updated)
+		s.enrichAdminFinance(ctx, vo, updated, true)
+		return response.Success(ctx, vo)
 	}
 
 	if callerRole == models.AdminRoleSchoolSuperAdmin && id == callerID && (req.SchoolID != nil || req.Schools != nil) {
@@ -652,7 +677,14 @@ func (s *AdminServer) UpdateAdmin(ctx echo.Context) error {
 		if req.Schools == nil && req.SchoolID != nil && *req.SchoolID != nil {
 			ownedSchools = []models.AdminSchoolRelation{{SchoolID: **req.SchoolID, CommissionRate: 0, IsOwner: true}}
 		}
-		if len(ownedSchools) == 0 {
+		hasAccessibleRelation := false
+		for _, school := range target.Schools {
+			if school.CommissionRate > 0 {
+				hasAccessibleRelation = true
+				break
+			}
+		}
+		if len(ownedSchools) == 0 && !hasAccessibleRelation {
 			return response.BadRequest(ctx, "校区超级管理员至少需要绑定一个学校")
 		}
 		target.SchoolID = nil

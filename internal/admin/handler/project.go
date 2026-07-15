@@ -344,11 +344,14 @@ func (s *AdminServer) CreateProjectMilestone(ctx echo.Context) error {
 }
 
 func (s *AdminServer) UpdateProjectMemberRole(ctx echo.Context) error {
-	if err := requireSuperAdmin(ctx); err != nil {
-		return err
+	if role := adminRole(ctx); role != models.AdminRoleSuperAdmin && role != models.AdminRoleSchoolSuperAdmin {
+		return response.Forbidden(ctx, "权限不足")
 	}
 	projectID, err := parseIDParam(ctx, "id", "project")
 	if err != nil {
+		return err
+	}
+	if err := s.requireProjectAccess(ctx, projectID); err != nil {
 		return err
 	}
 	memberID, err := parseIDParam(ctx, "memberId", "member")

@@ -46,7 +46,7 @@ func (s *AdminServer) Login(ctx echo.Context) error {
 	schoolIDInt := 0
 	if admin.Role == models.AdminRoleSchoolSuperAdmin {
 		for _, school := range admin.Schools {
-			if school.IsOwner {
+			if school.CommissionRate > 0 {
 				schoolIDInt = school.SchoolID
 				name := school.SchoolName
 				schoolName = &name
