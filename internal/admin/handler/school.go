@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"strings"
+
 	"github.com/kuaizu-team/kuaizu-service/internal/repository"
 	"github.com/kuaizu-team/kuaizu-service/internal/response"
 	"github.com/labstack/echo/v4"
@@ -11,9 +13,18 @@ type schoolDropdownVO struct {
 	Name string `json:"name"`
 }
 
-// ListSchools handles GET /admin/schools — returns all schools for dropdown
+// ListSchools handles GET /admin/schools?keyword=xxx.
+// Empty keyword returns the first 30 schools; keyword search also returns at most 30.
 func (s *AdminServer) ListSchools(ctx echo.Context) error {
-	schools, err := s.repo.School.List(ctx.Request().Context(), repository.SchoolListParams{})
+	keyword := strings.TrimSpace(ctx.QueryParam("keyword"))
+	var keywordParam *string
+	if keyword != "" {
+		keywordParam = &keyword
+	}
+	schools, err := s.repo.School.List(ctx.Request().Context(), repository.SchoolListParams{
+		Keyword: keywordParam,
+		Limit:   30,
+	})
 	if err != nil {
 		return response.InternalError(ctx, "获取学校列表失败")
 	}
