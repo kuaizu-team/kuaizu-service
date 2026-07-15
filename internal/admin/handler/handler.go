@@ -68,11 +68,79 @@ func adminRole(ctx echo.Context) int {
 // adminSchoolID returns the logged-in admin's school ID.
 // Returns nil when the admin is a super admin (no school binding).
 func adminSchoolID(ctx echo.Context) *int {
+	// Role=2 is multi-school; callers must use (*AdminServer).adminSchoolIDs.
+	if adminRole(ctx) == models.AdminRoleSchoolSuperAdmin {
+		return nil
+	}
 	schoolID, ok := ctx.Get("adminSchoolID").(int)
 	if !ok || schoolID == 0 {
 		return nil
 	}
 	return &schoolID
+}
+
+// adminSchoolIDs resolves the authoritative school scope. Role=2 reads owned
+// relations from the database on every request so delegation takes effect
+// immediately even when the JWT still contains a legacy schoolId claim.
+// A nil slice means unrestricted (platform super admin); an empty slice means
+// the school super admin currently owns no school.
+func (s *AdminServer) adminSchoolIDs(ctx echo.Context) ([]int, error) {
+	switch adminRole(ctx) {
+	case models.AdminRoleSuperAdmin:
+		return nil, nil
+	case models.AdminRoleSchoolSuperAdmin:
+		return s.repo.AdminUser.OwnedSchoolIDs(ctx.Request().Context(), currentAdminID(ctx))
+	default:
+		if schoolID := adminSchoolID(ctx); schoolID != nil {
+			return []int{*schoolID}, nil
+		}
+		return []int{}, nil
+	}
+}
+
+func schoolIDInScope(schoolID *int, schoolIDs []int) bool {
+	if schoolID == nil {
+		return false
+	}
+	for _, allowed := range schoolIDs {
+		if *schoolID == allowed {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *AdminServer) canAccessSchool(ctx echo.Context, schoolID *int) (bool, error) {
+	if adminRole(ctx) == models.AdminRoleSuperAdmin {
+		return true, nil
+	}
+	schoolIDs, err := s.adminSchoolIDs(ctx)
+	if err != nil {
+		return false, err
+	}
+	return schoolIDInScope(schoolID, schoolIDs), nil
+}
+
+func (s *AdminServer) canEditAdminInScope(ctx echo.Context, target *models.AdminUser) bool {
+	if target == nil {
+		return false
+	}
+	role := adminRole(ctx)
+	callerID := currentAdminID(ctx)
+	if role == models.AdminRoleSuperAdmin {
+		return target.ID == callerID || target.Role > models.AdminRoleSuperAdmin
+	}
+	if role != models.AdminRoleSchoolSuperAdmin {
+		return false
+	}
+	if target.ID == callerID {
+		return true
+	}
+	if target.Role != models.AdminRoleSchoolAdmin && target.Role != models.AdminRoleEventManager {
+		return false
+	}
+	schoolIDs, err := s.adminSchoolIDs(ctx)
+	return err == nil && schoolIDInScope(target.SchoolID, schoolIDs)
 }
 
 // canEditAdmin reports whether the caller may edit/delete the target admin.
@@ -117,6 +185,17 @@ func (s *AdminServer) eventIDForManager(ctx echo.Context) (int, error) {
 }
 
 func (s *AdminServer) requireProjectAccess(ctx echo.Context, projectID int) error {
+	if adminRole(ctx) == models.AdminRoleSchoolSuperAdmin {
+		var schoolID *int
+		if err := s.repo.DB().QueryRowxContext(ctx.Request().Context(), `SELECT school_id FROM project WHERE id=?`, projectID).Scan(&schoolID); err != nil {
+			return response.NotFound(ctx, "项目不存在")
+		}
+		allowed, err := s.canAccessSchool(ctx, schoolID)
+		if err != nil || !allowed {
+			return response.Forbidden(ctx, "无权访问非负责学校的项目")
+		}
+		return nil
+	}
 	if adminRole(ctx) != models.AdminRoleEventManager {
 		return nil
 	}
@@ -156,6 +235,37 @@ func (s *AdminServer) requireEventManagerUserAccess(ctx echo.Context, userID int
 		)`, eventID, userID, userID, userID, userID).Scan(&allowed)
 	if err != nil || !allowed {
 		return response.Forbidden(ctx, "无权查看非关联赛事项目的用户")
+	}
+	return nil
+}
+
+func (s *AdminServer) requireUserSchoolAccess(ctx echo.Context, userID int) error {
+	if adminRole(ctx) == models.AdminRoleSuperAdmin || adminRole(ctx) == models.AdminRoleEventManager {
+		return nil
+	}
+	var schoolID *int
+	if err := s.repo.DB().QueryRowxContext(ctx.Request().Context(), `SELECT school_id FROM `+"`user`"+` WHERE id=?`, userID).Scan(&schoolID); err != nil {
+		return response.NotFound(ctx, "用户不存在")
+	}
+	allowed, err := s.canAccessSchool(ctx, schoolID)
+	if err != nil || !allowed {
+		return response.Forbidden(ctx, "无权访问非负责学校的用户")
+	}
+	return nil
+}
+
+func (s *AdminServer) requireOrderSchoolAccess(ctx echo.Context, orderID int) error {
+	if adminRole(ctx) != models.AdminRoleSchoolSuperAdmin {
+		return nil
+	}
+	var schoolID *int
+	if err := s.repo.DB().QueryRowxContext(ctx.Request().Context(), `
+		SELECT u.school_id FROM `+"`order`"+` o JOIN `+"`user`"+` u ON u.id=o.user_id WHERE o.id=?`, orderID).Scan(&schoolID); err != nil {
+		return response.NotFound(ctx, "订单不存在")
+	}
+	allowed, err := s.canAccessSchool(ctx, schoolID)
+	if err != nil || !allowed {
+		return response.Forbidden(ctx, "无权访问非负责学校的订单")
 	}
 	return nil
 }

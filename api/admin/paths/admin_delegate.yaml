@@ -1,0 +1,43 @@
+post:
+  tags: [Admins]
+  summary: Transfer a school's unique operational ownership and split commission
+  requestBody:
+    required: true
+    content:
+      application/json:
+        schema:
+          type: object
+          required: [schoolId, commissionRate]
+          properties:
+            targetUserId:
+              type: integer
+              description: Existing role=2 admin. Omit to create a new admin.
+            schoolId:
+              type: integer
+            commissionRate:
+              type: number
+              minimum: 0
+              maximum: 100
+            username:
+              type: string
+            password:
+              type: string
+              format: password
+            nickname:
+              type: string
+  responses:
+    '200':
+      description: Delegation completed atomically
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/BaseResponse.yaml
+              - type: object
+                properties:
+                  data:
+                    $ref: ../components/schemas/AdminAccount.yaml
+    '400':
+      $ref: ../components/responses/BadRequest.yaml
+    '403':
+      $ref: ../components/responses/Forbidden.yaml

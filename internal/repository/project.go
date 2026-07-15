@@ -27,6 +27,7 @@ type ListParams struct {
 	Size          int
 	Keyword       *string
 	SchoolID      *int
+	SchoolIDs     []int
 	Status        *int
 	Statuses      []int
 	Direction     *int
@@ -73,6 +74,16 @@ func (r *ProjectRepository) List(ctx context.Context, params ListParams) ([]mode
 	if params.SchoolID != nil {
 		conditions = append(conditions, "p.school_id = ?")
 		whereArgs = append(whereArgs, *params.SchoolID)
+	}
+	if len(params.SchoolIDs) > 0 {
+		condition, inArgs, err := sqlx.In("p.school_id IN (?)", params.SchoolIDs)
+		if err != nil {
+			return nil, 0, fmt.Errorf("build project school filter: %w", err)
+		}
+		conditions = append(conditions, condition)
+		whereArgs = append(whereArgs, inArgs...)
+	} else if params.SchoolIDs != nil {
+		conditions = append(conditions, "1=0")
 	}
 	if len(params.Statuses) > 0 {
 		placeholders := make([]string, len(params.Statuses))

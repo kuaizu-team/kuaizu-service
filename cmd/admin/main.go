@@ -158,11 +158,17 @@ func main() {
 	adminGroup.PATCH("/admins/:id/finance-remark", server.UpdateAdminFinanceRemark)
 	adminGroup.PUT("/admins/:id/commission-rate", server.UpdateAdminCommissionRate)
 	adminGroup.POST("/admins/:id/settle", server.SettleAdminOrders)
+	adminGroup.POST("/delegate", server.DelegateAdminSchool)
 	adminGroup.PUT("/admins/:id", server.UpdateAdmin)
 	adminGroup.PATCH("/admins/:id/status", server.UpdateAdminStatus)
 	adminGroup.DELETE("/admins/:id", server.DeleteAdmin)
 
 	adminGroup.GET("/schools", server.ListSchools)
+
+	// Versioned delegation endpoint kept alongside the existing /admin API.
+	apiV2AdminGroup := e.Group("/api/v2/admin")
+	apiV2AdminGroup.Use(adminmw.AdminJWTAuth(adminmw.DefaultAdminJWTConfig()))
+	apiV2AdminGroup.POST("/delegate", server.DelegateAdminSchool)
 
 	port := os.Getenv("ADMIN_PORT")
 	if port == "" {

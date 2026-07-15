@@ -104,6 +104,8 @@ paths:
     $ref: paths/admins_{id}_commission-rate.yaml
   /admins/{id}/settle:
     $ref: paths/admins_{id}_settle.yaml
+  /delegate:
+    $ref: paths/admin_delegate.yaml
   /feedbacks:
     $ref: paths/feedbacks.yaml
   /feedbacks/{id}:

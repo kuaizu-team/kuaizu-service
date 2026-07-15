@@ -38,7 +38,7 @@ func TestCalculateCommissionAmount(t *testing.T) {
 func TestSettleSchoolPendingOrdersRejectsInvalidCommissionRate(t *testing.T) {
 	repo := &OrderRepository{}
 	for _, rate := range []float64{0, -1, 100.01} {
-		if _, err := repo.SettleSchoolPendingOrders(t.Context(), 1, 1, rate, nil); err == nil {
+		if _, err := repo.SettleSchoolPendingOrders(t.Context(), 1, 1, 2, rate, nil); err == nil {
 			t.Fatalf("rate %v: expected validation error", rate)
 		}
 	}

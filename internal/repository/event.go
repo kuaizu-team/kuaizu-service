@@ -22,6 +22,7 @@ type EventListParams struct {
 	IsRanking                *bool
 	RegistrationDeadlineFrom *time.Time
 	RegistrationDeadlineTo   *time.Time
+	SchoolIDs                []int
 }
 
 func NewEventRepository(db *sqlx.DB) *EventRepository {
@@ -69,6 +70,16 @@ func (r *EventRepository) List(ctx context.Context, params EventListParams) ([]m
 	if params.RegistrationDeadlineTo != nil {
 		conditions = append(conditions, "e.registration_deadline <= ?")
 		args = append(args, *params.RegistrationDeadlineTo)
+	}
+	if len(params.SchoolIDs) > 0 {
+		condition, inArgs, err := sqlx.In("(COALESCE(e.level,'') <> 'school' OR e.school_id IN (?))", params.SchoolIDs)
+		if err != nil {
+			return nil, 0, fmt.Errorf("build event school filter: %w", err)
+		}
+		conditions = append(conditions, condition)
+		args = append(args, inArgs...)
+	} else if params.SchoolIDs != nil {
+		conditions = append(conditions, "COALESCE(e.level,'') <> 'school'")
 	}
 	where := strings.Join(conditions, " AND ")
 

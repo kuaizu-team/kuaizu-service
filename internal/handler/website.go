@@ -6,6 +6,7 @@ import (
 	"github.com/kuaizu-team/kuaizu-service/internal/repository"
 	"github.com/kuaizu-team/kuaizu-service/internal/response"
 	"github.com/labstack/echo/v4"
+	"strings"
 	"time"
 )
 
@@ -141,7 +142,25 @@ func (s *Server) ListWebsiteTeam(ctx echo.Context) error {
 		if a.Role != models.AdminRoleSchoolSuperAdmin && a.Role != models.AdminRoleSchoolAdmin {
 			continue
 		}
-		result = append(result, map[string]interface{}{"id": a.ID, "nickname": a.Nickname, "role": a.Role, "schoolName": a.SchoolName, "joinDate": a.JoinDate, "intro": a.Intro, "articleUrl": a.ArticleURL})
+		schoolNames := make([]string, 0, len(a.Schools))
+		if a.Role == models.AdminRoleSchoolSuperAdmin {
+			for _, school := range a.Schools {
+				if school.IsOwner {
+					schoolNames = append(schoolNames, school.SchoolName)
+				}
+			}
+			// A fully delegated administrator no longer appears on the public team page.
+			if len(schoolNames) == 0 {
+				continue
+			}
+		} else if a.SchoolName != nil && *a.SchoolName != "" {
+			schoolNames = append(schoolNames, *a.SchoolName)
+		}
+		result = append(result, map[string]interface{}{
+			"id": a.ID, "nickname": a.Nickname, "role": a.Role,
+			"schoolName": strings.Join(schoolNames, " · "), "schoolNames": schoolNames,
+			"joinDate": a.JoinDate, "intro": a.Intro, "articleUrl": a.ArticleURL,
+		})
 	}
 	return response.Success(ctx, result)
 }

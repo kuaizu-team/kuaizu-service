@@ -357,6 +357,7 @@ type UserListParams struct {
 	Size                int
 	AuthStatus          *int
 	SchoolID            *int
+	SchoolIDs           []int
 	Keyword             *string
 	AuthImgUploaded     *bool
 	TalentProfileStatus *int // 按名片状态过滤（0=已驳回/下架, 1=已上架, 2=审核中）
@@ -388,6 +389,16 @@ func (r *UserRepository) ListUsers(ctx context.Context, params UserListParams) (
 	if params.SchoolID != nil {
 		conditions = append(conditions, "u.school_id = ?")
 		args = append(args, *params.SchoolID)
+	}
+	if len(params.SchoolIDs) > 0 {
+		condition, inArgs, err := sqlx.In("u.school_id IN (?)", params.SchoolIDs)
+		if err != nil {
+			return nil, 0, fmt.Errorf("build user school filter: %w", err)
+		}
+		conditions = append(conditions, condition)
+		args = append(args, inArgs...)
+	} else if params.SchoolIDs != nil {
+		conditions = append(conditions, "1=0")
 	}
 
 	if params.Keyword != nil && *params.Keyword != "" {

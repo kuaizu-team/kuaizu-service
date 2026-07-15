@@ -22,4 +22,23 @@ type AdminUser struct {
 
 	// Joined field — populated when querying with LEFT JOIN school
 	SchoolName *string `db:"school_name"`
+
+	// Schools is authoritative for school super admins. SchoolID/SchoolName and
+	// CommissionRate remain for the single-school roles and legacy clients.
+	Schools []AdminSchoolRelation `db:"-"`
+}
+
+// AdminSchoolRelation separates operational ownership from settlement rights.
+// Only IsOwner relations grant data access; a delegated administrator may leave
+// a non-owner relation behind with a residual commission rate.
+type AdminSchoolRelation struct {
+	ID                      int64     `db:"id"`
+	AdminUserID             int       `db:"admin_user_id"`
+	SchoolID                int       `db:"school_id"`
+	SchoolName              string    `db:"school_name"`
+	CommissionRate          float64   `db:"commission_rate"`
+	IsOwner                 bool      `db:"is_owner"`
+	PendingSettlementAmount int64     `db:"-"`
+	CreatedAt               time.Time `db:"created_at"`
+	UpdatedAt               time.Time `db:"updated_at"`
 }

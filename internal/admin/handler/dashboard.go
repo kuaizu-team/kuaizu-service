@@ -3,6 +3,7 @@ package handler
 import (
 	"strconv"
 
+	"github.com/jmoiron/sqlx"
 	"github.com/kuaizu-team/kuaizu-service/internal/models"
 	"github.com/kuaizu-team/kuaizu-service/internal/response"
 	"github.com/labstack/echo/v4"
@@ -34,6 +35,48 @@ func (s *AdminServer) GetDashboardStats(ctx echo.Context) error {
 			return response.InternalError(ctx, "failed to count event projects")
 		}
 		return response.Success(ctx, DashboradStatsResponse{ProjectCount: projectCount, PendingProjectCount: pendingProjectCount, DeletingProjectCount: deletingProjectCount})
+	}
+	if adminRole(ctx) == models.AdminRoleSchoolSuperAdmin {
+		schoolIDs, err := s.adminSchoolIDs(ctx)
+		if err != nil {
+			return response.InternalError(ctx, "查询学校权限失败")
+		}
+		if len(schoolIDs) == 0 {
+			return response.Success(ctx, DashboradStatsResponse{})
+		}
+		count := func(baseQuery string, destination *int64) error {
+			query, args, err := sqlx.In(baseQuery, schoolIDs)
+			if err != nil {
+				return err
+			}
+			return db.QueryRowxContext(rctx, db.Rebind(query), args...).Scan(destination)
+		}
+		if err := count("SELECT COUNT(*) FROM `user` WHERE school_id IN (?)", &userCount); err != nil {
+			return response.InternalError(ctx, "failed to count users")
+		}
+		if err := count("SELECT COUNT(*) FROM project WHERE status != 3 AND school_id IN (?)", &projectCount); err != nil {
+			return response.InternalError(ctx, "failed to count projects")
+		}
+		if err := count("SELECT COUNT(*) FROM project WHERE status = 0 AND school_id IN (?)", &pendingProjectCount); err != nil {
+			return response.InternalError(ctx, "failed to count pending projects")
+		}
+		if err := count("SELECT COUNT(*) FROM project WHERE status = 4 AND school_id IN (?)", &deletingProjectCount); err != nil {
+			return response.InternalError(ctx, "failed to count deleting projects")
+		}
+		if err := count("SELECT COUNT(*) FROM `user` WHERE auth_status=0 AND auth_img_url IS NOT NULL AND school_id IN (?)", &pendingAuthCount); err != nil {
+			return response.InternalError(ctx, "failed to count pending auths")
+		}
+		if err := count("SELECT COUNT(*) FROM feedback f JOIN `user` u ON f.user_id=u.id WHERE f.status=0 AND u.school_id IN (?)", &pendingFeedbackCount); err != nil {
+			return response.InternalError(ctx, "failed to count pending feedbacks")
+		}
+		if err := count("SELECT COUNT(*) FROM talent_profile tp JOIN `user` u ON tp.user_id=u.id WHERE tp.status=2 AND u.school_id IN (?)", &pendingTalentProfileCount); err != nil {
+			return response.InternalError(ctx, "failed to count pending talent profiles")
+		}
+		return response.Success(ctx, DashboradStatsResponse{
+			UserCount: userCount, ProjectCount: projectCount, PendingProjectCount: pendingProjectCount,
+			DeletingProjectCount: deletingProjectCount, PendingAuthCount: pendingAuthCount,
+			PendingFeedbackCount: pendingFeedbackCount, PendingTalentProfileCount: pendingTalentProfileCount,
+		})
 	}
 
 	if sid == nil {
@@ -115,6 +158,26 @@ func (s *AdminServer) GetRevenueStats(ctx echo.Context) error {
 	role := adminRole(ctx)
 	if role == models.AdminRoleSchoolAdmin {
 		return response.Forbidden(ctx, "权限不足")
+	}
+
+	if role == models.AdminRoleSchoolSuperAdmin {
+		schoolIDs, err := s.adminSchoolIDs(ctx)
+		if err != nil {
+			return response.InternalError(ctx, "查询学校权限失败")
+		}
+		if len(schoolIDs) == 0 {
+			return response.Forbidden(ctx, "当前管理员未绑定学校")
+		}
+		stats, err := s.repo.Order.RevenueStatsForSchools(ctx.Request().Context(), schoolIDs)
+		if err != nil {
+			return response.InternalError(ctx, "获取营收统计失败")
+		}
+		adminStats, err := s.repo.Order.AdminRevenueStats(ctx.Request().Context(), currentAdminID(ctx))
+		if err != nil {
+			return response.InternalError(ctx, "获取待结算统计失败")
+		}
+		stats.PendingSettlementAmount = adminStats.PendingSettlementAmount
+		return response.Success(ctx, stats)
 	}
 
 	var schoolID *int

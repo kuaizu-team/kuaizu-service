@@ -62,7 +62,13 @@ func (s *AdminServer) ListProjects(ctx echo.Context) error {
 	}
 
 	// 校区管理员自动按学校过滤
-	if sid := adminSchoolID(ctx); sid != nil && adminRole(ctx) != models.AdminRoleEventManager {
+	if adminRole(ctx) == models.AdminRoleSchoolSuperAdmin {
+		schoolIDs, err := s.adminSchoolIDs(ctx)
+		if err != nil {
+			return response.InternalError(ctx, "查询学校权限失败")
+		}
+		params.SchoolIDs = schoolIDs
+	} else if sid := adminSchoolID(ctx); sid != nil && adminRole(ctx) != models.AdminRoleEventManager {
 		params.SchoolID = sid
 	}
 
@@ -114,6 +120,9 @@ func (s *AdminServer) TakedownProject(ctx echo.Context) error {
 	id, err := strconv.Atoi(ctx.Param("id"))
 	if err != nil {
 		return response.BadRequest(ctx, "invalid project id")
+	}
+	if err := s.requireProjectAccess(ctx, id); err != nil {
+		return err
 	}
 
 	// 校区管理员只能操作本校项目

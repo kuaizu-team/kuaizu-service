@@ -3,6 +3,8 @@ package handler
 import (
 	"strconv"
 
+	"github.com/jmoiron/sqlx"
+	"github.com/kuaizu-team/kuaizu-service/internal/models"
 	"github.com/kuaizu-team/kuaizu-service/internal/response"
 	"github.com/labstack/echo/v4"
 )
@@ -38,18 +40,39 @@ func parseStatsRange(r string) (days int, isHourly bool, errMsg string) {
 // resolveSchoolFilter returns the school_id to use for filtering:
 //   - campus admins (role=2/3): always forced to their own school
 //   - super admin (role=1):     honours the optional `schoolId` query param
-func resolveSchoolFilter(ctx echo.Context) *int {
+func (s *AdminServer) resolveSchoolFilter(ctx echo.Context) (*int, []int, error) {
+	if adminRole(ctx) == models.AdminRoleSchoolSuperAdmin {
+		ids, err := s.adminSchoolIDs(ctx)
+		return nil, ids, err
+	}
 	// Campus admin — JWT-bound school takes priority; ignore query param.
 	if sid := adminSchoolID(ctx); sid != nil {
-		return sid
+		return sid, nil, nil
 	}
 	// Super admin — optional filter from query param.
 	if v := ctx.QueryParam("schoolId"); v != "" {
 		if id, err := strconv.Atoi(v); err == nil && id > 0 {
-			return &id
+			return &id, nil, nil
 		}
 	}
-	return nil
+	return nil, nil, nil
+}
+
+func appendStatsSchoolFilter(query string, args []interface{}, sid *int, schoolIDs []int) (string, []interface{}, error) {
+	if len(schoolIDs) > 0 {
+		condition, inArgs, err := sqlx.In(" AND school_id IN (?)", schoolIDs)
+		if err != nil {
+			return query, args, err
+		}
+		return query + condition, append(args, inArgs...), nil
+	}
+	if schoolIDs != nil {
+		return query + " AND 1=0", args, nil
+	}
+	if sid != nil {
+		return query + " AND school_id = ?", append(args, *sid), nil
+	}
+	return query, args, nil
 }
 
 // GetRegistrationStats handles GET /admin/stats/registrations
@@ -62,7 +85,10 @@ func (s *AdminServer) GetRegistrationStats(ctx echo.Context) error {
 		return response.BadRequest(ctx, errMsg)
 	}
 
-	sid := resolveSchoolFilter(ctx)
+	sid, schoolIDs, scopeErr := s.resolveSchoolFilter(ctx)
+	if scopeErr != nil {
+		return response.InternalError(ctx, "查询学校权限失败")
+	}
 	db := s.repo.DB()
 	rctx := ctx.Request().Context()
 
@@ -79,10 +105,7 @@ func (s *AdminServer) GetRegistrationStats(ctx echo.Context) error {
 			       COUNT(*) AS count
 			FROM ` + "`user`" + `
 			WHERE created_at >= NOW() - INTERVAL 24 HOUR`
-		if sid != nil {
-			query += " AND school_id = ?"
-			args = append(args, *sid)
-		}
+		query, args, _ = appendStatsSchoolFilter(query, args, sid, schoolIDs)
 		query += " GROUP BY date ORDER BY date ASC"
 	} else {
 		// Last N calendar days (inclusive of today), bucketed by day.
@@ -92,10 +115,7 @@ func (s *AdminServer) GetRegistrationStats(ctx echo.Context) error {
 			FROM ` + "`user`" + `
 			WHERE DATE(created_at) >= CURDATE() - INTERVAL ? DAY`
 		args = append(args, days-1)
-		if sid != nil {
-			query += " AND school_id = ?"
-			args = append(args, *sid)
-		}
+		query, args, _ = appendStatsSchoolFilter(query, args, sid, schoolIDs)
 		query += " GROUP BY date ORDER BY date ASC"
 	}
 
@@ -123,7 +143,10 @@ func (s *AdminServer) GetActivationStats(ctx echo.Context) error {
 		return response.BadRequest(ctx, errMsg)
 	}
 
-	sid := resolveSchoolFilter(ctx)
+	sid, schoolIDs, scopeErr := s.resolveSchoolFilter(ctx)
+	if scopeErr != nil {
+		return response.InternalError(ctx, "查询学校权限失败")
+	}
 	db := s.repo.DB()
 	rctx := ctx.Request().Context()
 
@@ -142,10 +165,7 @@ func (s *AdminServer) GetActivationStats(ctx echo.Context) error {
 			       COUNT(*) AS count
 			FROM ` + "`user`" + `
 			WHERE last_active_date = CURDATE()`
-		if sid != nil {
-			query += " AND school_id = ?"
-			args = append(args, *sid)
-		}
+		query, args, _ = appendStatsSchoolFilter(query, args, sid, schoolIDs)
 		query += " HAVING COUNT(*) > 0"
 	} else {
 		// Last N calendar days, bucketed by day.
@@ -155,10 +175,7 @@ func (s *AdminServer) GetActivationStats(ctx echo.Context) error {
 			FROM ` + "`user`" + `
 			WHERE last_active_date >= CURDATE() - INTERVAL ? DAY`
 		args = append(args, days-1)
-		if sid != nil {
-			query += " AND school_id = ?"
-			args = append(args, *sid)
-		}
+		query, args, _ = appendStatsSchoolFilter(query, args, sid, schoolIDs)
 		query += " GROUP BY date ORDER BY date ASC"
 	}
 

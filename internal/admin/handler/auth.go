@@ -2,6 +2,7 @@ package handler
 
 import (
 	adminauth "github.com/kuaizu-team/kuaizu-service/internal/admin/auth"
+	adminvo "github.com/kuaizu-team/kuaizu-service/internal/admin/vo"
 	"github.com/kuaizu-team/kuaizu-service/internal/models"
 	"github.com/kuaizu-team/kuaizu-service/internal/response"
 	"github.com/labstack/echo/v4"
@@ -43,7 +44,16 @@ func (s *AdminServer) Login(ctx echo.Context) error {
 	// Resolve school info for campus admins
 	var schoolName *string
 	schoolIDInt := 0
-	if admin.SchoolID != nil {
+	if admin.Role == models.AdminRoleSchoolSuperAdmin {
+		for _, school := range admin.Schools {
+			if school.IsOwner {
+				schoolIDInt = school.SchoolID
+				name := school.SchoolName
+				schoolName = &name
+				break
+			}
+		}
+	} else if admin.SchoolID != nil {
 		schoolIDInt = *admin.SchoolID
 		// SchoolName is already joined in GetByUsername
 		schoolName = admin.SchoolName
@@ -56,13 +66,19 @@ func (s *AdminServer) Login(ctx echo.Context) error {
 	}
 
 	return response.Success(ctx, map[string]interface{}{
-		"token":      token,
-		"expiresIn":  expiresIn,
-		"id":         admin.ID,
-		"username":   admin.Username,
-		"nickname":   admin.Nickname,
-		"role":       admin.Role,
-		"schoolId":   admin.SchoolID,
+		"token":     token,
+		"expiresIn": expiresIn,
+		"id":        admin.ID,
+		"username":  admin.Username,
+		"nickname":  admin.Nickname,
+		"role":      admin.Role,
+		"schoolId": func() interface{} {
+			if schoolIDInt == 0 {
+				return nil
+			}
+			return schoolIDInt
+		}(),
 		"schoolName": schoolName,
+		"schools":    adminvo.NewAdminUserAccountVO(admin).Schools,
 	})
 }

@@ -41,6 +41,7 @@ type AdminOrderListParams struct {
 	Nickname            *string
 	SchoolName          *string
 	SchoolID            *int
+	SchoolIDs           []int
 	UserID              *int
 	SettlementStatus    *int
 	RefundStatus        *int
@@ -62,6 +63,12 @@ type SettlementResult struct {
 	BatchNo     string `json:"batchNo"`
 	OrderCount  int    `json:"orderCount"`
 	TotalAmount int64  `json:"totalAmount"`
+}
+
+type AdminRevenueStats struct {
+	PendingSettlementAmount int64
+	PendingRefundOrderCount int64
+	PendingBySchool         map[int]int64
 }
 
 const orderFinanceCols = `
@@ -385,6 +392,16 @@ func (r *OrderRepository) AdminList(ctx context.Context, params AdminOrderListPa
 		conditions = append(conditions, "u.school_id = ?")
 		args = append(args, *params.SchoolID)
 	}
+	if len(params.SchoolIDs) > 0 {
+		condition, inArgs, err := sqlx.In("u.school_id IN (?)", params.SchoolIDs)
+		if err != nil {
+			return nil, 0, fmt.Errorf("build order school filter: %w", err)
+		}
+		conditions = append(conditions, condition)
+		args = append(args, inArgs...)
+	} else if params.SchoolIDs != nil {
+		conditions = append(conditions, "1=0")
+	}
 	if params.UserID != nil {
 		conditions = append(conditions, "o.user_id = ?")
 		args = append(args, *params.UserID)
@@ -506,12 +523,79 @@ func (r *OrderRepository) RevenueStats(ctx context.Context, schoolID *int) (*Rev
 	return stats, nil
 }
 
+func (r *OrderRepository) RevenueStatsForSchools(ctx context.Context, schoolIDs []int) (*RevenueStats, error) {
+	if len(schoolIDs) == 0 {
+		return &RevenueStats{}, nil
+	}
+	condition, args, err := sqlx.In(" AND u.school_id IN (?)", schoolIDs)
+	if err != nil {
+		return nil, fmt.Errorf("build revenue school filter: %w", err)
+	}
+	from := "`order` o LEFT JOIN `user` u ON o.user_id = u.id"
+	stats := &RevenueStats{}
+	queries := []struct {
+		sql string
+		dst *int64
+	}{
+		{fmt.Sprintf("SELECT CAST(COALESCE(ROUND(SUM(o.actual_paid) * 100), 0) AS SIGNED) FROM %s WHERE o.status=1 AND o.refund_status!=2%s", from, condition), &stats.TotalRevenue},
+		{fmt.Sprintf("SELECT CAST(COALESCE(ROUND(SUM(o.actual_paid) * 100), 0) AS SIGNED) FROM %s WHERE o.status=1 AND o.refund_status!=2 AND o.pay_time>=DATE_SUB(NOW(), INTERVAL 7 DAY)%s", from, condition), &stats.WeekRevenue},
+		{fmt.Sprintf("SELECT CAST(COALESCE(ROUND(SUM(o.actual_paid) * 100), 0) AS SIGNED) FROM %s WHERE o.status=1 AND o.settlement_status=0 AND o.refund_status=0%s", from, condition), &stats.PendingSettlementAmount},
+		{fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE o.refund_status=1 AND o.refund_applicant_type=0%s", from, condition), &stats.PendingConsumerRefundCount},
+		{fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE o.refund_status=1 AND o.refund_applicant_type=1%s", from, condition), &stats.PendingSchoolAdminRefundCount},
+		{fmt.Sprintf("SELECT CAST(COALESCE(ROUND(SUM(o.actual_paid) * 100), 0) AS SIGNED) FROM %s WHERE o.refund_status=1 AND o.refund_applicant_type=0%s", from, condition), &stats.PendingConsumerRefundAmount},
+		{fmt.Sprintf("SELECT CAST(COALESCE(ROUND(SUM(o.actual_paid) * 100), 0) AS SIGNED) FROM %s WHERE o.refund_status=1 AND o.refund_applicant_type=1%s", from, condition), &stats.PendingSchoolAdminRefundAmount},
+	}
+	for _, query := range queries {
+		if err := r.db.QueryRowxContext(ctx, query.sql, args...).Scan(query.dst); err != nil {
+			return nil, fmt.Errorf("query multi-school revenue stats: %w", err)
+		}
+	}
+	return stats, nil
+}
+
+func (r *OrderRepository) AdminRevenueStats(ctx context.Context, adminID int) (*AdminRevenueStats, error) {
+	stats := &AdminRevenueStats{PendingBySchool: map[int]int64{}}
+	type schoolAmount struct {
+		SchoolID int   `db:"school_id"`
+		Amount   int64 `db:"amount"`
+	}
+	var amounts []schoolAmount
+	if err := r.db.SelectContext(ctx, &amounts, `
+		SELECT rel.school_id,
+		       CAST(COALESCE(ROUND(SUM(o.actual_paid) * 100 * rel.commission_rate / 100), 0) AS SIGNED) AS amount
+		FROM admin_school_relation rel
+		LEFT JOIN `+"`user`"+` u ON u.school_id = rel.school_id
+		LEFT JOIN `+"`order`"+` o ON o.user_id = u.id
+		  AND o.status = 1 AND o.settlement_status = 0 AND o.refund_status = 0
+		  AND NOT EXISTS (
+		    SELECT 1 FROM settlement_record_order sro
+		    WHERE sro.order_id = o.id AND sro.beneficiary_admin_user_id = rel.admin_user_id
+		  )
+		WHERE rel.admin_user_id = ? AND rel.commission_rate > 0
+		GROUP BY rel.school_id, rel.commission_rate`, adminID); err != nil {
+		return nil, fmt.Errorf("query admin pending settlement: %w", err)
+	}
+	for _, amount := range amounts {
+		stats.PendingBySchool[amount.SchoolID] = amount.Amount
+		stats.PendingSettlementAmount += amount.Amount
+	}
+	if err := r.db.QueryRowxContext(ctx, `
+		SELECT COUNT(DISTINCT o.id)
+		FROM admin_school_relation rel
+		JOIN `+"`user`"+` u ON u.school_id = rel.school_id
+		JOIN `+"`order`"+` o ON o.user_id = u.id
+		WHERE rel.admin_user_id = ? AND rel.is_owner = 1 AND o.refund_status = 1`, adminID).Scan(&stats.PendingRefundOrderCount); err != nil {
+		return nil, fmt.Errorf("query admin pending refunds: %w", err)
+	}
+	return stats, nil
+}
+
 type settlementOrderRow struct {
 	ID         int     `db:"id"`
 	ActualPaid float64 `db:"actual_paid"`
 }
 
-func (r *OrderRepository) SettleSchoolPendingOrders(ctx context.Context, schoolID int, adminID int, commissionRate float64, remark *string) (*SettlementResult, error) {
+func (r *OrderRepository) SettleSchoolPendingOrders(ctx context.Context, schoolID int, operatorAdminID int, beneficiaryAdminID int, commissionRate float64, remark *string) (*SettlementResult, error) {
 	if commissionRate <= 0 || commissionRate > 100 || math.IsNaN(commissionRate) || math.IsInf(commissionRate, 0) {
 		return nil, fmt.Errorf("commission rate must be greater than 0 and at most 100")
 	}
@@ -530,8 +614,12 @@ func (r *OrderRepository) SettleSchoolPendingOrders(ctx context.Context, schoolI
 			AND o.status = 1
 			AND o.settlement_status = 0
 			AND o.refund_status = 0
+			AND NOT EXISTS (
+				SELECT 1 FROM settlement_record_order sro
+				WHERE sro.order_id=o.id AND sro.beneficiary_admin_user_id=?
+			)
 		FOR UPDATE
-	`, schoolID); err != nil {
+	`, schoolID, beneficiaryAdminID); err != nil {
 		return nil, fmt.Errorf("select settle orders: %w", err)
 	}
 	if len(rows) == 0 {
@@ -540,11 +628,11 @@ func (r *OrderRepository) SettleSchoolPendingOrders(ctx context.Context, schoolI
 
 	orderAmounts, totalAmount := calculateCommissionAmounts(rows, commissionRate)
 
-	batchNo := fmt.Sprintf("SETTLE-%s-%d", time.Now().Format("20060102150405"), schoolID)
+	batchNo := fmt.Sprintf("SETTLE-%s-%d-%d", time.Now().Format("20060102150405"), schoolID, beneficiaryAdminID)
 	result, err := tx.ExecContext(ctx, `
-		INSERT INTO settlement_record (batch_no, school_id, order_count, total_amount, operator_admin_id, remark, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, NOW())
-	`, batchNo, schoolID, len(rows), totalAmount, adminID, remark)
+		INSERT INTO settlement_record (batch_no, school_id, beneficiary_admin_user_id, commission_rate, order_count, total_amount, operator_admin_id, remark, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())
+	`, batchNo, schoolID, beneficiaryAdminID, commissionRate, len(rows), totalAmount, operatorAdminID, remark)
 	if err != nil {
 		return nil, fmt.Errorf("insert settlement record: %w", err)
 	}
@@ -556,20 +644,26 @@ func (r *OrderRepository) SettleSchoolPendingOrders(ctx context.Context, schoolI
 	for i, row := range rows {
 		amount := orderAmounts[i]
 		if _, err := tx.ExecContext(ctx, `
-			INSERT INTO settlement_record_order (settlement_record_id, order_id, amount, created_at)
-			VALUES (?, ?, ?, NOW())
-		`, recordID, row.ID, amount); err != nil {
+			INSERT INTO settlement_record_order (settlement_record_id, order_id, beneficiary_admin_user_id, amount, created_at)
+			VALUES (?, ?, ?, ?, NOW())
+		`, recordID, row.ID, beneficiaryAdminID, amount); err != nil {
 			return nil, fmt.Errorf("insert settlement record order: %w", err)
 		}
 		if _, err := tx.ExecContext(ctx, `
-			UPDATE `+"`order`"+` SET
-				settlement_status = 1,
-				settlement_batch_no = ?,
-				settlement_time = NOW(),
-				settlement_operator_admin_id = ?,
-				updated_at = NOW()
-			WHERE id = ?
-		`, batchNo, adminID, row.ID); err != nil {
+			UPDATE `+"`order`"+` o SET
+				settlement_status = CASE WHEN NOT EXISTS (
+					SELECT 1 FROM admin_school_relation rel
+					JOIN `+"`user`"+` owner_user ON owner_user.school_id=rel.school_id
+					WHERE owner_user.id=o.user_id AND rel.commission_rate>0
+					  AND NOT EXISTS (
+						SELECT 1 FROM settlement_record_order pending_sro
+						WHERE pending_sro.order_id=o.id AND pending_sro.beneficiary_admin_user_id=rel.admin_user_id
+					  )
+				) THEN 1 ELSE 0 END,
+				settlement_batch_no = ?, settlement_time = NOW(),
+				settlement_operator_admin_id = ?, updated_at = NOW()
+			WHERE o.id = ?
+		`, batchNo, operatorAdminID, row.ID); err != nil {
 			return nil, fmt.Errorf("update settled order: %w", err)
 		}
 	}

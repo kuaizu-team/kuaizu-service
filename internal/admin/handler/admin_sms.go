@@ -93,6 +93,9 @@ func (s *AdminServer) ensureAdminCanAccessUser(ctx echo.Context, userID int) err
 	if userID <= 0 {
 		return response.BadRequest(ctx, "invalid user_id")
 	}
+	if adminRole(ctx) == models.AdminRoleSchoolSuperAdmin {
+		return s.requireUserSchoolAccess(ctx, userID)
+	}
 	if sid := adminSchoolID(ctx); sid != nil {
 		user, err := s.svc.User.GetUser(ctx.Request().Context(), userID)
 		if err != nil {

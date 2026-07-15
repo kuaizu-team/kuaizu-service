@@ -504,23 +504,32 @@ func NewAdminProjectOliveBranchVO(ob *models.OliveBranch, talentProfileStatus *i
 
 // AdminUserAccountVO is the admin-facing admin-user response model (管理员账号).
 type AdminUserAccountVO struct {
-	ID                      int        `json:"id"`
-	Username                string     `json:"username"`
-	Password                *string    `json:"password,omitempty"`
-	Nickname                *string    `json:"nickname"`
-	Role                    int        `json:"role"`
-	SchoolID                *int       `json:"schoolId"`
-	SchoolName              *string    `json:"schoolName"`
-	Status                  int        `json:"status"`
-	PendingSettlementAmount int64      `json:"pendingSettlementAmount"`
-	PendingRefundOrderCount int64      `json:"pendingRefundOrderCount"`
-	FinanceRemark           *string    `json:"financeRemark"`
-	CommissionRate          float64    `json:"commissionRate"`
-	JoinDate                *time.Time `json:"joinDate"`
-	Intro                   *string    `json:"intro"`
-	ArticleURL              *string    `json:"articleUrl"`
-	CreatedAt               time.Time  `json:"createdAt"`
-	UpdatedAt               time.Time  `json:"updatedAt"`
+	ID                      int             `json:"id"`
+	Username                string          `json:"username"`
+	Password                *string         `json:"password,omitempty"`
+	Nickname                *string         `json:"nickname"`
+	Role                    int             `json:"role"`
+	SchoolID                *int            `json:"schoolId"`
+	SchoolName              *string         `json:"schoolName"`
+	Status                  int             `json:"status"`
+	PendingSettlementAmount int64           `json:"pendingSettlementAmount"`
+	PendingRefundOrderCount int64           `json:"pendingRefundOrderCount"`
+	FinanceRemark           *string         `json:"financeRemark"`
+	CommissionRate          float64         `json:"commissionRate"`
+	Schools                 []AdminSchoolVO `json:"schools"`
+	JoinDate                *time.Time      `json:"joinDate"`
+	Intro                   *string         `json:"intro"`
+	ArticleURL              *string         `json:"articleUrl"`
+	CreatedAt               time.Time       `json:"createdAt"`
+	UpdatedAt               time.Time       `json:"updatedAt"`
+}
+
+type AdminSchoolVO struct {
+	SchoolID                int     `json:"schoolId"`
+	SchoolName              string  `json:"schoolName"`
+	CommissionRate          float64 `json:"commissionRate"`
+	IsOwner                 bool    `json:"isOwner"`
+	PendingSettlementAmount int64   `json:"pendingSettlementAmount"`
 }
 
 // NewAdminUserAccountVO converts an AdminUser model to AdminUserAccountVO.
@@ -528,6 +537,14 @@ type AdminUserAccountVO struct {
 func NewAdminUserAccountVO(a *models.AdminUser) *AdminUserAccountVO {
 	if a == nil {
 		return nil
+	}
+	schools := make([]AdminSchoolVO, 0, len(a.Schools))
+	for _, school := range a.Schools {
+		schools = append(schools, AdminSchoolVO{
+			SchoolID: school.SchoolID, SchoolName: school.SchoolName,
+			CommissionRate: school.CommissionRate, IsOwner: school.IsOwner,
+			PendingSettlementAmount: school.PendingSettlementAmount,
+		})
 	}
 	return &AdminUserAccountVO{
 		ID:             a.ID,
@@ -539,6 +556,7 @@ func NewAdminUserAccountVO(a *models.AdminUser) *AdminUserAccountVO {
 		Status:         a.Status,
 		FinanceRemark:  a.FinanceRemark,
 		CommissionRate: a.CommissionRate,
+		Schools:        schools,
 		JoinDate:       a.JoinDate,
 		Intro:          a.Intro,
 		ArticleURL:     a.ArticleURL,

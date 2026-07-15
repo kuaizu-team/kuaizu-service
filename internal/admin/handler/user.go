@@ -60,7 +60,14 @@ func (s *AdminServer) ListUsers(ctx echo.Context) error {
 	}
 
 	// 校区管理员强制按本校过滤，放在所有 query param 解析之后，确保不被覆盖。
-	if sid := adminSchoolID(ctx); sid != nil {
+	if adminRole(ctx) == models.AdminRoleSchoolSuperAdmin {
+		schoolIDs, err := s.adminSchoolIDs(ctx)
+		if err != nil {
+			return response.InternalError(ctx, "查询学校权限失败")
+		}
+		params.SchoolID = nil
+		params.SchoolIDs = schoolIDs
+	} else if sid := adminSchoolID(ctx); sid != nil {
 		params.SchoolID = sid
 	}
 
@@ -174,6 +181,11 @@ func (s *AdminServer) ListUsers(ctx echo.Context) error {
 
 // GetUser handles GET /admin/users/:id
 func (s *AdminServer) GetUser(ctx echo.Context) error {
+	if userID, parseErr := strconv.Atoi(ctx.Param("id")); parseErr == nil {
+		if err := s.requireUserSchoolAccess(ctx, userID); err != nil {
+			return err
+		}
+	}
 	id, err := strconv.Atoi(ctx.Param("id"))
 	if err != nil {
 		return response.BadRequest(ctx, "invalid user id")
@@ -204,6 +216,11 @@ func (s *AdminServer) GetUser(ctx echo.Context) error {
 
 // GetUserActivitySummary returns compact counters used by the admin user detail page.
 func (s *AdminServer) GetUserActivitySummary(ctx echo.Context) error {
+	if userID, parseErr := strconv.Atoi(ctx.Param("id")); parseErr == nil {
+		if err := s.requireUserSchoolAccess(ctx, userID); err != nil {
+			return err
+		}
+	}
 	id, err := strconv.Atoi(ctx.Param("id"))
 	if err != nil || id <= 0 {
 		return response.BadRequest(ctx, "invalid user id")
@@ -262,6 +279,11 @@ func (s *AdminServer) GetUserActivitySummary(ctx echo.Context) error {
 }
 
 func (s *AdminServer) GetUserCollaborationHistory(ctx echo.Context) error {
+	if userID, parseErr := strconv.Atoi(ctx.Param("id")); parseErr == nil {
+		if err := s.requireUserSchoolAccess(ctx, userID); err != nil {
+			return err
+		}
+	}
 	id, err := strconv.Atoi(ctx.Param("id"))
 	if err != nil || id <= 0 {
 		return response.BadRequest(ctx, "invalid user id")
@@ -332,6 +354,11 @@ func (s *AdminServer) UpdateUserCollaborationScore(ctx echo.Context) error {
 
 // ListUserApplications handles GET /admin/users/:id/applications
 func (s *AdminServer) ListUserApplications(ctx echo.Context) error {
+	if userID, parseErr := strconv.Atoi(ctx.Param("id")); parseErr == nil {
+		if err := s.requireUserSchoolAccess(ctx, userID); err != nil {
+			return err
+		}
+	}
 	id, err := strconv.Atoi(ctx.Param("id"))
 	if err != nil {
 		return response.BadRequest(ctx, "invalid user id")
@@ -370,6 +397,11 @@ func (s *AdminServer) ListUserApplications(ctx echo.Context) error {
 
 // ListUserOliveBranches handles GET /admin/users/:id/olive-branches
 func (s *AdminServer) ListUserOliveBranches(ctx echo.Context) error {
+	if userID, parseErr := strconv.Atoi(ctx.Param("id")); parseErr == nil {
+		if err := s.requireUserSchoolAccess(ctx, userID); err != nil {
+			return err
+		}
+	}
 	id, err := strconv.Atoi(ctx.Param("id"))
 	if err != nil {
 		return response.BadRequest(ctx, "invalid user id")
@@ -408,6 +440,11 @@ func (s *AdminServer) ListUserOliveBranches(ctx echo.Context) error {
 
 // ListUserOrders handles GET /admin/users/:id/orders.
 func (s *AdminServer) ListUserOrders(ctx echo.Context) error {
+	if userID, parseErr := strconv.Atoi(ctx.Param("id")); parseErr == nil {
+		if err := s.requireUserSchoolAccess(ctx, userID); err != nil {
+			return err
+		}
+	}
 	if adminRole(ctx) == models.AdminRoleSchoolAdmin {
 		return response.Forbidden(ctx, "permission denied")
 	}
@@ -434,7 +471,13 @@ func (s *AdminServer) ListUserOrders(ctx echo.Context) error {
 		Page:   page,
 		Size:   size,
 	}
-	if sid := adminSchoolID(ctx); sid != nil {
+	if adminRole(ctx) == models.AdminRoleSchoolSuperAdmin {
+		schoolIDs, err := s.adminSchoolIDs(ctx)
+		if err != nil {
+			return response.InternalError(ctx, "查询学校权限失败")
+		}
+		params.SchoolIDs = schoolIDs
+	} else if sid := adminSchoolID(ctx); sid != nil {
 		params.SchoolID = sid
 	}
 
@@ -461,6 +504,11 @@ type updateUserStatusRequest struct {
 
 // UpdateUserStatus handles PUT /admin/users/:id/status
 func (s *AdminServer) UpdateUserStatus(ctx echo.Context) error {
+	if userID, parseErr := strconv.Atoi(ctx.Param("id")); parseErr == nil {
+		if err := s.requireUserSchoolAccess(ctx, userID); err != nil {
+			return err
+		}
+	}
 	// role=3 (校区管理员) 无权操作
 	if adminRole(ctx) == models.AdminRoleSchoolAdmin {
 		return response.Forbidden(ctx, "权限不足")
@@ -507,6 +555,11 @@ type updateCompetitionGroupRequest struct {
 
 // UpdateUserCompetitionGroup handles PUT /admin/users/:id/competition-group.
 func (s *AdminServer) UpdateUserCompetitionGroup(ctx echo.Context) error {
+	if userID, parseErr := strconv.Atoi(ctx.Param("id")); parseErr == nil {
+		if err := s.requireUserSchoolAccess(ctx, userID); err != nil {
+			return err
+		}
+	}
 	id, err := strconv.Atoi(ctx.Param("id"))
 	if err != nil {
 		return response.BadRequest(ctx, "invalid user id")
@@ -549,6 +602,11 @@ type reviewAuthRequest struct {
 
 // ReviewUserAuth handles PATCH /admin/users/:id/auth
 func (s *AdminServer) ReviewUserAuth(ctx echo.Context) error {
+	if userID, parseErr := strconv.Atoi(ctx.Param("id")); parseErr == nil {
+		if err := s.requireUserSchoolAccess(ctx, userID); err != nil {
+			return err
+		}
+	}
 	id, err := strconv.Atoi(ctx.Param("id"))
 	if err != nil {
 		return response.BadRequest(ctx, "invalid user id")

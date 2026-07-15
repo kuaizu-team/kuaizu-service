@@ -2,6 +2,9 @@ type: object
 required:
   - commissionRate
 properties:
+  schoolId:
+    type: integer
+    description: Required when the target is a multi-school super admin.
   commissionRate:
     type: number
     format: double

@@ -41,9 +41,17 @@ func (s *AdminServer) ListEvents(ctx echo.Context) error {
 	if keyword != "" {
 		keywordPtr = &keyword
 	}
-	result, err := s.svc.Event.ListEvents(ctx.Request().Context(), repository.EventListParams{
+	listParams := repository.EventListParams{
 		Page: page, Size: size, Keyword: keywordPtr,
-	})
+	}
+	if adminRole(ctx) == models.AdminRoleSchoolSuperAdmin {
+		schoolIDs, err := s.adminSchoolIDs(ctx)
+		if err != nil {
+			return response.InternalError(ctx, "查询学校权限失败")
+		}
+		listParams.SchoolIDs = schoolIDs
+	}
+	result, err := s.svc.Event.ListEvents(ctx.Request().Context(), listParams)
 	if err != nil {
 		return mapServiceError(ctx, err)
 	}
@@ -61,7 +69,7 @@ func (s *AdminServer) CreateEvent(ctx echo.Context) error {
 	if err := ctx.Bind(&req); err != nil {
 		return response.BadRequest(ctx, "invalid request body")
 	}
-	event, err := buildAdminEventModel(req, adminRole(ctx), adminSchoolID(ctx))
+	event, err := s.buildAdminEventModelForRequest(ctx, req)
 	if err != nil {
 		return response.BadRequest(ctx, err.Error())
 	}
@@ -92,10 +100,10 @@ func (s *AdminServer) UpdateEvent(ctx echo.Context) error {
 	if err != nil || existing == nil {
 		return response.NotFound(ctx, "event not found")
 	}
-	if !canManageEventManager(adminRole(ctx), adminSchoolID(ctx), existing) {
+	if !s.canManageEventInScope(ctx, existing) {
 		return response.Forbidden(ctx, "只能编辑本校学校层级赛事")
 	}
-	event, err := buildAdminEventModel(req, adminRole(ctx), adminSchoolID(ctx))
+	event, err := s.buildAdminEventModelForRequest(ctx, req)
 	if err != nil {
 		return response.BadRequest(ctx, err.Error())
 	}
@@ -122,6 +130,34 @@ func canManageEventManager(role int, schoolID *int, event *models.Event) bool {
 	return role == models.AdminRoleSchoolSuperAdmin && schoolID != nil && event.Level != nil && *event.Level == "school" && event.SchoolID != nil && *event.SchoolID == *schoolID
 }
 
+func (s *AdminServer) canManageEventInScope(ctx echo.Context, event *models.Event) bool {
+	if adminRole(ctx) == models.AdminRoleSuperAdmin {
+		return true
+	}
+	if adminRole(ctx) != models.AdminRoleSchoolSuperAdmin || event == nil || event.Level == nil || *event.Level != "school" {
+		return false
+	}
+	allowed, err := s.canAccessSchool(ctx, event.SchoolID)
+	return err == nil && allowed
+}
+
+func (s *AdminServer) buildAdminEventModelForRequest(ctx echo.Context, req adminEventRequest) (*models.Event, error) {
+	if adminRole(ctx) != models.AdminRoleSchoolSuperAdmin {
+		return buildAdminEventModel(req, adminRole(ctx), adminSchoolID(ctx))
+	}
+	if req.Level == nil || strings.TrimSpace(*req.Level) != "school" {
+		return nil, errors.New("school super admins can only manage school-level events")
+	}
+	if req.SchoolID == nil {
+		return nil, errors.New("schoolId is required for school-level events")
+	}
+	allowed, err := s.canAccessSchool(ctx, req.SchoolID)
+	if err != nil || !allowed {
+		return nil, errors.New("schoolId is outside the current admin scope")
+	}
+	return buildAdminEventModel(req, adminRole(ctx), req.SchoolID)
+}
+
 func (s *AdminServer) upsertEventManager(ctx echo.Context, event *models.Event, req adminEventRequest) error {
 	account := ""
 	password := ""
@@ -134,7 +170,7 @@ func (s *AdminServer) upsertEventManager(ctx echo.Context, event *models.Event, 
 	if account == "" && password == "" {
 		return nil
 	}
-	if !canManageEventManager(adminRole(ctx), adminSchoolID(ctx), event) {
+	if !s.canManageEventInScope(ctx, event) {
 		return response.Forbidden(ctx, "无权管理该赛事的赛事管理员")
 	}
 	if event.AdminID == nil && (account == "" || password == "") {
@@ -211,6 +247,9 @@ func (s *AdminServer) MergeEvent(ctx echo.Context) error {
 	source, err := s.repo.Event.GetByID(ctx.Request().Context(), id)
 	if err != nil || source == nil {
 		return response.NotFound(ctx, "event not found")
+	}
+	if adminRole(ctx) == models.AdminRoleSchoolSuperAdmin && !s.canManageEventInScope(ctx, source) {
+		return response.Forbidden(ctx, "只能合并自己负责学校的赛事")
 	}
 	target, err := s.repo.Event.GetByID(ctx.Request().Context(), req.TargetEventID)
 	if err != nil || target == nil {
