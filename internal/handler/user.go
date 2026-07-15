@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"strings"
+
 	"github.com/kuaizu-team/kuaizu-service/api"
 	"github.com/kuaizu-team/kuaizu-service/internal/models"
 	"github.com/kuaizu-team/kuaizu-service/internal/service"
@@ -163,6 +165,10 @@ func (s *Server) UpdateCurrentUser(ctx echo.Context) error {
 	if user == nil {
 		return NotFound(ctx, "用户不存在")
 	}
+	oldEmail := ""
+	if user.Email != nil {
+		oldEmail = strings.ToLower(strings.TrimSpace(*user.Email))
+	}
 
 	// Update fields if provided
 	if req.Nickname != nil {
@@ -176,7 +182,7 @@ func (s *Server) UpdateCurrentUser(ctx echo.Context) error {
 		user.Phone = req.Phone
 	}
 	if req.Email != nil {
-		email := string(*req.Email)
+		email := strings.TrimSpace(string(*req.Email))
 		user.Email = &email
 	}
 	if req.SchoolId != nil {
@@ -195,6 +201,17 @@ func (s *Server) UpdateCurrentUser(ctx echo.Context) error {
 	// Save changes
 	if err := s.repo.User.Update(ctx.Request().Context(), user); err != nil {
 		return InternalError(ctx, "更新用户信息失败")
+	}
+	newEmail := ""
+	if user.Email != nil {
+		newEmail = strings.ToLower(strings.TrimSpace(*user.Email))
+	}
+	if newEmail != "" && newEmail != oldEmail {
+		nickname := "同学"
+		if user.Nickname != nil && strings.TrimSpace(*user.Nickname) != "" {
+			nickname = strings.TrimSpace(*user.Nickname)
+		}
+		s.svc.WelcomeEmail.Queue(ctx.Request().Context(), userID, newEmail, nickname)
 	}
 
 	// Reload user with joined data

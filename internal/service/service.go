@@ -25,6 +25,7 @@ type Services struct {
 	Invitation         *InvitationFeedbackService
 	RegisterInvitation *RegisterInvitationService
 	Interaction        *InteractionService
+	WelcomeEmail       *WelcomeEmailService
 }
 
 // New creates a new Services instance with all sub-services.
@@ -51,6 +52,7 @@ func New(repo *repository.Repository, deps *Dependencies) *Services {
 		Invitation:         NewInvitationFeedbackService(repo),
 		RegisterInvitation: NewRegisterInvitationService(repo, deps.MessageCenter, deps.MessageCenterInitError),
 		Interaction:        NewInteractionService(repo, message),
+		WelcomeEmail:       NewWelcomeEmailService(repo.WelcomeEmailDelivery, deps.MessageCenter, deps.MessageCenterInitError),
 	}
 }
 
