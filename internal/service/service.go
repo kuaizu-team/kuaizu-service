@@ -27,6 +27,7 @@ type Services struct {
 	Interaction         *InteractionService
 	WelcomeEmail        *WelcomeEmailService
 	CustomerServiceLink *CustomerServiceLinkService
+	ProjectDetailLink   *ProjectDetailLinkService
 }
 
 // New creates a new Services instance with all sub-services.
@@ -55,6 +56,7 @@ func New(repo *repository.Repository, deps *Dependencies) *Services {
 		Interaction:         NewInteractionService(repo, message),
 		WelcomeEmail:        NewWelcomeEmailService(repo.WelcomeEmailDelivery, deps.MessageCenter, deps.MessageCenterInitError),
 		CustomerServiceLink: NewCustomerServiceLinkService(deps.WechatClient),
+		ProjectDetailLink:   NewProjectDetailLinkService(deps.WechatClient, repo.Project),
 	}
 }
 

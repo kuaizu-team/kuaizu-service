@@ -190,6 +190,10 @@ func main() {
 	e.GET("/open/customer-service", server.OpenCustomerService)
 	e.HEAD("/open/customer-service", server.OpenCustomerService)
 
+	// Public email entry that redirects to a project-specific Mini Program URL Link.
+	e.GET("/api/v2/open/project-detail", server.OpenProjectDetail)
+	e.HEAD("/api/v2/open/project-detail", server.OpenProjectDetail)
+
 	// Start server
 	port := os.Getenv("PORT")
 	if port == "" {
