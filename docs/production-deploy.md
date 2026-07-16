@@ -78,3 +78,27 @@ location /admin/ {
     proxy_pass http://127.0.0.1:8081/admin/;
 }
 ```
+
+The welcome-email customer-service URL is intentionally outside `/api/v2` so
+that opening it never requires JWT authentication. Proxy the exact public path
+to the Mini Program API service:
+
+```nginx
+location = /open/customer-service {
+    proxy_pass http://127.0.0.1:8080/open/customer-service;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+```
+
+After reloading Nginx, verify that the stable HTTPS entry returns `302` and a
+WeChat URL Link in the `Location` header:
+
+```bash
+curl -I https://kuaizu.xyz/open/customer-service
+```
+
+The destination host should be `wxaurl.cn` or `wxmpurl.cn`. Never put
+`WECHAT_SECRET` in Nginx, the database, an email template, or client code; it is
+read only by the API container from `.env.docker`.

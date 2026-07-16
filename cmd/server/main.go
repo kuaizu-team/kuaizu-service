@@ -186,6 +186,10 @@ func main() {
 		return c.JSON(200, map[string]string{"status": "ok"})
 	})
 
+	// Stable HTTPS entry used by emails to open the Mini Program customer-service page.
+	e.GET("/open/customer-service", server.OpenCustomerService)
+	e.HEAD("/open/customer-service", server.OpenCustomerService)
+
 	// Start server
 	port := os.Getenv("PORT")
 	if port == "" {

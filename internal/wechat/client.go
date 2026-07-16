@@ -63,6 +63,22 @@ type msgSecCheckResponse struct {
 	} `json:"result,omitempty"`
 }
 
+// URLLinkRequest describes a WeChat Mini Program URL Link target.
+type URLLinkRequest struct {
+	Path           string `json:"path,omitempty"`
+	Query          string `json:"query,omitempty"`
+	ExpireType     int    `json:"expire_type"`
+	ExpireInterval int    `json:"expire_interval,omitempty"`
+	ExpireTime     int64  `json:"expire_time,omitempty"`
+	EnvVersion     string `json:"env_version,omitempty"`
+}
+
+type urlLinkResponse struct {
+	ErrCode int    `json:"errcode,omitempty"`
+	ErrMsg  string `json:"errmsg,omitempty"`
+	URLLink string `json:"url_link,omitempty"`
+}
+
 // ErrContentBlocked indicates WeChat rejected the submitted content.
 var ErrContentBlocked = errors.New("wechat content audit rejected")
 
@@ -273,6 +289,68 @@ func (c *Client) GetPhoneNumber(code string) (string, error) {
 	}
 
 	return phone, nil
+}
+
+// GenerateURLLink creates an HTTPS URL Link for an already-published Mini Program page.
+// https://developers.weixin.qq.com/miniprogram/dev/server/API/qrcode-link/url-link/api_generateurllink.html
+func (c *Client) GenerateURLLink(ctx context.Context, input URLLinkRequest) (string, error) {
+	if input.Path == "" {
+		return "", fmt.Errorf("url link path is empty")
+	}
+	if input.ExpireType == 1 {
+		if input.ExpireInterval < 1 || input.ExpireInterval > 30 {
+			return "", fmt.Errorf("url link expire interval must be between 1 and 30 days")
+		}
+	} else if input.ExpireTime == 0 {
+		return "", fmt.Errorf("url link expire time is required when expire type is 0")
+	}
+	if input.EnvVersion == "" {
+		input.EnvVersion = "release"
+	}
+
+	body, err := json.Marshal(input)
+	if err != nil {
+		return "", fmt.Errorf("marshal url link request: %w", err)
+	}
+
+	var result urlLinkResponse
+	for attempt := 0; attempt < 2; attempt++ {
+		accessToken, err := c.GetAccessToken()
+		if err != nil {
+			return "", fmt.Errorf("get access token: %w", err)
+		}
+		url := fmt.Sprintf("https://api.weixin.qq.com/wxa/generate_urllink?access_token=%s", accessToken)
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+		if err != nil {
+			return "", fmt.Errorf("create url link request: %w", err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := c.httpClient.Do(req)
+		if err != nil {
+			return "", fmt.Errorf("request url link: %w", err)
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+			resp.Body.Close()
+			return "", fmt.Errorf("decode url link response: %w", err)
+		}
+		resp.Body.Close()
+
+		if isAccessTokenInvalidCode(result.ErrCode) && attempt == 0 {
+			if _, err := c.refreshAccessToken(); err != nil {
+				return "", fmt.Errorf("refresh access token: %w", err)
+			}
+			continue
+		}
+		break
+	}
+	if result.ErrCode != 0 {
+		return "", APIError{ErrCode: result.ErrCode, ErrMsg: result.ErrMsg}
+	}
+	if result.URLLink == "" {
+		return "", fmt.Errorf("wechat api returned empty url link")
+	}
+	return result.URLLink, nil
 }
 
 // MsgSecCheck checks whether text content is compliant.
