@@ -308,10 +308,16 @@ func (c *Client) GenerateURLLink(ctx context.Context, input URLLinkRequest) (str
 		input.EnvVersion = "release"
 	}
 
-	body, err := json.Marshal(input)
-	if err != nil {
+	var body bytes.Buffer
+	encoder := json.NewEncoder(&body)
+	// WeChat validates query against its raw URL-query grammar. Go's default
+	// json.Marshal HTML-escapes '&' as "\u0026", which WeChat rejects with
+	// errcode 40212 when the query contains more than one parameter.
+	encoder.SetEscapeHTML(false)
+	if err := encoder.Encode(input); err != nil {
 		return "", fmt.Errorf("marshal url link request: %w", err)
 	}
+	bodyBytes := body.Bytes()
 
 	var result urlLinkResponse
 	for attempt := 0; attempt < 2; attempt++ {
@@ -320,7 +326,7 @@ func (c *Client) GenerateURLLink(ctx context.Context, input URLLinkRequest) (str
 			return "", fmt.Errorf("get access token: %w", err)
 		}
 		url := fmt.Sprintf("https://api.weixin.qq.com/wxa/generate_urllink?access_token=%s", accessToken)
-		req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(bodyBytes))
 		if err != nil {
 			return "", fmt.Errorf("create url link request: %w", err)
 		}
