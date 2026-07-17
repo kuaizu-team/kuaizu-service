@@ -124,13 +124,16 @@ func TestSendRegisterInviteSmsUsesTemplateVariables(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			t.Fatalf("decode request: %v", err)
 		}
-		if _, ok := req["teamRole"]; !ok {
-			t.Fatalf("teamRole missing from request: %+v", req)
+		if _, ok := req["teamrole"]; !ok {
+			t.Fatalf("teamrole missing from request: %+v", req)
 		}
-		if _, ok := req["teamrole"]; ok {
-			t.Fatalf("unexpected teamrole key in request: %+v", req)
+		if req["phone"] != "13857007558" {
+			t.Fatalf("phone = %v, want 13857007558", req["phone"])
 		}
-		if req["projectTitle"] != "项目名称" || req["teamRole"] != "团队成员" {
+		if _, ok := req["teamRole"]; ok {
+			t.Fatalf("unexpected teamRole key in request: %+v", req)
+		}
+		if req["projectTitle"] != "项目名称" || req["teamrole"] != "团队成员" {
 			t.Fatalf("request = %+v", req)
 		}
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
@@ -148,7 +151,7 @@ func TestSendRegisterInviteSmsUsesTemplateVariables(t *testing.T) {
 	resp, err := client.SendRegisterInviteSms(context.Background(), RegisterInviteSmsRequest{
 		TraceID:      "REGISTER_INVITE:1",
 		RecordID:     1,
-		Phone:        "13800138000",
+		Phone:        "13857007558",
 		ProjectID:    2,
 		ProjectTitle: "项目名称",
 		TeamRole:     "团队成员",
