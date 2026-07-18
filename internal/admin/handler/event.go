@@ -1,12 +1,13 @@
 package handler
 
 import (
+	"context"
+	"database/sql"
 	"errors"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/jmoiron/sqlx"
 	adminvo "github.com/kuaizu-team/kuaizu-service/internal/admin/vo"
 	"github.com/kuaizu-team/kuaizu-service/internal/models"
 	"github.com/kuaizu-team/kuaizu-service/internal/repository"
@@ -33,7 +34,25 @@ type adminEventMergeRequest struct {
 	TargetEventID int `json:"targetEventId"`
 }
 
+type eventManagerExecer interface {
+	ExecContext(ctx context.Context, query string, args ...interface{}) (sql.Result, error)
+}
+
+func canManageEvents(role int) bool {
+	return role == models.AdminRoleSuperAdmin || role == models.AdminRoleSchoolSuperAdmin
+}
+
+func requireEventManagementRole(ctx echo.Context) error {
+	if !canManageEvents(adminRole(ctx)) {
+		return response.Forbidden(ctx, "event management requires a super admin role")
+	}
+	return nil
+}
+
 func (s *AdminServer) ListEvents(ctx echo.Context) error {
+	if err := requireEventManagementRole(ctx); err != nil {
+		return err
+	}
 	page, _ := strconv.Atoi(ctx.QueryParam("page"))
 	size, _ := strconv.Atoi(ctx.QueryParam("size"))
 	keyword := strings.TrimSpace(ctx.QueryParam("keyword"))
@@ -65,6 +84,9 @@ func (s *AdminServer) ListEvents(ctx echo.Context) error {
 }
 
 func (s *AdminServer) CreateEvent(ctx echo.Context) error {
+	if err := requireEventManagementRole(ctx); err != nil {
+		return err
+	}
 	var req adminEventRequest
 	if err := ctx.Bind(&req); err != nil {
 		return response.BadRequest(ctx, "invalid request body")
@@ -100,6 +122,9 @@ func (s *AdminServer) CreateEvent(ctx echo.Context) error {
 }
 
 func (s *AdminServer) UpdateEvent(ctx echo.Context) error {
+	if err := requireEventManagementRole(ctx); err != nil {
+		return err
+	}
 	id, err := parseIDParam(ctx, "id", "event")
 	if err != nil {
 		return err
@@ -172,7 +197,7 @@ func (s *AdminServer) buildAdminEventModelForRequest(ctx echo.Context, req admin
 	return buildAdminEventModel(req, adminRole(ctx), req.SchoolID)
 }
 
-func (s *AdminServer) upsertEventManager(ctx echo.Context, exec sqlx.ExtContext, event *models.Event, req adminEventRequest) error {
+func (s *AdminServer) upsertEventManager(ctx echo.Context, exec eventManagerExecer, event *models.Event, req adminEventRequest) error {
 	account := ""
 	password := ""
 	if req.ManagerAccount != nil {
@@ -181,7 +206,7 @@ func (s *AdminServer) upsertEventManager(ctx echo.Context, exec sqlx.ExtContext,
 	if req.ManagerPassword != nil {
 		password = strings.TrimSpace(*req.ManagerPassword)
 	}
-	if account == "" && password == "" {
+	if event.AdminID == nil && account == "" && password == "" {
 		return nil
 	}
 	if !s.canManageEventInScope(ctx, event) {
@@ -220,8 +245,8 @@ func (s *AdminServer) upsertEventManager(ctx echo.Context, exec sqlx.ExtContext,
 		}
 		return nil
 	}
-	sets := []string{"nickname=?"}
-	args := []interface{}{nickname}
+	sets := []string{"nickname=?", "school_id=?"}
+	args := []interface{}{nickname, event.SchoolID}
 	if account != "" {
 		sets = append(sets, "username=?")
 		args = append(args, account)
@@ -260,6 +285,9 @@ func (s *AdminServer) DeleteEvent(ctx echo.Context) error {
 }
 
 func (s *AdminServer) MergeEvent(ctx echo.Context) error {
+	if err := requireEventManagementRole(ctx); err != nil {
+		return err
+	}
 	id, err := parseIDParam(ctx, "id", "event")
 	if err != nil {
 		return err
