@@ -86,9 +86,6 @@ func (s *AdminServer) ListAdmins(ctx echo.Context) error {
 	list := make([]adminvo.AdminUserAccountVO, len(admins))
 	for i, a := range admins {
 		vo := adminvo.NewAdminUserAccountVO(a)
-		if s.canViewAdminPasswordInScope(ctx, a) {
-			attachAdminPassword(vo, a)
-		}
 		s.enrichAdminFinance(ctx, vo, a, callerRole == models.AdminRoleSuperAdmin)
 		list[i] = *vo
 	}

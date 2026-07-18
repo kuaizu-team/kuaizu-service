@@ -33,7 +33,21 @@ type adminEventMergeRequest struct {
 	TargetEventID int `json:"targetEventId"`
 }
 
+func canManageEvents(role int) bool {
+	return role == models.AdminRoleSuperAdmin || role == models.AdminRoleSchoolSuperAdmin
+}
+
+func requireEventManagementRole(ctx echo.Context) error {
+	if !canManageEvents(adminRole(ctx)) {
+		return response.Forbidden(ctx, "event management requires a super admin role")
+	}
+	return nil
+}
+
 func (s *AdminServer) ListEvents(ctx echo.Context) error {
+	if err := requireEventManagementRole(ctx); err != nil {
+		return err
+	}
 	page, _ := strconv.Atoi(ctx.QueryParam("page"))
 	size, _ := strconv.Atoi(ctx.QueryParam("size"))
 	keyword := strings.TrimSpace(ctx.QueryParam("keyword"))
@@ -65,6 +79,9 @@ func (s *AdminServer) ListEvents(ctx echo.Context) error {
 }
 
 func (s *AdminServer) CreateEvent(ctx echo.Context) error {
+	if err := requireEventManagementRole(ctx); err != nil {
+		return err
+	}
 	var req adminEventRequest
 	if err := ctx.Bind(&req); err != nil {
 		return response.BadRequest(ctx, "invalid request body")
@@ -100,6 +117,9 @@ func (s *AdminServer) CreateEvent(ctx echo.Context) error {
 }
 
 func (s *AdminServer) UpdateEvent(ctx echo.Context) error {
+	if err := requireEventManagementRole(ctx); err != nil {
+		return err
+	}
 	id, err := parseIDParam(ctx, "id", "event")
 	if err != nil {
 		return err
@@ -260,6 +280,9 @@ func (s *AdminServer) DeleteEvent(ctx echo.Context) error {
 }
 
 func (s *AdminServer) MergeEvent(ctx echo.Context) error {
+	if err := requireEventManagementRole(ctx); err != nil {
+		return err
+	}
 	id, err := parseIDParam(ctx, "id", "event")
 	if err != nil {
 		return err
