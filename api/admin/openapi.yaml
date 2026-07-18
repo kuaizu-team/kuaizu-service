@@ -44,6 +44,8 @@ paths:
     $ref: paths/health.yaml
   /auth/login:
     $ref: paths/auth_login.yaml
+  /auth/me:
+    $ref: paths/auth_me.yaml
   /dashboard/stats:
     $ref: paths/dashboard_stats.yaml
   /stats/revenue:
@@ -104,6 +106,8 @@ paths:
     $ref: paths/admins_{id}_commission-rate.yaml
   /admins/{id}/settle:
     $ref: paths/admins_{id}_settle.yaml
+  /delegate:
+    $ref: paths/admin_delegate.yaml
   /feedbacks:
     $ref: paths/feedbacks.yaml
   /feedbacks/{id}:

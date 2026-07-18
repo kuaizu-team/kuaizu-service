@@ -6,25 +6,28 @@ import (
 
 // Services aggregates all service instances.
 type Services struct {
-	Auth               *AuthService
-	AdminSms           *AdminSmsService
-	EmailPromotion     *EmailPromotionService
-	SmsNotice          *SmsNoticeService
-	Payment            *PaymentService
-	EmailUnsubscribe   *EmailUnsubscribeService
-	Order              *OrderService
-	OliveBranch        *OliveBranchService
-	Commons            *CommonsService
-	ContentAudit       *ContentAuditService
-	TalentProfile      *TalentProfileService
-	Project            *ProjectService
-	Event              *EventService
-	Message            *MessageService
-	User               *UserService
-	Feedback           *FeedbackService
-	Invitation         *InvitationFeedbackService
-	RegisterInvitation *RegisterInvitationService
-	Interaction        *InteractionService
+	Auth                *AuthService
+	AdminSms            *AdminSmsService
+	EmailPromotion      *EmailPromotionService
+	SmsNotice           *SmsNoticeService
+	Payment             *PaymentService
+	EmailUnsubscribe    *EmailUnsubscribeService
+	Order               *OrderService
+	OliveBranch         *OliveBranchService
+	Commons             *CommonsService
+	ContentAudit        *ContentAuditService
+	TalentProfile       *TalentProfileService
+	Project             *ProjectService
+	Event               *EventService
+	Message             *MessageService
+	User                *UserService
+	Feedback            *FeedbackService
+	Invitation          *InvitationFeedbackService
+	RegisterInvitation  *RegisterInvitationService
+	Interaction         *InteractionService
+	WelcomeEmail        *WelcomeEmailService
+	CustomerServiceLink *CustomerServiceLinkService
+	ProjectDetailLink   *ProjectDetailLinkService
 }
 
 // New creates a new Services instance with all sub-services.
@@ -32,25 +35,28 @@ func New(repo *repository.Repository, deps *Dependencies) *Services {
 	contentAudit := NewContentAuditService(deps.WechatClient)
 	message := NewMessageService(repo, deps.WechatClient)
 	return &Services{
-		Auth:               NewAuthService(repo, deps.WechatClient),
-		AdminSms:           NewAdminSmsService(deps.MessageCenter, deps.MessageCenterInitError),
-		EmailPromotion:     NewEmailPromotionServiceWithMessageCenter(repo, deps.MessageCenter, deps.MessageCenterInitError),
-		SmsNotice:          NewSmsNoticeService(repo, deps.MessageCenter, deps.MessageCenterInitError),
-		Payment:            NewPaymentService(repo, deps.PayClient, deps.PayInitError),
-		EmailUnsubscribe:   NewEmailUnsubscribeService(repo),
-		Order:              NewOrderService(repo, deps.PayClient, deps.PayInitError),
-		OliveBranch:        NewOliveBranchService(repo, message),
-		Commons:            NewCommonsService(deps.OSSClient, repo.User),
-		ContentAudit:       contentAudit,
-		TalentProfile:      NewTalentProfileService(repo, contentAudit, message),
-		Project:            NewProjectService(repo, contentAudit, message),
-		Event:              NewEventService(repo),
-		Message:            message,
-		User:               NewUserService(repo, message),
-		Feedback:           NewFeedbackService(repo, message),
-		Invitation:         NewInvitationFeedbackService(repo),
-		RegisterInvitation: NewRegisterInvitationService(repo, deps.MessageCenter, deps.MessageCenterInitError),
-		Interaction:        NewInteractionService(repo, message),
+		Auth:                NewAuthService(repo, deps.WechatClient),
+		AdminSms:            NewAdminSmsService(deps.MessageCenter, deps.MessageCenterInitError),
+		EmailPromotion:      NewEmailPromotionServiceWithMessageCenter(repo, deps.MessageCenter, deps.MessageCenterInitError),
+		SmsNotice:           NewSmsNoticeService(repo, deps.MessageCenter, deps.MessageCenterInitError),
+		Payment:             NewPaymentService(repo, deps.PayClient, deps.PayInitError),
+		EmailUnsubscribe:    NewEmailUnsubscribeService(repo),
+		Order:               NewOrderService(repo, deps.PayClient, deps.PayInitError),
+		OliveBranch:         NewOliveBranchService(repo, message),
+		Commons:             NewCommonsService(deps.OSSClient, repo.User),
+		ContentAudit:        contentAudit,
+		TalentProfile:       NewTalentProfileService(repo, contentAudit, message),
+		Project:             NewProjectService(repo, contentAudit, message),
+		Event:               NewEventService(repo),
+		Message:             message,
+		User:                NewUserService(repo, message),
+		Feedback:            NewFeedbackService(repo, message),
+		Invitation:          NewInvitationFeedbackService(repo),
+		RegisterInvitation:  NewRegisterInvitationService(repo, deps.MessageCenter, deps.MessageCenterInitError),
+		Interaction:         NewInteractionService(repo, message),
+		WelcomeEmail:        NewWelcomeEmailService(repo.WelcomeEmailDelivery, deps.MessageCenter, deps.MessageCenterInitError),
+		CustomerServiceLink: NewCustomerServiceLinkService(deps.WechatClient),
+		ProjectDetailLink:   NewProjectDetailLinkService(deps.WechatClient, repo.Project),
 	}
 }
 

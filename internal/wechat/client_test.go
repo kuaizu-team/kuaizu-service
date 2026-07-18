@@ -140,3 +140,69 @@ func TestGetPhoneNumberRefreshesTokenOnInvalidCredential(t *testing.T) {
 	assert.Equal(t, 2, tokenReqs)
 	assert.Equal(t, 2, phoneReqs)
 }
+
+func TestGenerateURLLinkUsesPublishedCustomerServicePage(t *testing.T) {
+	client := NewClientWithConfig("test-appid", "test-secret")
+	client.httpClient = &http.Client{
+		Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+			switch req.URL.Path {
+			case "/cgi-bin/stable_token":
+				return jsonResponse(`{"access_token":"token-123","expires_in":7200}`), nil
+			case "/wxa/generate_urllink":
+				assert.Equal(t, "token-123", req.URL.Query().Get("access_token"))
+				body, err := io.ReadAll(req.Body)
+				require.NoError(t, err)
+				assert.JSONEq(t, `{
+					"path":"/pages/contact-servicePPL/contact-servicePPL",
+					"expire_type":1,
+					"expire_interval":30,
+					"env_version":"release"
+				}`, string(body))
+				return jsonResponse(`{"errcode":0,"errmsg":"ok","url_link":"https://wxaurl.cn/test-ticket"}`), nil
+			default:
+				t.Fatalf("unexpected path: %s", req.URL.Path)
+				return nil, nil
+			}
+		}),
+	}
+
+	url, err := client.GenerateURLLink(context.Background(), URLLinkRequest{
+		Path:           "/pages/contact-servicePPL/contact-servicePPL",
+		ExpireType:     1,
+		ExpireInterval: 30,
+		EnvVersion:     "release",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "https://wxaurl.cn/test-ticket", url)
+}
+
+func TestGenerateURLLinkPreservesQuerySeparators(t *testing.T) {
+	client := NewClientWithConfig("test-appid", "test-secret")
+	client.httpClient = &http.Client{
+		Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+			switch req.URL.Path {
+			case "/cgi-bin/stable_token":
+				return jsonResponse(`{"access_token":"token-123","expires_in":7200}`), nil
+			case "/wxa/generate_urllink":
+				body, err := io.ReadAll(req.Body)
+				require.NoError(t, err)
+				assert.Contains(t, string(body), `"query":"id=402&source=2"`)
+				assert.NotContains(t, string(body), `\u0026`)
+				return jsonResponse(`{"errcode":0,"errmsg":"ok","url_link":"https://wxaurl.cn/project-ticket"}`), nil
+			default:
+				t.Fatalf("unexpected path: %s", req.URL.Path)
+				return nil, nil
+			}
+		}),
+	}
+
+	url, err := client.GenerateURLLink(context.Background(), URLLinkRequest{
+		Path:           "/pages/project-detail/project-detail",
+		Query:          "id=402&source=2",
+		ExpireType:     1,
+		ExpireInterval: 30,
+		EnvVersion:     "release",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "https://wxaurl.cn/project-ticket", url)
+}

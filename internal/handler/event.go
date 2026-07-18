@@ -4,7 +4,6 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/kuaizu-team/kuaizu-service/api"
 	"github.com/kuaizu-team/kuaizu-service/internal/models"
@@ -37,14 +36,14 @@ func (s *Server) ListEvents(ctx echo.Context) error {
 		params.IsRanking = &value
 	}
 	if raw := strings.TrimSpace(ctx.QueryParam("registrationDeadlineFrom")); raw != "" {
-		value, err := time.Parse("2006-01-02", raw)
+		value, err := models.ParseEventDate(raw)
 		if err != nil {
 			return BadRequest(ctx, "invalid registrationDeadlineFrom")
 		}
 		params.RegistrationDeadlineFrom = &value
 	}
 	if raw := strings.TrimSpace(ctx.QueryParam("registrationDeadlineTo")); raw != "" {
-		value, err := time.Parse("2006-01-02", raw)
+		value, err := models.ParseEventDate(raw)
 		if err != nil {
 			return BadRequest(ctx, "invalid registrationDeadlineTo")
 		}
@@ -137,7 +136,7 @@ func buildEventModel(req eventRequest) (*models.Event, error) {
 		}
 	}
 	if req.RegistrationDeadline != nil && strings.TrimSpace(*req.RegistrationDeadline) != "" {
-		t, err := time.Parse("2006-01-02", strings.TrimSpace(*req.RegistrationDeadline))
+		t, err := models.ParseEventDate(strings.TrimSpace(*req.RegistrationDeadline))
 		if err != nil {
 			return nil, err
 		}

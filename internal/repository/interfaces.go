@@ -22,7 +22,9 @@ type OrderRepo interface {
 	AdminRejectRefund(ctx context.Context, id int, reason string, adminID int) (bool, error)
 	WithdrawRefund(ctx context.Context, id int) (bool, error)
 	RevenueStats(ctx context.Context, schoolID *int) (*RevenueStats, error)
-	SettleSchoolPendingOrders(ctx context.Context, schoolID int, adminID int, commissionRate float64, remark *string) (*SettlementResult, error)
+	RevenueStatsForSchools(ctx context.Context, schoolIDs []int) (*RevenueStats, error)
+	AdminRevenueStats(ctx context.Context, adminID int) (*AdminRevenueStats, error)
+	SettleSchoolPendingOrders(ctx context.Context, schoolID int, operatorAdminID int, beneficiaryAdminID int, commissionRate float64, remark *string) (*SettlementResult, error)
 	// Admin-only queries
 	AdminList(ctx context.Context, params AdminOrderListParams) ([]*models.Order, int64, error)
 	AdminGetByID(ctx context.Context, id int) (*models.Order, error)
@@ -216,10 +218,19 @@ type AdminUserRepo interface {
 	GetByID(ctx context.Context, id int) (*models.AdminUser, error)
 	List(ctx context.Context, params AdminUserListParams) ([]*models.AdminUser, int64, error)
 	Create(ctx context.Context, admin *models.AdminUser) error
+	CreateWithSchools(ctx context.Context, admin *models.AdminUser, schools []models.AdminSchoolRelation) error
 	Update(ctx context.Context, admin *models.AdminUser) error
+	UpdateWithSchools(ctx context.Context, admin *models.AdminUser, schools []models.AdminSchoolRelation) error
 	UpdateStatus(ctx context.Context, id int, status int) error
 	UpdateFinanceRemark(ctx context.Context, id int, remark *string) error
 	UpdateCommissionRate(ctx context.Context, id int, rate float64) error
+	UpdateSchoolCommission(ctx context.Context, adminID, schoolID int, rate float64) error
+	SchoolCommissionTotalExcluding(ctx context.Context, schoolID, adminID int) (float64, error)
+	ListSchoolRelations(ctx context.Context, adminID int, ownersOnly bool) ([]models.AdminSchoolRelation, error)
+	AccessibleSchoolIDs(ctx context.Context, adminID int) ([]int, error)
+	HasOwnedSchool(ctx context.Context, adminID, schoolID int) (bool, error)
+	RemoveSchoolRelation(ctx context.Context, adminID, schoolID int) error
+	DelegateSchool(ctx context.Context, sourceAdminID int, target *models.AdminUser, targetUserID *int, schoolID int, rate float64) (int, error)
 	Delete(ctx context.Context, id int) error
 }
 

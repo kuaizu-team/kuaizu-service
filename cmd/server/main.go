@@ -62,6 +62,7 @@ func main() {
 	}
 
 	svc := service.New(repo, deps)
+	svc.WelcomeEmail.StartPendingRecovery(ctx)
 	server := handler.NewServer(repo, svc)
 
 	// Register API routes with /api/v2 prefix
@@ -101,6 +102,11 @@ func main() {
 
 		// Public GET endpoints with path parameters
 		if method == "GET" {
+			if path == "/api/v2/website/team" ||
+				path == "/api/v2/website/podcast" ||
+				path == "/api/v2/website/projects" {
+				return true
+			}
 			if path == "/api/v2/events" || path == "/api/v2/events/:id" {
 				return true
 			}
@@ -153,6 +159,9 @@ func main() {
 	apiGroup.GET("/users/me/pending-invitation", server.GetMyPendingInvitation)
 	apiGroup.POST("/users/me/pending-invitation/clear", server.ClearMyPendingInvitation)
 	apiGroup.GET("/events", server.ListEvents)
+	apiGroup.GET("/website/team", server.ListWebsiteTeam)
+	apiGroup.GET("/website/podcast", server.ListWebsitePodcast)
+	apiGroup.GET("/website/projects", server.ListWebsiteProjects)
 	apiGroup.POST("/events", server.CreateEvent)
 	apiGroup.GET("/events/:id", server.GetEvent)
 	apiGroup.GET("/info-center/events", server.ListInfoCenterEvents)
@@ -175,6 +184,14 @@ func main() {
 	e.GET("/health", func(c echo.Context) error {
 		return c.JSON(200, map[string]string{"status": "ok"})
 	})
+
+	// Stable HTTPS entry used by emails to open the Mini Program customer-service page.
+	e.GET("/open/customer-service", server.OpenCustomerService)
+	e.HEAD("/open/customer-service", server.OpenCustomerService)
+
+	// Public email entry that redirects to a project-specific Mini Program URL Link.
+	e.GET("/api/v2/open/project-detail", server.OpenProjectDetail)
+	e.HEAD("/api/v2/open/project-detail", server.OpenProjectDetail)
 
 	// Start server
 	port := os.Getenv("PORT")

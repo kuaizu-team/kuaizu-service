@@ -89,8 +89,24 @@ func (m *MockOrderRepo) RevenueStats(ctx context.Context, schoolID *int) (*repos
 	return args.Get(0).(*repository.RevenueStats), args.Error(1)
 }
 
-func (m *MockOrderRepo) SettleSchoolPendingOrders(ctx context.Context, schoolID int, adminID int, commissionRate float64, remark *string) (*repository.SettlementResult, error) {
-	args := m.Called(ctx, schoolID, adminID, commissionRate, remark)
+func (m *MockOrderRepo) RevenueStatsForSchools(ctx context.Context, schoolIDs []int) (*repository.RevenueStats, error) {
+	args := m.Called(ctx, schoolIDs)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*repository.RevenueStats), args.Error(1)
+}
+
+func (m *MockOrderRepo) AdminRevenueStats(ctx context.Context, adminID int) (*repository.AdminRevenueStats, error) {
+	args := m.Called(ctx, adminID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*repository.AdminRevenueStats), args.Error(1)
+}
+
+func (m *MockOrderRepo) SettleSchoolPendingOrders(ctx context.Context, schoolID int, operatorAdminID int, beneficiaryAdminID int, commissionRate float64, remark *string) (*repository.SettlementResult, error) {
+	args := m.Called(ctx, schoolID, operatorAdminID, beneficiaryAdminID, commissionRate, remark)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}

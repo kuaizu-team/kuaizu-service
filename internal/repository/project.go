@@ -27,6 +27,7 @@ type ListParams struct {
 	Size          int
 	Keyword       *string
 	SchoolID      *int
+	SchoolIDs     []int
 	Status        *int
 	Statuses      []int
 	Direction     *int
@@ -73,6 +74,16 @@ func (r *ProjectRepository) List(ctx context.Context, params ListParams) ([]mode
 	if params.SchoolID != nil {
 		conditions = append(conditions, "p.school_id = ?")
 		whereArgs = append(whereArgs, *params.SchoolID)
+	}
+	if len(params.SchoolIDs) > 0 {
+		condition, inArgs, err := sqlx.In("p.school_id IN (?)", params.SchoolIDs)
+		if err != nil {
+			return nil, 0, fmt.Errorf("build project school filter: %w", err)
+		}
+		conditions = append(conditions, condition)
+		whereArgs = append(whereArgs, inArgs...)
+	} else if params.SchoolIDs != nil {
+		conditions = append(conditions, "1=0")
 	}
 	if len(params.Statuses) > 0 {
 		placeholders := make([]string, len(params.Statuses))
@@ -323,6 +334,7 @@ type creatorRow struct {
 	UEmail               *string    `db:"u_email"`
 	UWechatID            *string    `db:"u_wechat_id"`
 	UAuthStatus          *int       `db:"u_auth_status"`
+	UCollaborationScore  *float64   `db:"u_collaboration_score"`
 	UAvatarUrl           *string    `db:"u_avatar_url"`
 	UCreatedAt           *time.Time `db:"u_created_at"`
 	USchoolName          *string    `db:"u_school_name"`
@@ -355,6 +367,7 @@ func (r *ProjectRepository) GetByID(ctx context.Context, id int) (*models.Projec
 			u.email       AS u_email,
 			u.wechat_id   AS u_wechat_id,
 			u.auth_status AS u_auth_status,
+			u.collaboration_score AS u_collaboration_score,
 			u.avatar_url  AS u_avatar_url,
 			u.created_at  AS u_created_at,
 			us.school_name AS u_school_name,
@@ -382,18 +395,19 @@ func (r *ProjectRepository) GetByID(ctx context.Context, id int) (*models.Projec
 
 	p := row.Project
 	p.Creator = &models.User{
-		ID:              row.UID,
-		OpenID:          row.UOpenID,
-		Nickname:        row.UNickname,
-		Phone:           row.UPhone,
-		Email:           row.UEmail,
-		WechatID:        row.UWechatID,
-		AuthStatus:      row.UAuthStatus,
-		AvatarUrl:       row.UAvatarUrl,
-		CreatedAt:       row.UCreatedAt,
-		SchoolName:      row.USchoolName,
-		TalentProfileID: row.UTalentProfileID,
-		MajorName:       row.UMajorName,
+		ID:                 row.UID,
+		OpenID:             row.UOpenID,
+		Nickname:           row.UNickname,
+		Phone:              row.UPhone,
+		Email:              row.UEmail,
+		WechatID:           row.UWechatID,
+		AuthStatus:         row.UAuthStatus,
+		CollaborationScore: row.UCollaborationScore,
+		AvatarUrl:          row.UAvatarUrl,
+		CreatedAt:          row.UCreatedAt,
+		SchoolName:         row.USchoolName,
+		TalentProfileID:    row.UTalentProfileID,
+		MajorName:          row.UMajorName,
 	}
 	p.CreatorTalentProfileStatus = row.UTalentProfileStatus
 	items := []models.Project{p}

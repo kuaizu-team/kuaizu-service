@@ -14,6 +14,15 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Validate credential encryption secret
+        env:
+          ADMIN_CREDENTIAL_KEY: ${{ secrets.ADMIN_CREDENTIAL_KEY }}
+        run: |
+          if [ -z "$ADMIN_CREDENTIAL_KEY" ]; then
+            echo "::error::ADMIN_CREDENTIAL_KEY secret is not configured."
+            exit 1
+          fi
+
       - name: Setup SSH
         run: |
           mkdir -p ~/.ssh
@@ -52,6 +61,7 @@ jobs:
             cd ~/kuaizu-server
             cat > .env.docker << 'ENVEOF'
           ${{ secrets.ENV_DOCKER }}
+          ADMIN_CREDENTIAL_KEY=${{ secrets.ADMIN_CREDENTIAL_KEY }}
           ENVEOF
           EOF
 

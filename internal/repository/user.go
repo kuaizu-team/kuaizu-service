@@ -180,8 +180,17 @@ func (r *UserRepository) CreateWithPhone(ctx context.Context, openid string, pho
 	return r.GetByID(ctx, int(id))
 }
 
-// Update updates user fields
+// Update updates user fields.
 func (r *UserRepository) Update(ctx context.Context, user *models.User) error {
+	return updateUser(ctx, r.db, user)
+}
+
+// UpdateUserTx updates user fields in an existing transaction.
+func UpdateUserTx(ctx context.Context, tx *sqlx.Tx, user *models.User) error {
+	return updateUser(ctx, tx, user)
+}
+
+func updateUser(ctx context.Context, exec sqlx.ExtContext, user *models.User) error {
 	query := `
 		UPDATE ` + "`user`" + ` SET
 			nickname = :nickname,
@@ -195,11 +204,9 @@ func (r *UserRepository) Update(ctx context.Context, user *models.User) error {
 		WHERE id = :id
 	`
 
-	_, err := r.db.NamedExecContext(ctx, query, user)
-	if err != nil {
+	if _, err := sqlx.NamedExecContext(ctx, exec, query, user); err != nil {
 		return fmt.Errorf("update user: %w", err)
 	}
-
 	return nil
 }
 
@@ -357,6 +364,7 @@ type UserListParams struct {
 	Size                int
 	AuthStatus          *int
 	SchoolID            *int
+	SchoolIDs           []int
 	Keyword             *string
 	AuthImgUploaded     *bool
 	TalentProfileStatus *int // 按名片状态过滤（0=已驳回/下架, 1=已上架, 2=审核中）
@@ -388,6 +396,16 @@ func (r *UserRepository) ListUsers(ctx context.Context, params UserListParams) (
 	if params.SchoolID != nil {
 		conditions = append(conditions, "u.school_id = ?")
 		args = append(args, *params.SchoolID)
+	}
+	if len(params.SchoolIDs) > 0 {
+		condition, inArgs, err := sqlx.In("u.school_id IN (?)", params.SchoolIDs)
+		if err != nil {
+			return nil, 0, fmt.Errorf("build user school filter: %w", err)
+		}
+		conditions = append(conditions, condition)
+		args = append(args, inArgs...)
+	} else if params.SchoolIDs != nil {
+		conditions = append(conditions, "1=0")
 	}
 
 	if params.Keyword != nil && *params.Keyword != "" {

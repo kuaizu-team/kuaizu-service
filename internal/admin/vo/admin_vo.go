@@ -154,6 +154,13 @@ type AdminEventVO struct {
 	IsRanking            bool       `json:"isRanking"`
 	RegistrationDeadline *time.Time `json:"registrationDeadline"`
 	ArticleURL           *string    `json:"articleUrl"`
+	Level                *string    `json:"level"`
+	Summary              *string    `json:"summary"`
+	SchoolID             *int       `json:"schoolId"`
+	SchoolName           *string    `json:"schoolName"`
+	AdminID              *int       `json:"adminId"`
+	ManagerUsername      *string    `json:"managerAccount"`
+	ManagerNickname      *string    `json:"managerNickname"`
 	DisplayOrder         int        `json:"displayOrder"`
 	ProjectCount         int        `json:"projectCount"`
 	CreatedAt            time.Time  `json:"createdAt"`
@@ -171,6 +178,13 @@ func NewAdminEventVO(e *models.Event) *AdminEventVO {
 		IsRanking:            e.IsRanking == 1,
 		RegistrationDeadline: e.RegistrationDeadline,
 		ArticleURL:           e.ArticleURL,
+		Level:                e.Level,
+		Summary:              e.Summary,
+		SchoolID:             e.SchoolID,
+		SchoolName:           e.SchoolName,
+		AdminID:              e.AdminID,
+		ManagerUsername:      e.ManagerUsername,
+		ManagerNickname:      e.ManagerNickname,
 		DisplayOrder:         e.DisplayOrder,
 		ProjectCount:         e.ProjectCount,
 		CreatedAt:            e.CreatedAt,
@@ -490,25 +504,47 @@ func NewAdminProjectOliveBranchVO(ob *models.OliveBranch, talentProfileStatus *i
 
 // AdminUserAccountVO is the admin-facing admin-user response model (管理员账号).
 type AdminUserAccountVO struct {
-	ID                      int       `json:"id"`
-	Username                string    `json:"username"`
-	Nickname                *string   `json:"nickname"`
-	Role                    int       `json:"role"`
-	SchoolID                *int      `json:"schoolId"`
-	SchoolName              *string   `json:"schoolName"`
-	Status                  int       `json:"status"`
-	PendingSettlementAmount int64     `json:"pendingSettlementAmount"`
-	PendingRefundOrderCount int64     `json:"pendingRefundOrderCount"`
-	FinanceRemark           *string   `json:"financeRemark"`
-	CommissionRate          float64   `json:"commissionRate"`
-	CreatedAt               time.Time `json:"createdAt"`
-	UpdatedAt               time.Time `json:"updatedAt"`
+	ID                      int             `json:"id"`
+	Username                string          `json:"username"`
+	Password                *string         `json:"password,omitempty"`
+	Nickname                *string         `json:"nickname"`
+	Role                    int             `json:"role"`
+	SchoolID                *int            `json:"schoolId"`
+	SchoolName              *string         `json:"schoolName"`
+	Status                  int             `json:"status"`
+	PendingSettlementAmount int64           `json:"pendingSettlementAmount"`
+	PendingRefundOrderCount int64           `json:"pendingRefundOrderCount"`
+	FinanceRemark           *string         `json:"financeRemark"`
+	CommissionRate          float64         `json:"commissionRate"`
+	Schools                 []AdminSchoolVO `json:"schools"`
+	JoinDate                *time.Time      `json:"joinDate"`
+	Intro                   *string         `json:"intro"`
+	ArticleURL              *string         `json:"articleUrl"`
+	CreatedAt               time.Time       `json:"createdAt"`
+	UpdatedAt               time.Time       `json:"updatedAt"`
 }
 
-// NewAdminUserAccountVO converts an AdminUser model to AdminUserAccountVO (no password).
+type AdminSchoolVO struct {
+	SchoolID                int     `json:"schoolId"`
+	SchoolName              string  `json:"schoolName"`
+	CommissionRate          float64 `json:"commissionRate"`
+	IsOwner                 bool    `json:"isOwner"`
+	PendingSettlementAmount int64   `json:"pendingSettlementAmount"`
+}
+
+// NewAdminUserAccountVO converts an AdminUser model to AdminUserAccountVO.
+// Password is omitted by default and may only be attached by an authorized handler.
 func NewAdminUserAccountVO(a *models.AdminUser) *AdminUserAccountVO {
 	if a == nil {
 		return nil
+	}
+	schools := make([]AdminSchoolVO, 0, len(a.Schools))
+	for _, school := range a.Schools {
+		schools = append(schools, AdminSchoolVO{
+			SchoolID: school.SchoolID, SchoolName: school.SchoolName,
+			CommissionRate: school.CommissionRate, IsOwner: school.IsOwner,
+			PendingSettlementAmount: school.PendingSettlementAmount,
+		})
 	}
 	return &AdminUserAccountVO{
 		ID:             a.ID,
@@ -520,6 +556,10 @@ func NewAdminUserAccountVO(a *models.AdminUser) *AdminUserAccountVO {
 		Status:         a.Status,
 		FinanceRemark:  a.FinanceRemark,
 		CommissionRate: a.CommissionRate,
+		Schools:        schools,
+		JoinDate:       a.JoinDate,
+		Intro:          a.Intro,
+		ArticleURL:     a.ArticleURL,
 		CreatedAt:      a.CreatedAt,
 		UpdatedAt:      a.UpdatedAt,
 	}

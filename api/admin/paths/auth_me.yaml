@@ -1,0 +1,23 @@
+get:
+  tags:
+    - Auth
+  summary: 获取当前管理员信息
+  operationId: getCurrentAdmin
+  responses:
+    '200':
+      description: 当前管理员信息
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/BaseResponse.yaml
+              - type: object
+                properties:
+                  data:
+                    $ref: ../components/schemas/AdminAccount.yaml
+    '401':
+      $ref: ../components/responses/Unauthorized.yaml
+    '404':
+      $ref: ../components/responses/NotFound.yaml
+    '500':
+      $ref: ../components/responses/InternalError.yaml

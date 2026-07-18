@@ -5,6 +5,7 @@ import (
 	"log"
 	"strings"
 
+	"github.com/jmoiron/sqlx"
 	"github.com/kuaizu-team/kuaizu-service/internal/models"
 	"github.com/kuaizu-team/kuaizu-service/internal/repository"
 )
@@ -71,13 +72,20 @@ func (s *EventService) GetEvent(ctx context.Context, id int) (*models.Event, []m
 	return event, projects, nil
 }
 
-func (s *EventService) CreateEvent(ctx context.Context, event *models.Event) (*models.Event, error) {
+func validateEvent(event *models.Event) error {
 	event.Name = strings.TrimSpace(event.Name)
 	if event.Name == "" {
-		return nil, ErrBadRequest("event name is required")
+		return ErrBadRequest("event name is required")
 	}
 	if len([]rune(event.Name)) > 200 {
-		return nil, ErrBadRequest("event name is too long")
+		return ErrBadRequest("event name is too long")
+	}
+	return nil
+}
+
+func (s *EventService) CreateEvent(ctx context.Context, event *models.Event) (*models.Event, error) {
+	if err := validateEvent(event); err != nil {
+		return nil, err
 	}
 	if err := s.repo.Event.Create(ctx, event); err != nil {
 		log.Printf("[EventService.CreateEvent] repository error: %v", err)
@@ -86,10 +94,21 @@ func (s *EventService) CreateEvent(ctx context.Context, event *models.Event) (*m
 	return s.repo.Event.GetByID(ctx, event.ID)
 }
 
+// CreateEventTx validates and creates an event in the caller's transaction.
+func (s *EventService) CreateEventTx(ctx context.Context, tx *sqlx.Tx, event *models.Event) error {
+	if err := validateEvent(event); err != nil {
+		return err
+	}
+	if err := repository.CreateEventTx(ctx, tx, event); err != nil {
+		log.Printf("[EventService.CreateEventTx] repository error: %v", err)
+		return ErrInternal("create event failed")
+	}
+	return nil
+}
+
 func (s *EventService) UpdateEvent(ctx context.Context, event *models.Event) (*models.Event, error) {
-	event.Name = strings.TrimSpace(event.Name)
-	if event.Name == "" {
-		return nil, ErrBadRequest("event name is required")
+	if err := validateEvent(event); err != nil {
+		return nil, err
 	}
 	if err := s.repo.Event.Update(ctx, event); err != nil {
 		log.Printf("[EventService.UpdateEvent] repository error: %v", err)
@@ -98,6 +117,17 @@ func (s *EventService) UpdateEvent(ctx context.Context, event *models.Event) (*m
 	return s.repo.Event.GetByID(ctx, event.ID)
 }
 
+// UpdateEventTx validates and updates an event in the caller's transaction.
+func (s *EventService) UpdateEventTx(ctx context.Context, tx *sqlx.Tx, event *models.Event) error {
+	if err := validateEvent(event); err != nil {
+		return err
+	}
+	if err := repository.UpdateEventTx(ctx, tx, event); err != nil {
+		log.Printf("[EventService.UpdateEventTx] repository error: %v", err)
+		return ErrInternal("update event failed")
+	}
+	return nil
+}
 func (s *EventService) DeleteEvent(ctx context.Context, id int) error {
 	if err := s.repo.Event.Delete(ctx, id); err != nil {
 		log.Printf("[EventService.DeleteEvent] repository error: %v", err)

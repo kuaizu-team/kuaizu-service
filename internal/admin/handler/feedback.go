@@ -4,6 +4,7 @@ import (
 	"strconv"
 
 	adminvo "github.com/kuaizu-team/kuaizu-service/internal/admin/vo"
+	"github.com/kuaizu-team/kuaizu-service/internal/models"
 	"github.com/kuaizu-team/kuaizu-service/internal/repository"
 	"github.com/kuaizu-team/kuaizu-service/internal/response"
 	"github.com/labstack/echo/v4"
@@ -20,7 +21,13 @@ func (s *AdminServer) ListFeedbacks(ctx echo.Context) error {
 	}
 
 	// 校区管理员自动按学校过滤
-	if sid := adminSchoolID(ctx); sid != nil {
+	if adminRole(ctx) == models.AdminRoleSchoolSuperAdmin {
+		schoolIDs, err := s.adminSchoolIDs(ctx)
+		if err != nil {
+			return response.InternalError(ctx, "查询学校权限失败")
+		}
+		params.SchoolIDs = schoolIDs
+	} else if sid := adminSchoolID(ctx); sid != nil {
 		params.SchoolID = sid
 	}
 
@@ -61,6 +68,12 @@ func (s *AdminServer) GetFeedback(ctx echo.Context) error {
 	if err != nil {
 		return mapServiceError(ctx, err)
 	}
+	if adminRole(ctx) == models.AdminRoleSchoolSuperAdmin {
+		allowed, scopeErr := s.canAccessSchool(ctx, feedback.UserSchoolID)
+		if scopeErr != nil || !allowed {
+			return response.Forbidden(ctx, "权限不足")
+		}
+	}
 
 	// 校区管理员只能查看本校用户的反馈
 	if sid := adminSchoolID(ctx); sid != nil {
@@ -84,6 +97,16 @@ func (s *AdminServer) ReplyFeedback(ctx echo.Context) error {
 	id, err := strconv.Atoi(ctx.Param("id"))
 	if err != nil {
 		return response.BadRequest(ctx, "invalid feedback id")
+	}
+	if adminRole(ctx) == models.AdminRoleSchoolSuperAdmin {
+		feedback, err := s.svc.Feedback.GetFeedback(ctx.Request().Context(), id)
+		if err != nil {
+			return mapServiceError(ctx, err)
+		}
+		allowed, scopeErr := s.canAccessSchool(ctx, feedback.UserSchoolID)
+		if scopeErr != nil || !allowed {
+			return response.Forbidden(ctx, "权限不足")
+		}
 	}
 
 	// 校区管理员需校验该反馈归属本校（与 GetFeedback 逻辑一致）

@@ -14,6 +14,7 @@ import (
 
 const defaultTimeout = 3 * time.Second
 const applicationSmsTimeout = 12 * time.Second
+const welcomeEmailTimeout = 15 * time.Second
 
 // Client submits marketing tasks to the independent message center.
 type Client struct {
@@ -72,7 +73,7 @@ type RegisterInviteSmsRequest struct {
 	Phone        string `json:"phone"`
 	ProjectID    int    `json:"projectId"`
 	ProjectTitle string `json:"projectTitle"`
-	TeamRole     string `json:"teamRole"`
+	TeamRole     string `json:"teamrole"`
 }
 
 type RegisterInviteSmsResponse struct {
@@ -92,6 +93,27 @@ type registerInviteSmsEnvelope struct {
 	Code    int                        `json:"code"`
 	Message string                     `json:"message"`
 	Data    *RegisterInviteSmsResponse `json:"data"`
+}
+
+type WelcomeEmailRequest struct {
+	Email    string `json:"email"`
+	Nickname string `json:"nickname,omitempty"`
+	TraceID  string `json:"traceId"`
+}
+
+type WelcomeEmailResponse struct {
+	Success       bool   `json:"success"`
+	TaskID        *int64 `json:"taskId,omitempty"`
+	Provider      string `json:"provider,omitempty"`
+	ProviderBizID string `json:"providerBizId,omitempty"`
+	ErrorCode     string `json:"errorCode,omitempty"`
+	ErrorMessage  string `json:"errorMessage,omitempty"`
+}
+
+type welcomeEmailEnvelope struct {
+	Code    int                   `json:"code"`
+	Message string                `json:"message"`
+	Data    *WelcomeEmailResponse `json:"data"`
 }
 
 type AdminSmsSendRequest struct {
@@ -352,6 +374,57 @@ func (c *Client) SendRegisterInviteSms(ctx context.Context, req RegisterInviteSm
 	}
 	if envelope.Data == nil {
 		return &RegisterInviteSmsResponse{}, nil
+	}
+	return envelope.Data, nil
+}
+
+func (c *Client) SendWelcomeEmail(ctx context.Context, req WelcomeEmailRequest) (*WelcomeEmailResponse, error) {
+	if c == nil {
+		return nil, fmt.Errorf("message center client is nil")
+	}
+	if strings.TrimSpace(req.Email) == "" {
+		return nil, fmt.Errorf("email is required")
+	}
+	if strings.TrimSpace(req.TraceID) == "" {
+		return nil, fmt.Errorf("traceId is required")
+	}
+	body, err := json.Marshal(req)
+	if err != nil {
+		return nil, fmt.Errorf("marshal welcome email: %w", err)
+	}
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/api/v2/email/welcome", bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("create welcome email request: %w", err)
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Authorization", "Bearer "+c.apiToken)
+	httpClient := c.httpClient
+	if httpClient.Timeout < welcomeEmailTimeout {
+		clientCopy := *httpClient
+		clientCopy.Timeout = welcomeEmailTimeout
+		httpClient = &clientCopy
+	}
+	resp, err := httpClient.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("post welcome email: %w", err)
+	}
+	defer resp.Body.Close()
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read welcome email response: %w", err)
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("unexpected status %d: %s", resp.StatusCode, string(respBody))
+	}
+	var envelope welcomeEmailEnvelope
+	if err := json.Unmarshal(respBody, &envelope); err != nil {
+		return nil, fmt.Errorf("decode welcome email response: %w", err)
+	}
+	if envelope.Code != http.StatusOK {
+		return nil, fmt.Errorf("message center code %d: %s", envelope.Code, envelope.Message)
+	}
+	if envelope.Data == nil {
+		return nil, fmt.Errorf("message center response data is empty")
 	}
 	return envelope.Data, nil
 }

@@ -25,6 +25,13 @@ func (s *AdminServer) ListProjects(ctx echo.Context) error {
 		Size:                size,
 		IncludePendingCount: true, // admin list always needs pending count column
 	}
+	if adminRole(ctx) == models.AdminRoleEventManager {
+		eventID, err := s.eventIDForManager(ctx)
+		if err != nil {
+			return err
+		}
+		params.EventID = &eventID
+	}
 
 	if v := ctx.QueryParam("status"); v != "" {
 		status, err := strconv.Atoi(v)
@@ -55,7 +62,13 @@ func (s *AdminServer) ListProjects(ctx echo.Context) error {
 	}
 
 	// 校区管理员自动按学校过滤
-	if sid := adminSchoolID(ctx); sid != nil {
+	if adminRole(ctx) == models.AdminRoleSchoolSuperAdmin {
+		schoolIDs, err := s.adminSchoolIDs(ctx)
+		if err != nil {
+			return response.InternalError(ctx, "查询学校权限失败")
+		}
+		params.SchoolIDs = schoolIDs
+	} else if sid := adminSchoolID(ctx); sid != nil && adminRole(ctx) != models.AdminRoleEventManager {
 		params.SchoolID = sid
 	}
 
@@ -88,9 +101,12 @@ func (s *AdminServer) GetProject(ctx echo.Context) error {
 	if err != nil {
 		return mapServiceError(ctx, err)
 	}
+	if err := s.requireProjectAccess(ctx, id); err != nil {
+		return err
+	}
 
 	// 校区管理员只能查看本校项目
-	if sid := adminSchoolID(ctx); sid != nil {
+	if sid := adminSchoolID(ctx); sid != nil && adminRole(ctx) != models.AdminRoleEventManager {
 		if project == nil || project.SchoolID == nil || *project.SchoolID != *sid {
 			return response.Forbidden(ctx, "权限不足")
 		}
@@ -105,9 +121,12 @@ func (s *AdminServer) TakedownProject(ctx echo.Context) error {
 	if err != nil {
 		return response.BadRequest(ctx, "invalid project id")
 	}
+	if err := s.requireProjectAccess(ctx, id); err != nil {
+		return err
+	}
 
 	// 校区管理员只能操作本校项目
-	if sid := adminSchoolID(ctx); sid != nil {
+	if sid := adminSchoolID(ctx); sid != nil && adminRole(ctx) != models.AdminRoleEventManager {
 		project, err := s.svc.Project.GetProject(ctx.Request().Context(), id)
 		if err != nil {
 			return mapServiceError(ctx, err)
@@ -135,6 +154,9 @@ func (s *AdminServer) ListProjectApplications(ctx echo.Context) error {
 	id, err := strconv.Atoi(ctx.Param("id"))
 	if err != nil {
 		return response.BadRequest(ctx, "invalid project id")
+	}
+	if err := s.requireProjectAccess(ctx, id); err != nil {
+		return err
 	}
 
 	page, _ := strconv.Atoi(ctx.QueryParam("page"))
@@ -205,6 +227,9 @@ func (s *AdminServer) ListProjectOliveBranches(ctx echo.Context) error {
 	id, err := strconv.Atoi(ctx.Param("id"))
 	if err != nil {
 		return response.BadRequest(ctx, "invalid project id")
+	}
+	if err := s.requireProjectAccess(ctx, id); err != nil {
+		return err
 	}
 
 	page, _ := strconv.Atoi(ctx.QueryParam("page"))
@@ -319,11 +344,14 @@ func (s *AdminServer) CreateProjectMilestone(ctx echo.Context) error {
 }
 
 func (s *AdminServer) UpdateProjectMemberRole(ctx echo.Context) error {
-	if err := requireSuperAdmin(ctx); err != nil {
-		return err
+	if role := adminRole(ctx); role != models.AdminRoleSuperAdmin && role != models.AdminRoleSchoolSuperAdmin {
+		return response.Forbidden(ctx, "权限不足")
 	}
 	projectID, err := parseIDParam(ctx, "id", "project")
 	if err != nil {
+		return err
+	}
+	if err := s.requireProjectAccess(ctx, projectID); err != nil {
 		return err
 	}
 	memberID, err := parseIDParam(ctx, "memberId", "member")
@@ -449,9 +477,21 @@ func (s *AdminServer) ReviewProject(ctx echo.Context) error {
 	if err != nil {
 		return response.BadRequest(ctx, "invalid project id")
 	}
+	if err := s.requireProjectAccess(ctx, id); err != nil {
+		return err
+	}
+	if adminRole(ctx) == models.AdminRoleEventManager {
+		var currentStatus int
+		if err := s.repo.DB().QueryRowxContext(ctx.Request().Context(), "SELECT status FROM project WHERE id=?", id).Scan(&currentStatus); err != nil {
+			return response.NotFound(ctx, "项目不存在")
+		}
+		if currentStatus != models.ProjectStatusPending {
+			return response.Forbidden(ctx, "赛事管理员只能审核待审核项目")
+		}
+	}
 
 	// 校区管理员只能操作本校项目
-	if sid := adminSchoolID(ctx); sid != nil {
+	if sid := adminSchoolID(ctx); sid != nil && adminRole(ctx) != models.AdminRoleEventManager {
 		project, err := s.svc.Project.GetProject(ctx.Request().Context(), id)
 		if err != nil {
 			return mapServiceError(ctx, err)
@@ -490,8 +530,11 @@ func (s *AdminServer) RestoreProject(ctx echo.Context) error {
 	if err != nil {
 		return response.BadRequest(ctx, "invalid project id")
 	}
+	if err := s.requireProjectAccess(ctx, id); err != nil {
+		return err
+	}
 
-	if sid := adminSchoolID(ctx); sid != nil {
+	if sid := adminSchoolID(ctx); sid != nil && adminRole(ctx) != models.AdminRoleEventManager {
 		project, err := s.svc.Project.GetProject(ctx.Request().Context(), id)
 		if err != nil {
 			return mapServiceError(ctx, err)
@@ -509,12 +552,16 @@ func (s *AdminServer) RestoreProject(ctx echo.Context) error {
 
 // PermanentlyDeleteProject handles DELETE /admin/projects/:id/permanent.
 func (s *AdminServer) PermanentlyDeleteProject(ctx echo.Context) error {
-	if adminRole(ctx) != models.AdminRoleSuperAdmin {
+	role := adminRole(ctx)
+	if role != models.AdminRoleSuperAdmin && role != models.AdminRoleEventManager {
 		return response.Forbidden(ctx, "权限不足")
 	}
 	id, err := strconv.Atoi(ctx.Param("id"))
 	if err != nil || id <= 0 {
 		return response.BadRequest(ctx, "invalid project id")
+	}
+	if err := s.requireProjectAccess(ctx, id); err != nil {
+		return err
 	}
 
 	cutoff := time.Now().Add(-7 * 24 * time.Hour)
@@ -533,7 +580,10 @@ func (s *AdminServer) GetProjectActivitySummary(ctx echo.Context) error {
 	if err != nil || id <= 0 {
 		return response.BadRequest(ctx, "invalid project id")
 	}
-	if sid := adminSchoolID(ctx); sid != nil {
+	if err := s.requireProjectAccess(ctx, id); err != nil {
+		return err
+	}
+	if sid := adminSchoolID(ctx); sid != nil && adminRole(ctx) != models.AdminRoleEventManager {
 		project, err := s.svc.Project.GetProject(ctx.Request().Context(), id)
 		if err != nil {
 			return mapServiceError(ctx, err)

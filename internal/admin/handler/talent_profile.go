@@ -40,6 +40,20 @@ func normalizeTalentProfileReason(rejectReason *string, reason *string) (string,
 // checkTalentProfileSchool returns 403 if the talent profile does not belong to the admin's school.
 // GetByID already JOINs the user table and exposes SchoolID, so no extra query is needed.
 func (s *AdminServer) checkTalentProfileSchool(ctx echo.Context, id int) error {
+	if adminRole(ctx) == models.AdminRoleSchoolSuperAdmin {
+		tp, err := s.repo.TalentProfile.GetByID(ctx.Request().Context(), id)
+		if err != nil {
+			return response.InternalError(ctx, "查询名片失败")
+		}
+		if tp == nil {
+			return response.NotFound(ctx, "名片不存在")
+		}
+		allowed, err := s.canAccessSchool(ctx, tp.SchoolID)
+		if err != nil || !allowed {
+			return response.Forbidden(ctx, "权限不足")
+		}
+		return nil
+	}
 	sid := adminSchoolID(ctx)
 	if sid == nil {
 		return nil // super admin — no restriction

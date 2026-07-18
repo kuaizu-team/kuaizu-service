@@ -22,11 +22,12 @@ func NewFeedbackRepository(db *sqlx.DB) *FeedbackRepository {
 
 // FeedbackListParams contains parameters for listing feedbacks
 type FeedbackListParams struct {
-	Page     int
-	Size     int
-	Status   *int
-	UserID   *int
-	SchoolID *int // admin 权限过滤：只返回该学校用户的反馈
+	Page      int
+	Size      int
+	Status    *int
+	UserID    *int
+	SchoolID  *int // admin 权限过滤：只返回该学校用户的反馈
+	SchoolIDs []int
 }
 
 // List retrieves paginated feedbacks with optional filters
@@ -46,6 +47,16 @@ func (r *FeedbackRepository) List(ctx context.Context, params FeedbackListParams
 	if params.SchoolID != nil {
 		conditions = append(conditions, "u.school_id = ?")
 		args = append(args, *params.SchoolID)
+	}
+	if len(params.SchoolIDs) > 0 {
+		condition, inArgs, err := sqlx.In("u.school_id IN (?)", params.SchoolIDs)
+		if err != nil {
+			return nil, 0, fmt.Errorf("build feedback school filter: %w", err)
+		}
+		conditions = append(conditions, condition)
+		args = append(args, inArgs...)
+	} else if params.SchoolIDs != nil {
+		conditions = append(conditions, "1=0")
 	}
 
 	whereClause := strings.Join(conditions, " AND ")

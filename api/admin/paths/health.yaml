@@ -1,4 +1,5 @@
 get:
+  summary: 服务健康检查
   servers:
     - url: http://localhost:8081
       description: 测活

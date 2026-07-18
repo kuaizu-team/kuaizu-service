@@ -16,6 +16,7 @@ const (
 	AdminRoleSuperAdmin       = 1 // 超级管理员（全量权限）
 	AdminRoleSchoolSuperAdmin = 2 // 校区超级管理员（本校全量）
 	AdminRoleSchoolAdmin      = 3 // 校区管理员（本校受限，不可访问订单）
+	AdminRoleEventManager     = 4 // 赛事管理员（仅限关联赛事的数据看板和项目）
 )
 
 // Email Promotion Status

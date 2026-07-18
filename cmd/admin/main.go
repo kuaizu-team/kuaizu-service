@@ -65,6 +65,7 @@ func main() {
 	// Protected routes
 	adminGroup := e.Group("/admin")
 	adminGroup.Use(adminmw.AdminJWTAuth(adminmw.DefaultAdminJWTConfig()))
+	adminGroup.GET("/auth/me", server.GetCurrentAdmin)
 
 	adminGroup.GET("/dashboard/stats", server.GetDashboardStats)
 	adminGroup.GET("/stats/revenue", server.GetRevenueStats)
@@ -157,6 +158,7 @@ func main() {
 	adminGroup.PATCH("/admins/:id/finance-remark", server.UpdateAdminFinanceRemark)
 	adminGroup.PUT("/admins/:id/commission-rate", server.UpdateAdminCommissionRate)
 	adminGroup.POST("/admins/:id/settle", server.SettleAdminOrders)
+	adminGroup.POST("/delegate", server.DelegateAdminSchool)
 	adminGroup.PUT("/admins/:id", server.UpdateAdmin)
 	adminGroup.PATCH("/admins/:id/status", server.UpdateAdminStatus)
 	adminGroup.DELETE("/admins/:id", server.DeleteAdmin)

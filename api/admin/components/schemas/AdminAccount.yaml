@@ -7,9 +7,13 @@ properties:
   nickname:
     type: string
     nullable: true
+  password:
+    type: string
+    nullable: true
+    description: Decrypted credential, returned only when the caller has permission to view it.
   role:
     type: integer
-    description: 1-super admin,2-school super admin,3-school admin
+    description: 1-super admin, 2-school super admin, 3-school admin, 4-event manager
   schoolId:
     type: integer
     nullable: true
@@ -31,6 +35,38 @@ properties:
     type: number
     format: double
     description: Commission rate percentage, e.g. 30.5 means 30.5%
+  schools:
+    type: array
+    description: School relations. A positive commissionRate grants operational data access; isOwner marks the unique operational owner.
+    items:
+      type: object
+      required: [schoolId, schoolName, commissionRate, isOwner]
+      properties:
+        schoolId:
+          type: integer
+        schoolName:
+          type: string
+        commissionRate:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 100
+        isOwner:
+          type: boolean
+        pendingSettlementAmount:
+          type: integer
+          format: int64
+  joinDate:
+    type: string
+    format: date
+    nullable: true
+  intro:
+    type: string
+    nullable: true
+  articleUrl:
+    type: string
+    format: uri
+    nullable: true
   createdAt:
     type: string
     format: date-time

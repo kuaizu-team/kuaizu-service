@@ -90,7 +90,13 @@ func (s *AdminServer) ListOrders(ctx echo.Context) error {
 		params.UserID = &n
 	}
 
-	if sid := adminSchoolID(ctx); sid != nil {
+	if adminRole(ctx) == models.AdminRoleSchoolSuperAdmin {
+		schoolIDs, err := s.adminSchoolIDs(ctx)
+		if err != nil {
+			return response.InternalError(ctx, "查询学校权限失败")
+		}
+		params.SchoolIDs = schoolIDs
+	} else if sid := adminSchoolID(ctx); sid != nil {
 		params.SchoolID = sid
 	}
 
@@ -112,6 +118,11 @@ func (s *AdminServer) ListOrders(ctx echo.Context) error {
 
 // GetOrder handles GET /admin/orders/:id.
 func (s *AdminServer) GetOrder(ctx echo.Context) error {
+	if orderID, parseErr := strconv.Atoi(ctx.Param("id")); parseErr == nil {
+		if err := s.requireOrderSchoolAccess(ctx, orderID); err != nil {
+			return err
+		}
+	}
 	if adminRole(ctx) == models.AdminRoleSchoolAdmin {
 		return response.Forbidden(ctx, "权限不足")
 	}
@@ -140,11 +151,16 @@ func (s *AdminServer) GetOrder(ctx echo.Context) error {
 
 // ApplyOrderRefund handles POST /admin/orders/:id/refund/apply.
 func (s *AdminServer) ApplyOrderRefund(ctx echo.Context) error {
+	if orderID, parseErr := strconv.Atoi(ctx.Param("id")); parseErr == nil {
+		if err := s.requireOrderSchoolAccess(ctx, orderID); err != nil {
+			return err
+		}
+	}
 	if adminRole(ctx) != models.AdminRoleSchoolSuperAdmin {
 		return response.Forbidden(ctx, "权限不足")
 	}
 	sid := adminSchoolID(ctx)
-	if sid == nil {
+	if sid == nil && adminRole(ctx) != models.AdminRoleSchoolSuperAdmin {
 		return response.Forbidden(ctx, "当前管理员未绑定学校")
 	}
 
@@ -172,7 +188,7 @@ func (s *AdminServer) ApplyOrderRefund(ctx echo.Context) error {
 	if order == nil {
 		return response.NotFound(ctx, "订单不存在")
 	}
-	if order.UserSchoolID == nil || *order.UserSchoolID != *sid {
+	if sid != nil && (order.UserSchoolID == nil || *order.UserSchoolID != *sid) {
 		return response.Forbidden(ctx, "权限不足")
 	}
 	if order.Status != models.OrderStatusPaid {
@@ -200,6 +216,11 @@ func (s *AdminServer) ApplyOrderRefund(ctx echo.Context) error {
 
 // ReviewOrderRefund handles PATCH /admin/orders/:id/refund.
 func (s *AdminServer) ReviewOrderRefund(ctx echo.Context) error {
+	if orderID, parseErr := strconv.Atoi(ctx.Param("id")); parseErr == nil {
+		if err := s.requireOrderSchoolAccess(ctx, orderID); err != nil {
+			return err
+		}
+	}
 	id, err := strconv.Atoi(ctx.Param("id"))
 	if err != nil {
 		return response.BadRequest(ctx, "invalid order id")
@@ -243,6 +264,11 @@ func (s *AdminServer) ReviewOrderRefund(ctx echo.Context) error {
 
 // RejectOrderRefund handles PATCH/POST /admin/orders/:id/refund/reject.
 func (s *AdminServer) RejectOrderRefund(ctx echo.Context) error {
+	if orderID, parseErr := strconv.Atoi(ctx.Param("id")); parseErr == nil {
+		if err := s.requireOrderSchoolAccess(ctx, orderID); err != nil {
+			return err
+		}
+	}
 	id, err := strconv.Atoi(ctx.Param("id"))
 	if err != nil {
 		return response.BadRequest(ctx, "invalid order id")
@@ -277,7 +303,7 @@ func (s *AdminServer) rejectOrderRefund(ctx echo.Context, id int, reason string)
 	}
 	if role == models.AdminRoleSchoolSuperAdmin {
 		sid := adminSchoolID(ctx)
-		if sid == nil || order.UserSchoolID == nil || *order.UserSchoolID != *sid {
+		if sid != nil && (order.UserSchoolID == nil || *order.UserSchoolID != *sid) {
 			return response.Forbidden(ctx, "权限不足")
 		}
 		if order.RefundApplicantType == nil || *order.RefundApplicantType != 0 {
@@ -302,11 +328,16 @@ func (s *AdminServer) rejectOrderRefund(ctx echo.Context, id int, reason string)
 
 // WithdrawOrderRefund handles PATCH/POST /admin/orders/:id/refund/withdraw.
 func (s *AdminServer) WithdrawOrderRefund(ctx echo.Context) error {
+	if orderID, parseErr := strconv.Atoi(ctx.Param("id")); parseErr == nil {
+		if err := s.requireOrderSchoolAccess(ctx, orderID); err != nil {
+			return err
+		}
+	}
 	if adminRole(ctx) != models.AdminRoleSchoolSuperAdmin {
 		return response.Forbidden(ctx, "权限不足")
 	}
 	sid := adminSchoolID(ctx)
-	if sid == nil {
+	if sid == nil && adminRole(ctx) != models.AdminRoleSchoolSuperAdmin {
 		return response.Forbidden(ctx, "当前管理员未绑定学校")
 	}
 
@@ -322,7 +353,7 @@ func (s *AdminServer) WithdrawOrderRefund(ctx echo.Context) error {
 	if order == nil {
 		return response.NotFound(ctx, "订单不存在")
 	}
-	if order.UserSchoolID == nil || *order.UserSchoolID != *sid {
+	if sid != nil && (order.UserSchoolID == nil || *order.UserSchoolID != *sid) {
 		return response.Forbidden(ctx, "权限不足")
 	}
 	if order.RefundStatus != 1 {
