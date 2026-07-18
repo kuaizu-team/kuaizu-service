@@ -1,12 +1,13 @@
 package handler
 
 import (
+	"context"
+	"database/sql"
 	"errors"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/jmoiron/sqlx"
 	adminvo "github.com/kuaizu-team/kuaizu-service/internal/admin/vo"
 	"github.com/kuaizu-team/kuaizu-service/internal/models"
 	"github.com/kuaizu-team/kuaizu-service/internal/repository"
@@ -31,6 +32,10 @@ type adminEventRequest struct {
 
 type adminEventMergeRequest struct {
 	TargetEventID int `json:"targetEventId"`
+}
+
+type eventManagerExecer interface {
+	ExecContext(ctx context.Context, query string, args ...interface{}) (sql.Result, error)
 }
 
 func canManageEvents(role int) bool {
@@ -192,7 +197,7 @@ func (s *AdminServer) buildAdminEventModelForRequest(ctx echo.Context, req admin
 	return buildAdminEventModel(req, adminRole(ctx), req.SchoolID)
 }
 
-func (s *AdminServer) upsertEventManager(ctx echo.Context, exec sqlx.ExtContext, event *models.Event, req adminEventRequest) error {
+func (s *AdminServer) upsertEventManager(ctx echo.Context, exec eventManagerExecer, event *models.Event, req adminEventRequest) error {
 	account := ""
 	password := ""
 	if req.ManagerAccount != nil {
@@ -201,7 +206,7 @@ func (s *AdminServer) upsertEventManager(ctx echo.Context, exec sqlx.ExtContext,
 	if req.ManagerPassword != nil {
 		password = strings.TrimSpace(*req.ManagerPassword)
 	}
-	if account == "" && password == "" {
+	if event.AdminID == nil && account == "" && password == "" {
 		return nil
 	}
 	if !s.canManageEventInScope(ctx, event) {
@@ -240,8 +245,8 @@ func (s *AdminServer) upsertEventManager(ctx echo.Context, exec sqlx.ExtContext,
 		}
 		return nil
 	}
-	sets := []string{"nickname=?"}
-	args := []interface{}{nickname}
+	sets := []string{"nickname=?", "school_id=?"}
+	args := []interface{}{nickname, event.SchoolID}
 	if account != "" {
 		sets = append(sets, "username=?")
 		args = append(args, account)
