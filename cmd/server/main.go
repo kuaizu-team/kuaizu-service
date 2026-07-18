@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"strings"
 
 	"github.com/joho/godotenv"
 	"github.com/kuaizu-team/kuaizu-service/api"
@@ -63,6 +62,7 @@ func main() {
 	}
 
 	svc := service.New(repo, deps)
+	svc.WelcomeEmail.StartPendingRecovery(ctx)
 	server := handler.NewServer(repo, svc)
 
 	// Register API routes with /api/v2 prefix
@@ -94,9 +94,6 @@ func main() {
 		}
 
 		// Check exact matches
-		if method == "GET" && strings.HasPrefix(path, "/api/v2/website/") {
-			return true
-		}
 		for _, endpoint := range publicEndpoints {
 			if path == endpoint {
 				return true
@@ -105,6 +102,11 @@ func main() {
 
 		// Public GET endpoints with path parameters
 		if method == "GET" {
+			if path == "/api/v2/website/team" ||
+				path == "/api/v2/website/podcast" ||
+				path == "/api/v2/website/projects" {
+				return true
+			}
 			if path == "/api/v2/events" || path == "/api/v2/events/:id" {
 				return true
 			}

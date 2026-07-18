@@ -565,9 +565,6 @@ func (s *AdminServer) PermanentlyDeleteProject(ctx echo.Context) error {
 	}
 
 	cutoff := time.Now().Add(-7 * 24 * time.Hour)
-	if role == models.AdminRoleEventManager {
-		cutoff = time.Now()
-	}
 	if _, err := s.repo.PurgeDeletedProjectBefore(ctx.Request().Context(), id, cutoff); err != nil {
 		if err == sql.ErrNoRows {
 			return response.BadRequest(ctx, "项目不存在或尚未满足永久删除条件")

@@ -44,6 +44,8 @@ paths:
     $ref: paths/health.yaml
   /auth/login:
     $ref: paths/auth_login.yaml
+  /auth/me:
+    $ref: paths/auth_me.yaml
   /dashboard/stats:
     $ref: paths/dashboard_stats.yaml
   /stats/revenue:

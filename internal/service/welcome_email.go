@@ -45,6 +45,58 @@ func (s *WelcomeEmailService) QueueDelivery(deliveryID int64, userID int, email,
 	}
 	go s.send(deliveryID, userID, email, nickname)
 }
+
+// StartPendingRecovery retries committed deliveries that were left pending by
+// a process interruption. The stable delivery trace ID keeps retries idempotent.
+func (s *WelcomeEmailService) StartPendingRecovery(ctx context.Context) {
+	go func() {
+		s.recoverPending(ctx)
+		ticker := time.NewTicker(5 * time.Minute)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				s.recoverPending(ctx)
+			}
+		}
+	}()
+}
+
+func (s *WelcomeEmailService) recoverPending(ctx context.Context) {
+	if s.messageCenterErr != nil || s.messageCenter == nil {
+		log.Printf("[WelcomeEmail] pending recovery skipped: message center is unavailable")
+		return
+	}
+	queryCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	staleBefore := time.Now().Add(-time.Minute)
+	deliveries, err := s.repo.ListPendingBefore(queryCtx, staleBefore, 100)
+	if err != nil {
+		log.Printf("[WelcomeEmail] list pending deliveries failed: %v", err)
+		return
+	}
+	queued := 0
+	for _, delivery := range deliveries {
+		if ctx.Err() != nil {
+			return
+		}
+		claimed, err := s.repo.ClaimPending(queryCtx, delivery.ID, staleBefore)
+		if err != nil {
+			log.Printf("[WelcomeEmail] claim pending delivery id=%d failed: %v", delivery.ID, err)
+			continue
+		}
+		if !claimed {
+			continue
+		}
+		s.QueueDelivery(delivery.ID, delivery.UserID, delivery.Email, delivery.Nickname)
+		queued++
+	}
+	if queued > 0 {
+		log.Printf("[WelcomeEmail] queued %d pending deliveries for recovery", queued)
+	}
+}
 func (s *WelcomeEmailService) send(deliveryID int64, userID int, email, nickname string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()

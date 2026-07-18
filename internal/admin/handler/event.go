@@ -144,13 +144,6 @@ func (s *AdminServer) UpdateEvent(ctx echo.Context) error {
 	}
 	return response.Success(ctx, adminvo.NewAdminEventVO(updated))
 }
-func canManageEventManager(role int, schoolID *int, event *models.Event) bool {
-	if role == models.AdminRoleSuperAdmin {
-		return true
-	}
-	return role == models.AdminRoleSchoolSuperAdmin && schoolID != nil && event.Level != nil && *event.Level == "school" && event.SchoolID != nil && *event.SchoolID == *schoolID
-}
-
 func (s *AdminServer) canManageEventInScope(ctx echo.Context, event *models.Event) bool {
 	if adminRole(ctx) == models.AdminRoleSuperAdmin {
 		return true

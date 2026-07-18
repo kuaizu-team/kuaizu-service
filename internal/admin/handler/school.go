@@ -14,7 +14,7 @@ type schoolDropdownVO struct {
 }
 
 // ListSchools handles GET /admin/schools?keyword=xxx.
-// Empty keyword returns the first 30 schools; keyword search also returns at most 30.
+// Empty keyword preserves the existing full dropdown; keyword search returns at most 30.
 func (s *AdminServer) ListSchools(ctx echo.Context) error {
 	keyword := strings.TrimSpace(ctx.QueryParam("keyword"))
 	var keywordParam *string
@@ -23,7 +23,7 @@ func (s *AdminServer) ListSchools(ctx echo.Context) error {
 	}
 	schools, err := s.repo.School.List(ctx.Request().Context(), repository.SchoolListParams{
 		Keyword: keywordParam,
-		Limit:   30,
+		All:     keywordParam == nil,
 	})
 	if err != nil {
 		return response.InternalError(ctx, "获取学校列表失败")

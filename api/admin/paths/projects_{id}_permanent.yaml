@@ -15,4 +15,4 @@ delete:
     '400':
       description: 项目不存在或尚未满足永久删除条件
     '403':
-      description: 仅超级管理员可操作
+      description: 仅超级管理员或有该赛事项目权限的赛事管理员可操作

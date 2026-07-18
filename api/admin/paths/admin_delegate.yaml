@@ -1,6 +1,7 @@
 post:
   tags: [Admins]
   summary: Transfer a school's unique operational ownership and split commission
+  operationId: delegateAdminSchool
   requestBody:
     required: true
     content:

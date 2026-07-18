@@ -25,7 +25,7 @@ type SchoolListParams struct {
 	Province *string // 省份
 	City     *string // 城市
 	District *string // 区县
-	Limit    int     // 无筛选时最多返回数量；0 表示保持原有空结果行为
+	All      bool    // 无筛选时返回全部学校，仅供明确需要全量数据的后台调用
 }
 
 // GetByID retrieves a single school by its primary key.
@@ -71,18 +71,12 @@ func (r *SchoolRepository) List(ctx context.Context, params SchoolListParams) ([
 			ORDER BY school_name ASC
 		`
 		args = append(args, *params.Province, *params.City, *params.District)
-	} else if params.Limit > 0 {
-		limit := params.Limit
-		if limit > 100 {
-			limit = 100
-		}
+	} else if params.All {
 		query = `
 			SELECT id, school_name, school_code, province, city, district, created_at, updated_at
 			FROM school
 			ORDER BY school_name ASC
-			LIMIT ?
 		`
-		args = append(args, limit)
 	} else {
 		// No valid filter — return empty
 		return []*models.School{}, nil
