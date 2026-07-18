@@ -3,6 +3,34 @@
 The backend must be managed by one Docker Compose project. Do not mix
 `docker run` containers with Compose-managed containers that use the same names.
 
+## Database migration gate for this release
+
+Database migrations are deliberately run as a separate pre-deploy gate; the
+application workflow must not start a new image against an older schema. Apply
+the following files exactly once and in this order:
+
+1. `sql/migration_event_level_summary.sql`
+2. `sql/migration_admin_user_website_profile.sql`
+3. `sql/20260713_event_manager.sql`
+4. `sql/20260714_event_manager_password.sql`
+5. `sql/20260715_admin_multi_school_delegation.sql`
+6. `sql/20260715_add_welcome_email_delivery.sql`
+
+`20260713_event_manager.sql` depends on the `event.school_id` column created by
+the first migration. The multi-school migration also assumes the existing
+settlement tables are present. These ALTER statements are not rerunnable; if a
+database was already migrated, run `sql/20260718_release_preflight.sql` instead
+of applying them again. The preflight is read-only and must return no rows.
+
+Take a database backup before the first migration. Deploy the application only
+after the preflight passes, and keep `ADMIN_CREDENTIAL_KEY` configured and
+stable across deployments because it encrypts event-manager credentials.
+
+For the message center, apply `sql/20260718_project_promotion_public_link.sql` from
+the `kz-message-center` repository only when the project-promotion template still
+contains the legacy Mini Program relative path. It is idempotent; templates
+that already use the HTTPS project link require no data update.
+
 ## Why the previous deploy failed
 
 `docker compose up -d kuaizu-console` can still try to create `kuaizu-api`

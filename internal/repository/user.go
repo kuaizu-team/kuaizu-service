@@ -180,8 +180,17 @@ func (r *UserRepository) CreateWithPhone(ctx context.Context, openid string, pho
 	return r.GetByID(ctx, int(id))
 }
 
-// Update updates user fields
+// Update updates user fields.
 func (r *UserRepository) Update(ctx context.Context, user *models.User) error {
+	return updateUser(ctx, r.db, user)
+}
+
+// UpdateUserTx updates user fields in an existing transaction.
+func UpdateUserTx(ctx context.Context, tx *sqlx.Tx, user *models.User) error {
+	return updateUser(ctx, tx, user)
+}
+
+func updateUser(ctx context.Context, exec sqlx.ExtContext, user *models.User) error {
 	query := `
 		UPDATE ` + "`user`" + ` SET
 			nickname = :nickname,
@@ -195,11 +204,9 @@ func (r *UserRepository) Update(ctx context.Context, user *models.User) error {
 		WHERE id = :id
 	`
 
-	_, err := r.db.NamedExecContext(ctx, query, user)
-	if err != nil {
+	if _, err := sqlx.NamedExecContext(ctx, exec, query, user); err != nil {
 		return fmt.Errorf("update user: %w", err)
 	}
-
 	return nil
 }
 

@@ -21,8 +21,8 @@ func NewWelcomeEmailService(repo repository.WelcomeEmailDeliveryRepo, client *me
 	return &WelcomeEmailService{repo: repo, messageCenter: client, messageCenterErr: initErr}
 }
 
-// Queue records this email-change event before starting background work. The
-// caller only waits for the small history write, never for email delivery.
+// Queue records this email-change event before starting background work.
+// Retained for callers that do not already own a database transaction.
 func (s *WelcomeEmailService) Queue(ctx context.Context, userID int, email, nickname string) {
 	email = strings.ToLower(strings.TrimSpace(email))
 	if email == "" {
@@ -33,10 +33,18 @@ func (s *WelcomeEmailService) Queue(ctx context.Context, userID int, email, nick
 		log.Printf("[WelcomeEmail] create delivery failed user_id=%d: %v", userID, err)
 		return
 	}
-
-	go s.send(deliveryID, userID, email, nickname)
+	s.QueueDelivery(deliveryID, userID, email, nickname)
 }
 
+// QueueDelivery starts delivery for a history row that was committed together
+// with the corresponding user email change.
+func (s *WelcomeEmailService) QueueDelivery(deliveryID int64, userID int, email, nickname string) {
+	email = strings.ToLower(strings.TrimSpace(email))
+	if deliveryID <= 0 || email == "" {
+		return
+	}
+	go s.send(deliveryID, userID, email, nickname)
+}
 func (s *WelcomeEmailService) send(deliveryID int64, userID int, email, nickname string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
@@ -51,7 +59,7 @@ func (s *WelcomeEmailService) send(deliveryID int64, userID int, email, nickname
 	}
 
 	result, err := s.messageCenter.SendWelcomeEmail(ctx, messagecenter.WelcomeEmailRequest{
-		Email: email, Nickname: nickname, TraceID: fmt.Sprintf("welcome-email:%d:%d", userID, time.Now().UnixNano()),
+		Email: email, Nickname: nickname, TraceID: welcomeEmailTraceID(deliveryID),
 	})
 	if err != nil {
 		s.fail(ctx, deliveryID, email, err)
@@ -68,6 +76,9 @@ func (s *WelcomeEmailService) send(deliveryID int64, userID int, email, nickname
 	}
 }
 
+func welcomeEmailTraceID(deliveryID int64) string {
+	return fmt.Sprintf("welcome-email:%d", deliveryID)
+}
 func (s *WelcomeEmailService) fail(ctx context.Context, deliveryID int64, email string, sendErr error) {
 	if ctx.Err() != nil {
 		var cancel context.CancelFunc

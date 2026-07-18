@@ -122,6 +122,15 @@ func (r *EventRepository) GetByID(ctx context.Context, id int) (*models.Event, e
 }
 
 func (r *EventRepository) Create(ctx context.Context, event *models.Event) error {
+	return createEvent(ctx, r.db, event)
+}
+
+// CreateEventTx creates an event in an existing transaction.
+func CreateEventTx(ctx context.Context, tx *sqlx.Tx, event *models.Event) error {
+	return createEvent(ctx, tx, event)
+}
+
+func createEvent(ctx context.Context, exec sqlx.ExtContext, event *models.Event) error {
 	query := `
 		INSERT INTO event (name, is_ranking, registration_deadline, article_url, level, summary, school_id, admin_id, creator_id, display_order)
 		VALUES (:name, :is_ranking, :registration_deadline, :article_url, :level, :summary, :school_id, :admin_id, :creator_id, :display_order)
@@ -132,16 +141,28 @@ func (r *EventRepository) Create(ctx context.Context, event *models.Event) error
 			VALUES (:name, :is_ranking, :registration_deadline, :article_url, :level, :summary, :school_id, :admin_id, :creator_id, :display_order, :created_at)
 		`
 	}
-	result, err := r.db.NamedExecContext(ctx, query, event)
+	result, err := sqlx.NamedExecContext(ctx, exec, query, event)
 	if err != nil {
 		return fmt.Errorf("create event: %w", err)
 	}
-	id, _ := result.LastInsertId()
+	id, err := result.LastInsertId()
+	if err != nil {
+		return fmt.Errorf("read created event id: %w", err)
+	}
 	event.ID = int(id)
 	return nil
 }
 
 func (r *EventRepository) Update(ctx context.Context, event *models.Event) error {
+	return updateEvent(ctx, r.db, event)
+}
+
+// UpdateEventTx updates an event in an existing transaction.
+func UpdateEventTx(ctx context.Context, tx *sqlx.Tx, event *models.Event) error {
+	return updateEvent(ctx, tx, event)
+}
+
+func updateEvent(ctx context.Context, exec sqlx.ExtContext, event *models.Event) error {
 	query := `
 		UPDATE event
 		SET name = :name,
@@ -171,7 +192,7 @@ func (r *EventRepository) Update(ctx context.Context, event *models.Event) error
 			WHERE id = :id
 		`
 	}
-	result, err := r.db.NamedExecContext(ctx, query, event)
+	result, err := sqlx.NamedExecContext(ctx, exec, query, event)
 	if err != nil {
 		return fmt.Errorf("update event: %w", err)
 	}
@@ -181,7 +202,6 @@ func (r *EventRepository) Update(ctx context.Context, event *models.Event) error
 	}
 	return nil
 }
-
 func (r *EventRepository) Merge(ctx context.Context, sourceID, targetID int) error {
 	tx, err := r.db.BeginTxx(ctx, nil)
 	if err != nil {

@@ -1,12 +1,12 @@
 package handler
 
 import (
-	"database/sql"
 	"errors"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/jmoiron/sqlx"
 	adminvo "github.com/kuaizu-team/kuaizu-service/internal/admin/vo"
 	"github.com/kuaizu-team/kuaizu-service/internal/models"
 	"github.com/kuaizu-team/kuaizu-service/internal/repository"
@@ -75,15 +75,27 @@ func (s *AdminServer) CreateEvent(ctx echo.Context) error {
 	}
 	creatorID := currentAdminID(ctx)
 	event.CreatorID = &creatorID
-	created, err := s.svc.Event.CreateEvent(ctx.Request().Context(), event)
+
+	requestCtx := ctx.Request().Context()
+	tx, err := s.repo.DB().BeginTxx(requestCtx, nil)
 	if err != nil {
+		return response.InternalError(ctx, "创建赛事失败")
+	}
+	defer tx.Rollback()
+	if err := s.svc.Event.CreateEventTx(requestCtx, tx, event); err != nil {
 		return mapServiceError(ctx, err)
 	}
-	if err := s.upsertEventManager(ctx, created, req); err != nil {
-		_ = s.svc.Event.DeleteEvent(ctx.Request().Context(), created.ID)
+	if err := s.upsertEventManager(ctx, tx, event, req); err != nil {
 		return err
 	}
-	created, _ = s.repo.Event.GetByID(ctx.Request().Context(), created.ID)
+	if err := tx.Commit(); err != nil {
+		return response.InternalError(ctx, "创建赛事失败")
+	}
+
+	created, err := s.repo.Event.GetByID(requestCtx, event.ID)
+	if err != nil || created == nil {
+		return response.InternalError(ctx, "获取赛事信息失败")
+	}
 	return response.Success(ctx, adminvo.NewAdminEventVO(created))
 }
 
@@ -96,7 +108,8 @@ func (s *AdminServer) UpdateEvent(ctx echo.Context) error {
 	if err := ctx.Bind(&req); err != nil {
 		return response.BadRequest(ctx, "invalid request body")
 	}
-	existing, err := s.repo.Event.GetByID(ctx.Request().Context(), id)
+	requestCtx := ctx.Request().Context()
+	existing, err := s.repo.Event.GetByID(requestCtx, id)
 	if err != nil || existing == nil {
 		return response.NotFound(ctx, "event not found")
 	}
@@ -108,21 +121,29 @@ func (s *AdminServer) UpdateEvent(ctx echo.Context) error {
 		return response.BadRequest(ctx, err.Error())
 	}
 	event.ID = id
-	updated, err := s.svc.Event.UpdateEvent(ctx.Request().Context(), event)
+	event.AdminID = existing.AdminID
+
+	tx, err := s.repo.DB().BeginTxx(requestCtx, nil)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return response.NotFound(ctx, "event not found")
-		}
+		return response.InternalError(ctx, "更新赛事失败")
+	}
+	defer tx.Rollback()
+	if err := s.svc.Event.UpdateEventTx(requestCtx, tx, event); err != nil {
 		return mapServiceError(ctx, err)
 	}
-	updated.AdminID = existing.AdminID
-	if err := s.upsertEventManager(ctx, updated, req); err != nil {
+	if err := s.upsertEventManager(ctx, tx, event, req); err != nil {
 		return err
 	}
-	updated, _ = s.repo.Event.GetByID(ctx.Request().Context(), id)
+	if err := tx.Commit(); err != nil {
+		return response.InternalError(ctx, "更新赛事失败")
+	}
+
+	updated, err := s.repo.Event.GetByID(requestCtx, id)
+	if err != nil || updated == nil {
+		return response.InternalError(ctx, "获取赛事信息失败")
+	}
 	return response.Success(ctx, adminvo.NewAdminEventVO(updated))
 }
-
 func canManageEventManager(role int, schoolID *int, event *models.Event) bool {
 	if role == models.AdminRoleSuperAdmin {
 		return true
@@ -158,7 +179,7 @@ func (s *AdminServer) buildAdminEventModelForRequest(ctx echo.Context, req admin
 	return buildAdminEventModel(req, adminRole(ctx), req.SchoolID)
 }
 
-func (s *AdminServer) upsertEventManager(ctx echo.Context, event *models.Event, req adminEventRequest) error {
+func (s *AdminServer) upsertEventManager(ctx echo.Context, exec sqlx.ExtContext, event *models.Event, req adminEventRequest) error {
 	account := ""
 	password := ""
 	if req.ManagerAccount != nil {
@@ -189,12 +210,19 @@ func (s *AdminServer) upsertEventManager(ctx echo.Context, event *models.Event, 
 		if err != nil {
 			return response.InternalError(ctx, "赛事管理员密码安全存储失败")
 		}
-		result, err := s.repo.DB().ExecContext(ctx.Request().Context(), `INSERT INTO admin_user(username,password_hash,password_encrypted,nickname,role,school_id,status) VALUES(?,?,?,?,?,?,1)`, account, string(hash), encrypted, nickname, models.AdminRoleEventManager, event.SchoolID)
+		result, err := exec.ExecContext(ctx.Request().Context(), `INSERT INTO admin_user(username,password_hash,password_encrypted,nickname,role,school_id,status) VALUES(?,?,?,?,?,?,1)`, account, string(hash), encrypted, nickname, models.AdminRoleEventManager, event.SchoolID)
 		if err != nil {
 			return response.BadRequest(ctx, "赛事管理员账号已存在")
 		}
-		id, _ := result.LastInsertId()
-		if _, err = s.repo.DB().ExecContext(ctx.Request().Context(), `UPDATE event SET admin_id=? WHERE id=? AND admin_id IS NULL`, id, event.ID); err != nil {
+		id, err := result.LastInsertId()
+		if err != nil {
+			return response.InternalError(ctx, "读取赛事管理员信息失败")
+		}
+		linkResult, err := exec.ExecContext(ctx.Request().Context(), `UPDATE event SET admin_id=? WHERE id=? AND admin_id IS NULL`, id, event.ID)
+		if err != nil {
+			return response.InternalError(ctx, "关联赛事管理员失败")
+		}
+		if rows, _ := linkResult.RowsAffected(); rows != 1 {
 			return response.InternalError(ctx, "关联赛事管理员失败")
 		}
 		return nil
@@ -206,7 +234,10 @@ func (s *AdminServer) upsertEventManager(ctx echo.Context, event *models.Event, 
 		args = append(args, account)
 	}
 	if password != "" {
-		hash, _ := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+		hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+		if err != nil {
+			return response.InternalError(ctx, "密码加密失败")
+		}
 		encrypted, err := encryptAdminCredential(password)
 		if err != nil {
 			return response.InternalError(ctx, "赛事管理员密码安全存储失败")
@@ -215,7 +246,7 @@ func (s *AdminServer) upsertEventManager(ctx echo.Context, event *models.Event, 
 		args = append(args, string(hash), encrypted)
 	}
 	args = append(args, *event.AdminID)
-	if _, err := s.repo.DB().ExecContext(ctx.Request().Context(), `UPDATE admin_user SET `+strings.Join(sets, ",")+`,updated_at=CURRENT_TIMESTAMP WHERE id=? AND role=4`, args...); err != nil {
+	if _, err := exec.ExecContext(ctx.Request().Context(), `UPDATE admin_user SET `+strings.Join(sets, ",")+`,updated_at=CURRENT_TIMESTAMP WHERE id=? AND role=4`, args...); err != nil {
 		return response.BadRequest(ctx, "赛事管理员账号更新失败")
 	}
 	return nil

@@ -165,11 +165,6 @@ func main() {
 
 	adminGroup.GET("/schools", server.ListSchools)
 
-	// Versioned delegation endpoint kept alongside the existing /admin API.
-	apiV2AdminGroup := e.Group("/api/v2/admin")
-	apiV2AdminGroup.Use(adminmw.AdminJWTAuth(adminmw.DefaultAdminJWTConfig()))
-	apiV2AdminGroup.POST("/delegate", server.DelegateAdminSchool)
-
 	port := os.Getenv("ADMIN_PORT")
 	if port == "" {
 		port = "8081"

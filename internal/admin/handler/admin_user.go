@@ -380,7 +380,7 @@ type delegateAdminRequest struct {
 	Nickname       *string `json:"nickname"`
 }
 
-// DelegateAdminSchool handles POST /api/v2/admin/delegate and /admin/delegate.
+// DelegateAdminSchool handles POST /admin/delegate.
 func (s *AdminServer) DelegateAdminSchool(ctx echo.Context) error {
 	if adminRole(ctx) != models.AdminRoleSchoolSuperAdmin {
 		return response.Forbidden(ctx, "只有校区超级管理员可以分配负责人")

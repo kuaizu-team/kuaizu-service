@@ -404,6 +404,10 @@ func (r *AdminUserRepository) SchoolCommissionTotalExcluding(ctx context.Context
 	return total, nil
 }
 
+func addCommissionRates(existing, delegated float64) float64 {
+	return math.Round((existing+delegated)*100) / 100
+}
+
 // DelegateSchool atomically transfers operational ownership and splits the
 // source administrator's settlement percentage.
 func (r *AdminUserRepository) DelegateSchool(ctx context.Context, sourceAdminID int, target *models.AdminUser, targetUserID *int, schoolID int, rate float64) (int, error) {
@@ -453,6 +457,25 @@ func (r *AdminUserRepository) DelegateSchool(ctx context.Context, sourceAdminID 
 		resolvedTargetID = int(id)
 	}
 
+	targetRate := rate
+	targetRelationExists := false
+	var existingTargetRate float64
+	var targetIsOwner int
+	err = tx.QueryRowxContext(ctx, `SELECT commission_rate,is_owner FROM admin_school_relation
+		WHERE admin_user_id=? AND school_id=? FOR UPDATE`, resolvedTargetID, schoolID).Scan(&existingTargetRate, &targetIsOwner)
+	switch {
+	case err == nil:
+		if targetIsOwner == 1 {
+			return 0, ErrSchoolAlreadyOwned
+		}
+		targetRelationExists = true
+		targetRate = addCommissionRates(existingTargetRate, rate)
+	case err == sql.ErrNoRows:
+		err = nil
+	default:
+		return 0, fmt.Errorf("lock delegated target relation: %w", err)
+	}
+
 	remaining := math.Round((sourceRate-rate)*100) / 100
 	if remaining <= 0 {
 		if _, err := tx.ExecContext(ctx, `DELETE FROM admin_school_relation
@@ -465,18 +488,13 @@ func (r *AdminUserRepository) DelegateSchool(ctx context.Context, sourceAdminID 
 		return 0, fmt.Errorf("downgrade delegated source relation: %w", err)
 	}
 
-	result, err := tx.ExecContext(ctx, `UPDATE admin_school_relation
-		SET commission_rate=?, is_owner=1, updated_at=CURRENT_TIMESTAMP
-		WHERE admin_user_id=? AND school_id=?`, rate, resolvedTargetID, schoolID)
-	if err == nil {
-		if rows, _ := result.RowsAffected(); rows == 0 {
-			var exists bool
-			err = tx.QueryRowxContext(ctx, `SELECT EXISTS(SELECT 1 FROM admin_school_relation WHERE admin_user_id=? AND school_id=?)`, resolvedTargetID, schoolID).Scan(&exists)
-			if err == nil && !exists {
-				_, err = tx.ExecContext(ctx, `INSERT INTO admin_school_relation
-					(admin_user_id,school_id,commission_rate,is_owner) VALUES(?,?,?,1)`, resolvedTargetID, schoolID, rate)
-			}
-		}
+	if targetRelationExists {
+		_, err = tx.ExecContext(ctx, `UPDATE admin_school_relation
+			SET commission_rate=?, is_owner=1, updated_at=CURRENT_TIMESTAMP
+			WHERE admin_user_id=? AND school_id=?`, targetRate, resolvedTargetID, schoolID)
+	} else {
+		_, err = tx.ExecContext(ctx, `INSERT INTO admin_school_relation
+			(admin_user_id,school_id,commission_rate,is_owner) VALUES(?,?,?,1)`, resolvedTargetID, schoolID, targetRate)
 	}
 	if err != nil {
 		if isDuplicateKeyError(err) {

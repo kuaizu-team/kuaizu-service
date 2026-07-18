@@ -17,7 +17,9 @@ post:
             commissionRate:
               type: number
               minimum: 0
+              exclusiveMinimum: true
               maximum: 100
+              description: Share transferred from the current owner; added to any retained share already held by targetUserId.
             username:
               type: string
             password:

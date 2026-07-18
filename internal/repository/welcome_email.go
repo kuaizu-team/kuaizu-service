@@ -26,7 +26,17 @@ func NewWelcomeEmailDeliveryRepository(db *sqlx.DB) *WelcomeEmailDeliveryReposit
 // Create records every genuine email change as an independent delivery.
 // Historical deliveries to the same address never suppress a new one.
 func (r *WelcomeEmailDeliveryRepository) Create(ctx context.Context, userID int, email string) (int64, error) {
-	result, err := r.db.ExecContext(ctx, `
+	return createWelcomeEmailDelivery(ctx, r.db, userID, email)
+}
+
+// CreateWelcomeEmailDeliveryTx records the delivery in the same transaction as
+// the user email change, so concurrent identical updates cannot create duplicates.
+func CreateWelcomeEmailDeliveryTx(ctx context.Context, tx *sqlx.Tx, userID int, email string) (int64, error) {
+	return createWelcomeEmailDelivery(ctx, tx, userID, email)
+}
+
+func createWelcomeEmailDelivery(ctx context.Context, exec sqlx.ExtContext, userID int, email string) (int64, error) {
+	result, err := exec.ExecContext(ctx, `
 		INSERT INTO welcome_email_delivery
 			(recipient_email, user_id, status, created_at, updated_at)
 		VALUES (?, ?, 'pending', NOW(), NOW())`, strings.ToLower(strings.TrimSpace(email)), userID)
@@ -39,7 +49,6 @@ func (r *WelcomeEmailDeliveryRepository) Create(ctx context.Context, userID int,
 	}
 	return id, nil
 }
-
 func (r *WelcomeEmailDeliveryRepository) MarkSent(ctx context.Context, deliveryID int64, taskID *int64) error {
 	_, err := r.db.ExecContext(ctx, `
 		UPDATE welcome_email_delivery

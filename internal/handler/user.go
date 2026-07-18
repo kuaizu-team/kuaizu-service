@@ -5,6 +5,7 @@ import (
 
 	"github.com/kuaizu-team/kuaizu-service/api"
 	"github.com/kuaizu-team/kuaizu-service/internal/models"
+	"github.com/kuaizu-team/kuaizu-service/internal/repository"
 	"github.com/kuaizu-team/kuaizu-service/internal/service"
 	"github.com/labstack/echo/v4"
 )
@@ -150,32 +151,37 @@ func (s *Server) InviteRegister(ctx echo.Context) error {
 // UpdateCurrentUser handles PUT /users/me
 func (s *Server) UpdateCurrentUser(ctx echo.Context) error {
 	userID := GetUserID(ctx)
+	requestCtx := ctx.Request().Context()
 
-	// Bind request body
 	var req api.UpdateUserDTO
 	if err := ctx.Bind(&req); err != nil {
 		return BadRequest(ctx, "请求参数错误")
 	}
+	if req.Nickname != nil {
+		if err := s.svc.ContentAudit.CheckText(requestCtx, *req.Nickname); err != nil {
+			return mapServiceError(ctx, err)
+		}
+	}
 
-	// Get existing user
-	user, err := s.repo.User.GetByID(ctx.Request().Context(), userID)
+	tx, err := s.repo.DB().BeginTxx(requestCtx, nil)
+	if err != nil {
+		return InternalError(ctx, "更新用户信息失败")
+	}
+	defer tx.Rollback()
+
+	// Lock the user row so concurrent requests can create at most one delivery
+	// for the same actual email transition. A later change away and back to the
+	// same address remains a separate product event and creates another delivery.
+	user, err := s.repo.User.GetByIDForUpdateTx(requestCtx, tx, userID)
 	if err != nil {
 		return InternalError(ctx, "获取用户信息失败")
 	}
 	if user == nil {
 		return NotFound(ctx, "用户不存在")
 	}
-	oldEmail := ""
-	if user.Email != nil {
-		oldEmail = strings.ToLower(strings.TrimSpace(*user.Email))
-	}
+	oldEmail := normalizedEmail(user.Email)
 
-	// Update fields if provided
 	if req.Nickname != nil {
-		// 文字内容审核
-		if err := s.svc.ContentAudit.CheckText(ctx.Request().Context(), *req.Nickname); err != nil {
-			return mapServiceError(ctx, err)
-		}
 		user.Nickname = req.Nickname
 	}
 	if req.Phone != nil {
@@ -198,29 +204,42 @@ func (s *Server) UpdateCurrentUser(ctx echo.Context) error {
 		user.WechatID = req.Wechat
 	}
 
-	// Save changes
-	if err := s.repo.User.Update(ctx.Request().Context(), user); err != nil {
+	if err := repository.UpdateUserTx(requestCtx, tx, user); err != nil {
 		return InternalError(ctx, "更新用户信息失败")
 	}
-	newEmail := ""
-	if user.Email != nil {
-		newEmail = strings.ToLower(strings.TrimSpace(*user.Email))
-	}
+
+	newEmail := normalizedEmail(user.Email)
+	var deliveryID int64
 	if newEmail != "" && newEmail != oldEmail {
+		deliveryID, err = repository.CreateWelcomeEmailDeliveryTx(requestCtx, tx, userID, newEmail)
+		if err != nil {
+			return InternalError(ctx, "创建欢迎邮件任务失败")
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return InternalError(ctx, "更新用户信息失败")
+	}
+
+	if deliveryID > 0 {
 		nickname := "同学"
 		if user.Nickname != nil && strings.TrimSpace(*user.Nickname) != "" {
 			nickname = strings.TrimSpace(*user.Nickname)
 		}
-		s.svc.WelcomeEmail.Queue(ctx.Request().Context(), userID, newEmail, nickname)
+		s.svc.WelcomeEmail.QueueDelivery(deliveryID, userID, newEmail, nickname)
 	}
 
-	// Reload user with joined data
-	user, err = s.repo.User.GetByID(ctx.Request().Context(), userID)
+	user, err = s.repo.User.GetByID(requestCtx, userID)
 	if err != nil {
 		return InternalError(ctx, "获取用户信息失败")
 	}
-
 	return Success(ctx, toExtendedUserVO(user))
+}
+
+func normalizedEmail(email *string) string {
+	if email == nil {
+		return ""
+	}
+	return strings.ToLower(strings.TrimSpace(*email))
 }
 
 // SubmitCertification handles POST /users/me/certification
