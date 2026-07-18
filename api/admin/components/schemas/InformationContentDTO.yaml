@@ -22,6 +22,7 @@ properties:
       - campus_project
       - kuaizu_talking
       - developer_weekly
+      - talent
   displayOrder:
     type: integer
     default: 0

@@ -17,6 +17,7 @@ get:
           - campus_project
           - kuaizu_talking
           - developer_weekly
+          - talent
   responses:
     '200':
       description: Success

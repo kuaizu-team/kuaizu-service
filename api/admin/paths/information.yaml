@@ -13,6 +13,7 @@ get:
           - campus_project
           - kuaizu_talking
           - developer_weekly
+          - talent
     - in: query
       name: page
       schema:
