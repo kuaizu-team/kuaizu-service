@@ -20,11 +20,11 @@ type ProjectMemberRatingStatus struct {
 	Score           *float64   `json:"score"`
 	CanRate         bool       `json:"canRate"`
 	CooldownDays    int        `json:"cooldownDays"`
-	LastRatedAt     *time.Time `json:"lastRatedAt,omitempty"`
-	NextRateAt      *time.Time `json:"nextRateAt,omitempty"`
+	LastRatedAt     *time.Time `json:"-"`
+	NextRateAt      *time.Time `json:"-"`
 	IsSelf          bool       `json:"isSelf"`
 	RatingHint      string     `json:"ratingHint"`
-	RatingCount     int        `json:"ratingCount"`
+	RatingCount     int        `json:"-"`
 	ProjectMemberID int64      `json:"-"`
 }
 
@@ -33,6 +33,6 @@ type ProjectMemberRatingResult struct {
 	Score        float64   `json:"score"`
 	CanRate      bool      `json:"canRate"`
 	CooldownDays int       `json:"cooldownDays"`
-	NextRateAt   time.Time `json:"nextRateAt"`
-	RatingCount  int       `json:"ratingCount"`
+	NextRateAt   time.Time `json:"-"`
+	RatingCount  int       `json:"-"`
 }

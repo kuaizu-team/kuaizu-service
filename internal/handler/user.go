@@ -4,7 +4,6 @@ import (
 	"strings"
 
 	"github.com/kuaizu-team/kuaizu-service/api"
-	"github.com/kuaizu-team/kuaizu-service/internal/models"
 	"github.com/kuaizu-team/kuaizu-service/internal/repository"
 	"github.com/kuaizu-team/kuaizu-service/internal/service"
 	"github.com/labstack/echo/v4"
@@ -34,25 +33,28 @@ func (s *Server) GetCurrentUser(ctx echo.Context) error {
 }
 
 // GetMyCollaborationHistory handles GET /users/me/collaboration-history.
+// It intentionally returns project-level aggregates only: rater identity,
+// individual scores and timestamps are restricted to admin endpoints.
 func (s *Server) GetMyCollaborationHistory(ctx echo.Context) error {
 	userID := GetUserID(ctx)
+	type collaborationProjectSummary struct {
+		ID          int64   `db:"id" json:"id"`
+		ProjectID   int     `db:"project_id" json:"projectId"`
+		ProjectName *string `db:"project_name" json:"projectName,omitempty"`
+		Score       float64 `db:"score" json:"score"`
+	}
 
-	var list []models.CollaborationScore
+	list := make([]collaborationProjectSummary, 0)
 	if err := s.repo.DB().SelectContext(ctx.Request().Context(), &list, `
-		SELECT cs.id, cs.user_id, cs.project_id, cs.scorer_id, cs.score, cs.rating_count, cs.created_at,
-			p.name AS project_name, u.nickname AS scorer_nickname
-		FROM collaboration_score cs
-		LEFT JOIN project p ON p.id = cs.project_id
-		LEFT JOIN `+"`user`"+` u ON u.id = cs.scorer_id
-		WHERE cs.user_id = ?
-		ORDER BY cs.created_at DESC, cs.id DESC
+		SELECT MIN(pms.id) AS id,pms.project_id,p.name AS project_name,ROUND(AVG(pms.score),2) AS score
+		FROM project_member_score pms
+		LEFT JOIN project p ON p.id=pms.project_id
+		WHERE pms.member_id=? AND pms.score IS NOT NULL
+		GROUP BY pms.project_id,p.name
+		ORDER BY MAX(pms.updated_at) DESC,MAX(pms.id) DESC
 	`, userID); err != nil {
 		return InternalError(ctx, "get collaboration history failed")
 	}
-	for i := range list {
-		list[i].ScorerNickname = models.DisplayNickname(list[i].ScorerNickname)
-	}
-
 	return Success(ctx, list)
 }
 
