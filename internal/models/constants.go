@@ -1,5 +1,7 @@
 package models
 
+import "time"
+
 // Admin User Status
 const (
 	AdminUserStatusDisabled = 0 // 禁用
@@ -7,8 +9,17 @@ const (
 )
 
 const (
-	ProjectRoleTeamLeader = "TEAM_LEADER"
-	ProjectRoleTeamMember = "TEAM_MEMBER"
+	ProjectRoleTeamLeader     = "TEAM_LEADER"
+	ProjectRoleTeamMember     = "TEAM_MEMBER"
+	ProjectRoleLearningMember = "LEARNING_MEMBER"
+)
+
+const (
+	ProjectRatingCooldown       = 30 * 24 * time.Hour
+	ProjectRatingWeightLeader   = 1.0
+	ProjectRatingWeightManager  = 0.8
+	ProjectRatingWeightMember   = 0.6
+	ProjectRatingWeightLearning = 0.4
 )
 
 // Admin Role

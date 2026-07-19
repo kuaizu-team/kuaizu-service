@@ -482,6 +482,8 @@ func oliveRolePriority(role string) int {
 		return 1
 	case models.ProjectRoleTeamMember, "":
 		return 3
+	case models.ProjectRoleLearningMember:
+		return 4
 	default:
 		return 2
 	}

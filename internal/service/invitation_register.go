@@ -234,6 +234,8 @@ func projectRoleLabel(role string) string {
 	switch role {
 	case models.ProjectRoleTeamLeader:
 		return "团队负责人"
+	case models.ProjectRoleLearningMember:
+		return "学习成员"
 	case "RECRUITMENT_LEADER":
 		return "招募负责人"
 	case "TECH_LEADER":

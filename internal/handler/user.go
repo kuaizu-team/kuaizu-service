@@ -39,7 +39,7 @@ func (s *Server) GetMyCollaborationHistory(ctx echo.Context) error {
 
 	var list []models.CollaborationScore
 	if err := s.repo.DB().SelectContext(ctx.Request().Context(), &list, `
-		SELECT cs.id, cs.user_id, cs.project_id, cs.scorer_id, cs.score, cs.created_at,
+		SELECT cs.id, cs.user_id, cs.project_id, cs.scorer_id, cs.score, cs.rating_count, cs.created_at,
 			p.name AS project_name, u.nickname AS scorer_nickname
 		FROM collaboration_score cs
 		LEFT JOIN project p ON p.id = cs.project_id

@@ -1,0 +1,24 @@
+parameters:
+  - name: id
+    in: path
+    required: true
+    schema:
+      type: integer
+    description: 项目 ID
+get:
+  tags: [Projects]
+  summary: 获取项目全员评分状态
+  operationId: listProjectMemberRatings
+  responses:
+    '200':
+      description: 当前项目所有成员的评分与当前用户冷却状态
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/BaseResponse.yaml
+    '403':
+      description: 当前用户不是项目成员
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/BaseResponse.yaml

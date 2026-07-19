@@ -614,14 +614,8 @@ func saveProjectMetadataTx(ctx context.Context, tx *sqlx.Tx, projectID int, tags
 		}
 	}
 	if members != nil {
-		if _, err := tx.ExecContext(ctx, "DELETE FROM project_members WHERE project_id=?", projectID); err != nil {
+		if err := syncProjectMembersTx(ctx, tx, projectID, *members); err != nil {
 			return err
-		}
-		for _, member := range *members {
-			if _, err := tx.ExecContext(ctx, `INSERT INTO project_members(project_id,user_id,role)
-				VALUES(?,?,?)`, projectID, member.UserID, member.Role); err != nil {
-				return err
-			}
 		}
 	}
 	if eventIDs != nil {
@@ -652,7 +646,7 @@ func (r *ProjectRepository) ListMembers(ctx context.Context, projectID int) ([]m
 		FROM project_members pm
 		LEFT JOIN project_role pr ON pr.code=pm.role
 		WHERE pm.project_id=?
-		ORDER BY FIELD(pm.role,'TEAM_LEADER','TECH_LEADER','PRODUCT_MANAGER','TEAM_MEMBER'), pm.id ASC`, projectID); err != nil {
+		ORDER BY FIELD(pm.role,'TEAM_LEADER','TECH_LEADER','PRODUCT_MANAGER','TEAM_MEMBER','LEARNING_MEMBER'), pm.id ASC`, projectID); err != nil {
 		return nil, fmt.Errorf("query project members: %w", err)
 	}
 	if len(members) == 0 {
@@ -705,21 +699,38 @@ func (r *ProjectRepository) AddMembers(ctx context.Context, projectID int, membe
 	return tx.Commit()
 }
 
+func syncProjectMembersTx(ctx context.Context, tx *sqlx.Tx, projectID int, members []models.ProjectMember) error {
+	if len(members) == 0 {
+		_, err := tx.ExecContext(ctx, "DELETE FROM project_members WHERE project_id=?", projectID)
+		return err
+	}
+	userIDs := make([]int, 0, len(members))
+	for _, member := range members {
+		userIDs = append(userIDs, member.UserID)
+		if _, err := tx.ExecContext(ctx, `INSERT INTO project_members(project_id,user_id,role)
+			VALUES(?,?,?)
+			ON DUPLICATE KEY UPDATE role=VALUES(role)`, projectID, member.UserID, member.Role); err != nil {
+			return fmt.Errorf("upsert project member: %w", err)
+		}
+	}
+	query, args, err := sqlx.In("DELETE FROM project_members WHERE project_id=? AND user_id NOT IN (?)", projectID, userIDs)
+	if err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, tx.Rebind(query), args...); err != nil {
+		return fmt.Errorf("remove omitted project members: %w", err)
+	}
+	return nil
+}
+
 func (r *ProjectRepository) ReplaceMembers(ctx context.Context, projectID int, members []models.ProjectMember) error {
 	tx, err := r.db.BeginTxx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
-
-	if _, err := tx.ExecContext(ctx, "DELETE FROM project_members WHERE project_id=?", projectID); err != nil {
-		return fmt.Errorf("delete project members: %w", err)
-	}
-	for _, member := range members {
-		if _, err := tx.ExecContext(ctx, `INSERT INTO project_members(project_id,user_id,role)
-			VALUES(?,?,?)`, projectID, member.UserID, member.Role); err != nil {
-			return fmt.Errorf("replace project member: %w", err)
-		}
+	if err := syncProjectMembersTx(ctx, tx, projectID, members); err != nil {
+		return err
 	}
 	return tx.Commit()
 }

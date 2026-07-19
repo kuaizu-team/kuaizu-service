@@ -1,0 +1,12 @@
+type: object
+required:
+  - targetUserId
+  - score
+properties:
+  targetUserId:
+    type: integer
+    minimum: 1
+  score:
+    type: integer
+    minimum: 0
+    maximum: 100
