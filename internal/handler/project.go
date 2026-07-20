@@ -395,6 +395,29 @@ func (s *Server) DeleteProject(ctx echo.Context, id int) error {
 
 	return SuccessMessage(ctx, "项目已删除")
 }
+
+func (s *Server) ListProjectMemberRatings(ctx echo.Context, id int) error {
+	result, err := s.svc.Project.ListProjectMemberRatings(ctx.Request().Context(), id, GetUserID(ctx))
+	if err != nil {
+		return mapServiceError(ctx, err)
+	}
+	return Success(ctx, result)
+}
+
+func (s *Server) RateProjectMember(ctx echo.Context, id int) error {
+	var req api.RateProjectMemberJSONRequestBody
+	if err := ctx.Bind(&req); err != nil {
+		return BadRequest(ctx, "请求参数错误")
+	}
+	result, err := s.svc.Project.RateProjectMember(
+		ctx.Request().Context(), id, GetUserID(ctx), req.TargetUserId, req.Score,
+	)
+	if err != nil {
+		return mapServiceError(ctx, err)
+	}
+	return Success(ctx, result)
+}
+
 func (s *Server) RemoveProjectMember(ctx echo.Context, id int, memberId int, params api.RemoveProjectMemberParams) error {
 	userID := GetUserID(ctx)
 	result, err := s.svc.Project.RemoveMember(ctx.Request().Context(), id, userID, memberId, params.Score)
@@ -403,6 +426,7 @@ func (s *Server) RemoveProjectMember(ctx echo.Context, id int, memberId int, par
 	}
 	return Success(ctx, result)
 }
+
 func (s *Server) RestoreProject(ctx echo.Context, id int) error {
 	userID := GetUserID(ctx)
 	if id <= 0 {

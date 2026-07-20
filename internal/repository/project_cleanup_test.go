@@ -97,3 +97,23 @@ func TestProjectCleanupUsesActualSMSNoticeTable(t *testing.T) {
 		t.Fatal("project cleanup must clear olive_branch_sms_notice")
 	}
 }
+
+func TestProjectCleanupClearsPeriodicRatingsBeforeMembers(t *testing.T) {
+	indexes := make(map[string]int, len(projectRelationTables))
+	for i, table := range projectRelationTables {
+		indexes[table] = i
+	}
+	memberIndex, hasMembers := indexes["project_members"]
+	if !hasMembers {
+		t.Fatal("project cleanup must clear project_members")
+	}
+	for _, table := range []string{"project_member_rating", "project_member_score"} {
+		index, ok := indexes[table]
+		if !ok {
+			t.Fatalf("project cleanup must clear %s", table)
+		}
+		if index >= memberIndex {
+			t.Fatalf("project cleanup must clear %s before project_members", table)
+		}
+	}
+}

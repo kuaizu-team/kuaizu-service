@@ -581,6 +581,86 @@ CREATE TABLE `user` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
+-- Table structure for project roles, membership cycles, and periodic ratings
+--
+
+DROP TABLE IF EXISTS `project_member_score`;
+DROP TABLE IF EXISTS `project_member_rating`;
+DROP TABLE IF EXISTS `project_members`;
+DROP TABLE IF EXISTS `project_role`;
+CREATE TABLE `project_role` (
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `code` VARCHAR(32) NOT NULL,
+  `name` VARCHAR(32) NOT NULL,
+  `status` TINYINT NOT NULL DEFAULT 1,
+  `sort_order` INT NOT NULL DEFAULT 0,
+  `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_project_role_code` (`code`),
+  KEY `idx_project_role_status_sort` (`status`,`sort_order`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='项目团队角色字典';
+
+INSERT INTO `project_role` (`code`,`name`,`status`,`sort_order`) VALUES
+  ('TEAM_LEADER','团队负责人',1,10),
+  ('TECH_LEADER','技术负责人',1,20),
+  ('OPERATIONS_LEADER','运营负责人',1,30),
+  ('PUBLICITY_LEADER','宣传负责人',1,40),
+  ('RECRUITMENT_LEADER','招募负责人',1,50),
+  ('DESIGN_LEADER','美化负责人',1,60),
+  ('LEGAL_LEADER','法务负责人',1,70),
+  ('TEAM_MEMBER','团队成员',1,80),
+  ('LEARNING_MEMBER','学习成员',1,90);
+
+CREATE TABLE `project_members` (
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `project_id` BIGINT UNSIGNED NOT NULL,
+  `user_id` BIGINT UNSIGNED NOT NULL,
+  `role` VARCHAR(32) NOT NULL,
+  `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_project_members_project_user` (`project_id`,`user_id`),
+  KEY `idx_project_members_user` (`user_id`),
+  KEY `idx_project_members_project_role` (`project_id`,`role`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='项目团队成员关系';
+
+INSERT INTO `project_members` (`project_id`,`user_id`,`role`,`created_at`,`updated_at`)
+SELECT p.id,p.creator_id,'TEAM_LEADER',NOW(),NOW()
+FROM `project` p
+WHERE p.creator_id IS NOT NULL;
+
+CREATE TABLE `project_member_rating` (
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `project_id` BIGINT UNSIGNED NOT NULL,
+  `rater_id` BIGINT UNSIGNED NOT NULL COMMENT '评分用户 ID',
+  `target_id` BIGINT UNSIGNED NOT NULL COMMENT '被评分用户 ID',
+  `rater_member_id` BIGINT UNSIGNED NOT NULL COMMENT '评分人的本次成员关系 ID',
+  `target_member_id` BIGINT UNSIGNED NOT NULL COMMENT '被评分人的本次成员关系 ID',
+  `rater_role` VARCHAR(32) NOT NULL COMMENT '评分提交时的角色快照',
+  `rater_weight` DECIMAL(3,2) NOT NULL COMMENT '评分提交时的角色权重快照',
+  `score` TINYINT UNSIGNED NOT NULL COMMENT '0-100',
+  `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_rating_target_latest` (`target_member_id`,`rater_id`,`id`),
+  KEY `idx_rating_cooldown` (`project_id`,`rater_id`,`target_member_id`,`created_at`),
+  KEY `idx_rating_project_target` (`project_id`,`target_id`,`created_at`),
+  KEY `idx_rating_target_history` (`target_id`,`created_at`,`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='项目成员周期性互评明细';
+
+CREATE TABLE `project_member_score` (
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `project_id` BIGINT UNSIGNED NOT NULL,
+  `project_member_id` BIGINT UNSIGNED NOT NULL COMMENT '成员本次加入关系 ID',
+  `member_id` BIGINT UNSIGNED NOT NULL COMMENT '成员用户 ID',
+  `score` DECIMAL(5,2) DEFAULT NULL COMMENT '当前角色加权平均分，NULL 表示暂无评分',
+  `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_project_member_score_cycle` (`project_member_id`),
+  KEY `idx_project_member_score_lookup` (`project_id`,`member_id`,`project_member_id`),
+  KEY `idx_member_score_user_project` (`member_id`,`project_id`,`updated_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='项目成员当前生效评分';
+--
 -- Table structure for table `user_competition_group`
 --
 
@@ -615,10 +695,11 @@ CREATE TABLE `project_member_removal` (
   `role` VARCHAR(32) NOT NULL,
   `joined_at` DATETIME NOT NULL,
   `removed_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  `score` INT NULL,
+  `score` DECIMAL(5,2) NULL COMMENT '项目成员移除时固化的最终评分',
   PRIMARY KEY (`id`),
   KEY `idx_member_removal_user` (`user_id`,`removed_at`),
   KEY `idx_member_removal_project` (`project_id`),
+  KEY `idx_member_removal_user_project_cycle` (`user_id`,`project_id`,`joined_at`,`removed_at`),
   CONSTRAINT `fk_member_removal_user` FOREIGN KEY (`user_id`) REFERENCES `user` (`id`) ON DELETE CASCADE,
   CONSTRAINT `fk_member_removal_project` FOREIGN KEY (`project_id`) REFERENCES `project` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Removed project member snapshots';
@@ -651,12 +732,15 @@ CREATE TABLE `collaboration_score` (
   `user_id` INT UNSIGNED NOT NULL COMMENT 'rated user ID',
   `project_id` INT UNSIGNED NOT NULL COMMENT 'project ID',
   `scorer_id` INT UNSIGNED NOT NULL COMMENT 'scorer user ID',
-  `score` TINYINT UNSIGNED NOT NULL COMMENT '0-100 score',
+  `score` DECIMAL(5,2) NOT NULL COMMENT '项目成员移除时固化的最终评分',
+  `rating_count` INT UNSIGNED NOT NULL DEFAULT 1 COMMENT '固化评分包含的有效评分人数',
   `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   KEY `idx_collaboration_score_user` (`user_id`),
   KEY `idx_collaboration_score_project` (`project_id`),
-  KEY `idx_collaboration_score_scorer` (`scorer_id`)
+  KEY `idx_collaboration_score_scorer` (`scorer_id`),
+  KEY `idx_collaboration_score_user_created` (`user_id`,`created_at`),
+  KEY `idx_collaboration_score_user_project_created` (`user_id`,`project_id`,`created_at`,`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='collaboration score history';
 /*!40101 SET character_set_client = @saved_cs_client */;
 

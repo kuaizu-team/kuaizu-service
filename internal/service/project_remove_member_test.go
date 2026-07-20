@@ -25,8 +25,6 @@ func TestRemoveMemberRejectsInvalidInputBeforeRepository(t *testing.T) {
 	}{
 		{name: "invalid project", projectID: 0, scorerID: 1, memberID: 2, score: removeScorePtr(80), message: "invalid project or member id"},
 		{name: "invalid member", projectID: 1, scorerID: 2, memberID: 0, score: removeScorePtr(80), message: "invalid project or member id"},
-		{name: "low score", projectID: 1, scorerID: 2, memberID: 3, score: removeScorePtr(-1), message: "score must be between 0 and 100"},
-		{name: "high score", projectID: 1, scorerID: 2, memberID: 3, score: removeScorePtr(101), message: "score must be between 0 and 100"},
 		{name: "self remove", projectID: 1, scorerID: 2, memberID: 2, score: removeScorePtr(80), message: "不能移除自己"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

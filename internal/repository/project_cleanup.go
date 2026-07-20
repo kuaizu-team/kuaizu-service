@@ -94,7 +94,8 @@ func (r *Repository) PurgeDeletedProjectBefore(ctx context.Context, id int, cuto
 var projectRelationTables = []string{
 	"email_promotion_recipient", "project_view_log", "project_like",
 	"project_favorite", "project_share", "project_tag_relation",
-	"project_milestones", "project_members", "project_event",
+	"project_milestones", "project_member_rating", "project_member_score",
+	"project_members", "project_event",
 	"project_recommendation", "collaboration_score", "olive_branch_sms_notice",
 }
 

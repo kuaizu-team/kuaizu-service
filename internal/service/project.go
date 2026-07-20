@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"database/sql"
 	"log"
 	"math"
 	"sort"
@@ -234,7 +235,8 @@ func shouldRecordProjectView(recordView bool, viewerUserID, creatorUserID int) b
 }
 
 func isProjectLeaderRole(role string) bool {
-	return strings.TrimSpace(role) != "" && role != models.ProjectRoleTeamMember
+	role = strings.TrimSpace(role)
+	return role != "" && role != models.ProjectRoleTeamMember && role != models.ProjectRoleLearningMember
 }
 
 func canOperateAsHighestRole(currentRole *string, members []models.ProjectMember) bool {
@@ -245,12 +247,15 @@ func canOperateAsHighestRole(currentRole *string, members []models.ProjectMember
 	hasTeamLeader := false
 	hasOtherLeader := false
 	hasTeamMember := false
+	hasLearningMember := false
 	for _, member := range members {
 		switch member.Role {
 		case models.ProjectRoleTeamLeader:
 			hasTeamLeader = true
 		case models.ProjectRoleTeamMember:
 			hasTeamMember = true
+		case models.ProjectRoleLearningMember:
+			hasLearningMember = true
 		default:
 			if isProjectLeaderRole(member.Role) {
 				hasOtherLeader = true
@@ -266,6 +271,9 @@ func canOperateAsHighestRole(currentRole *string, members []models.ProjectMember
 	if hasTeamMember {
 		return role == models.ProjectRoleTeamMember
 	}
+	if hasLearningMember {
+		return role == models.ProjectRoleLearningMember
+	}
 	return role != ""
 }
 
@@ -275,6 +283,8 @@ func projectRolePriority(role string) int {
 		return 1
 	case models.ProjectRoleTeamMember, "":
 		return 3
+	case models.ProjectRoleLearningMember:
+		return 4
 	default:
 		return 2
 	}
@@ -313,7 +323,7 @@ func canSelfUpdateProjectRole(userID int, nextRole string, members []models.Proj
 		return false
 	}
 	currentRole := ""
-	highestPriority := 3
+	highestPriority := 4
 	for _, member := range members {
 		priority := projectRolePriority(member.Role)
 		if priority < highestPriority {
@@ -694,14 +704,11 @@ type RemovedMemberResult struct {
 	Days        int       `json:"days"`
 }
 
-func (s *ProjectService) RemoveMember(ctx context.Context, projectID int, scorerID int, memberID int, score *int) (*RemovedMemberResult, error) {
+func (s *ProjectService) RemoveMember(ctx context.Context, projectID int, operatorID int, memberID int, _ *int) (*RemovedMemberResult, error) {
 	if projectID <= 0 || memberID <= 0 {
 		return nil, ErrBadRequest("invalid project or member id")
 	}
-	if score != nil && (*score < 0 || *score > 100) {
-		return nil, ErrBadRequest("score must be between 0 and 100")
-	}
-	if scorerID == memberID {
+	if operatorID == memberID {
 		return nil, ErrBadRequest("不能移除自己")
 	}
 
@@ -718,7 +725,7 @@ func (s *ProjectService) RemoveMember(ctx context.Context, projectID int, scorer
 		log.Printf("[ProjectService.RemoveMember] repository error listing members: %v", err)
 		return nil, ErrInternal("获取项目成员失败")
 	}
-	currentRole, _ := currentUserProjectRole(project, scorerID, members)
+	currentRole, _ := currentUserProjectRole(project, operatorID, members)
 	if !canOperateAsHighestRole(currentRole, members) {
 		return nil, ErrForbidden("当前角色不能移除项目成员")
 	}
@@ -741,6 +748,45 @@ func (s *ProjectService) RemoveMember(ctx context.Context, projectID int, scorer
 	}
 	defer tx.Rollback()
 
+	var lockedMemberID int
+	if err := tx.GetContext(ctx, &lockedMemberID, `SELECT id FROM project_members
+		WHERE project_id=? AND user_id=? FOR UPDATE`, projectID, memberID); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, ErrNotFound("项目成员不存在")
+		}
+		return nil, ErrInternal("锁定项目成员失败")
+	}
+	if lockedMemberID != removedMember.ID {
+		return nil, ErrBadRequest("成员关系已变更，请刷新后重试")
+	}
+
+	var finalScore sql.NullFloat64
+	var ratingCount int
+	err = tx.QueryRowxContext(ctx, `SELECT pms.score,
+		(SELECT COUNT(DISTINCT r.rater_id) FROM project_member_rating r WHERE r.target_member_id=pms.project_member_id)
+		FROM project_member_score pms
+		WHERE pms.project_member_id=? FOR UPDATE`, removedMember.ID).Scan(&finalScore, &ratingCount)
+	if err != nil && err != sql.ErrNoRows {
+		return nil, ErrInternal("获取成员最终评分失败")
+	}
+
+	var frozenScore *float64
+	if finalScore.Valid {
+		score := math.Round(finalScore.Float64*100) / 100
+		frozenScore = &score
+		if _, err := tx.ExecContext(ctx, `INSERT INTO collaboration_score(
+			user_id,project_id,scorer_id,score,rating_count,created_at
+		) VALUES(?,?,?,?,?,NOW())`, memberID, projectID, operatorID, score, ratingCount); err != nil {
+			log.Printf("[ProjectService.RemoveMember] insert frozen score failed: %v", err)
+			return nil, ErrInternal("固化项目最终评分失败")
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE `+"`user`"+` SET collaboration_score=(
+			SELECT avg_score FROM (SELECT COALESCE(AVG(score),100) AS avg_score FROM collaboration_score WHERE user_id=?) t
+		) WHERE id=?`, memberID, memberID); err != nil {
+			return nil, ErrInternal("更新协作指数失败")
+		}
+	}
+
 	result, err := tx.ExecContext(ctx, "DELETE FROM project_members WHERE project_id=? AND user_id=?", projectID, memberID)
 	if err != nil {
 		log.Printf("[ProjectService.RemoveMember] delete member failed: %v", err)
@@ -751,25 +797,14 @@ func (s *ProjectService) RemoveMember(ctx context.Context, projectID int, scorer
 		return nil, ErrNotFound("项目成员不存在")
 	}
 
-	if score != nil {
-		if _, err := tx.ExecContext(ctx, `INSERT INTO collaboration_score(user_id, project_id, scorer_id, score, created_at)
-			VALUES (?, ?, ?, ?, NOW())`, memberID, projectID, scorerID, *score); err != nil {
-			log.Printf("[ProjectService.RemoveMember] insert score failed: %v", err)
-			return nil, ErrInternal("记录协作评分失败")
-		}
-		if _, err := tx.ExecContext(ctx, `UPDATE `+"`user`"+` SET collaboration_score=(
-			SELECT avg_score FROM (SELECT COALESCE(AVG(score), 100) AS avg_score FROM collaboration_score WHERE user_id=?) t
-		) WHERE id=?`, memberID, memberID); err != nil {
-			log.Printf("[ProjectService.RemoveMember] update user score failed: %v", err)
-			return nil, ErrInternal("更新协作指数失败")
-		}
-	}
 	joinedAt := removedMember.CreatedAt
 	if joinedAt.IsZero() {
 		joinedAt = time.Now()
 	}
 	removedAt := time.Now()
-	result, err = tx.ExecContext(ctx, `INSERT INTO project_member_removal(user_id,project_id,operator_id,role,joined_at,removed_at,score) VALUES(?,?,?,?,?,?,?)`, memberID, projectID, scorerID, removedMember.Role, joinedAt, removedAt, score)
+	result, err = tx.ExecContext(ctx, `INSERT INTO project_member_removal(
+		user_id,project_id,operator_id,role,joined_at,removed_at,score
+	) VALUES(?,?,?,?,?,?,?)`, memberID, projectID, operatorID, removedMember.Role, joinedAt, removedAt, frozenScore)
 	if err != nil {
 		return nil, ErrInternal("记录成员移除信息失败")
 	}
@@ -780,16 +815,20 @@ func (s *ProjectService) RemoveMember(ctx context.Context, projectID int, scorer
 	if err := repository.CreateMemberRemovalStatusNotificationTx(ctx, tx, memberID, removalID); err != nil {
 		return nil, ErrInternal("创建状态通知失败")
 	}
-
 	if err := tx.Commit(); err != nil {
 		return nil, ErrInternal("提交事务失败")
 	}
+
 	days := int(math.Ceil(removedAt.Sub(joinedAt).Hours() / 24))
 	if days < 1 {
 		days = 1
 	}
 	roleName := applicationSmsRoleName(removedMember.Role)
-	return &RemovedMemberResult{RemovalID: removalID, ProjectID: projectID, ProjectName: project.Name, MemberID: memberID, Role: removedMember.Role, RoleName: roleName, JoinedAt: joinedAt, RemovedAt: removedAt, Days: days}, nil
+	return &RemovedMemberResult{
+		RemovalID: removalID, ProjectID: projectID, ProjectName: project.Name,
+		MemberID: memberID, Role: removedMember.Role, RoleName: roleName,
+		JoinedAt: joinedAt, RemovedAt: removedAt, Days: days,
+	}, nil
 }
 
 func (s *ProjectService) resolveProjectSchool(ctx context.Context, creatorID int, schoolID, initiatingSchoolID *int, useCreatorDefault bool) (*int, error) {
@@ -961,6 +1000,17 @@ func (s *ProjectService) UpdateProject(ctx context.Context, id, userID int, inpu
 	}
 	if members != nil && !projectMembersContainUser(*members, userID) {
 		return nil, ErrBadRequest("不能删除自己")
+	}
+	if members != nil {
+		existingMembers, err := s.repo.Project.ListMembers(ctx, id)
+		if err != nil {
+			return nil, ErrInternal("获取项目成员失败")
+		}
+		for _, existingMember := range existingMembers {
+			if !projectMembersContainUser(*members, existingMember.UserID) {
+				return nil, ErrBadRequest("请通过成员移除接口移除已有成员")
+			}
+		}
 	}
 
 	if !isOwner {

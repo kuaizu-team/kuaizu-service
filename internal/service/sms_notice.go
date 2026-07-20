@@ -594,6 +594,7 @@ func applicationSmsRoleName(code string) string {
 		"TECH_LEADER": "技术负责人", "OPERATIONS_LEADER": "运营负责人",
 		"PUBLICITY_LEADER": "宣传负责人", "DESIGN_LEADER": "美化负责人",
 		"LEGAL_LEADER": "法务负责人", "TEAM_MEMBER": "团队成员",
+		"LEARNING_MEMBER": "学习成员",
 	}
 	if name := names[code]; name != "" {
 		return name
