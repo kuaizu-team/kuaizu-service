@@ -38,6 +38,11 @@ type projectRatingRecord struct {
 	TargetMemberID int64 `db:"target_member_id"`
 }
 
+type projectRatingAccessRecord struct {
+	TargetID       int   `db:"target_id"`
+	TargetMemberID int64 `db:"target_member_id"`
+}
+
 type memberRemovalMatch struct {
 	ID        int64     `db:"id"`
 	JoinedAt  time.Time `db:"joined_at"`
@@ -122,15 +127,15 @@ func (s *AdminServer) UpdateProjectRating(ctx echo.Context) error {
 		return response.BadRequest(ctx, "score must be between 0 and 100")
 	}
 
-	var targetUserID int
-	if err := s.repo.DB().GetContext(ctx.Request().Context(), &targetUserID,
-		"SELECT target_id FROM project_member_rating WHERE id=?", ratingID); err != nil {
+	var accessRecord projectRatingAccessRecord
+	if err := s.repo.DB().GetContext(ctx.Request().Context(), &accessRecord,
+		"SELECT target_id,target_member_id FROM project_member_rating WHERE id=?", ratingID); err != nil {
 		if err == sql.ErrNoRows {
 			return response.NotFound(ctx, "评分记录不存在")
 		}
 		return response.InternalError(ctx, "获取评分记录失败")
 	}
-	if err := s.requireUserSchoolAccess(ctx, targetUserID); err != nil {
+	if err := s.requireUserSchoolAccess(ctx, accessRecord.TargetID); err != nil {
 		return err
 	}
 
@@ -139,6 +144,16 @@ func (s *AdminServer) UpdateProjectRating(ctx echo.Context) error {
 		return response.InternalError(ctx, "开启事务失败")
 	}
 	defer tx.Rollback()
+
+	// Client ratings and member removal both lock the active membership row
+	// before calculating or freezing a score. Use the same lock to serialize an
+	// admin adjustment with those flows. Removed cycles have no active row and
+	// cannot receive new client ratings, so sql.ErrNoRows is expected for them.
+	var activeMemberID int64
+	if err := tx.GetContext(ctx.Request().Context(), &activeMemberID,
+		"SELECT id FROM project_members WHERE id=? FOR UPDATE", accessRecord.TargetMemberID); err != nil && err != sql.ErrNoRows {
+		return response.InternalError(ctx, "lock rating membership cycle failed")
+	}
 
 	var record projectRatingRecord
 	if err := tx.GetContext(ctx.Request().Context(), &record, `
