@@ -26,7 +26,7 @@ delete:
         minimum: 0
         maximum: 100
       deprecated: true
-      description: 已废弃并忽略；评分请使用 /projects/{id}/rate
+      description: 已废弃并忽略；评分请使用 POST /projects/{id}/ratings
   responses:
     '200':
       description: 操作成功
