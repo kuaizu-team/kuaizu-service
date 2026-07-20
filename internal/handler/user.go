@@ -46,13 +46,25 @@ func (s *Server) GetMyCollaborationHistory(ctx echo.Context) error {
 
 	list := make([]collaborationProjectSummary, 0)
 	if err := s.repo.DB().SelectContext(ctx.Request().Context(), &list, `
-		SELECT MIN(pms.id) AS id,pms.project_id,p.name AS project_name,ROUND(AVG(pms.score),2) AS score
-		FROM project_member_score pms
-		LEFT JOIN project p ON p.id=pms.project_id
-		WHERE pms.member_id=? AND pms.score IS NOT NULL
-		GROUP BY pms.project_id,p.name
-		ORDER BY MAX(pms.updated_at) DESC,MAX(pms.id) DESC
-	`, userID); err != nil {
+		SELECT summary.project_id AS id,summary.project_id,p.name AS project_name,summary.score
+		FROM (
+			SELECT pms.project_id,ROUND(AVG(pms.score),2) AS score,MAX(pms.updated_at) AS sort_at
+			FROM project_member_score pms
+			WHERE pms.member_id=? AND pms.score IS NOT NULL
+			GROUP BY pms.project_id
+			UNION ALL
+			SELECT cs.project_id,ROUND(AVG(cs.score),2) AS score,MAX(cs.created_at) AS sort_at
+			FROM collaboration_score cs
+			WHERE cs.user_id=?
+				AND NOT EXISTS (
+					SELECT 1 FROM project_member_score pms
+					WHERE pms.member_id=cs.user_id AND pms.project_id=cs.project_id AND pms.score IS NOT NULL
+				)
+			GROUP BY cs.project_id
+		) summary
+		LEFT JOIN project p ON p.id=summary.project_id
+		ORDER BY summary.sort_at DESC,summary.project_id DESC
+	`, userID, userID); err != nil {
 		return InternalError(ctx, "get collaboration history failed")
 	}
 	return Success(ctx, list)

@@ -96,6 +96,7 @@ func main() {
 	adminGroup.GET("/users/:id/ratings", server.ListUserProjectRatings)
 	adminGroup.PUT("/ratings/:id", server.UpdateProjectRating)
 	adminGroup.GET("/users/:id/collaboration-history", server.GetUserCollaborationHistory)
+	adminGroup.PUT("/users/:id/collaboration-history/:scoreId", server.UpdateUserCollaborationScore)
 	adminGroup.GET("/users/:id", server.GetUser)
 	adminGroup.GET("/users/:id/activity-summary", server.GetUserActivitySummary)
 	adminGroup.PATCH("/users/:id/auth", server.ReviewUserAuth)
