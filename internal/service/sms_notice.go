@@ -911,11 +911,27 @@ func smsMessageCenterBaseURL(submitter smsNoticeSubmitter) string {
 
 func (s *SmsNoticeService) markFailed(notice *models.SmsNotice, message string) {
 	now := time.Now()
-	notice.Status = models.SmsNoticeStatusFailed
-	notice.ErrorMessage = &message
-	notice.CompletedAt = &now
-	if err := s.repo.SmsNotice.Update(context.Background(), notice); err != nil {
-		log.Printf("[SmsNoticeService] update failed sms notice failed, notice_id=%d: %v", notice.ID, err)
+	ctx := context.Background()
+	updated, err := s.repo.SmsNotice.MarkFailedAndOrderPushIfNotCompleted(
+		ctx, notice.ID, notice.OrderID, message, now)
+	if err != nil {
+		log.Printf("[SmsNoticeService] atomically fail sms notice and order failed, notice_id=%d: %v", notice.ID, err)
+		return
+	}
+	if updated {
+		notice.Status = models.SmsNoticeStatusFailed
+		notice.ErrorMessage = &message
+		notice.CompletedAt = &now
+		return
+	}
+
+	fresh, getErr := s.repo.SmsNotice.GetByID(ctx, notice.ID)
+	if getErr != nil {
+		log.Printf("[SmsNoticeService] reload sms notice after protected failure failed, notice_id=%d: %v", notice.ID, getErr)
+		return
+	}
+	if fresh != nil {
+		*notice = *fresh
 	}
 }
 

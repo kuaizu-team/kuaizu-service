@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/go-sql-driver/mysql"
 	"github.com/jmoiron/sqlx"
@@ -169,6 +170,58 @@ func (r *SmsNoticeRepository) Update(ctx context.Context, notice *models.SmsNoti
 		return fmt.Errorf("update sms notice: %w", err)
 	}
 	return nil
+}
+
+func (r *SmsNoticeRepository) MarkFailedAndOrderPushIfNotCompleted(
+	ctx context.Context, noticeID, orderID int, message string, completedAt time.Time,
+) (bool, error) {
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return false, fmt.Errorf("begin failed sms notice transition: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	noticeResult, err := tx.ExecContext(ctx, `UPDATE olive_branch_sms_notice SET
+		status=?, error_message=?, completed_at=?, updated_at=NOW()
+		WHERE id=? AND (status IS NULL OR status<>?)`,
+		models.SmsNoticeStatusFailed, message, completedAt, noticeID, models.SmsNoticeStatusCompleted)
+	if err != nil {
+		return false, fmt.Errorf("conditionally fail sms notice: %w", err)
+	}
+	noticeAffected, err := noticeResult.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("read failed sms notice affected rows: %w", err)
+	}
+	if noticeAffected == 0 {
+		return false, nil
+	}
+
+	orderResult, err := tx.ExecContext(ctx, `UPDATE `+"`order`"+` SET
+		push_status='failed', push_error_message=?, last_push_time=?, updated_at=NOW()
+		WHERE id=? AND (push_status IS NULL OR push_status<>'success')`,
+		message, completedAt, orderID)
+	if err != nil {
+		return false, fmt.Errorf("conditionally fail order push: %w", err)
+	}
+	orderAffected, err := orderResult.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("read failed order push affected rows: %w", err)
+	}
+	if orderAffected == 0 {
+		var pushStatus sql.NullString
+		if err := tx.QueryRowxContext(ctx,
+			`SELECT push_status FROM `+"`order`"+` WHERE id=?`, orderID).Scan(&pushStatus); err != nil {
+			return false, fmt.Errorf("read order push status after conditional failure: %w", err)
+		}
+		if pushStatus.Valid && pushStatus.String == "success" {
+			return false, nil
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return false, fmt.Errorf("commit failed sms notice transition: %w", err)
+	}
+	return true, nil
 }
 
 func isDuplicateEntryError(err error) bool {

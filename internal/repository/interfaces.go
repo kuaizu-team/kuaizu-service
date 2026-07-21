@@ -115,6 +115,7 @@ type EmailPromotionRepo interface {
 type SmsNoticeRepo interface {
 	Create(ctx context.Context, notice *models.SmsNotice) error
 	Update(ctx context.Context, notice *models.SmsNotice) error
+	MarkFailedAndOrderPushIfNotCompleted(ctx context.Context, noticeID, orderID int, message string, completedAt time.Time) (bool, error)
 	GetByID(ctx context.Context, id int) (*models.SmsNotice, error)
 	GetByOliveBranchRecordID(ctx context.Context, oliveBranchRecordID int) (*models.SmsNotice, error)
 	GetByOrderID(ctx context.Context, orderID int) (*models.SmsNotice, error)
