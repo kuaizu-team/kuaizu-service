@@ -33,6 +33,9 @@ func mapServiceError(ctx echo.Context, err error) error {
 			return response.NotFound(ctx, svcErr.Message)
 		case service.ErrCodeForbidden:
 			return response.Forbidden(ctx, svcErr.Message)
+		case service.ErrCodeInternal:
+			ctx.Logger().Errorf("internal admin service error: %v", err)
+			return response.InternalError(ctx, "internal server error")
 		default:
 			return response.Error(ctx, int(svcErr.Code), svcErr.Message)
 		}
