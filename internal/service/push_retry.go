@@ -42,18 +42,18 @@ func (s *PushRetryService) Retry(ctx context.Context, userID, orderID int) (*mod
 
 	promotion, err := s.repo.EmailPromotion.GetByOrderID(ctx, orderID)
 	if err != nil {
-		return s.fail(ctx, orderID, "查询邮件推广记录失败")
+		return s.fail(ctx, orderID, userID, "查询邮件推广记录失败")
 	}
 	if promotion != nil {
 		_, err = s.email.TriggerPromotionWithInput(ctx, userID, TriggerPromotionInput{
-			OrderID: orderID, ProjectID: promotion.ProjectID, Strategy: promotion.Strategy,
+			OrderID: orderID, ProjectID: promotion.ProjectID, Strategy: promotion.Strategy, OrderPushAlreadyPending: true,
 		})
 	} else {
 		_, err = s.sms.RetryByOrder(ctx, userID, orderID)
 	}
 	if err != nil {
 		message := err.Error()
-		_, _ = s.fail(ctx, orderID, message)
+		_, _ = s.fail(ctx, orderID, userID, message)
 		return nil, err
 	}
 	updated, err := s.repo.Order.GetByID(ctx, orderID)
@@ -63,7 +63,7 @@ func (s *PushRetryService) Retry(ctx context.Context, userID, orderID int) (*mod
 	return updated, nil
 }
 
-func (s *PushRetryService) fail(ctx context.Context, orderID int, message string) (*models.Order, error) {
-	_ = s.repo.UpdateOrderPushStatus(ctx, orderID, "failed", &message)
+func (s *PushRetryService) fail(ctx context.Context, orderID, userID int, message string) (*models.Order, error) {
+	_, _ = s.repo.UpdateOrderPushStatusForUser(ctx, orderID, userID, "failed", &message)
 	return nil, ErrInternal(message)
 }

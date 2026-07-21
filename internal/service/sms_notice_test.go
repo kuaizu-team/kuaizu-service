@@ -578,3 +578,25 @@ var (
 func intPtr(v int) *int {
 	return &v
 }
+
+func TestSmsNoticeSendDoesNotCreateTaskForAnotherUsersOrder(t *testing.T) {
+	noticeRepo := &smsNoticeRepoStub{}
+	repo := &repository.Repository{
+		OliveBranch: smsNoticeOliveBranchRepoStub{branch: &models.OliveBranch{
+			ID: 76, SenderID: 1, ReceiverID: 2, RelatedProjectID: 154, Status: models.OliveBranchStatusPending,
+		}},
+		Order:     smsNoticeOrderRepoStub{order: &models.Order{ID: 52, UserID: 999, ProductID: 2, Status: models.OrderStatusPaid}},
+		SmsNotice: noticeRepo,
+	}
+	svc := &SmsNoticeService{repo: repo}
+
+	notice, err := svc.Send(context.Background(), 1, SendSmsNoticeInput{
+		OrderID: 52, ReceiverUserID: 2, OliveBranchRecordID: 76,
+	})
+
+	require.Nil(t, notice)
+	var svcErr *ServiceError
+	require.ErrorAs(t, err, &svcErr)
+	assert.Equal(t, ErrCodeForbidden, svcErr.Code)
+	assert.Nil(t, noticeRepo.notice, "unauthorized order must not create a send record")
+}

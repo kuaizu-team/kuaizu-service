@@ -20,6 +20,27 @@ func (r *Repository) UpdateOrderPushStatus(ctx context.Context, id int, status s
 	return nil
 }
 
+// UpdateOrderPushStatusForUser updates delivery state only when the order belongs to the caller.
+// The ownership predicate is a defense-in-depth guard for user-triggered send flows.
+func (r *Repository) UpdateOrderPushStatusForUser(ctx context.Context, id, userID int, status string, errorMessage *string) (bool, error) {
+	if r == nil || r.db == nil {
+		return true, nil
+	}
+	result, err := r.db.ExecContext(ctx, `UPDATE `+"`order`"+` SET
+		push_status=?, push_error_message=?, last_push_time=NOW(), updated_at=NOW()
+		WHERE id=? AND user_id=?
+		  AND (push_status IS NULL OR push_status <> 'success' OR ? = 'success')`,
+		status, errorMessage, id, userID, status)
+	if err != nil {
+		return false, fmt.Errorf("update owned order push status: %w", err)
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("read owned order push status result: %w", err)
+	}
+	return affected == 1, nil
+}
+
 // BeginOrderPushRetry atomically changes a failed push to pending and increments its retry counter.
 func (r *Repository) BeginOrderPushRetry(ctx context.Context, id int) (bool, error) {
 	if r == nil || r.db == nil {

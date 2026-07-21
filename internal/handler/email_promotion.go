@@ -44,8 +44,6 @@ func (s *Server) TriggerEmailPromotion(ctx echo.Context) error {
 		MaxRecipients: body.MaxRecipients,
 	})
 	if err != nil {
-		message := err.Error()
-		_ = s.repo.UpdateOrderPushStatus(ctx.Request().Context(), body.OrderId, "failed", &message)
 		return mapServiceError(ctx, err)
 	}
 

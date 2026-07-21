@@ -44,3 +44,41 @@ func TestBeginOrderPushRetryUsesAtomicFailedStateGuard(t *testing.T) {
 		t.Fatalf("args = %#v, want order id 52", args)
 	}
 }
+
+func TestUpdateOrderPushStatusForUserUsesOwnershipAndTerminalGuard(t *testing.T) {
+	db := openCaptureDB(t)
+	defer db.Close()
+	capturedExec.Lock()
+	capturedExec.query = ""
+	capturedExec.args = nil
+	capturedExec.Unlock()
+
+	repo := New(sqlx.NewDb(db, "capture_user_repo"))
+	updated, err := repo.UpdateOrderPushStatusForUser(context.Background(), 52, 1130, "failed", nil)
+	if err != nil {
+		t.Fatalf("UpdateOrderPushStatusForUser returned error: %v", err)
+	}
+	if !updated {
+		t.Fatal("UpdateOrderPushStatusForUser should report one affected row")
+	}
+
+	capturedExec.Lock()
+	query := normalizeSQL(capturedExec.query)
+	args := append([]driver.NamedValue(nil), capturedExec.args...)
+	capturedExec.Unlock()
+
+	for _, want := range []string{
+		"WHERE id=? AND user_id=?",
+		"push_status IS NULL OR push_status <> 'success' OR ? = 'success'",
+	} {
+		if !strings.Contains(query, want) {
+			t.Fatalf("query missing %q: %s", want, query)
+		}
+	}
+	if len(args) != 5 {
+		t.Fatalf("args = %#v, want five arguments", args)
+	}
+	if args[2].Value != int64(52) || args[3].Value != int64(1130) {
+		t.Fatalf("args = %#v, want order id 52 and owner id 1130", args)
+	}
+}

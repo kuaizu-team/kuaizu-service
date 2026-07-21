@@ -165,6 +165,9 @@ func (s *SmsNoticeService) Send(ctx context.Context, userID int, input SendSmsNo
 	if err := s.recordOrderSmsTemplate(ctx, order.ID, "OLIVE_BRANCH_SMS_NOTICE"); err != nil {
 		return nil, err
 	}
+	if err := s.beginOrderPush(ctx, order.ID, userID); err != nil {
+		return nil, err
+	}
 	s.startAsyncSubmission(notice)
 	fresh, err := s.repo.SmsNotice.GetByID(ctx, notice.ID)
 	if err == nil && fresh != nil {
@@ -264,6 +267,9 @@ func (s *SmsNoticeService) sendOliveOutcomeSms(ctx context.Context, userID int, 
 	if err := s.recordOrderSmsTemplate(ctx, order.ID, templateCode); err != nil {
 		return nil, err
 	}
+	if err := s.beginOrderPush(ctx, order.ID, userID); err != nil {
+		return nil, err
+	}
 	if err := applicationSubmitter.SubmitApplicationSms(ctx, messagecenter.ApplicationSmsRequest{
 		TaskKey: taskKey, TemplateCode: templateCode, Phone: strings.TrimSpace(*receiver.Phone), Nickname: nickname,
 		ProjectTitle: project.Name, TeamRole: teamRole, BusinessTag: "olive_branch_result_sms_" + noticeType, TraceID: taskKey,
@@ -272,6 +278,7 @@ func (s *SmsNoticeService) sendOliveOutcomeSms(ctx context.Context, userID int, 
 		message := err.Error()
 		notice.ErrorMessage = &message
 		_ = s.repo.SmsNotice.Update(ctx, notice)
+		s.syncOrderPush(ctx, order.ID, userID, "failed", &message)
 		return nil, ErrInternal("submit olive branch result sms failed")
 	}
 	notice.Status = models.SmsNoticeStatusCompleted
@@ -279,6 +286,7 @@ func (s *SmsNoticeService) sendOliveOutcomeSms(ctx context.Context, userID int, 
 	if err := s.repo.SmsNotice.Update(ctx, notice); err != nil {
 		return nil, ErrInternal("complete olive branch result sms record failed")
 	}
+	s.syncOrderPush(ctx, order.ID, userID, "success", nil)
 	return notice, nil
 }
 
@@ -345,6 +353,9 @@ func (s *SmsNoticeService) sendMemberRemovalSms(ctx context.Context, userID int,
 	if err := s.recordOrderSmsTemplate(ctx, order.ID, "MEMBER_REMOVAL_THANKS"); err != nil {
 		return nil, err
 	}
+	if err := s.beginOrderPush(ctx, order.ID, userID); err != nil {
+		return nil, err
+	}
 	if err := applicationSubmitter.SubmitApplicationSms(ctx, messagecenter.ApplicationSmsRequest{
 		TaskKey: taskKey, TemplateCode: "MEMBER_REMOVAL_THANKS", Phone: strings.TrimSpace(*receiver.Phone), Nickname: nickname,
 		ProjectTitle: removal.ProjectName, TeamRole: applicationSmsRoleName(removal.Role), BusinessTag: tag, TraceID: trace,
@@ -353,6 +364,7 @@ func (s *SmsNoticeService) sendMemberRemovalSms(ctx context.Context, userID int,
 		message := err.Error()
 		notice.ErrorMessage = &message
 		_ = memberRemovalRepo.CompleteMemberRemoval(ctx, notice)
+		s.syncOrderPush(ctx, order.ID, userID, "failed", &message)
 		return nil, ErrInternal("submit member removal sms failed")
 	}
 	notice.Status = models.SmsNoticeStatusCompleted
@@ -360,6 +372,7 @@ func (s *SmsNoticeService) sendMemberRemovalSms(ctx context.Context, userID int,
 	if err := memberRemovalRepo.CompleteMemberRemoval(ctx, notice); err != nil {
 		return nil, ErrInternal("complete member removal sms record failed")
 	}
+	s.syncOrderPush(ctx, order.ID, userID, "success", nil)
 	return notice, nil
 }
 
@@ -388,6 +401,27 @@ func (s *SmsNoticeService) recordOrderSmsTemplate(ctx context.Context, orderID i
 	return nil
 }
 
+func (s *SmsNoticeService) beginOrderPush(ctx context.Context, orderID, userID int) error {
+	updated, err := s.repo.UpdateOrderPushStatusForUser(ctx, orderID, userID, "pending", nil)
+	if err != nil {
+		return ErrInternal("update order push status failed")
+	}
+	if !updated {
+		return ErrForbidden("no permission to update order push status")
+	}
+	return nil
+}
+
+func (s *SmsNoticeService) syncOrderPush(ctx context.Context, orderID, userID int, status string, message *string) {
+	updated, err := s.repo.UpdateOrderPushStatusForUser(ctx, orderID, userID, status, message)
+	if err != nil {
+		log.Printf("[SmsNoticeService] update order push status, order_id=%d status=%s: %v", orderID, status, err)
+		return
+	}
+	if !updated {
+		log.Printf("[SmsNoticeService] order push status unchanged by ownership/terminal guard, order_id=%d user_id=%d status=%s", orderID, userID, status)
+	}
+}
 func valueOrEmpty(value *string) string {
 	if value == nil {
 		return ""
@@ -547,6 +581,9 @@ func (s *SmsNoticeService) sendApplicationSms(ctx context.Context, userID int, i
 	if err := s.recordOrderSmsTemplate(ctx, order.ID, templateCode); err != nil {
 		return nil, err
 	}
+	if err := s.beginOrderPush(ctx, order.ID, userID); err != nil {
+		return nil, err
+	}
 	err = applicationSubmitter.SubmitApplicationSms(ctx, messagecenter.ApplicationSmsRequest{
 		TaskKey: taskKey, TemplateCode: templateCode,
 		Phone: strings.TrimSpace(*receiver.Phone), Nickname: nickname, ProjectTitle: project.Name, TeamRole: teamRole,
@@ -558,6 +595,7 @@ func (s *SmsNoticeService) sendApplicationSms(ctx context.Context, userID int, i
 		notice.ErrorMessage = &message
 		notice.CompletedAt = &now
 		_ = s.repo.SmsNotice.Update(ctx, notice)
+		s.syncOrderPush(ctx, order.ID, userID, "failed", &message)
 		return nil, ErrInternal("submit application sms failed")
 	}
 	notice.Status = models.SmsNoticeStatusCompleted
@@ -565,6 +603,7 @@ func (s *SmsNoticeService) sendApplicationSms(ctx context.Context, userID int, i
 	if err := s.repo.SmsNotice.Update(ctx, notice); err != nil {
 		return nil, ErrInternal("complete application sms record failed")
 	}
+	s.syncOrderPush(ctx, order.ID, userID, "success", nil)
 	return notice, nil
 }
 
@@ -724,6 +763,7 @@ func (s *SmsNoticeService) RetryByOrder(ctx context.Context, userID, orderID int
 		notice.ErrorMessage = &message
 		notice.CompletedAt = &now
 		_ = s.repo.SmsNotice.Update(ctx, notice)
+		s.syncOrderPush(ctx, order.ID, userID, "failed", &message)
 		return nil, ErrInternal("retry sms notice failed")
 	}
 	notice.Status = models.SmsNoticeStatusCompleted
@@ -731,6 +771,7 @@ func (s *SmsNoticeService) RetryByOrder(ctx context.Context, userID, orderID int
 	if err := s.repo.SmsNotice.Update(ctx, notice); err != nil {
 		return nil, ErrInternal("complete sms retry failed")
 	}
+	s.syncOrderPush(ctx, order.ID, userID, "success", nil)
 	return notice, nil
 }
 
@@ -746,6 +787,9 @@ func (s *SmsNoticeService) handleExistingNotice(ctx context.Context, existing *m
 		if err := s.repo.SmsNotice.Update(ctx, notice); err != nil {
 			log.Printf("[SmsNoticeService] update failed notice for retry: %v", err)
 			return nil, ErrInternal("update sms notice failed")
+		}
+		if err := s.beginOrderPush(ctx, order.ID, existing.SenderID); err != nil {
+			return nil, err
 		}
 		s.startAsyncSubmission(notice)
 		return notice, nil

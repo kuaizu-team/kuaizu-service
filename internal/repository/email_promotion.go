@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/jmoiron/sqlx"
 	"github.com/kuaizu-team/kuaizu-service/internal/models"
@@ -188,6 +189,22 @@ func (r *EmailPromotionRepository) Update(ctx context.Context, promotion *models
 	return nil
 }
 
+// MarkFailedIfNotCompleted conditionally records failure without downgrading a completed promotion.
+func (r *EmailPromotionRepository) MarkFailedIfNotCompleted(ctx context.Context, promotionID int, message string, completedAt time.Time) (bool, error) {
+	result, err := r.db.ExecContext(ctx, `UPDATE email_promotion SET
+		status=?, error_message=?, completed_at=?, updated_at=NOW()
+		WHERE id=? AND (status IS NULL OR status<>?)`,
+		models.EmailPromotionStatusFailed, message, completedAt, promotionID, models.EmailPromotionStatusCompleted)
+	if err != nil {
+		return false, fmt.Errorf("conditionally fail email promotion: %w", err)
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("read failed email promotion affected rows: %w", err)
+	}
+	return affected == 1, nil
+}
+
 // CreateRecipients stores the selected recipient users for a promotion batch.
 func (r *EmailPromotionRepository) CreateRecipients(ctx context.Context, promotionID, projectID int, userIDs []int) error {
 	if len(userIDs) == 0 {
@@ -209,6 +226,43 @@ func (r *EmailPromotionRepository) CreateRecipients(ctx context.Context, promoti
 		return fmt.Errorf("create promotion recipients: %w", err)
 	}
 	return nil
+}
+
+// GetRetryRecipientUserIDs returns the original recipient set for a retry.
+// Current batches use the immutable snapshot; legacy batches fall back to sent task addresses.
+func (r *EmailPromotionRepository) GetRetryRecipientUserIDs(ctx context.Context, promotionID, limit int) ([]int, error) {
+	if limit <= 0 {
+		return nil, nil
+	}
+
+	var userIDs []int
+	if err := r.db.SelectContext(ctx, &userIDs, `
+		SELECT user_id
+		FROM email_promotion_recipient
+		WHERE promotion_id = ?
+		ORDER BY created_at ASC, id ASC
+		LIMIT ?`, promotionID, limit); err != nil {
+		return nil, fmt.Errorf("query promotion recipient snapshot: %w", err)
+	}
+	if len(userIDs) > 0 {
+		return userIDs, nil
+	}
+
+	if err := r.db.SelectContext(ctx, &userIDs, `
+		SELECT u.id
+		FROM email_task et
+		JOIN `+"`user`"+` u ON u.email = et.recipient_email
+		WHERE et.promotion_id = ?
+		  AND et.recipient_email IS NOT NULL
+		  AND et.recipient_email <> ''
+		  AND u.email IS NOT NULL
+		  AND u.email <> ''
+		GROUP BY u.id
+		ORDER BY MIN(et.id) ASC
+		LIMIT ?`, promotionID, limit); err != nil {
+		return nil, fmt.Errorf("query legacy promotion recipients: %w", err)
+	}
+	return userIDs, nil
 }
 
 // SelectPromotionRecipients chooses recipient users by strategy and priority tiers.
