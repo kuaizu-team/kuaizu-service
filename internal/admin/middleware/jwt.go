@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	adminauth "github.com/kuaizu-team/kuaizu-service/internal/admin/auth"
+	"github.com/kuaizu-team/kuaizu-service/internal/models"
 	"github.com/labstack/echo/v4"
 )
 
@@ -49,6 +50,9 @@ func AdminJWTAuth(config *AdminJWTConfig) echo.MiddlewareFunc {
 			if err != nil {
 				return echo.NewHTTPError(401, "invalid or expired token")
 			}
+			if !validAdminRole(claims.Role) {
+				return echo.NewHTTPError(401, "invalid admin role; please sign in again")
+			}
 
 			c.Set("adminID", claims.AdminID)
 			c.Set("adminUsername", claims.Username)
@@ -60,6 +64,18 @@ func AdminJWTAuth(config *AdminJWTConfig) echo.MiddlewareFunc {
 
 			return next(c)
 		}
+	}
+}
+
+func validAdminRole(role int) bool {
+	switch role {
+	case models.AdminRoleSuperAdmin,
+		models.AdminRoleSchoolSuperAdmin,
+		models.AdminRoleSchoolAdmin,
+		models.AdminRoleEventManager:
+		return true
+	default:
+		return false
 	}
 }
 

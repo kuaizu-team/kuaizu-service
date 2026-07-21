@@ -1,0 +1,159 @@
+-- Kuaizu database schema/index audit (read-only, MySQL 5.7 compatible)
+-- Run against the target schema and export every result set.
+
+SELECT VERSION() AS mysql_version, DATABASE() AS current_database, NOW() AS audited_at;
+SHOW VARIABLES LIKE 'character_set_server';
+SHOW VARIABLES LIKE 'collation_server';
+SHOW VARIABLES LIKE 'sql_mode';
+
+SELECT
+  TABLE_NAME,
+  ENGINE,
+  TABLE_COLLATION,
+  TABLE_ROWS,
+  DATA_LENGTH,
+  INDEX_LENGTH,
+  AUTO_INCREMENT,
+  CREATE_TIME,
+  UPDATE_TIME,
+  TABLE_COMMENT
+FROM information_schema.TABLES
+WHERE TABLE_SCHEMA = DATABASE()
+ORDER BY TABLE_NAME;
+
+SELECT
+  TABLE_NAME,
+  ORDINAL_POSITION,
+  COLUMN_NAME,
+  COLUMN_TYPE,
+  IS_NULLABLE,
+  COLUMN_DEFAULT,
+  EXTRA,
+  CHARACTER_SET_NAME,
+  COLLATION_NAME,
+  COLUMN_KEY,
+  COLUMN_COMMENT
+FROM information_schema.COLUMNS
+WHERE TABLE_SCHEMA = DATABASE()
+ORDER BY TABLE_NAME, ORDINAL_POSITION;
+
+SELECT
+  TABLE_NAME,
+  INDEX_NAME,
+  NON_UNIQUE,
+  INDEX_TYPE,
+  GROUP_CONCAT(COLUMN_NAME ORDER BY SEQ_IN_INDEX SEPARATOR ',') AS INDEX_COLUMNS,
+  MAX(CARDINALITY) AS CARDINALITY
+FROM information_schema.STATISTICS
+WHERE TABLE_SCHEMA = DATABASE()
+GROUP BY TABLE_NAME, INDEX_NAME, NON_UNIQUE, INDEX_TYPE
+ORDER BY TABLE_NAME, INDEX_NAME;
+
+SELECT
+  rc.TABLE_NAME,
+  rc.CONSTRAINT_NAME,
+  rc.REFERENCED_TABLE_NAME,
+  rc.UPDATE_RULE,
+  rc.DELETE_RULE,
+  GROUP_CONCAT(kcu.COLUMN_NAME ORDER BY kcu.ORDINAL_POSITION SEPARATOR ',') AS COLUMNS,
+  GROUP_CONCAT(kcu.REFERENCED_COLUMN_NAME ORDER BY kcu.ORDINAL_POSITION SEPARATOR ',') AS REFERENCED_COLUMNS
+FROM information_schema.REFERENTIAL_CONSTRAINTS rc
+JOIN information_schema.KEY_COLUMN_USAGE kcu
+  ON kcu.CONSTRAINT_SCHEMA = rc.CONSTRAINT_SCHEMA
+ AND kcu.CONSTRAINT_NAME = rc.CONSTRAINT_NAME
+ AND kcu.TABLE_NAME = rc.TABLE_NAME
+WHERE rc.CONSTRAINT_SCHEMA = DATABASE()
+GROUP BY rc.TABLE_NAME, rc.CONSTRAINT_NAME, rc.REFERENCED_TABLE_NAME, rc.UPDATE_RULE, rc.DELETE_RULE
+ORDER BY rc.TABLE_NAME, rc.CONSTRAINT_NAME;
+
+SELECT
+  TRIGGER_NAME,
+  EVENT_MANIPULATION,
+  EVENT_OBJECT_TABLE,
+  ACTION_TIMING,
+  ACTION_STATEMENT
+FROM information_schema.TRIGGERS
+WHERE TRIGGER_SCHEMA = DATABASE()
+ORDER BY EVENT_OBJECT_TABLE, TRIGGER_NAME;
+
+SELECT
+  EVENT_NAME,
+  STATUS,
+  EVENT_TYPE,
+  EXECUTE_AT,
+  INTERVAL_VALUE,
+  INTERVAL_FIELD,
+  EVENT_DEFINITION
+FROM information_schema.EVENTS
+WHERE EVENT_SCHEMA = DATABASE()
+ORDER BY EVENT_NAME;
+
+SELECT
+  ROUTINE_NAME,
+  ROUTINE_TYPE,
+  DATA_TYPE,
+  SECURITY_TYPE,
+  ROUTINE_DEFINITION
+FROM information_schema.ROUTINES
+WHERE ROUTINE_SCHEMA = DATABASE()
+ORDER BY ROUTINE_TYPE, ROUTINE_NAME;
+
+SELECT
+  TABLE_NAME AS VIEW_NAME,
+  VIEW_DEFINITION,
+  CHECK_OPTION,
+  IS_UPDATABLE,
+  SECURITY_TYPE
+FROM information_schema.VIEWS
+WHERE TABLE_SCHEMA = DATABASE()
+ORDER BY TABLE_NAME;
+
+SELECT CONCAT('SHOW CREATE TABLE `', TABLE_NAME, '`;') AS show_create_command
+FROM information_schema.TABLES
+WHERE TABLE_SCHEMA = DATABASE()
+  AND TABLE_TYPE = 'BASE TABLE'
+ORDER BY TABLE_NAME;
+
+SELECT task_key, COUNT(*) AS duplicate_count
+FROM email_task
+WHERE task_key IS NOT NULL AND task_key <> ''
+GROUP BY task_key
+HAVING COUNT(*) > 1;
+
+SELECT email, COUNT(*) AS duplicate_count
+FROM `user`
+WHERE email IS NOT NULL AND email <> ''
+GROUP BY email
+HAVING COUNT(*) > 1;
+
+SELECT business_tag, COUNT(*) AS task_count
+FROM email_task
+WHERE business_tag IN ('manual_test', 'manual_template_test', 'mq_test', 'mq_recovery_test', 'layout_preview')
+GROUP BY business_tag
+ORDER BY business_tag;
+
+SELECT business_tag, COUNT(*) AS promotion_count
+FROM email_promotion
+WHERE business_tag IN ('manual_test', 'manual_template_test', 'mq_test', 'mq_recovery_test', 'layout_preview')
+GROUP BY business_tag
+ORDER BY business_tag;
+
+SELECT id, order_id, channel, business_tag, trace_id, status, created_at
+FROM email_promotion
+WHERE channel IS NULL OR channel = '' OR business_tag IS NULL OR business_tag = ''
+ORDER BY id;
+
+SELECT
+  TABLE_NAME,
+  INDEX_NAME,
+  NON_UNIQUE,
+  GROUP_CONCAT(COLUMN_NAME ORDER BY SEQ_IN_INDEX SEPARATOR ',') AS INDEX_COLUMNS
+FROM information_schema.STATISTICS
+WHERE TABLE_SCHEMA = DATABASE()
+  AND TABLE_NAME IN (
+    'email_task', 'email_promotion', 'user', 'admin_sms_send_record',
+    'admin_user', 'talent_profile', 'project_application', 'subscribe',
+    'project_view_log', 'talent_view_log'
+  )
+GROUP BY TABLE_NAME, INDEX_NAME, NON_UNIQUE
+ORDER BY TABLE_NAME, INDEX_NAME;

@@ -47,5 +47,6 @@ func mapServiceError(ctx echo.Context, err error) error {
 			return Error(ctx, int(svcErr.Code), svcErr.Message)
 		}
 	}
-	return InternalError(ctx, err.Error())
+	ctx.Logger().Errorf("unhandled service error: %v", err)
+	return InternalError(ctx, "internal server error")
 }
