@@ -8,14 +8,23 @@ parameters:
 get:
   tags: [Projects]
   summary: 获取项目全员评分状态
+  description: 返回评分、30 天冷却状态，以及评分者或被评分者加入项目不足 7 天时的冻结状态。
   operationId: listProjectMemberRatings
   responses:
     '200':
-      description: 当前项目所有成员的评分与当前用户冷却状态
+      description: 当前项目所有成员的评分、冻结状态与当前用户冷却状态
       content:
         application/json:
           schema:
-            $ref: ../components/schemas/BaseResponse.yaml
+            allOf:
+              - $ref: ../components/schemas/BaseResponse.yaml
+              - type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: ../components/schemas/ProjectMemberRatingStatus.yaml
     '403':
       description: 当前用户不是项目成员
       content:
@@ -25,7 +34,7 @@ get:
 post:
   tags: [Projects]
   summary: 对项目内其他成员评分
-  description: 所有当前项目成员均可评分；同一成员关系内，对同一目标采用滚动 30 天冷却。
+  description: 评分者与被评分者均须加入当前项目满 7 天；同一成员关系内，对同一目标采用滚动 30 天冷却。
   operationId: rateProjectMember
   requestBody:
     required: true
@@ -39,9 +48,15 @@ post:
       content:
         application/json:
           schema:
-            $ref: ../components/schemas/BaseResponse.yaml
+            allOf:
+              - $ref: ../components/schemas/BaseResponse.yaml
+              - type: object
+                required: [data]
+                properties:
+                  data:
+                    $ref: ../components/schemas/ProjectMemberRatingResult.yaml
     '400':
-      description: 参数错误或仍在冷却期
+      description: 参数错误、评分者或被评分者仍在 7 天冻结期，或仍在 30 天冷却期
       content:
         application/json:
           schema:
