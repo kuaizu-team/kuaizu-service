@@ -24,6 +24,7 @@ func (s *Server) PostSmsSend(ctx echo.Context) error {
 		value := string(*req.NoticeType)
 		noticeType = &value
 	}
+	_ = s.repo.UpdateOrderPushStatus(ctx.Request().Context(), req.OrderId, "pending", nil)
 
 	notice, err := s.svc.SmsNotice.Send(ctx.Request().Context(), userID, service.SendSmsNoticeInput{
 		OrderID:             req.OrderId,
@@ -35,7 +36,14 @@ func (s *Server) PostSmsSend(ctx echo.Context) error {
 		ProjectID:           req.ProjectId,
 	})
 	if err != nil {
+		message := err.Error()
+		_ = s.repo.UpdateOrderPushStatus(ctx.Request().Context(), req.OrderId, "failed", &message)
 		return mapServiceError(ctx, err)
+	}
+	if notice.Status == models.SmsNoticeStatusCompleted {
+		_ = s.repo.UpdateOrderPushStatus(ctx.Request().Context(), req.OrderId, "success", nil)
+	} else if notice.Status == models.SmsNoticeStatusFailed {
+		_ = s.repo.UpdateOrderPushStatus(ctx.Request().Context(), req.OrderId, "failed", notice.ErrorMessage)
 	}
 	return Success(ctx, smsNoticeToVO(notice))
 }

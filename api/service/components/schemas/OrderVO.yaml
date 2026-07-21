@@ -48,6 +48,23 @@ properties:
     description: 实付金额
   status:
     $ref: ./OrderStatus.yaml
+  pushStatus:
+    type: string
+    nullable: true
+    enum: [pending, success, failed]
+    description: Paid message delivery status
+  pushRetryCount:
+    type: integer
+    description: Number of manual delivery retries
+  lastPushTime:
+    type: string
+    format: date-time
+    nullable: true
+    description: Last delivery attempt time
+  pushErrorMessage:
+    type: string
+    nullable: true
+    description: Last delivery failure reason
   wxPayNo:
     type: string
     description: 微信支付单号

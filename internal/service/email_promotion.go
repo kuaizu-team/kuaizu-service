@@ -85,6 +85,9 @@ func (s *EmailPromotionService) TriggerPromotionWithInput(ctx context.Context, u
 	if order.Status != models.OrderStatusPaid {
 		return nil, ErrBadRequest("订单未支付或状态异常")
 	}
+	if err := s.repo.UpdateOrderPushStatus(ctx, orderID, "pending", nil); err != nil {
+		return nil, ErrInternal("更新订单推送状态失败")
+	}
 
 	project, err := s.repo.Project.GetByID(ctx, projectID)
 	if err != nil {
@@ -339,6 +342,7 @@ func (s *EmailPromotionService) markPromotionFailed(promotion *models.EmailPromo
 		promotion.ID, promotion.OrderID, promotion.ProjectID, message)
 	promotion.Status = models.EmailPromotionStatusFailed
 	promotion.ErrorMessage = &message
+	_ = s.repo.UpdateOrderPushStatus(context.Background(), promotion.OrderID, "failed", &message)
 	if err := s.repo.EmailPromotion.Update(context.Background(), promotion); err != nil {
 		log.Printf("[EmailPromotionService] failed to update failed promotion, promotion_id=%d order_id=%d: %v",
 			promotion.ID, promotion.OrderID, err)

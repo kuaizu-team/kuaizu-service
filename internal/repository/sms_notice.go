@@ -13,7 +13,7 @@ import (
 
 const smsNoticeSelectColumns = `
 	id, channel, business_tag, trace_id, order_id, olive_branch_record_id,
-	project_id, sender_id, receiver_id, sms_content, status, error_message,
+	member_removal_id, project_id, sender_id, receiver_id, sms_content, status, error_message,
 	provider, provider_biz_id, started_at, completed_at, created_at, updated_at
 `
 

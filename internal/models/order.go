@@ -17,6 +17,10 @@ type Order struct {
 	Quantity                  int        `db:"quantity"`
 	ActualPaid                float64    `db:"actual_paid"`
 	Status                    int        `db:"status"`
+	PushStatus                *string    `db:"push_status"`
+	PushRetryCount            int        `db:"push_retry_count"`
+	LastPushTime              *time.Time `db:"last_push_time"`
+	PushErrorMessage          *string    `db:"push_error_message"`
 	SettlementStatus          int        `db:"settlement_status"`
 	RefundStatus              int        `db:"refund_status"`
 	RefundReason              *string    `db:"refund_reason"`
@@ -50,6 +54,11 @@ type Order struct {
 // ToVO converts Order to API OrderVO.
 func (o *Order) ToVO() *api.OrderVO {
 	status := api.OrderStatus(o.Status)
+	var pushStatus *api.OrderVOPushStatus
+	if o.PushStatus != nil {
+		value := api.OrderVOPushStatus(*o.PushStatus)
+		pushStatus = &value
+	}
 
 	return &api.OrderVO{
 		Id:                 &o.ID,
@@ -58,6 +67,10 @@ func (o *Order) ToVO() *api.OrderVO {
 		TemplateName:       o.TemplateName,
 		ActualPaid:         &o.ActualPaid,
 		Status:             &status,
+		PushStatus:         pushStatus,
+		PushRetryCount:     &o.PushRetryCount,
+		LastPushTime:       o.LastPushTime,
+		PushErrorMessage:   o.PushErrorMessage,
 		RefundStatus:       &o.RefundStatus,
 		RefundReason:       o.RefundReason,
 		RefundApplyTime:    o.RefundApplyTime,

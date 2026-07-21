@@ -601,6 +601,136 @@ func applicationSmsRoleName(code string) string {
 	}
 	return "团队成员"
 }
+
+// RetryByOrder resends a failed SMS using the original paid order and business record.
+func (s *SmsNoticeService) RetryByOrder(ctx context.Context, userID, orderID int) (*models.SmsNotice, error) {
+	order, err := s.repo.Order.GetByID(ctx, orderID)
+	if err != nil || order == nil {
+		return nil, ErrNotFound("order not found")
+	}
+	if order.UserID != userID || order.Status != models.OrderStatusPaid {
+		return nil, ErrForbidden("no permission to retry this order")
+	}
+	notice, err := s.repo.SmsNotice.GetByOrderID(ctx, orderID)
+	if err != nil || notice == nil {
+		return nil, ErrNotFound("sms notice not found")
+	}
+	if notice.SenderID != userID || notice.Status != models.SmsNoticeStatusFailed {
+		return nil, ErrBadRequest("only a failed sms notice can be retried")
+	}
+	tag := valueOrEmpty(notice.BusinessTag)
+	if tag == smsNoticeScene {
+		return s.Send(ctx, userID, SendSmsNoticeInput{
+			OrderID: orderID, ReceiverUserID: notice.ReceiverID,
+			OliveBranchRecordID: notice.OliveBranchRecordID, ProjectID: notice.ProjectID,
+		})
+	}
+	if order.TemplateCode == nil || strings.TrimSpace(*order.TemplateCode) == "" {
+		return nil, ErrBadRequest("sms template is unavailable for retry")
+	}
+	receiver, err := s.repo.User.GetByID(ctx, notice.ReceiverID)
+	if err != nil || receiver == nil || receiver.Phone == nil || strings.TrimSpace(*receiver.Phone) == "" {
+		return nil, ErrBadRequest("receiver phone is unavailable")
+	}
+	projectTitle := "项目邀约"
+	if notice.ProjectID != nil {
+		project, projectErr := s.repo.Project.GetByID(ctx, *notice.ProjectID)
+		if projectErr == nil && project != nil {
+			projectTitle = project.Name
+		}
+	}
+	nickname := displayName(receiver)
+	teamRole := "团队成员"
+
+	switch {
+	case strings.HasPrefix(tag, "olive_branch_result_sms_"):
+		branch, branchErr := s.repo.OliveBranch.GetByID(ctx, notice.OliveBranchRecordID)
+		if branchErr != nil || branch == nil {
+			return nil, ErrNotFound("olive branch record not found")
+		}
+		teamRole = applicationSmsRoleName(valueOrEmpty(branch.OperatorRole))
+		if strings.HasSuffix(tag, "talent_rejected") {
+			sender, senderErr := s.repo.User.GetByID(ctx, userID)
+			if senderErr != nil || sender == nil {
+				return nil, ErrInternal("get sender failed")
+			}
+			nickname = displayName(sender)
+		}
+	case strings.HasPrefix(tag, "project_application_sms_"):
+		var applicationID int
+		var noticeType string
+		if _, scanErr := fmt.Sscanf(notice.SmsContent, "PROJECT_APPLICATION_SMS:%d:%s", &applicationID, &noticeType); scanErr != nil {
+			return nil, ErrBadRequest("application sms metadata is unavailable")
+		}
+		application, applicationErr := s.repo.Application.GetByID(ctx, applicationID)
+		if applicationErr != nil || application == nil {
+			return nil, ErrNotFound("application not found")
+		}
+		if noticeType == "accepted" {
+			teamRole = applicationSmsRoleName(valueOrEmpty(application.AssignedRole))
+		} else {
+			teamRole = applicationSmsRoleName(valueOrEmpty(application.ReviewerRole))
+		}
+		if noticeType == "applicant_rejected" {
+			sender, senderErr := s.repo.User.GetByID(ctx, userID)
+			if senderErr != nil || sender == nil {
+				return nil, ErrInternal("get sender failed")
+			}
+			nickname = displayName(sender)
+		}
+	case tag == "member_removal_sms":
+		if notice.MemberRemovalID == nil {
+			return nil, ErrBadRequest("member removal metadata is unavailable")
+		}
+		var role string
+		if dbErr := s.repo.DB().GetContext(ctx, &role, `SELECT role FROM project_member_removal WHERE id=?`, *notice.MemberRemovalID); dbErr != nil {
+			return nil, ErrNotFound("member removal record not found")
+		}
+		teamRole = applicationSmsRoleName(role)
+	default:
+		return nil, ErrBadRequest("sms notice type does not support retry")
+	}
+
+	submitter, initErr, _ := s.resolveMessageCenter()
+	if initErr != nil {
+		return nil, ErrInternal("message center unavailable")
+	}
+	applicationSubmitter, ok := submitter.(applicationSmsSubmitter)
+	if !ok {
+		return nil, ErrInternal("message center client does not support sms retry")
+	}
+	now := time.Now()
+	notice.Status = models.SmsNoticeStatusSending
+	notice.ErrorMessage = nil
+	notice.StartedAt = &now
+	notice.CompletedAt = nil
+	if err := s.repo.SmsNotice.Update(ctx, notice); err != nil {
+		return nil, ErrInternal("update sms notice for retry failed")
+	}
+	taskKey := valueOrEmpty(notice.TraceID)
+	if taskKey == "" {
+		return nil, ErrBadRequest("sms task key is unavailable")
+	}
+	err = applicationSubmitter.SubmitApplicationSms(ctx, messagecenter.ApplicationSmsRequest{
+		TaskKey: taskKey, TemplateCode: *order.TemplateCode, Phone: strings.TrimSpace(*receiver.Phone),
+		Nickname: nickname, ProjectTitle: projectTitle, TeamRole: teamRole,
+		BusinessTag: tag, TraceID: taskKey, Retry: true,
+	})
+	if err != nil {
+		message := err.Error()
+		notice.Status = models.SmsNoticeStatusFailed
+		notice.ErrorMessage = &message
+		notice.CompletedAt = &now
+		_ = s.repo.SmsNotice.Update(ctx, notice)
+		return nil, ErrInternal("retry sms notice failed")
+	}
+	notice.Status = models.SmsNoticeStatusCompleted
+	notice.CompletedAt = &now
+	if err := s.repo.SmsNotice.Update(ctx, notice); err != nil {
+		return nil, ErrInternal("complete sms retry failed")
+	}
+	return notice, nil
+}
 func (s *SmsNoticeService) handleExistingNotice(ctx context.Context, existing *models.SmsNotice, input SendSmsNoticeInput, branch *models.OliveBranch, order *models.Order, project *models.Project, receiver *models.User) (*models.SmsNotice, error) {
 	switch existing.Status {
 	case models.SmsNoticeStatusCompleted, models.SmsNoticeStatusPending, models.SmsNoticeStatusSending:
