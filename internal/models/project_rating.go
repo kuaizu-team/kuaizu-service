@@ -19,6 +19,8 @@ type ProjectMemberRatingStatus struct {
 	MemberID        int        `json:"memberId"`
 	Score           *float64   `json:"score"`
 	CanRate         bool       `json:"canRate"`
+	RatingFrozen    bool       `json:"ratingFrozen"`
+	FreezeDays      int        `json:"freezeDays"`
 	CooldownDays    int        `json:"cooldownDays"`
 	LastRatedAt     *time.Time `json:"-"`
 	NextRateAt      *time.Time `json:"-"`

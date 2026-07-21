@@ -1,0 +1,18 @@
+type: object
+required:
+  - memberId
+  - score
+  - canRate
+  - cooldownDays
+properties:
+  memberId:
+    type: integer
+    minimum: 1
+  score:
+    type: number
+    format: double
+  canRate:
+    type: boolean
+  cooldownDays:
+    type: integer
+    minimum: 0

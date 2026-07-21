@@ -37,3 +37,19 @@ func TestProjectRatingCooldown(t *testing.T) {
 	require.True(t, canRate)
 	require.Zero(t, days)
 }
+
+func TestProjectRatingFreeze(t *testing.T) {
+	now := time.Date(2026, 7, 22, 12, 0, 0, 0, time.Local)
+
+	frozen, days := projectRatingFreeze(now.Add(-2*24*time.Hour), now)
+	require.True(t, frozen)
+	require.Equal(t, 5, days)
+
+	frozen, days = projectRatingFreeze(now.Add(-models.ProjectRatingFreeze), now)
+	require.False(t, frozen)
+	require.Zero(t, days)
+
+	frozen, days = projectRatingFreeze(now.Add(-models.ProjectRatingFreeze+time.Minute), now)
+	require.True(t, frozen)
+	require.Equal(t, 1, days)
+}

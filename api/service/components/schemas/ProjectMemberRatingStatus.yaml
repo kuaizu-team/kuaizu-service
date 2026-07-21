@@ -1,0 +1,35 @@
+type: object
+required:
+  - memberId
+  - score
+  - canRate
+  - ratingFrozen
+  - freezeDays
+  - cooldownDays
+  - isSelf
+  - ratingHint
+properties:
+  memberId:
+    type: integer
+    minimum: 1
+  score:
+    type: number
+    format: double
+    nullable: true
+  canRate:
+    type: boolean
+  ratingFrozen:
+    type: boolean
+    description: Whether the current user is blocked by the 7-day join freeze for this rating target.
+  freezeDays:
+    type: integer
+    minimum: 0
+    description: Remaining freeze days, rounded up; zero when not frozen.
+  cooldownDays:
+    type: integer
+    minimum: 0
+    description: Remaining 30-day rating cooldown, rounded up; zero when available or frozen.
+  isSelf:
+    type: boolean
+  ratingHint:
+    type: string

@@ -15,6 +15,7 @@ const (
 )
 
 const (
+	ProjectRatingFreeze         = 7 * 24 * time.Hour
 	ProjectRatingCooldown       = 30 * 24 * time.Hour
 	ProjectRatingWeightLeader   = 1.0
 	ProjectRatingWeightManager  = 0.8
