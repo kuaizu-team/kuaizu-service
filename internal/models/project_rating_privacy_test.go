@@ -10,7 +10,7 @@ import (
 func TestProjectMemberRatingStatusJSONOmitsRatingDetails(t *testing.T) {
 	now := time.Now()
 	payload, err := json.Marshal(ProjectMemberRatingStatus{
-		MemberID: 2, Score: float64Ptr(88.5), CanRate: false, CooldownDays: 12,
+		MemberID: 2, Score: float64Ptr(88.5), CanRate: false, RatingFrozen: true, FreezeDays: 5, CooldownDays: 0,
 		LastRatedAt: &now, NextRateAt: &now, RatingCount: 3,
 	})
 	if err != nil {
@@ -22,7 +22,7 @@ func TestProjectMemberRatingStatusJSONOmitsRatingDetails(t *testing.T) {
 			t.Fatalf("client rating status leaked %s: %s", forbidden, body)
 		}
 	}
-	for _, required := range []string{"memberId", "score", "cooldownDays"} {
+	for _, required := range []string{"memberId", "score", "ratingFrozen", "freezeDays", "cooldownDays"} {
 		if !strings.Contains(body, required) {
 			t.Fatalf("client rating status omitted %s: %s", required, body)
 		}

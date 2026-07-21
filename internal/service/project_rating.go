@@ -12,9 +12,10 @@ import (
 )
 
 type ratingMemberRow struct {
-	ID     int64  `db:"id"`
-	UserID int    `db:"user_id"`
-	Role   string `db:"role"`
+	ID        int64     `db:"id"`
+	UserID    int       `db:"user_id"`
+	Role      string    `db:"role"`
+	CreatedAt time.Time `db:"created_at"`
 }
 
 type weightedRatingRow struct {
@@ -28,6 +29,7 @@ type ratingStatusRow struct {
 	Score           *float64   `db:"score"`
 	LastRatedAt     *time.Time `db:"last_rated_at"`
 	RatingCount     int        `db:"rating_count"`
+	CreatedAt       time.Time  `db:"created_at"`
 }
 
 func projectRoleRatingWeight(role string) float64 {
@@ -73,6 +75,18 @@ func projectRatingCooldown(lastRatedAt *time.Time, now time.Time) (bool, int, *t
 	return false, days, &next
 }
 
+func projectRatingFreeze(joinedAt, now time.Time) (bool, int) {
+	availableAt := joinedAt.Add(models.ProjectRatingFreeze)
+	if !availableAt.After(now) {
+		return false, 0
+	}
+	days := int(math.Ceil(availableAt.Sub(now).Hours() / 24))
+	if days < 1 {
+		days = 1
+	}
+	return true, days
+}
+
 func (s *ProjectService) RateProjectMember(ctx context.Context, projectID, raterID, targetUserID, score int) (*models.ProjectMemberRatingResult, error) {
 	if projectID <= 0 || targetUserID <= 0 {
 		return nil, ErrBadRequest("invalid project or target user id")
@@ -91,7 +105,7 @@ func (s *ProjectService) RateProjectMember(ctx context.Context, projectID, rater
 	defer tx.Rollback()
 
 	var members []ratingMemberRow
-	query, args, err := sqlx.In(`SELECT id,user_id,role FROM project_members
+	query, args, err := sqlx.In(`SELECT id,user_id,role,created_at FROM project_members
 		WHERE project_id=? AND user_id IN (?,?) ORDER BY id FOR UPDATE`, projectID, raterID, targetUserID)
 	if err != nil {
 		return nil, ErrInternal("构建成员查询失败")
@@ -116,14 +130,21 @@ func (s *ProjectService) RateProjectMember(ctx context.Context, projectID, rater
 		return nil, ErrForbidden("评分人与被评分人必须都是当前项目成员")
 	}
 
+	now := time.Now()
+	if frozen, days := projectRatingFreeze(rater.CreatedAt, now); frozen {
+		return nil, ErrBadRequest(fmt.Sprintf("加入满7天后方可评分，剩余 %d 天", days))
+	}
+	if frozen, days := projectRatingFreeze(target.CreatedAt, now); frozen {
+		return nil, ErrBadRequest(fmt.Sprintf("该成员加入满7天后方可评分，剩余 %d 天", days))
+	}
+
 	var lastRatedAt time.Time
 	err = tx.GetContext(ctx, &lastRatedAt, `SELECT created_at FROM project_member_rating
-		WHERE project_id=? AND rater_id=? AND target_member_id=?
-		ORDER BY created_at DESC,id DESC LIMIT 1`, projectID, raterID, target.ID)
+		WHERE project_id=? AND rater_member_id=? AND target_member_id=?
+		ORDER BY created_at DESC,id DESC LIMIT 1`, projectID, rater.ID, target.ID)
 	if err != nil && err != sql.ErrNoRows {
 		return nil, ErrInternal("获取评分冷却状态失败")
 	}
-	now := time.Now()
 	if err == nil {
 		canRate, days, _ := projectRatingCooldown(&lastRatedAt, now)
 		if !canRate {
@@ -175,9 +196,9 @@ func (s *ProjectService) ListProjectMemberRatings(ctx context.Context, projectID
 	if projectID <= 0 {
 		return nil, ErrBadRequest("invalid project id")
 	}
-	var raterMemberID int64
-	if err := s.repo.DB().GetContext(ctx, &raterMemberID,
-		`SELECT id FROM project_members WHERE project_id=? AND user_id=?`, projectID, userID); err != nil {
+	var rater ratingMemberRow
+	if err := s.repo.DB().GetContext(ctx, &rater,
+		`SELECT id,user_id,role,created_at FROM project_members WHERE project_id=? AND user_id=?`, projectID, userID); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, ErrForbidden("只有当前项目成员可以查看评分状态")
 		}
@@ -186,10 +207,10 @@ func (s *ProjectService) ListProjectMemberRatings(ctx context.Context, projectID
 
 	var rows []ratingStatusRow
 	if err := s.repo.DB().SelectContext(ctx, &rows, `SELECT
-			pm.id AS project_member_id,pm.user_id AS member_id,pms.score,
+			pm.id AS project_member_id,pm.user_id AS member_id,pm.created_at,pms.score,
 			(
 				SELECT r.created_at FROM project_member_rating r
-				WHERE r.rater_id=? AND r.target_member_id=pm.id
+				WHERE r.rater_member_id=? AND r.target_member_id=pm.id
 				ORDER BY r.created_at DESC,r.id DESC LIMIT 1
 			) AS last_rated_at,
 			(
@@ -200,11 +221,12 @@ func (s *ProjectService) ListProjectMemberRatings(ctx context.Context, projectID
 		FROM project_members pm
 		LEFT JOIN project_member_score pms ON pms.project_member_id=pm.id
 		WHERE pm.project_id=?
-		ORDER BY pm.id`, userID, projectID); err != nil {
+		ORDER BY pm.id`, rater.ID, projectID); err != nil {
 		return nil, ErrInternal("获取项目评分状态失败")
 	}
 
 	now := time.Now()
+	raterFrozen, raterFreezeDays := projectRatingFreeze(rater.CreatedAt, now)
 	result := make([]models.ProjectMemberRatingStatus, 0, len(rows))
 	for _, row := range rows {
 		status := models.ProjectMemberRatingStatus{
@@ -213,6 +235,14 @@ func (s *ProjectService) ListProjectMemberRatings(ctx context.Context, projectID
 		}
 		if status.IsSelf {
 			status.RatingHint = "不能给自己评分"
+		} else if raterFrozen {
+			status.RatingFrozen = true
+			status.FreezeDays = raterFreezeDays
+			status.RatingHint = fmt.Sprintf("加入满7天后方可评分（剩余 %d 天）", raterFreezeDays)
+		} else if frozen, days := projectRatingFreeze(row.CreatedAt, now); frozen {
+			status.RatingFrozen = true
+			status.FreezeDays = days
+			status.RatingHint = fmt.Sprintf("加入满7天后方可评分（剩余 %d 天）", days)
 		} else {
 			status.CanRate, status.CooldownDays, status.NextRateAt = projectRatingCooldown(row.LastRatedAt, now)
 			status.LastRatedAt = row.LastRatedAt
