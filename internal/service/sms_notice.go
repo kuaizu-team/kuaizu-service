@@ -873,25 +873,6 @@ func (s *SmsNoticeService) startAsyncSubmission(notice *models.SmsNotice) {
 			}
 			return
 		}
-
-		notice.Status = models.SmsNoticeStatusSending
-		notice.CompletedAt = nil
-		notice.ErrorMessage = nil
-		if resp != nil {
-			if resp.Provider != "" {
-				notice.Provider = &resp.Provider
-			}
-			providerBizID := resp.ProviderBizID
-			if providerBizID == "" {
-				providerBizID = resp.TaskID
-			}
-			if providerBizID != "" {
-				notice.ProviderBizID = &providerBizID
-			}
-		}
-		if err := s.repo.SmsNotice.Update(context.Background(), notice); err != nil {
-			log.Printf("[SmsNoticeService] update completed sms notice failed, notice_id=%d: %v", notice.ID, err)
-		}
 	}()
 }
 

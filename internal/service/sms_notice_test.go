@@ -143,6 +143,52 @@ func TestSmsNoticeMqPublishRejectedDoesNotOverwriteMessageCenterFailure(t *testi
 	assert.Equal(t, failedMessage, *notice.ErrorMessage)
 }
 
+func TestSmsNoticeMqPublishAcceptedDoesNotOverwriteMessageCenterSuccess(t *testing.T) {
+	accepted := true
+	completedAt := time.Now()
+	successfulNotice := &models.SmsNotice{
+		ID:                  10,
+		OrderID:             20,
+		OliveBranchRecordID: 30,
+		SenderID:            1,
+		ReceiverID:          2,
+		Status:              models.SmsNoticeStatusCompleted,
+		CompletedAt:         &completedAt,
+	}
+	repo := &smsNoticeRepoStub{
+		notice:      successfulNotice,
+		updateCalls: make(chan *models.SmsNotice, 1),
+	}
+	svc := &SmsNoticeService{
+		repo: &repository.Repository{
+			SmsNotice: repo,
+		},
+		messageCenter: fakeSmsNoticeSubmitter{
+			resp: &messagecenter.SmsNoticeResponse{
+				Accepted: &accepted,
+				Provider: "aliyun_sms",
+			},
+		},
+	}
+
+	staleNotice := &models.SmsNotice{
+		ID:                  10,
+		OrderID:             20,
+		OliveBranchRecordID: 30,
+		SenderID:            1,
+		ReceiverID:          2,
+		Status:              models.SmsNoticeStatusSending,
+	}
+	svc.startAsyncSubmission(staleNotice)
+
+	select {
+	case updated := <-repo.updateCalls:
+		require.Failf(t, "accepted response should not rewrite shared terminal state", "unexpected update: %+v", updated)
+	case <-time.After(50 * time.Millisecond):
+	}
+	assert.Equal(t, models.SmsNoticeStatusCompleted, repo.notice.Status)
+}
+
 func TestSmsNoticeSendRejectsOrderBoundToAnotherOliveBranch(t *testing.T) {
 	sceneConfig := `{"scene":"olive_branch_sms_notice"}`
 	repo := &repository.Repository{
