@@ -9,6 +9,34 @@ import (
 	"time"
 )
 
+func TestSubmitSmsNoticePreservesRejectedResponse(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v2/sms/send" {
+			t.Fatalf("path = %s, want /api/v2/sms/send", r.URL.Path)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"code":    200,
+			"message": "success",
+			"data": map[string]interface{}{
+				"accepted": false,
+			},
+		})
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, "test-token", 0)
+	resp, err := client.SubmitSmsNotice(context.Background(), SmsNoticeRequest{
+		TraceID: "OLIVE_BRANCH_SMS:115", NoticeID: 15, OrderID: 115,
+		SenderUserID: 1, ReceiverUserID: 2, OliveBranchRecordID: 3,
+		Content: "hello",
+	})
+	if err != nil {
+		t.Fatalf("SubmitSmsNotice returned error: %v", err)
+	}
+	if resp.Accepted == nil || *resp.Accepted {
+		t.Fatalf("response = %+v, want accepted=false", resp)
+	}
+}
 func TestSubmitApplicationSmsUsesApprovedTemplateVariables(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/sms/send" {

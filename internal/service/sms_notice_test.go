@@ -89,9 +89,9 @@ func TestGetSmsNoticeByOliveBranchReturnsNotFoundWhenNoCurrentNoticeExists(t *te
 	assert.Equal(t, ErrCodeNotFound, serviceErr.Code)
 }
 
-func TestSmsNoticeSubmissionRejectedDoesNotOverwriteMessageCenterFailure(t *testing.T) {
+func TestSmsNoticeMqPublishRejectedDoesNotOverwriteMessageCenterFailure(t *testing.T) {
 	accepted := false
-	failedMessage := "receiver phone is missing or invalid"
+	failedMessage := "failed to publish olive branch sms message"
 	failedNotice := &models.SmsNotice{
 		ID:                  10,
 		OrderID:             20,
