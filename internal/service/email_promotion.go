@@ -310,15 +310,6 @@ func (s *EmailPromotionService) startAsyncPromotionSubmission(promotion *models.
 			return
 		}
 
-		now := time.Now()
-		promotion.Status = models.EmailPromotionStatusSending
-		promotion.TotalSent = resp.ActualCount
-		promotion.StartedAt = &now
-		promotion.ErrorMessage = nil
-		if updateErr := s.repo.EmailPromotion.Update(context.Background(), promotion); updateErr != nil {
-			log.Printf("[EmailPromotionService] failed to update submitted promotion, promotion_id=%d order_id=%d task_id=%s: %v",
-				promotion.ID, promotion.OrderID, resp.TaskID, updateErr)
-		}
 		log.Printf("[EmailPromotionService] submitted project promotion, promotion_id=%d order_id=%d project_id=%d task_id=%s requested=%d actual=%d",
 			promotion.ID, promotion.OrderID, promotion.ProjectID, resp.TaskID, resp.RequestedCount, resp.ActualCount)
 

@@ -3,6 +3,8 @@ package repository
 import (
 	"context"
 	"database/sql/driver"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -56,7 +58,7 @@ func TestGetRetryRecipientUserIDsFallsBackToLegacyTasks(t *testing.T) {
 		t.Fatalf("queries = %#v, want snapshot then legacy query", queries)
 	}
 	legacyQuery := normalizeSQL(queries[1])
-	for _, want := range []string{"FROM email_task et", "et.promotion_id = ?", "ORDER BY MIN(et.id) ASC"} {
+	for _, want := range []string{"SELECT MIN(u.id) AS id", "GROUP BY LOWER(TRIM(recipient_email))", "GROUP BY et.recipient_email, et.first_task_id", "ORDER BY et.first_task_id ASC"} {
 		if !strings.Contains(legacyQuery, want) {
 			t.Fatalf("legacy query missing %q: %s", want, legacyQuery)
 		}
@@ -86,6 +88,32 @@ func TestMarkEmailPromotionFailedProtectsCompletedStatus(t *testing.T) {
 	for _, want := range []string{"UPDATE email_promotion SET", "WHERE id=? AND (status IS NULL OR status<>?)"} {
 		if !strings.Contains(query, want) {
 			t.Fatalf("query missing %q: %s", want, query)
+		}
+	}
+	if strings.Contains(query, "updated_at") {
+		t.Fatalf("failure query references column absent from email_promotion schema: %s", query)
+	}
+
+	schemaBytes, err := os.ReadFile(filepath.Join("..", "..", "sql", "create_mysql.sql"))
+	if err != nil {
+		t.Fatalf("read create_mysql.sql: %v", err)
+	}
+	schema := string(schemaBytes)
+	start := strings.Index(schema, "CREATE TABLE `email_promotion` (")
+	if start < 0 {
+		t.Fatal("email_promotion table definition not found")
+	}
+	end := strings.Index(schema[start:], ") ENGINE=")
+	if end < 0 {
+		t.Fatal("email_promotion table definition end not found")
+	}
+	tableDDL := schema[start : start+end]
+	if strings.Contains(tableDDL, "`updated_at`") {
+		t.Fatal("email_promotion schema unexpectedly contains updated_at; revisit failure SQL assertion")
+	}
+	for _, column := range []string{"`status`", "`error_message`", "`completed_at`"} {
+		if !strings.Contains(tableDDL, column) {
+			t.Fatalf("email_promotion schema missing required failure column %s", column)
 		}
 	}
 }

@@ -192,7 +192,7 @@ func (r *EmailPromotionRepository) Update(ctx context.Context, promotion *models
 // MarkFailedIfNotCompleted conditionally records failure without downgrading a completed promotion.
 func (r *EmailPromotionRepository) MarkFailedIfNotCompleted(ctx context.Context, promotionID int, message string, completedAt time.Time) (bool, error) {
 	result, err := r.db.ExecContext(ctx, `UPDATE email_promotion SET
-		status=?, error_message=?, completed_at=?, updated_at=NOW()
+		status=?, error_message=?, completed_at=?
 		WHERE id=? AND (status IS NULL OR status<>?)`,
 		models.EmailPromotionStatusFailed, message, completedAt, promotionID, models.EmailPromotionStatusCompleted)
 	if err != nil {
@@ -249,16 +249,19 @@ func (r *EmailPromotionRepository) GetRetryRecipientUserIDs(ctx context.Context,
 	}
 
 	if err := r.db.SelectContext(ctx, &userIDs, `
-		SELECT u.id
-		FROM email_task et
-		JOIN `+"`user`"+` u ON u.email = et.recipient_email
-		WHERE et.promotion_id = ?
-		  AND et.recipient_email IS NOT NULL
-		  AND et.recipient_email <> ''
-		  AND u.email IS NOT NULL
-		  AND u.email <> ''
-		GROUP BY u.id
-		ORDER BY MIN(et.id) ASC
+		SELECT MIN(u.id) AS id
+		FROM (
+			SELECT LOWER(TRIM(recipient_email)) AS recipient_email, MIN(id) AS first_task_id
+			FROM email_task
+			WHERE promotion_id = ?
+			  AND recipient_email IS NOT NULL
+			  AND TRIM(recipient_email) <> ''
+			GROUP BY LOWER(TRIM(recipient_email))
+		) et
+		JOIN `+"`user`"+` u ON LOWER(TRIM(u.email)) = et.recipient_email
+		WHERE u.email IS NOT NULL AND TRIM(u.email) <> ''
+		GROUP BY et.recipient_email, et.first_task_id
+		ORDER BY et.first_task_id ASC
 		LIMIT ?`, promotionID, limit); err != nil {
 		return nil, fmt.Errorf("query legacy promotion recipients: %w", err)
 	}

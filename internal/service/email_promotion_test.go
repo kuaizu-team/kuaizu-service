@@ -17,11 +17,15 @@ import (
 )
 
 type fakeProjectPromotionSubmitter struct {
-	requests chan messagecenter.ProjectPromotionRequest
+	requests     chan messagecenter.ProjectPromotionRequest
+	beforeReturn func()
 }
 
 func (f *fakeProjectPromotionSubmitter) SubmitProjectPromotion(ctx context.Context, req messagecenter.ProjectPromotionRequest) (*messagecenter.ProjectPromotionResponse, error) {
 	f.requests <- req
+	if f.beforeReturn != nil {
+		f.beforeReturn()
+	}
 	return &messagecenter.ProjectPromotionResponse{}, nil
 }
 
@@ -1100,4 +1104,37 @@ func TestMarkPromotionFailedDoesNotDowngradeCompletedPromotion(t *testing.T) {
 
 	assert.Equal(t, models.EmailPromotionStatusCompleted, stale.Status)
 	mockEmailPromotion.AssertExpectations(t)
+}
+
+func TestPromotionSubmissionSuccessDoesNotWriteSendingState(t *testing.T) {
+	mockEmailPromotion := new(MockEmailPromotionRepo)
+	updateCalls := make(chan models.EmailPromotionStatus, 1)
+	mockEmailPromotion.On("Update", mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
+		updateCalls <- args.Get(1).(*models.EmailPromotion).Status
+	}).Return(nil).Maybe()
+	responseReady := make(chan struct{})
+	submitter := &fakeProjectPromotionSubmitter{
+		requests: make(chan messagecenter.ProjectPromotionRequest, 1),
+		beforeReturn: func() {
+			close(responseReady)
+		},
+	}
+	svc := NewEmailPromotionService(&repository.Repository{EmailPromotion: mockEmailPromotion})
+	svc.messageCenter = submitter
+	promotion := &models.EmailPromotion{ID: 77, OrderID: 100, ProjectID: 200, Status: models.EmailPromotionStatusPending}
+
+	svc.startAsyncPromotionSubmission(promotion, messagecenter.ProjectPromotionRequest{
+		PromotionID: 77, OrderID: 100, ProjectID: 200,
+	})
+
+	select {
+	case <-responseReady:
+	case <-time.After(time.Second):
+		require.Fail(t, "timed out waiting for message-center response")
+	}
+	select {
+	case status := <-updateCalls:
+		require.Failf(t, "backend must not overwrite message-center execution state", "unexpected status update: %v", status)
+	case <-time.After(100 * time.Millisecond):
+	}
 }
