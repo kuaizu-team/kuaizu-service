@@ -189,6 +189,28 @@ func (r *EmailPromotionRepository) Update(ctx context.Context, promotion *models
 	return nil
 }
 
+// UpdateMetadata normalizes routing metadata without writing message-center-owned execution state.
+func (r *EmailPromotionRepository) UpdateMetadata(ctx context.Context, promotion *models.EmailPromotion) error {
+	query := `
+		UPDATE email_promotion SET
+			channel = :channel,
+			business_tag = :business_tag,
+			trace_id = :trace_id,
+			project_id = :project_id,
+			creator_id = :creator_id,
+			strategy = :strategy,
+			max_recipients = :max_recipients
+		WHERE id = :id
+	`
+
+	_, err := r.db.NamedExecContext(ctx, query, promotion)
+	if err != nil {
+		return fmt.Errorf("update email promotion metadata: %w", err)
+	}
+
+	return nil
+}
+
 // MarkFailedIfNotCompleted conditionally records failure without downgrading a completed promotion.
 func (r *EmailPromotionRepository) MarkFailedIfNotCompleted(ctx context.Context, promotionID int, message string, completedAt time.Time) (bool, error) {
 	result, err := r.db.ExecContext(ctx, `UPDATE email_promotion SET

@@ -103,6 +103,7 @@ type EmailPromotionRepo interface {
 	GetByOrderID(ctx context.Context, orderID int) (*models.EmailPromotion, error)
 	GetByOrderAndProject(ctx context.Context, orderID, projectID int) (*models.EmailPromotion, error)
 	Update(ctx context.Context, promotion *models.EmailPromotion) error
+	UpdateMetadata(ctx context.Context, promotion *models.EmailPromotion) error
 	MarkFailedIfNotCompleted(ctx context.Context, promotionID int, message string, completedAt time.Time) (bool, error)
 	CreateRecipients(ctx context.Context, promotionID, projectID int, userIDs []int) error
 	GetRetryRecipientUserIDs(ctx context.Context, promotionID, limit int) ([]int, error)

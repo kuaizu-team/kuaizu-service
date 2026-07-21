@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/jmoiron/sqlx"
+	"github.com/kuaizu-team/kuaizu-service/internal/models"
 )
 
 func TestGetRetryRecipientUserIDsPrefersSnapshot(t *testing.T) {
@@ -114,6 +115,70 @@ func TestMarkEmailPromotionFailedProtectsCompletedStatus(t *testing.T) {
 	for _, column := range []string{"`status`", "`error_message`", "`completed_at`"} {
 		if !strings.Contains(tableDDL, column) {
 			t.Fatalf("email_promotion schema missing required failure column %s", column)
+		}
+	}
+}
+
+func TestUpdateEmailPromotionMetadataDoesNotWriteExecutionState(t *testing.T) {
+	db := openCaptureDB(t)
+	defer db.Close()
+	capturedExec.Lock()
+	capturedExec.query = ""
+	capturedExec.args = nil
+	capturedExec.Unlock()
+
+	channel := "EMAIL"
+	businessTag := "project_promotion"
+	traceID := "PROJECT_PROMOTION:100"
+	errorMessage := "stale error"
+	now := time.Now()
+	promotion := &models.EmailPromotion{
+		ID:            77,
+		Channel:       &channel,
+		BusinessTag:   &businessTag,
+		TraceID:       &traceID,
+		ProjectID:     200,
+		CreatorID:     1,
+		Strategy:      "region",
+		MaxRecipients: 10,
+		TotalSent:     10,
+		Status:        models.EmailPromotionStatusCompleted,
+		ErrorMessage:  &errorMessage,
+		StartedAt:     &now,
+		CompletedAt:   &now,
+	}
+
+	repo := NewEmailPromotionRepository(sqlx.NewDb(db, "capture_user_repo"))
+	if err := repo.UpdateMetadata(context.Background(), promotion); err != nil {
+		t.Fatalf("UpdateMetadata returned error: %v", err)
+	}
+
+	capturedExec.Lock()
+	query := normalizeSQL(capturedExec.query)
+	capturedExec.Unlock()
+	for _, want := range []string{
+		"channel = ?",
+		"business_tag = ?",
+		"trace_id = ?",
+		"project_id = ?",
+		"creator_id = ?",
+		"strategy = ?",
+		"max_recipients = ?",
+		"WHERE id = ?",
+	} {
+		if !strings.Contains(query, want) {
+			t.Fatalf("metadata update query missing %q: %s", want, query)
+		}
+	}
+	for _, forbidden := range []string{
+		"total_sent",
+		"status",
+		"error_message",
+		"started_at",
+		"completed_at",
+	} {
+		if strings.Contains(query, forbidden) {
+			t.Fatalf("metadata update must not write execution field %q: %s", forbidden, query)
 		}
 	}
 }

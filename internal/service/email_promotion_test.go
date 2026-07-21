@@ -313,6 +313,11 @@ func (m *MockEmailPromotionRepo) Update(ctx context.Context, promotion *models.E
 	return args.Error(0)
 }
 
+func (m *MockEmailPromotionRepo) UpdateMetadata(ctx context.Context, promotion *models.EmailPromotion) error {
+	args := m.Called(ctx, promotion)
+	return args.Error(0)
+}
+
 func (m *MockEmailPromotionRepo) MarkFailedIfNotCompleted(ctx context.Context, promotionID int, message string, completedAt time.Time) (bool, error) {
 	if !m.hasExpectation("MarkFailedIfNotCompleted") {
 		return true, nil
@@ -551,7 +556,7 @@ func TestTriggerPromotion_AlreadyTriggeredReturnsExisting(t *testing.T) {
 		Status:        models.EmailPromotionStatusCompleted,
 		MaxRecipients: 10,
 	}, nil)
-	mockEmailPromotion.On("Update", mock.Anything, mock.MatchedBy(func(p *models.EmailPromotion) bool {
+	mockEmailPromotion.On("UpdateMetadata", mock.Anything, mock.MatchedBy(func(p *models.EmailPromotion) bool {
 		return p.ID == 1 && p.OrderID == 100 && p.ProjectID == 200 && p.CreatorID == 1 &&
 			p.Channel != nil && *p.Channel == "EMAIL" &&
 			p.BusinessTag != nil && *p.BusinessTag == "project_promotion" &&
@@ -570,6 +575,46 @@ func TestTriggerPromotion_AlreadyTriggeredReturnsExisting(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	assert.Equal(t, 1, result.Promotion.ID)
+	mockOrder.AssertExpectations(t)
+	mockProject.AssertExpectations(t)
+	mockEmailPromotion.AssertExpectations(t)
+}
+
+func TestTriggerPromotion_MetadataNormalizationCannotDowngradeConcurrentCompletion(t *testing.T) {
+	mockOrder := new(MockOrderRepo)
+	mockProject := new(MockProjectRepo)
+	mockProduct := new(MockProductRepo)
+	mockEmailPromotion := new(MockEmailPromotionRepo)
+	stalePromotion := &models.EmailPromotion{
+		ID:            1,
+		OrderID:       100,
+		ProjectID:     200,
+		CreatorID:     1,
+		Status:        models.EmailPromotionStatusSending,
+		TotalSent:     3,
+		MaxRecipients: 10,
+	}
+
+	mockOrder.On("GetByID", mock.Anything, 100).Return(&models.Order{ID: 100, UserID: 1, Status: models.OrderStatusPaid}, nil)
+	mockProject.On("GetByID", mock.Anything, 200).Return(&models.Project{ID: 200, CreatorID: 1}, nil)
+	mockEmailPromotion.On("GetByOrderAndProject", mock.Anything, 100, 200).Return(stalePromotion, nil)
+	mockEmailPromotion.On("UpdateMetadata", mock.Anything, mock.MatchedBy(func(p *models.EmailPromotion) bool {
+		return p.ID == 1 && p.Status == models.EmailPromotionStatusSending && p.TotalSent == 3
+	})).Return(nil)
+
+	repo := &repository.Repository{
+		Order:          mockOrder,
+		Project:        mockProject,
+		Product:        mockProduct,
+		EmailPromotion: mockEmailPromotion,
+	}
+
+	svc := NewEmailPromotionService(repo)
+	result, err := svc.TriggerPromotion(context.Background(), 1, 100, 200)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.Equal(t, 1, result.Promotion.ID)
+	mockEmailPromotion.AssertNotCalled(t, "Update", mock.Anything, mock.Anything)
 	mockOrder.AssertExpectations(t)
 	mockProject.AssertExpectations(t)
 	mockEmailPromotion.AssertExpectations(t)
@@ -1062,7 +1107,7 @@ func TestTriggerPromotion_RetryReusesOriginalRecipientSnapshot(t *testing.T) {
 	}, nil)
 	mockProject.On("GetByID", mock.Anything, 200).Return(&models.Project{ID: 200, CreatorID: 1}, nil)
 	mockEmailPromotion.On("GetByOrderAndProject", mock.Anything, 100, 200).Return(promotion, nil)
-	mockEmailPromotion.On("Update", mock.Anything, mock.Anything).Return(nil).Maybe()
+	mockEmailPromotion.On("UpdateMetadata", mock.Anything, mock.Anything).Return(nil)
 	mockEmailPromotion.On("GetRetryRecipientUserIDs", mock.Anything, 77, 2).Return(originalRecipients, nil)
 	mockEmailPromotion.On("CreateRecipients", mock.Anything, 77, 200, originalRecipients).Return(nil)
 

@@ -118,7 +118,7 @@ func (s *EmailPromotionService) TriggerPromotionWithInput(ctx context.Context, u
 		existingPromotion.TraceID = &traceID
 		existingPromotion.ProjectID = projectID
 		existingPromotion.CreatorID = userID
-		if updateErr := s.repo.EmailPromotion.Update(ctx, existingPromotion); updateErr != nil {
+		if updateErr := s.repo.EmailPromotion.UpdateMetadata(ctx, existingPromotion); updateErr != nil {
 			log.Printf("[EmailPromotionService] failed to normalize existing email promotion, order_id=%d project_id=%d: %v", orderID, projectID, updateErr)
 			return nil, ErrInternal("更新推广记录失败")
 		}
