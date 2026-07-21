@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"context"
 	"net/http"
 	"regexp"
 	"strings"
@@ -10,9 +11,14 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
+type AdminAuthStateStore interface {
+	GetAuthStateByID(ctx context.Context, id int) (*models.AdminUser, error)
+}
+
 // AdminJWTConfig holds admin JWT middleware configuration
 type AdminJWTConfig struct {
 	AuthConfig *adminauth.AdminConfig
+	AdminUsers AdminAuthStateStore
 	Skipper    func(c echo.Context) bool
 }
 
@@ -51,14 +57,32 @@ func AdminJWTAuth(config *AdminJWTConfig) echo.MiddlewareFunc {
 				return echo.NewHTTPError(401, "invalid or expired token")
 			}
 			if !validAdminRole(claims.Role) {
-				return echo.NewHTTPError(401, "invalid admin role; please sign in again")
+				return echo.NewHTTPError(http.StatusUnauthorized, "invalid admin role; please sign in again")
+			}
+			if config.AdminUsers == nil {
+				c.Logger().Error("admin authorization state store is not configured")
+				return echo.NewHTTPError(http.StatusServiceUnavailable, "administrator authentication is temporarily unavailable")
 			}
 
-			c.Set("adminID", claims.AdminID)
-			c.Set("adminUsername", claims.Username)
-			c.Set("adminRole", claims.Role)
-			c.Set("adminSchoolID", claims.SchoolID) // 0 表示超级管理员（无学校绑定）
-			if claims.Role == 4 && !eventManagerRouteAllowed(c.Request().Method, c.Request().URL.Path) {
+			admin, err := config.AdminUsers.GetAuthStateByID(c.Request().Context(), claims.AdminID)
+			if err != nil {
+				c.Logger().Errorf("load current administrator authorization state: %v", err)
+				return echo.NewHTTPError(http.StatusServiceUnavailable, "administrator authentication is temporarily unavailable")
+			}
+			if admin == nil || admin.Status != models.AdminUserStatusEnabled || !validAdminRole(admin.Role) {
+				return echo.NewHTTPError(http.StatusUnauthorized, "administrator account is unavailable; please sign in again")
+			}
+
+			schoolID := 0
+			if (admin.Role == models.AdminRoleSchoolAdmin ||
+				admin.Role == models.AdminRoleEventManager) && admin.SchoolID != nil {
+				schoolID = *admin.SchoolID
+			}
+			c.Set("adminID", admin.ID)
+			c.Set("adminUsername", admin.Username)
+			c.Set("adminRole", admin.Role)
+			c.Set("adminSchoolID", schoolID)
+			if admin.Role == models.AdminRoleEventManager && !eventManagerRouteAllowed(c.Request().Method, c.Request().URL.Path) {
 				return echo.NewHTTPError(http.StatusForbidden, "赛事管理员仅可访问数据看板和项目大厅")
 			}
 

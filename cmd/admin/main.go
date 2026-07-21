@@ -64,7 +64,9 @@ func main() {
 
 	// Protected routes
 	adminGroup := e.Group("/admin")
-	adminGroup.Use(adminmw.AdminJWTAuth(adminmw.DefaultAdminJWTConfig()))
+	adminJWTConfig := adminmw.DefaultAdminJWTConfig()
+	adminJWTConfig.AdminUsers = repo.AdminUser
+	adminGroup.Use(adminmw.AdminJWTAuth(adminJWTConfig))
 	adminGroup.GET("/auth/me", server.GetCurrentAdmin)
 
 	adminGroup.GET("/dashboard/stats", server.GetDashboardStats)

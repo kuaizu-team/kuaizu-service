@@ -216,6 +216,7 @@ type TalentProfileRepo interface {
 type AdminUserRepo interface {
 	GetByUsername(ctx context.Context, username string) (*models.AdminUser, error)
 	GetByID(ctx context.Context, id int) (*models.AdminUser, error)
+	GetAuthStateByID(ctx context.Context, id int) (*models.AdminUser, error)
 	List(ctx context.Context, params AdminUserListParams) ([]*models.AdminUser, int64, error)
 	Create(ctx context.Context, admin *models.AdminUser) error
 	CreateWithSchools(ctx context.Context, admin *models.AdminUser, schools []models.AdminSchoolRelation) error
