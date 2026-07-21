@@ -59,6 +59,11 @@ func (o *Order) ToVO() *api.OrderVO {
 		value := api.OrderVOPushStatus(*o.PushStatus)
 		pushStatus = &value
 	}
+	var pushErrorMessage *string
+	if o.PushStatus != nil && *o.PushStatus == "failed" && o.PushErrorMessage != nil {
+		message := "消息发送失败，请稍后重试或申请退款"
+		pushErrorMessage = &message
+	}
 
 	return &api.OrderVO{
 		Id:                 &o.ID,
@@ -70,7 +75,7 @@ func (o *Order) ToVO() *api.OrderVO {
 		PushStatus:         pushStatus,
 		PushRetryCount:     &o.PushRetryCount,
 		LastPushTime:       o.LastPushTime,
-		PushErrorMessage:   o.PushErrorMessage,
+		PushErrorMessage:   pushErrorMessage,
 		RefundStatus:       &o.RefundStatus,
 		RefundReason:       o.RefundReason,
 		RefundApplyTime:    o.RefundApplyTime,
