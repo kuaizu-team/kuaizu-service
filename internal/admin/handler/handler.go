@@ -33,11 +33,15 @@ func mapServiceError(ctx echo.Context, err error) error {
 			return response.NotFound(ctx, svcErr.Message)
 		case service.ErrCodeForbidden:
 			return response.Forbidden(ctx, svcErr.Message)
+		case service.ErrCodeInternal:
+			ctx.Logger().Errorf("internal admin service error: %v", err)
+			return response.InternalError(ctx, "internal server error")
 		default:
 			return response.Error(ctx, int(svcErr.Code), svcErr.Message)
 		}
 	}
-	return response.InternalError(ctx, err.Error())
+	ctx.Logger().Errorf("unhandled admin service error: %v", err)
+	return response.InternalError(ctx, "internal server error")
 }
 
 func parseIDParam(ctx echo.Context, name, label string) (int, error) {
@@ -57,12 +61,12 @@ func currentAdminID(ctx echo.Context) int {
 }
 
 // adminRole returns the logged-in admin's role from context.
-// Falls back to SuperAdmin (1) for legacy tokens that pre-date the role field.
+// Missing roles stay invalid; AdminJWTAuth rejects legacy tokens before handlers run.
 func adminRole(ctx echo.Context) int {
 	if role, ok := ctx.Get("adminRole").(int); ok && role > 0 {
 		return role
 	}
-	return models.AdminRoleSuperAdmin
+	return 0
 }
 
 // adminSchoolID returns the logged-in admin's school ID.

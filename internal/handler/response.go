@@ -42,10 +42,14 @@ func mapServiceError(ctx echo.Context, err error) error {
 			return NotFound(ctx, svcErr.Message)
 		case service.ErrCodeForbidden:
 			return Forbidden(ctx, svcErr.Message)
+		case service.ErrCodeInternal:
+			ctx.Logger().Errorf("internal service error: %v", err)
+			return InternalError(ctx, "internal server error")
 		default:
 			// For custom business codes (like 4002), use Error()
 			return Error(ctx, int(svcErr.Code), svcErr.Message)
 		}
 	}
-	return InternalError(ctx, err.Error())
+	ctx.Logger().Errorf("unhandled service error: %v", err)
+	return InternalError(ctx, "internal server error")
 }

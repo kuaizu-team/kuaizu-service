@@ -27,7 +27,7 @@ func (s *Server) LoginWithWechat(ctx echo.Context) error {
 	result, err := s.svc.Auth.LoginWithWechat(ctx.Request().Context(), req.Code)
 	if err != nil {
 		log.Printf("LoginWithWechat error: %v", err)
-		return Error(ctx, 4001, "微信登录失败: "+err.Error())
+		return Error(ctx, 4001, "微信登录失败")
 	}
 
 	// If user needs phone binding
@@ -69,7 +69,7 @@ func (s *Server) PrecheckWechatAuth(ctx echo.Context) error {
 	result, err := s.svc.Auth.PrecheckWechatAuth(ctx.Request().Context(), req.Code)
 	if err != nil {
 		log.Printf("PrecheckWechatAuth error: %v", err)
-		return Error(ctx, 4001, "微信登录预检查失败: "+err.Error())
+		return Error(ctx, 4001, "微信登录预检查失败")
 	}
 
 	return Success(ctx, api.WechatPrecheckResponse{
@@ -99,7 +99,7 @@ func (s *Server) RegisterWithPhone(ctx echo.Context) error {
 	result, err := s.svc.Auth.RegisterWithPhone(ctx.Request().Context(), req.RegisterToken, req.PhoneCode)
 	if err != nil {
 		log.Printf("RegisterWithPhone error: %v", err)
-		return Error(ctx, 4002, "手机号注册失败: "+err.Error())
+		return Error(ctx, 4002, "手机号注册失败")
 	}
 
 	return Success(ctx, loginResponse{

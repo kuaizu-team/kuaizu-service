@@ -14,14 +14,17 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Validate credential encryption secret
+      - name: Validate admin secrets
         env:
           ADMIN_CREDENTIAL_KEY: ${{ secrets.ADMIN_CREDENTIAL_KEY }}
+          ADMIN_JWT_SECRET: ${{ secrets.ADMIN_JWT_SECRET }}
         run: |
-          if [ -z "$ADMIN_CREDENTIAL_KEY" ]; then
-            echo "::error::ADMIN_CREDENTIAL_KEY secret is not configured."
-            exit 1
-          fi
+          for name in ADMIN_CREDENTIAL_KEY ADMIN_JWT_SECRET; do
+            if [ -z "${!name}" ]; then
+              echo "::error::${name} secret is not configured."
+              exit 1
+            fi
+          done
 
       - name: Setup SSH
         run: |
@@ -62,6 +65,7 @@ jobs:
             cat > .env.docker << 'ENVEOF'
           ${{ secrets.ENV_DOCKER }}
           ADMIN_CREDENTIAL_KEY=${{ secrets.ADMIN_CREDENTIAL_KEY }}
+          ADMIN_JWT_SECRET=${{ secrets.ADMIN_JWT_SECRET }}
           ENVEOF
           EOF
 

@@ -67,6 +67,20 @@ func (r *AdminUserRepository) GetByID(ctx context.Context, id int) (*models.Admi
 	return &admin, nil
 }
 
+// GetAuthStateByID retrieves only the fields required to authorize an admin request.
+func (r *AdminUserRepository) GetAuthStateByID(ctx context.Context, id int) (*models.AdminUser, error) {
+	const query = `SELECT id, username, role, school_id, status FROM admin_user WHERE id = ?`
+
+	var admin models.AdminUser
+	if err := r.db.QueryRowxContext(ctx, query, id).StructScan(&admin); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("query admin authorization state: %w", err)
+	}
+	return &admin, nil
+}
+
 // AdminUserListParams contains parameters for listing admin users
 type AdminUserListParams struct {
 	Page                    int
