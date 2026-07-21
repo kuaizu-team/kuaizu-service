@@ -321,6 +321,67 @@ func TestApplicationSmsRejectsApplicantRejectedWhenReviewerRejected(t *testing.T
 	assert.Equal(t, "application was not rejected by applicant", svcErr.Message)
 }
 
+func TestRetryByOrderReusesApplicationSmsTaskKey(t *testing.T) {
+	templateCode := "PROJECT_APPLICATION_REJECTED"
+	phone := "13200000000"
+	nickname := "applicant"
+	reviewerID := 1130
+	applicationID := 7
+	projectID := 154
+	traceID := "PROJECT_APPLICATION_SMS:52"
+	businessTag := "project_application_sms_rejected"
+	failure := "provider unavailable"
+	submitter := &fakeSmsNoticeSubmitter{}
+	noticeRepo := &smsNoticeRepoStub{
+		noticeByOrder: &models.SmsNotice{
+			ID:           101,
+			OrderID:      52,
+			ProjectID:    &projectID,
+			SenderID:     reviewerID,
+			ReceiverID:   1128,
+			SmsContent:   "PROJECT_APPLICATION_SMS:7:rejected",
+			Channel:      stringPtr("SMS"),
+			BusinessTag:  &businessTag,
+			TraceID:      &traceID,
+			Status:       models.SmsNoticeStatusFailed,
+			ErrorMessage: &failure,
+		},
+	}
+	repo := &repository.Repository{
+		Order: smsNoticeOrderRepoStub{
+			order: &models.Order{
+				ID: 52, UserID: reviewerID, Status: models.OrderStatusPaid,
+				TemplateCode: &templateCode,
+			},
+		},
+		SmsNotice: noticeRepo,
+		User: smsNoticeUserRepoStub{
+			user: &models.User{ID: 1128, Phone: &phone, Nickname: &nickname},
+		},
+		Project: smsNoticeProjectRepoStub{
+			project: &models.Project{ID: projectID, Name: "test project"},
+		},
+		Application: smsNoticeApplicationRepoStub{
+			application: &models.ProjectApplication{
+				ID: applicationID, ProjectID: projectID, UserID: 1128,
+			},
+		},
+	}
+	svc := &SmsNoticeService{repo: repo, messageCenter: submitter}
+
+	notice, err := svc.RetryByOrder(context.Background(), reviewerID, 52)
+
+	require.NoError(t, err)
+	require.NotNil(t, notice)
+	require.Len(t, submitter.appReqs, 1)
+	req := submitter.appReqs[0]
+	assert.Equal(t, "PROJECT_APPLICATION_SMS:52:rejected", req.TaskKey)
+	assert.Equal(t, "PROJECT_APPLICATION_SMS:52", req.TraceID)
+	assert.Equal(t, businessTag, req.BusinessTag)
+	assert.True(t, req.Retry)
+	assert.Equal(t, models.SmsNoticeStatusCompleted, notice.Status)
+}
+
 type smsNoticeOliveBranchRepoStub struct {
 	repository.OliveBranchRepo
 	branch *models.OliveBranch

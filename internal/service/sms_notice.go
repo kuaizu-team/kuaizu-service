@@ -641,6 +641,8 @@ func (s *SmsNoticeService) RetryByOrder(ctx context.Context, userID, orderID int
 	}
 	nickname := displayName(receiver)
 	teamRole := "团队成员"
+	taskKey := valueOrEmpty(notice.TraceID)
+	traceID := taskKey
 
 	switch {
 	case strings.HasPrefix(tag, "olive_branch_result_sms_"):
@@ -662,6 +664,7 @@ func (s *SmsNoticeService) RetryByOrder(ctx context.Context, userID, orderID int
 		if _, scanErr := fmt.Sscanf(notice.SmsContent, "PROJECT_APPLICATION_SMS:%d:%s", &applicationID, &noticeType); scanErr != nil {
 			return nil, ErrBadRequest("application sms metadata is unavailable")
 		}
+		taskKey = fmt.Sprintf("PROJECT_APPLICATION_SMS:%d:%s", orderID, noticeType)
 		application, applicationErr := s.repo.Application.GetByID(ctx, applicationID)
 		if applicationErr != nil || application == nil {
 			return nil, ErrNotFound("application not found")
@@ -691,6 +694,9 @@ func (s *SmsNoticeService) RetryByOrder(ctx context.Context, userID, orderID int
 		return nil, ErrBadRequest("sms notice type does not support retry")
 	}
 
+	if taskKey == "" || traceID == "" {
+		return nil, ErrBadRequest("sms task key is unavailable")
+	}
 	submitter, initErr, _ := s.resolveMessageCenter()
 	if initErr != nil {
 		return nil, ErrInternal("message center unavailable")
@@ -707,14 +713,10 @@ func (s *SmsNoticeService) RetryByOrder(ctx context.Context, userID, orderID int
 	if err := s.repo.SmsNotice.Update(ctx, notice); err != nil {
 		return nil, ErrInternal("update sms notice for retry failed")
 	}
-	taskKey := valueOrEmpty(notice.TraceID)
-	if taskKey == "" {
-		return nil, ErrBadRequest("sms task key is unavailable")
-	}
 	err = applicationSubmitter.SubmitApplicationSms(ctx, messagecenter.ApplicationSmsRequest{
 		TaskKey: taskKey, TemplateCode: *order.TemplateCode, Phone: strings.TrimSpace(*receiver.Phone),
 		Nickname: nickname, ProjectTitle: projectTitle, TeamRole: teamRole,
-		BusinessTag: tag, TraceID: taskKey, Retry: true,
+		BusinessTag: tag, TraceID: traceID, Retry: true,
 	})
 	if err != nil {
 		message := err.Error()
@@ -731,6 +733,7 @@ func (s *SmsNoticeService) RetryByOrder(ctx context.Context, userID, orderID int
 	}
 	return notice, nil
 }
+
 func (s *SmsNoticeService) handleExistingNotice(ctx context.Context, existing *models.SmsNotice, input SendSmsNoticeInput, branch *models.OliveBranch, order *models.Order, project *models.Project, receiver *models.User) (*models.SmsNotice, error) {
 	switch existing.Status {
 	case models.SmsNoticeStatusCompleted, models.SmsNoticeStatusPending, models.SmsNoticeStatusSending:

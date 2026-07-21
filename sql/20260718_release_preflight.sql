@@ -29,6 +29,14 @@ UNION ALL SELECT 'settlement_record.commission_rate'
 WHERE NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'settlement_record' AND column_name = 'commission_rate')
 UNION ALL SELECT 'settlement_record_order.beneficiary_admin_user_id'
 WHERE NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'settlement_record_order' AND column_name = 'beneficiary_admin_user_id')
+UNION ALL SELECT 'order.push_status'
+WHERE NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'order' AND column_name = 'push_status')
+UNION ALL SELECT 'order.push_retry_count'
+WHERE NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'order' AND column_name = 'push_retry_count')
+UNION ALL SELECT 'order.last_push_time'
+WHERE NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'order' AND column_name = 'last_push_time')
+UNION ALL SELECT 'order.push_error_message'
+WHERE NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'order' AND column_name = 'push_error_message')
 UNION ALL SELECT 'event.uk_event_admin_id'
 WHERE NOT EXISTS (SELECT 1 FROM information_schema.table_constraints WHERE constraint_schema = DATABASE() AND table_name = 'event' AND constraint_name = 'uk_event_admin_id' AND constraint_type = 'UNIQUE')
 UNION ALL SELECT 'event.fk_event_admin'
