@@ -1,0 +1,23 @@
+post:
+  tags:
+    - Orders
+  summary: Retry a failed paid-message delivery
+  operationId: retryOrderPush
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema:
+        type: integer
+  responses:
+    '200':
+      description: Delivery retry accepted
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/BaseResponse.yaml
+              - type: object
+                properties:
+                  data:
+                    $ref: ../components/schemas/OrderVO.yaml

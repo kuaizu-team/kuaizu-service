@@ -145,6 +145,16 @@ func (s *Server) CancelOrder(ctx echo.Context, id int) error {
 	return Success(ctx, order.ToVO())
 }
 
+// RetryOrderPush handles POST /orders/{id}/push/retry.
+func (s *Server) RetryOrderPush(ctx echo.Context, id int) error {
+	userID := GetUserID(ctx)
+	order, err := s.svc.PushRetry.Retry(ctx.Request().Context(), userID, id)
+	if err != nil {
+		return mapServiceError(ctx, err)
+	}
+	return Success(ctx, order.ToVO())
+}
+
 // ApplyOrderRefund handles generated POST /orders/{id}/refund/apply routes.
 func (s *Server) ApplyOrderRefund(ctx echo.Context, id int) error {
 	return s.applyOrderRefund(ctx, id)

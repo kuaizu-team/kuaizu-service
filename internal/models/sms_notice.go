@@ -18,6 +18,7 @@ type SmsNotice struct {
 	TraceID             *string         `db:"trace_id"`
 	OrderID             int             `db:"order_id"`
 	OliveBranchRecordID int             `db:"olive_branch_record_id"`
+	MemberRemovalID     *int64          `db:"member_removal_id"`
 	ProjectID           *int            `db:"project_id"`
 	SenderID            int             `db:"sender_id"`
 	ReceiverID          int             `db:"receiver_id"`

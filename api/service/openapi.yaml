@@ -176,6 +176,8 @@ paths:
     $ref: paths/orders_my.yaml
   /orders/{id}/pay:
     $ref: paths/orders_{id}_pay.yaml
+  /orders/{id}/push/retry:
+    $ref: paths/orders_{id}_push_retry.yaml
   /orders/{id}/refund/apply:
     $ref: paths/orders_{id}_refund_apply.yaml
   /orders/{id}/refund/withdraw:

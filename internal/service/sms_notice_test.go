@@ -28,12 +28,22 @@ func (f *fakeSmsNoticeSubmitter) SubmitApplicationSms(ctx context.Context, req m
 	return f.appErr
 }
 
+type smsNoticeFailureCall struct {
+	noticeID    int
+	orderID     int
+	message     string
+	completedAt time.Time
+}
+
 type smsNoticeRepoStub struct {
-	notice        *models.SmsNotice
-	noticeByOrder *models.SmsNotice
-	getByIDCalls  chan struct{}
-	updateCalls   chan *models.SmsNotice
-	createApp     chan *models.SmsNotice
+	notice           *models.SmsNotice
+	noticeByOrder    *models.SmsNotice
+	getByIDCalls     chan struct{}
+	updateCalls      chan *models.SmsNotice
+	createApp        chan *models.SmsNotice
+	markFailedCalls  chan smsNoticeFailureCall
+	markFailedResult bool
+	markFailedErr    error
 }
 
 func (s *smsNoticeRepoStub) Create(ctx context.Context, notice *models.SmsNotice) error {
@@ -56,6 +66,17 @@ func (s *smsNoticeRepoStub) Update(ctx context.Context, notice *models.SmsNotice
 	}
 	s.notice = notice
 	return nil
+}
+
+func (s *smsNoticeRepoStub) MarkFailedAndOrderPushIfNotCompleted(
+	ctx context.Context, noticeID, orderID int, message string, completedAt time.Time,
+) (bool, error) {
+	if s.markFailedCalls != nil {
+		s.markFailedCalls <- smsNoticeFailureCall{
+			noticeID: noticeID, orderID: orderID, message: message, completedAt: completedAt,
+		}
+	}
+	return s.markFailedResult, s.markFailedErr
 }
 
 func (s *smsNoticeRepoStub) GetByID(ctx context.Context, id int) (*models.SmsNotice, error) {
@@ -89,9 +110,9 @@ func TestGetSmsNoticeByOliveBranchReturnsNotFoundWhenNoCurrentNoticeExists(t *te
 	assert.Equal(t, ErrCodeNotFound, serviceErr.Code)
 }
 
-func TestSmsNoticeSubmissionRejectedDoesNotOverwriteMessageCenterFailure(t *testing.T) {
+func TestSmsNoticeMqPublishRejectedDoesNotOverwriteMessageCenterFailure(t *testing.T) {
 	accepted := false
-	failedMessage := "receiver phone is missing or invalid"
+	failedMessage := "failed to publish olive branch sms message"
 	failedNotice := &models.SmsNotice{
 		ID:                  10,
 		OrderID:             20,
@@ -143,6 +164,115 @@ func TestSmsNoticeSubmissionRejectedDoesNotOverwriteMessageCenterFailure(t *test
 	assert.Equal(t, failedMessage, *notice.ErrorMessage)
 }
 
+func TestSmsNoticeMqPublishAcceptedDoesNotOverwriteMessageCenterSuccess(t *testing.T) {
+	accepted := true
+	completedAt := time.Now()
+	successfulNotice := &models.SmsNotice{
+		ID:                  10,
+		OrderID:             20,
+		OliveBranchRecordID: 30,
+		SenderID:            1,
+		ReceiverID:          2,
+		Status:              models.SmsNoticeStatusCompleted,
+		CompletedAt:         &completedAt,
+	}
+	repo := &smsNoticeRepoStub{
+		notice:      successfulNotice,
+		updateCalls: make(chan *models.SmsNotice, 1),
+	}
+	svc := &SmsNoticeService{
+		repo: &repository.Repository{
+			SmsNotice: repo,
+		},
+		messageCenter: fakeSmsNoticeSubmitter{
+			resp: &messagecenter.SmsNoticeResponse{
+				Accepted: &accepted,
+				Provider: "aliyun_sms",
+			},
+		},
+	}
+
+	staleNotice := &models.SmsNotice{
+		ID:                  10,
+		OrderID:             20,
+		OliveBranchRecordID: 30,
+		SenderID:            1,
+		ReceiverID:          2,
+		Status:              models.SmsNoticeStatusSending,
+	}
+	svc.startAsyncSubmission(staleNotice)
+
+	select {
+	case updated := <-repo.updateCalls:
+		require.Failf(t, "accepted response should not rewrite shared terminal state", "unexpected update: %+v", updated)
+	case <-time.After(50 * time.Millisecond):
+	}
+	assert.Equal(t, models.SmsNoticeStatusCompleted, repo.notice.Status)
+}
+
+func TestSmsNoticeHttpTimeoutDoesNotOverwriteMessageCenterSuccess(t *testing.T) {
+	completedAt := time.Now()
+	successfulNotice := &models.SmsNotice{
+		ID: 10, OrderID: 20, Status: models.SmsNoticeStatusCompleted, CompletedAt: &completedAt,
+	}
+	repo := &smsNoticeRepoStub{
+		notice:           successfulNotice,
+		getByIDCalls:     make(chan struct{}, 1),
+		markFailedCalls:  make(chan smsNoticeFailureCall, 1),
+		markFailedResult: false,
+	}
+	svc := &SmsNoticeService{
+		repo:          &repository.Repository{SmsNotice: repo},
+		messageCenter: fakeSmsNoticeSubmitter{err: context.DeadlineExceeded},
+	}
+	staleNotice := &models.SmsNotice{
+		ID: 10, OrderID: 20, Status: models.SmsNoticeStatusSending,
+	}
+
+	svc.startAsyncSubmission(staleNotice)
+
+	select {
+	case call := <-repo.markFailedCalls:
+		assert.Equal(t, 10, call.noticeID)
+		assert.Equal(t, 20, call.orderID)
+		assert.Contains(t, call.message, "submit message center failed")
+	case <-time.After(2 * time.Second):
+		require.Fail(t, "timed out waiting for protected failure transition")
+	}
+	select {
+	case <-repo.getByIDCalls:
+	case <-time.After(time.Second):
+		require.Fail(t, "timed out waiting for successful notice reload")
+	}
+	assert.Equal(t, models.SmsNoticeStatusCompleted, repo.notice.Status)
+	assert.Equal(t, completedAt, *repo.notice.CompletedAt)
+}
+
+func TestSmsNoticeHttpFailureAtomicallyFailsNoticeAndOrder(t *testing.T) {
+	repo := &smsNoticeRepoStub{
+		markFailedCalls:  make(chan smsNoticeFailureCall, 1),
+		markFailedResult: true,
+	}
+	svc := &SmsNoticeService{
+		repo:          &repository.Repository{SmsNotice: repo},
+		messageCenter: fakeSmsNoticeSubmitter{err: context.DeadlineExceeded},
+	}
+	notice := &models.SmsNotice{
+		ID: 10, OrderID: 20, Status: models.SmsNoticeStatusSending,
+	}
+
+	svc.startAsyncSubmission(notice)
+
+	select {
+	case call := <-repo.markFailedCalls:
+		assert.Equal(t, 10, call.noticeID)
+		assert.Equal(t, 20, call.orderID)
+		assert.Contains(t, call.message, "submit message center failed")
+		assert.False(t, call.completedAt.IsZero())
+	case <-time.After(2 * time.Second):
+		require.Fail(t, "timed out waiting for atomic failure transition")
+	}
+}
 func TestSmsNoticeSendRejectsOrderBoundToAnotherOliveBranch(t *testing.T) {
 	sceneConfig := `{"scene":"olive_branch_sms_notice"}`
 	repo := &repository.Repository{
@@ -321,6 +451,67 @@ func TestApplicationSmsRejectsApplicantRejectedWhenReviewerRejected(t *testing.T
 	assert.Equal(t, "application was not rejected by applicant", svcErr.Message)
 }
 
+func TestRetryByOrderReusesApplicationSmsTaskKey(t *testing.T) {
+	templateCode := "PROJECT_APPLICATION_REJECTED"
+	phone := "13200000000"
+	nickname := "applicant"
+	reviewerID := 1130
+	applicationID := 7
+	projectID := 154
+	traceID := "PROJECT_APPLICATION_SMS:52"
+	businessTag := "project_application_sms_rejected"
+	failure := "provider unavailable"
+	submitter := &fakeSmsNoticeSubmitter{}
+	noticeRepo := &smsNoticeRepoStub{
+		noticeByOrder: &models.SmsNotice{
+			ID:           101,
+			OrderID:      52,
+			ProjectID:    &projectID,
+			SenderID:     reviewerID,
+			ReceiverID:   1128,
+			SmsContent:   "PROJECT_APPLICATION_SMS:7:rejected",
+			Channel:      stringPtr("SMS"),
+			BusinessTag:  &businessTag,
+			TraceID:      &traceID,
+			Status:       models.SmsNoticeStatusFailed,
+			ErrorMessage: &failure,
+		},
+	}
+	repo := &repository.Repository{
+		Order: smsNoticeOrderRepoStub{
+			order: &models.Order{
+				ID: 52, UserID: reviewerID, Status: models.OrderStatusPaid,
+				TemplateCode: &templateCode,
+			},
+		},
+		SmsNotice: noticeRepo,
+		User: smsNoticeUserRepoStub{
+			user: &models.User{ID: 1128, Phone: &phone, Nickname: &nickname},
+		},
+		Project: smsNoticeProjectRepoStub{
+			project: &models.Project{ID: projectID, Name: "test project"},
+		},
+		Application: smsNoticeApplicationRepoStub{
+			application: &models.ProjectApplication{
+				ID: applicationID, ProjectID: projectID, UserID: 1128,
+			},
+		},
+	}
+	svc := &SmsNoticeService{repo: repo, messageCenter: submitter}
+
+	notice, err := svc.RetryByOrder(context.Background(), reviewerID, 52)
+
+	require.NoError(t, err)
+	require.NotNil(t, notice)
+	require.Len(t, submitter.appReqs, 1)
+	req := submitter.appReqs[0]
+	assert.Equal(t, "PROJECT_APPLICATION_SMS:52:rejected", req.TaskKey)
+	assert.Equal(t, "PROJECT_APPLICATION_SMS:52", req.TraceID)
+	assert.Equal(t, businessTag, req.BusinessTag)
+	assert.True(t, req.Retry)
+	assert.Equal(t, models.SmsNoticeStatusCompleted, notice.Status)
+}
+
 type smsNoticeOliveBranchRepoStub struct {
 	repository.OliveBranchRepo
 	branch *models.OliveBranch
@@ -386,4 +577,26 @@ var (
 
 func intPtr(v int) *int {
 	return &v
+}
+
+func TestSmsNoticeSendDoesNotCreateTaskForAnotherUsersOrder(t *testing.T) {
+	noticeRepo := &smsNoticeRepoStub{}
+	repo := &repository.Repository{
+		OliveBranch: smsNoticeOliveBranchRepoStub{branch: &models.OliveBranch{
+			ID: 76, SenderID: 1, ReceiverID: 2, RelatedProjectID: 154, Status: models.OliveBranchStatusPending,
+		}},
+		Order:     smsNoticeOrderRepoStub{order: &models.Order{ID: 52, UserID: 999, ProductID: 2, Status: models.OrderStatusPaid}},
+		SmsNotice: noticeRepo,
+	}
+	svc := &SmsNoticeService{repo: repo}
+
+	notice, err := svc.Send(context.Background(), 1, SendSmsNoticeInput{
+		OrderID: 52, ReceiverUserID: 2, OliveBranchRecordID: 76,
+	})
+
+	require.Nil(t, notice)
+	var svcErr *ServiceError
+	require.ErrorAs(t, err, &svcErr)
+	assert.Equal(t, ErrCodeForbidden, svcErr.Code)
+	assert.Nil(t, noticeRepo.notice, "unauthorized order must not create a send record")
 }

@@ -103,7 +103,10 @@ type EmailPromotionRepo interface {
 	GetByOrderID(ctx context.Context, orderID int) (*models.EmailPromotion, error)
 	GetByOrderAndProject(ctx context.Context, orderID, projectID int) (*models.EmailPromotion, error)
 	Update(ctx context.Context, promotion *models.EmailPromotion) error
+	UpdateMetadata(ctx context.Context, promotion *models.EmailPromotion) error
+	MarkFailedIfNotCompleted(ctx context.Context, promotionID int, message string, completedAt time.Time) (bool, error)
 	CreateRecipients(ctx context.Context, promotionID, projectID int, userIDs []int) error
+	GetRetryRecipientUserIDs(ctx context.Context, promotionID, limit int) ([]int, error)
 	SelectPromotionRecipients(ctx context.Context, projectID, creatorID int, strategy string, limit int) ([]int, error)
 	ListByCreatorID(ctx context.Context, creatorID int, page, size int) ([]models.EmailPromotion, int64, error)
 	ListByProjectID(ctx context.Context, projectID int) ([]models.EmailPromotion, error)
@@ -115,6 +118,7 @@ type EmailPromotionRepo interface {
 type SmsNoticeRepo interface {
 	Create(ctx context.Context, notice *models.SmsNotice) error
 	Update(ctx context.Context, notice *models.SmsNotice) error
+	MarkFailedAndOrderPushIfNotCompleted(ctx context.Context, noticeID, orderID int, message string, completedAt time.Time) (bool, error)
 	GetByID(ctx context.Context, id int) (*models.SmsNotice, error)
 	GetByOliveBranchRecordID(ctx context.Context, oliveBranchRecordID int) (*models.SmsNotice, error)
 	GetByOrderID(ctx context.Context, orderID int) (*models.SmsNotice, error)

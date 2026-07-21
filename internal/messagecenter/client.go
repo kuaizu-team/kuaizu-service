@@ -550,6 +550,7 @@ type ApplicationSmsRequest struct {
 	TeamRole     string
 	BusinessTag  string
 	TraceID      string
+	Retry        bool
 }
 
 func (c *Client) SubmitApplicationSms(ctx context.Context, req ApplicationSmsRequest) error {
@@ -559,6 +560,7 @@ func (c *Client) SubmitApplicationSms(ctx context.Context, req ApplicationSmsReq
 	payload := map[string]interface{}{
 		"taskKey": req.TaskKey, "templateCode": req.TemplateCode,
 		"businessTag": req.BusinessTag, "traceId": req.TraceID,
+		"retry": req.Retry,
 		"recipients": []map[string]interface{}{{
 			"phone": req.Phone,
 			"vars":  map[string]interface{}{"nickname": req.Nickname, "projectTitle": req.ProjectTitle, "teamRole": req.TeamRole},

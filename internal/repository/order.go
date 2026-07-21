@@ -107,6 +107,7 @@ func (r *OrderRepository) ListByUserID(ctx context.Context, params OrderListPara
 	query := fmt.Sprintf(`
 		SELECT
 			o.id, o.user_id, o.product_id, o.template_code, o.template_name, o.price, o.quantity, o.actual_paid, o.status,
+			o.push_status, o.push_retry_count, o.last_push_time, o.push_error_message,
 			%s,
 			o.wx_pay_no, o.pay_time, o.created_at, o.updated_at,
 			p.name as product_name
@@ -174,6 +175,7 @@ func (r *OrderRepository) GetByID(ctx context.Context, id int) (*models.Order, e
 	query := `
 		SELECT
 			o.id, o.user_id, o.product_id, o.template_code, o.template_name, o.price, o.quantity, o.actual_paid, o.status,
+			o.push_status, o.push_retry_count, o.last_push_time, o.push_error_message,
 			` + orderFinanceCols + `,
 			o.wx_pay_no, o.pay_time, o.created_at, o.updated_at,
 			p.name as product_name

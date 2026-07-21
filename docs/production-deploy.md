@@ -15,11 +15,14 @@ the following files exactly once and in this order:
 4. `sql/20260714_event_manager_password.sql`
 5. `sql/20260715_admin_multi_school_delegation.sql`
 6. `sql/20260715_add_welcome_email_delivery.sql`
+7. `sql/migration_order_push_status.sql`
 
 `20260713_event_manager.sql` depends on the `event.school_id` column created by
 the first migration. The multi-school migration also assumes the existing
-settlement tables are present. These ALTER statements are not rerunnable; if a
-database was already migrated, run `sql/20260718_release_preflight.sql` instead
+settlement tables are present. The order push status migration is idempotent and
+may be safely rerun when deployment history is uncertain. The other ALTER
+statements are not rerunnable; if a database was already migrated, run
+`sql/20260718_release_preflight.sql` instead
 of applying them again. The preflight is read-only and must return no rows.
 
 Take a database backup before the first migration. Deploy the application only

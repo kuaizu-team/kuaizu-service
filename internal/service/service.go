@@ -10,6 +10,7 @@ type Services struct {
 	AdminSms            *AdminSmsService
 	EmailPromotion      *EmailPromotionService
 	SmsNotice           *SmsNoticeService
+	PushRetry           *PushRetryService
 	Payment             *PaymentService
 	EmailUnsubscribe    *EmailUnsubscribeService
 	Order               *OrderService
@@ -34,11 +35,14 @@ type Services struct {
 func New(repo *repository.Repository, deps *Dependencies) *Services {
 	contentAudit := NewContentAuditService(deps.WechatClient)
 	message := NewMessageService(repo, deps.WechatClient)
+	emailPromotion := NewEmailPromotionServiceWithMessageCenter(repo, deps.MessageCenter, deps.MessageCenterInitError)
+	smsNotice := NewSmsNoticeService(repo, deps.MessageCenter, deps.MessageCenterInitError)
 	return &Services{
 		Auth:                NewAuthService(repo, deps.WechatClient),
 		AdminSms:            NewAdminSmsService(deps.MessageCenter, deps.MessageCenterInitError),
-		EmailPromotion:      NewEmailPromotionServiceWithMessageCenter(repo, deps.MessageCenter, deps.MessageCenterInitError),
-		SmsNotice:           NewSmsNoticeService(repo, deps.MessageCenter, deps.MessageCenterInitError),
+		EmailPromotion:      emailPromotion,
+		SmsNotice:           smsNotice,
+		PushRetry:           NewPushRetryService(repo, emailPromotion, smsNotice),
 		Payment:             NewPaymentService(repo, deps.PayClient, deps.PayInitError),
 		EmailUnsubscribe:    NewEmailUnsubscribeService(repo),
 		Order:               NewOrderService(repo, deps.PayClient, deps.PayInitError),
