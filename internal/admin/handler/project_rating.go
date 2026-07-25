@@ -228,7 +228,7 @@ func (s *AdminServer) UpdateProjectRating(ctx echo.Context) error {
 				return response.InternalError(ctx, "同步历史协作评分失败")
 			}
 			if _, err := tx.ExecContext(ctx.Request().Context(), `UPDATE `+"`user`"+` SET collaboration_score=(
-				SELECT avg_score FROM (SELECT COALESCE(AVG(score),100) AS avg_score FROM collaboration_score WHERE user_id=?) t
+				SELECT avg_score FROM (SELECT COALESCE(AVG(score),90) AS avg_score FROM collaboration_score WHERE user_id=?) t
 			) WHERE id=?`, record.TargetID, record.TargetID); err != nil {
 				return response.InternalError(ctx, "更新用户协作指数失败")
 			}

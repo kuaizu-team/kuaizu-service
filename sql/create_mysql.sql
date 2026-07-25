@@ -573,7 +573,7 @@ CREATE TABLE `user` (
   `cover_image` varchar(100) DEFAULT NULL COMMENT '用户中心封面url',
   `unionid` varchar(100) DEFAULT NULL COMMENT '微信用户unionid',
   `last_viewed_my_projects_at` timestamp NULL DEFAULT NULL COMMENT '最后查看我的项目页时间',
-  `collaboration_score` DECIMAL(5,2) NOT NULL DEFAULT 100.00 COMMENT 'collaboration score, 0-100',
+  `collaboration_score` DECIMAL(5,2) NOT NULL DEFAULT 90.00 COMMENT 'collaboration score, 0-100',
   PRIMARY KEY (`id`),
   UNIQUE KEY `openid` (`openid`),
   KEY `idx_user_openid` (`openid`),
