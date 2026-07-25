@@ -134,6 +134,9 @@ func (s *AdminServer) canEditAdminInScope(ctx echo.Context, target *models.Admin
 	if role == models.AdminRoleSuperAdmin {
 		return target.ID == callerID || target.Role > models.AdminRoleSuperAdmin
 	}
+	if role == models.AdminRoleSchoolAdmin {
+		return target.ID == callerID
+	}
 	if role != models.AdminRoleSchoolSuperAdmin {
 		return false
 	}

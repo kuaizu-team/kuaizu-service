@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -17,6 +18,8 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
+var adminPhonePattern = regexp.MustCompile(`^1\d{10}$`)
+
 const (
 	adminCenterForbiddenMessage     = "校区管理员没有管理员中心权限"
 	schoolSuperAdminNoSchoolMessage = "当前校区超级管理员账号未绑定 schoolId，不能操作管理员账号"
@@ -26,10 +29,6 @@ const (
 func (s *AdminServer) ListAdmins(ctx echo.Context) error {
 	callerRole := adminRole(ctx)
 	callerID := currentAdminID(ctx)
-
-	if callerRole == models.AdminRoleSchoolAdmin {
-		return response.Forbidden(ctx, adminCenterForbiddenMessage)
-	}
 
 	page, _ := strconv.Atoi(ctx.QueryParam("page"))
 	size, _ := strconv.Atoi(ctx.QueryParam("pageSize"))
@@ -65,6 +64,8 @@ func (s *AdminServer) ListAdmins(ctx echo.Context) error {
 			}
 			params.Role = &r
 		}
+	case models.AdminRoleSchoolAdmin:
+		params.OnlyAdminID = &callerID
 	case models.AdminRoleSchoolSuperAdmin:
 		schoolIDs, err := s.adminSchoolIDs(ctx)
 		if err != nil {
@@ -98,10 +99,6 @@ func (s *AdminServer) ListAdmins(ctx echo.Context) error {
 
 func (s *AdminServer) GetAdmin(ctx echo.Context) error {
 	callerRole := adminRole(ctx)
-
-	if callerRole == models.AdminRoleSchoolAdmin {
-		return response.Forbidden(ctx, adminCenterForbiddenMessage)
-	}
 
 	id, err := strconv.Atoi(ctx.Param("id"))
 	if err != nil {
@@ -362,6 +359,8 @@ type createAdminRequest struct {
 	Username string               `json:"username"`
 	Password string               `json:"password"`
 	Nickname *string              `json:"nickname"`
+	Phone    string               `json:"phone"`
+	JoinDate string               `json:"joinDate"`
 	Role     int                  `json:"role"`
 	SchoolID *int                 `json:"schoolId"`
 	Status   int                  `json:"status"`
@@ -375,6 +374,7 @@ type delegateAdminRequest struct {
 	Username       string  `json:"username"`
 	Password       string  `json:"password"`
 	Nickname       *string `json:"nickname"`
+	Phone          string  `json:"phone"`
 }
 
 // DelegateAdminSchool handles POST /admin/delegate.
@@ -396,6 +396,9 @@ func (s *AdminServer) DelegateAdminSchool(ctx echo.Context) error {
 		if strings.TrimSpace(req.Username) == "" || req.Password == "" {
 			return response.BadRequest(ctx, "新管理员账号和密码不能为空")
 		}
+		if !adminPhonePattern.MatchString(strings.TrimSpace(req.Phone)) {
+			return response.BadRequest(ctx, "请输入正确的手机号")
+		}
 		hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
 		if err != nil {
 			return response.InternalError(ctx, "密码加密失败")
@@ -407,7 +410,8 @@ func (s *AdminServer) DelegateAdminSchool(ctx echo.Context) error {
 		target = &models.AdminUser{
 			Username: strings.TrimSpace(req.Username), PasswordHash: string(hash),
 			PasswordEncrypted: &encrypted, Nickname: req.Nickname,
-			Role: models.AdminRoleSchoolSuperAdmin, Status: models.AdminUserStatusEnabled,
+			Phone: func() *string { value := strings.TrimSpace(req.Phone); return &value }(),
+			Role:  models.AdminRoleSchoolSuperAdmin, Status: models.AdminUserStatusEnabled,
 		}
 	}
 	targetID, err := s.repo.AdminUser.DelegateSchool(ctx.Request().Context(), currentAdminID(ctx), target, req.TargetUserID, req.SchoolID, req.CommissionRate)
@@ -486,6 +490,12 @@ func (s *AdminServer) CreateAdmin(ctx echo.Context) error {
 	if req.Username == "" || req.Password == "" {
 		return response.BadRequest(ctx, "username 和 password 不能为空")
 	}
+	if !adminPhonePattern.MatchString(strings.TrimSpace(req.Phone)) {
+		return response.BadRequest(ctx, "请输入正确的手机号")
+	}
+	if callerRole == models.AdminRoleSuperAdmin && strings.TrimSpace(req.JoinDate) == "" {
+		return response.BadRequest(ctx, "新建管理员时加入日期不能为空")
+	}
 	if req.Role < 1 || req.Role > 3 {
 		return response.BadRequest(ctx, "role 必须为 1、2 或 3")
 	}
@@ -538,11 +548,22 @@ func (s *AdminServer) CreateAdmin(ctx echo.Context) error {
 		return response.InternalError(ctx, "管理员密码安全存储失败")
 	}
 
+	var joinDate *time.Time
+	if strings.TrimSpace(req.JoinDate) != "" {
+		parsed, parseErr := time.Parse("2006-01-02", req.JoinDate)
+		if parseErr != nil {
+			return response.BadRequest(ctx, "joinDate must use YYYY-MM-DD")
+		}
+		joinDate = &parsed
+	}
+
 	admin := &models.AdminUser{
 		Username:          req.Username,
 		PasswordHash:      string(hash),
 		PasswordEncrypted: &encrypted,
 		Nickname:          req.Nickname,
+		Phone:             func() *string { value := strings.TrimSpace(req.Phone); return &value }(),
+		JoinDate:          joinDate,
 		Role:              req.Role,
 		SchoolID:          req.SchoolID,
 		Status:            req.Status,
@@ -559,9 +580,6 @@ func (s *AdminServer) CreateAdmin(ctx echo.Context) error {
 		if errors.Is(err, repository.ErrSchoolAlreadyOwned) {
 			return response.BadRequest(ctx, "所选学校已有校区超级管理员负责人")
 		}
-		if errors.Is(err, repository.ErrDuplicateUsername) {
-			return response.BadRequest(ctx, "账号已存在")
-		}
 		return response.InternalError(ctx, "创建管理员失败")
 	}
 
@@ -570,7 +588,9 @@ func (s *AdminServer) CreateAdmin(ctx echo.Context) error {
 }
 
 type updateAdminRequest struct {
+	Username       *string               `json:"username"`
 	Nickname       *string               `json:"nickname"`
+	Phone          *string               `json:"phone"`
 	Password       string                `json:"password"`
 	Role           *int                  `json:"role"`
 	SchoolID       **int                 `json:"schoolId"`
@@ -586,10 +606,6 @@ type updateAdminRequest struct {
 func (s *AdminServer) UpdateAdmin(ctx echo.Context) error {
 	callerRole := adminRole(ctx)
 	callerID := currentAdminID(ctx)
-
-	if callerRole == models.AdminRoleSchoolAdmin {
-		return response.Forbidden(ctx, adminCenterForbiddenMessage)
-	}
 
 	id, err := strconv.Atoi(ctx.Param("id"))
 	if err != nil {
@@ -612,6 +628,17 @@ func (s *AdminServer) UpdateAdmin(ctx echo.Context) error {
 	var req updateAdminRequest
 	if err := ctx.Bind(&req); err != nil {
 		return response.BadRequest(ctx, "invalid request body")
+	}
+	if callerRole != models.AdminRoleSuperAdmin {
+		if req.Username != nil || req.Role != nil || req.JoinDate != nil {
+			return response.Forbidden(ctx, "当前角色不可修改账号、加入日期或角色")
+		}
+		if id != callerID && (req.Nickname != nil || req.Phone != nil) {
+			return response.Forbidden(ctx, "只能修改自己的姓名和电话")
+		}
+	}
+	if callerRole == models.AdminRoleSchoolAdmin && (id != callerID || req.Password != "" || req.SchoolID != nil || req.Status != nil || req.Intro != nil || req.ArticleURL != nil || req.Schools != nil || req.RemoveSchoolID != nil) {
+		return response.Forbidden(ctx, "校区管理员只能修改自己的姓名和电话")
 	}
 	if req.RemoveSchoolID != nil {
 		if callerRole != models.AdminRoleSuperAdmin {
@@ -639,6 +666,20 @@ func (s *AdminServer) UpdateAdmin(ctx echo.Context) error {
 		return response.Forbidden(ctx, "校区超级管理员不能修改自己的 schoolId")
 	}
 
+	if req.Username != nil {
+		value := strings.TrimSpace(*req.Username)
+		if value == "" {
+			return response.BadRequest(ctx, "账号不能为空")
+		}
+		target.Username = value
+	}
+	if req.Phone != nil {
+		value := strings.TrimSpace(*req.Phone)
+		if !adminPhonePattern.MatchString(value) {
+			return response.BadRequest(ctx, "请输入正确的手机号")
+		}
+		target.Phone = &value
+	}
 	if req.Nickname != nil {
 		target.Nickname = req.Nickname
 	}

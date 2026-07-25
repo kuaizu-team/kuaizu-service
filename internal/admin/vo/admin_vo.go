@@ -508,6 +508,7 @@ type AdminUserAccountVO struct {
 	Username                string          `json:"username"`
 	Password                *string         `json:"password,omitempty"`
 	Nickname                *string         `json:"nickname"`
+	Phone                   *string         `json:"phone"`
 	Role                    int             `json:"role"`
 	SchoolID                *int            `json:"schoolId"`
 	SchoolName              *string         `json:"schoolName"`
@@ -550,6 +551,7 @@ func NewAdminUserAccountVO(a *models.AdminUser) *AdminUserAccountVO {
 		ID:             a.ID,
 		Username:       a.Username,
 		Nickname:       a.Nickname,
+		Phone:          a.Phone,
 		Role:           a.Role,
 		SchoolID:       a.SchoolID,
 		SchoolName:     a.SchoolName,
