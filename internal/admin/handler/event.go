@@ -60,8 +60,21 @@ func (s *AdminServer) ListEvents(ctx echo.Context) error {
 	if keyword != "" {
 		keywordPtr = &keyword
 	}
+	sortBy := strings.TrimSpace(ctx.QueryParam("sortBy"))
+	switch sortBy {
+	case "", "updatedAt", "id", "registrationDeadline", "displayOrder":
+	default:
+		return response.BadRequest(ctx, "invalid sortBy")
+	}
+	order := strings.ToLower(strings.TrimSpace(ctx.QueryParam("order")))
+	if order == "" {
+		order = "desc"
+	}
+	if order != "asc" && order != "desc" {
+		return response.BadRequest(ctx, "invalid order")
+	}
 	listParams := repository.EventListParams{
-		Page: page, Size: size, Keyword: keywordPtr,
+		Page: page, Size: size, Keyword: keywordPtr, SortBy: sortBy, Order: order,
 	}
 	if adminRole(ctx) == models.AdminRoleSchoolSuperAdmin {
 		schoolIDs, err := s.adminSchoolIDs(ctx)
