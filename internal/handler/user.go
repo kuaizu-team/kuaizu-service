@@ -2,6 +2,7 @@ package handler
 
 import (
 	"strings"
+	"time"
 
 	"github.com/kuaizu-team/kuaizu-service/api"
 	"github.com/kuaizu-team/kuaizu-service/internal/repository"
@@ -38,33 +39,47 @@ func (s *Server) GetCurrentUser(ctx echo.Context) error {
 func (s *Server) GetMyCollaborationHistory(ctx echo.Context) error {
 	userID := GetUserID(ctx)
 	type collaborationProjectSummary struct {
-		ID          int64   `db:"id" json:"id"`
-		ProjectID   int     `db:"project_id" json:"projectId"`
-		ProjectName *string `db:"project_name" json:"projectName,omitempty"`
-		Score       float64 `db:"score" json:"score"`
+		ID          int64      `db:"id" json:"id"`
+		ProjectID   int        `db:"project_id" json:"projectId"`
+		ProjectName string     `db:"project_name" json:"projectName"`
+		Score       float64    `db:"score" json:"score"`
+		Type        string     `db:"type" json:"type"`
+		RaterName   string     `db:"rater_name" json:"raterName"`
+		CreatedAt   *time.Time `db:"created_at" json:"createdAt,omitempty"`
 	}
 
 	list := make([]collaborationProjectSummary, 0)
 	if err := s.repo.DB().SelectContext(ctx.Request().Context(), &list, `
-		SELECT summary.project_id AS id,summary.project_id,p.name AS project_name,summary.score
+		SELECT history.id,history.project_id,history.project_name,history.score,
+			history.type,history.rater_name,history.created_at
 		FROM (
-			SELECT pms.project_id,ROUND(AVG(pms.score),2) AS score,MAX(pms.updated_at) AS sort_at
-			FROM project_member_score pms
-			WHERE pms.member_id=? AND pms.score IS NOT NULL
-			GROUP BY pms.project_id
+			SELECT summary.project_id AS id,summary.project_id,COALESCE(p.name,'-') AS project_name,
+				summary.score,'project' AS type,'项目内成员匿名互评' AS rater_name,
+				summary.sort_at AS created_at,0 AS sort_order
+			FROM (
+				SELECT pms.project_id,ROUND(AVG(pms.score),2) AS score,MAX(pms.updated_at) AS sort_at
+				FROM project_member_score pms
+				WHERE pms.member_id=? AND pms.score IS NOT NULL
+				GROUP BY pms.project_id
+				UNION ALL
+				SELECT cs.project_id,ROUND(AVG(cs.score),2) AS score,MAX(cs.created_at) AS sort_at
+				FROM collaboration_score cs
+				WHERE cs.user_id=?
+					AND NOT EXISTS (
+						SELECT 1 FROM project_member_score pms
+						WHERE pms.member_id=cs.user_id AND pms.project_id=cs.project_id AND pms.score IS NOT NULL
+					)
+				GROUP BY cs.project_id
+			) summary
+			LEFT JOIN project p ON p.id=summary.project_id
 			UNION ALL
-			SELECT cs.project_id,ROUND(AVG(cs.score),2) AS score,MAX(cs.created_at) AS sort_at
-			FROM collaboration_score cs
-			WHERE cs.user_id=?
-				AND NOT EXISTS (
-					SELECT 1 FROM project_member_score pms
-					WHERE pms.member_id=cs.user_id AND pms.project_id=cs.project_id AND pms.score IS NOT NULL
-				)
-			GROUP BY cs.project_id
-		) summary
-		LEFT JOIN project p ON p.id=summary.project_id
-		ORDER BY summary.sort_at DESC,summary.project_id DESC
-	`, userID, userID); err != nil {
+			SELECT 0 AS id,0 AS project_id,'初始得分' AS project_name,90 AS score,
+				'initial' AS type,'快组校园团队' AS rater_name,u.created_at,1 AS sort_order
+			FROM `+"`user`"+` u
+			WHERE u.id=?
+		) history
+		ORDER BY history.sort_order,history.created_at DESC,history.project_id DESC
+	`, userID, userID, userID); err != nil {
 		return InternalError(ctx, "get collaboration history failed")
 	}
 	return Success(ctx, list)
