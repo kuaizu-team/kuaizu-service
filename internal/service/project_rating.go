@@ -9,6 +9,7 @@ import (
 
 	"github.com/jmoiron/sqlx"
 	"github.com/kuaizu-team/kuaizu-service/internal/models"
+	"github.com/kuaizu-team/kuaizu-service/internal/repository"
 )
 
 type ratingMemberRow struct {
@@ -180,6 +181,9 @@ func (s *ProjectService) RateProjectMember(ctx context.Context, projectID, rater
 	ON DUPLICATE KEY UPDATE score=VALUES(score),updated_at=VALUES(updated_at)`,
 		projectID, target.ID, targetUserID, currentScore, now); err != nil {
 		return nil, ErrInternal("更新项目成员评分失败")
+	}
+	if err := repository.UpdateUserCollaborationScoreTx(ctx, tx, targetUserID); err != nil {
+		return nil, ErrInternal("更新协作指数失败")
 	}
 	if err := tx.Commit(); err != nil {
 		return nil, ErrInternal("提交评分事务失败")

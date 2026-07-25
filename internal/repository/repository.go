@@ -1,6 +1,8 @@
 package repository
 
 import (
+	"context"
+
 	"github.com/jmoiron/sqlx"
 )
 
@@ -73,4 +75,23 @@ func New(db *sqlx.DB) *Repository {
 		StatusNotification:   NewStatusNotificationRepository(db),
 		WelcomeEmailDelivery: NewWelcomeEmailDeliveryRepository(db),
 	}
+}
+
+// UpdateUserCollaborationScoreTx recalculates the user's collaboration score
+// from frozen history and scores for currently active project memberships.
+func UpdateUserCollaborationScoreTx(ctx context.Context, tx *sqlx.Tx, userID int) error {
+	_, err := tx.ExecContext(ctx, `UPDATE `+"`user`"+` SET collaboration_score=(
+		SELECT COALESCE(AVG(scores.score),90)
+		FROM (
+			SELECT cs.score
+			FROM collaboration_score cs
+			WHERE cs.user_id=?
+			UNION ALL
+			SELECT pms.score
+			FROM project_member_score pms
+			INNER JOIN project_members pm ON pm.id=pms.project_member_id
+			WHERE pms.member_id=? AND pms.score IS NOT NULL
+		) scores
+	) WHERE id=?`, userID, userID, userID)
+	return err
 }

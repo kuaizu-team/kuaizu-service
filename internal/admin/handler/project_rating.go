@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/kuaizu-team/kuaizu-service/internal/models"
+	"github.com/kuaizu-team/kuaizu-service/internal/repository"
 	"github.com/kuaizu-team/kuaizu-service/internal/response"
 	"github.com/labstack/echo/v4"
 )
@@ -227,13 +228,12 @@ func (s *AdminServer) UpdateProjectRating(ctx echo.Context) error {
 				projectScore.Float64, ratingCount, frozenScoreID); err != nil {
 				return response.InternalError(ctx, "同步历史协作评分失败")
 			}
-			if _, err := tx.ExecContext(ctx.Request().Context(), `UPDATE `+"`user`"+` SET collaboration_score=(
-				SELECT avg_score FROM (SELECT COALESCE(AVG(score),90) AS avg_score FROM collaboration_score WHERE user_id=?) t
-			) WHERE id=?`, record.TargetID, record.TargetID); err != nil {
-				return response.InternalError(ctx, "更新用户协作指数失败")
-			}
 			historicalScoreUpdated = true
 		}
+	}
+
+	if err := repository.UpdateUserCollaborationScoreTx(ctx.Request().Context(), tx, record.TargetID); err != nil {
+		return response.InternalError(ctx, "更新用户协作指数失败")
 	}
 
 	if err := tx.Commit(); err != nil {

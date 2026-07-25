@@ -341,9 +341,7 @@ func (s *AdminServer) UpdateUserCollaborationScore(ctx echo.Context) error {
 	if affected == 0 {
 		return response.NotFound(ctx, "评分记录不存在")
 	}
-	if _, err := tx.ExecContext(ctx.Request().Context(), `UPDATE `+"`user`"+` SET collaboration_score=(
-		SELECT avg_score FROM (SELECT COALESCE(AVG(score), 90) AS avg_score FROM collaboration_score WHERE user_id=?) t
-	) WHERE id=?`, userID, userID); err != nil {
+	if err := repository.UpdateUserCollaborationScoreTx(ctx.Request().Context(), tx, userID); err != nil {
 		return response.InternalError(ctx, "更新协作指数失败")
 	}
 	if err := tx.Commit(); err != nil {
