@@ -60,6 +60,8 @@ paths:
     $ref: paths/auth_register_phone.yaml
   /users/me:
     $ref: paths/users_me.yaml
+  /users/me/collaboration-history:
+    $ref: paths/users_me_collaboration-history.yaml
   /users/me/certification:
     $ref: paths/users_me_certification.yaml
   /users/me/olive-branches:
