@@ -4,7 +4,9 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"log"
 	"math"
+	"strconv"
 	"time"
 
 	"github.com/jmoiron/sqlx"
@@ -185,15 +187,42 @@ func (s *ProjectService) RateProjectMember(ctx context.Context, projectID, rater
 	if err := repository.UpdateUserCollaborationScoreTx(ctx, tx, targetUserID); err != nil {
 		return nil, ErrInternal("更新协作指数失败")
 	}
+	var collaborationScore float64
+	if err := tx.GetContext(ctx, &collaborationScore,
+		"SELECT COALESCE(collaboration_score, 90) FROM `user` WHERE id=?", targetUserID); err != nil {
+		return nil, ErrInternal("获取最新协作指数失败")
+	}
 	if err := tx.Commit(); err != nil {
 		return nil, ErrInternal("提交评分事务失败")
 	}
+
+	go s.sendCollaborationScoreUpdateNotification(context.WithoutCancel(ctx), targetUserID, collaborationScore, now)
 
 	nextRateAt := now.Add(models.ProjectRatingCooldown)
 	return &models.ProjectMemberRatingResult{
 		MemberID: targetUserID, Score: currentScore, CanRate: false,
 		CooldownDays: 30, NextRateAt: nextRateAt, RatingCount: ratingCount,
 	}, nil
+}
+
+func (s *ProjectService) sendCollaborationScoreUpdateNotification(
+	ctx context.Context,
+	userID int,
+	score float64,
+	updatedAt time.Time,
+) {
+	if s.message == nil {
+		return
+	}
+
+	data := map[string]string{
+		"score":      strconv.FormatFloat(score, 'f', -1, 64),
+		"updated_at": updatedAt.Format("2006-01-02 15:04"),
+		"remark":     "请点击查看详情",
+	}
+	if err := s.message.SendSubscribeMsgByBizKey(ctx, userID, models.MsgBizKeyCollaborationScore, data); err != nil {
+		log.Printf("[ProjectService.RateProjectMember] send collaboration score notification failed (non-fatal), user_id=%d: %v", userID, err)
+	}
 }
 
 func (s *ProjectService) ListProjectMemberRatings(ctx context.Context, projectID, userID int) ([]models.ProjectMemberRatingStatus, error) {
