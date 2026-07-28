@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -42,6 +43,37 @@ func (s *MessageService) SendSubscribeMsgByBizKey(ctx context.Context, userID in
 // page path. It is used when the target page depends on the concrete business entity.
 func (s *MessageService) SendSubscribeMsgByBizKeyWithPage(ctx context.Context, userID int, bizKey string, businessData map[string]string, pagePath string) error {
 	return s.sendSubscribeMsg(ctx, userID, bizKey, businessData, pagePath)
+}
+
+func (s *MessageService) SendCollaborationScoreUpdateNotification(
+	ctx context.Context,
+	userID int,
+	score float64,
+	updatedAt time.Time,
+) error {
+	return s.SendSubscribeMsgByBizKey(ctx, userID, models.MsgBizKeyCollaborationScore, map[string]string{
+		"score":      strconv.FormatFloat(score, 'f', -1, 64),
+		"updated_at": updatedAt.Format("2006-01-02 15:04"),
+		"remark":     "请点击查看详情",
+	})
+}
+
+func SendCollaborationScoreUpdateNotificationAsync(
+	ctx context.Context,
+	message *MessageService,
+	userID int,
+	score float64,
+	updatedAt time.Time,
+	source string,
+) {
+	if message == nil {
+		return
+	}
+	go func(asyncCtx context.Context) {
+		if err := message.SendCollaborationScoreUpdateNotification(asyncCtx, userID, score, updatedAt); err != nil {
+			log.Printf("[%s] send collaboration score notification failed (non-fatal), user_id=%d: %v", source, userID, err)
+		}
+	}(context.WithoutCancel(ctx))
 }
 
 // sendSubscribeMsg is the shared implementation. When pageOverride is non-empty it

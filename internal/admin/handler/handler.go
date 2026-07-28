@@ -22,6 +22,13 @@ func NewAdminServer(repo *repository.Repository, svc *service.Services) *AdminSe
 	return &AdminServer{repo: repo, svc: svc}
 }
 
+func (s *AdminServer) messageService() *service.MessageService {
+	if s.svc == nil {
+		return nil
+	}
+	return s.svc.Message
+}
+
 // mapServiceError maps a service.ServiceError to the appropriate HTTP error response.
 func mapServiceError(ctx echo.Context, err error) error {
 	var svcErr *service.ServiceError
