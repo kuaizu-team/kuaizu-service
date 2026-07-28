@@ -26,6 +26,12 @@ type VersionUpdateBroadcastResult struct {
 	Status    string `json:"status"`
 }
 
+var chinaStandardTime = time.FixedZone("Asia/Shanghai", 8*60*60)
+
+func formatChinaMinute(value time.Time) string {
+	return value.In(chinaStandardTime).Format("2006-01-02 15:04")
+}
+
 func NewMessageService(repo *repository.Repository, wxClient *wechat.Client) *MessageService {
 	return &MessageService{
 		repo:     repo,
@@ -53,7 +59,7 @@ func (s *MessageService) SendCollaborationScoreUpdateNotification(
 ) error {
 	return s.SendSubscribeMsgByBizKey(ctx, userID, models.MsgBizKeyCollaborationScore, map[string]string{
 		"score":      strconv.FormatFloat(score, 'f', -1, 64),
-		"updated_at": updatedAt.Format("2006-01-02 15:04"),
+		"updated_at": formatChinaMinute(updatedAt),
 		"remark":     "请点击查看详情",
 	})
 }
