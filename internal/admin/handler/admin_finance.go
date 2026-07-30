@@ -101,6 +101,11 @@ func (s *AdminServer) enrichAdminFinance(ctx echo.Context, vo *adminvo.AdminUser
 		}
 		return
 	}
+	if admin.Role == models.AdminRoleSchoolAdmin {
+		vo.PendingSettlementAmount = 0
+		vo.PendingRefundOrderCount = 0
+		return
+	}
 	if admin.SchoolID == nil {
 		vo.PendingSettlementAmount = 0
 		vo.PendingRefundOrderCount = 0

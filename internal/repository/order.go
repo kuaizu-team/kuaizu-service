@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"math"
 	"strings"
@@ -64,6 +65,8 @@ type SettlementResult struct {
 	OrderCount  int    `json:"orderCount"`
 	TotalAmount int64  `json:"totalAmount"`
 }
+
+var ErrSettlementBeneficiaryNotFound = errors.New("active settlement beneficiary not found")
 
 type AdminRevenueStats struct {
 	PendingSettlementAmount int64
@@ -510,7 +513,18 @@ func (r *OrderRepository) RevenueStats(ctx context.Context, schoolID *int) (*Rev
 	}{
 		{fmt.Sprintf("SELECT CAST(COALESCE(ROUND(SUM(o.actual_paid) * 100), 0) AS SIGNED) FROM %s WHERE o.status = 1 AND o.refund_status != 2%s", from, schoolWhere), &stats.TotalRevenue},
 		{fmt.Sprintf("SELECT CAST(COALESCE(ROUND(SUM(o.actual_paid) * 100), 0) AS SIGNED) FROM %s WHERE o.status = 1 AND o.refund_status != 2 AND o.pay_time >= DATE_SUB(NOW(), INTERVAL 7 DAY)%s", from, schoolWhere), &stats.WeekRevenue},
-		{fmt.Sprintf("SELECT CAST(COALESCE(ROUND(SUM(o.actual_paid) * 100), 0) AS SIGNED) FROM %s WHERE o.status = 1 AND o.settlement_status = 0 AND o.refund_status = 0%s", from, schoolWhere), &stats.PendingSettlementAmount},
+		{fmt.Sprintf(`SELECT CAST(COALESCE(ROUND(SUM(o.actual_paid * rel.commission_rate / 100) * 100), 0) AS SIGNED)
+			FROM `+"`order`"+` o
+			JOIN `+"`user`"+` u ON o.user_id = u.id
+			JOIN admin_school_relation rel ON rel.school_id = u.school_id
+			JOIN admin_user au ON au.id = rel.admin_user_id AND au.role = 2 AND au.status = 1
+			WHERE o.status = 1 AND o.settlement_status = 0 AND o.refund_status = 0
+			  AND rel.commission_rate > 0
+			  AND COALESCE(o.pay_time, o.created_at) >= rel.created_at
+			  AND NOT EXISTS (
+			    SELECT 1 FROM settlement_record_order sro
+			    WHERE sro.order_id = o.id AND sro.beneficiary_admin_user_id = rel.admin_user_id
+			  )%s`, schoolWhere), &stats.PendingSettlementAmount},
 		{fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE o.refund_status = 1 AND o.refund_applicant_type = 0%s", from, schoolWhere), &stats.PendingConsumerRefundCount},
 		{fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE o.refund_status = 1 AND o.refund_applicant_type = 1%s", from, schoolWhere), &stats.PendingSchoolAdminRefundCount},
 		{fmt.Sprintf("SELECT CAST(COALESCE(ROUND(SUM(o.actual_paid) * 100), 0) AS SIGNED) FROM %s WHERE o.refund_status = 1 AND o.refund_applicant_type = 0%s", from, schoolWhere), &stats.PendingConsumerRefundAmount},
@@ -541,7 +555,18 @@ func (r *OrderRepository) RevenueStatsForSchools(ctx context.Context, schoolIDs 
 	}{
 		{fmt.Sprintf("SELECT CAST(COALESCE(ROUND(SUM(o.actual_paid) * 100), 0) AS SIGNED) FROM %s WHERE o.status=1 AND o.refund_status!=2%s", from, condition), &stats.TotalRevenue},
 		{fmt.Sprintf("SELECT CAST(COALESCE(ROUND(SUM(o.actual_paid) * 100), 0) AS SIGNED) FROM %s WHERE o.status=1 AND o.refund_status!=2 AND o.pay_time>=DATE_SUB(NOW(), INTERVAL 7 DAY)%s", from, condition), &stats.WeekRevenue},
-		{fmt.Sprintf("SELECT CAST(COALESCE(ROUND(SUM(o.actual_paid) * 100), 0) AS SIGNED) FROM %s WHERE o.status=1 AND o.settlement_status=0 AND o.refund_status=0%s", from, condition), &stats.PendingSettlementAmount},
+		{fmt.Sprintf(`SELECT CAST(COALESCE(ROUND(SUM(o.actual_paid * rel.commission_rate / 100) * 100), 0) AS SIGNED)
+			FROM `+"`order`"+` o
+			JOIN `+"`user`"+` u ON o.user_id = u.id
+			JOIN admin_school_relation rel ON rel.school_id = u.school_id
+			JOIN admin_user au ON au.id = rel.admin_user_id AND au.role = 2 AND au.status = 1
+			WHERE o.status=1 AND o.settlement_status=0 AND o.refund_status=0
+			  AND rel.commission_rate > 0
+			  AND COALESCE(o.pay_time, o.created_at) >= rel.created_at
+			  AND NOT EXISTS (
+			    SELECT 1 FROM settlement_record_order sro
+			    WHERE sro.order_id = o.id AND sro.beneficiary_admin_user_id = rel.admin_user_id
+			  )%s`, condition), &stats.PendingSettlementAmount},
 		{fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE o.refund_status=1 AND o.refund_applicant_type=0%s", from, condition), &stats.PendingConsumerRefundCount},
 		{fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE o.refund_status=1 AND o.refund_applicant_type=1%s", from, condition), &stats.PendingSchoolAdminRefundCount},
 		{fmt.Sprintf("SELECT CAST(COALESCE(ROUND(SUM(o.actual_paid) * 100), 0) AS SIGNED) FROM %s WHERE o.refund_status=1 AND o.refund_applicant_type=0%s", from, condition), &stats.PendingConsumerRefundAmount},
@@ -566,9 +591,11 @@ func (r *OrderRepository) AdminRevenueStats(ctx context.Context, adminID int) (*
 		SELECT rel.school_id,
 		       CAST(COALESCE(ROUND(SUM(o.actual_paid) * 100 * rel.commission_rate / 100), 0) AS SIGNED) AS amount
 		FROM admin_school_relation rel
+		JOIN admin_user au ON au.id = rel.admin_user_id AND au.role = 2 AND au.status = 1
 		LEFT JOIN `+"`user`"+` u ON u.school_id = rel.school_id
 		LEFT JOIN `+"`order`"+` o ON o.user_id = u.id
 		  AND o.status = 1 AND o.settlement_status = 0 AND o.refund_status = 0
+		  AND COALESCE(o.pay_time, o.created_at) >= rel.created_at
 		  AND NOT EXISTS (
 		    SELECT 1 FROM settlement_record_order sro
 		    WHERE sro.order_id = o.id AND sro.beneficiary_admin_user_id = rel.admin_user_id
@@ -584,9 +611,12 @@ func (r *OrderRepository) AdminRevenueStats(ctx context.Context, adminID int) (*
 	if err := r.db.QueryRowxContext(ctx, `
 		SELECT COUNT(DISTINCT o.id)
 		FROM admin_school_relation rel
+		JOIN admin_user au ON au.id = rel.admin_user_id AND au.role = 2 AND au.status = 1
 		JOIN `+"`user`"+` u ON u.school_id = rel.school_id
 		JOIN `+"`order`"+` o ON o.user_id = u.id
-		WHERE rel.admin_user_id = ? AND rel.commission_rate > 0 AND o.refund_status = 1`, adminID).Scan(&stats.PendingRefundOrderCount); err != nil {
+		WHERE rel.admin_user_id = ? AND rel.commission_rate > 0
+		  AND COALESCE(o.pay_time, o.created_at) >= rel.created_at
+		  AND o.refund_status = 1`, adminID).Scan(&stats.PendingRefundOrderCount); err != nil {
 		return nil, fmt.Errorf("query admin pending refunds: %w", err)
 	}
 	return stats, nil
@@ -607,6 +637,25 @@ func (r *OrderRepository) SettleSchoolPendingOrders(ctx context.Context, schoolI
 	}
 	defer tx.Rollback()
 
+	var relation struct {
+		CommissionRate float64   `db:"commission_rate"`
+		CreatedAt      time.Time `db:"created_at"`
+	}
+	if err := tx.QueryRowxContext(ctx, `
+		SELECT rel.commission_rate, rel.created_at
+		FROM admin_school_relation rel
+		JOIN admin_user au ON au.id = rel.admin_user_id
+		WHERE rel.admin_user_id = ? AND rel.school_id = ?
+		  AND rel.commission_rate > 0 AND au.role = 2 AND au.status = 1
+		FOR UPDATE
+	`, beneficiaryAdminID, schoolID).StructScan(&relation); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, ErrSettlementBeneficiaryNotFound
+		}
+		return nil, fmt.Errorf("query settlement beneficiary: %w", err)
+	}
+	commissionRate = relation.CommissionRate
+
 	var rows []settlementOrderRow
 	if err := tx.SelectContext(ctx, &rows, `
 		SELECT o.id, o.actual_paid
@@ -616,12 +665,13 @@ func (r *OrderRepository) SettleSchoolPendingOrders(ctx context.Context, schoolI
 			AND o.status = 1
 			AND o.settlement_status = 0
 			AND o.refund_status = 0
+			AND COALESCE(o.pay_time, o.created_at) >= ?
 			AND NOT EXISTS (
 				SELECT 1 FROM settlement_record_order sro
 				WHERE sro.order_id=o.id AND sro.beneficiary_admin_user_id=?
 			)
 		FOR UPDATE
-	`, schoolID, beneficiaryAdminID); err != nil {
+	`, schoolID, relation.CreatedAt, beneficiaryAdminID); err != nil {
 		return nil, fmt.Errorf("select settle orders: %w", err)
 	}
 	if len(rows) == 0 {
@@ -655,8 +705,10 @@ func (r *OrderRepository) SettleSchoolPendingOrders(ctx context.Context, schoolI
 			UPDATE `+"`order`"+` o SET
 				settlement_status = CASE WHEN NOT EXISTS (
 					SELECT 1 FROM admin_school_relation rel
+					JOIN admin_user au ON au.id=rel.admin_user_id AND au.role=2 AND au.status=1
 					JOIN `+"`user`"+` owner_user ON owner_user.school_id=rel.school_id
 					WHERE owner_user.id=o.user_id AND rel.commission_rate>0
+					  AND COALESCE(o.pay_time, o.created_at) >= rel.created_at
 					  AND NOT EXISTS (
 						SELECT 1 FROM settlement_record_order pending_sro
 						WHERE pending_sro.order_id=o.id AND pending_sro.beneficiary_admin_user_id=rel.admin_user_id

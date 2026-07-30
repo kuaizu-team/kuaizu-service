@@ -538,7 +538,7 @@ func (r *AdminUserRepository) Create(ctx context.Context, admin *models.AdminUse
 	`
 	result, err := r.db.ExecContext(ctx, query,
 		admin.Username, admin.PasswordHash, admin.PasswordEncrypted, admin.Nickname,
-		admin.Phone, admin.Role, admin.SchoolID, admin.Status)
+		admin.Phone, admin.JoinDate, admin.Role, admin.SchoolID, admin.Status)
 	if err != nil {
 		if strings.Contains(err.Error(), "Duplicate entry") || strings.Contains(err.Error(), "duplicate key") {
 			return ErrDuplicateUsername

@@ -312,6 +312,9 @@ func (s *AdminServer) SettleAdminOrders(ctx echo.Context) error {
 	if target.Role != models.AdminRoleSchoolSuperAdmin {
 		return s.settleAdminOrdersLegacy(ctx)
 	}
+	if target.Status != models.AdminUserStatusEnabled {
+		return response.BadRequest(ctx, "校区超级管理员已禁用，无法执行结算")
+	}
 
 	var req settleAdminRequest
 	if err := ctx.Bind(&req); err != nil {
@@ -339,6 +342,9 @@ func (s *AdminServer) SettleAdminOrders(ctx echo.Context) error {
 		}
 		result, err := s.repo.Order.SettleSchoolPendingOrders(ctx.Request().Context(), relation.SchoolID, currentAdminID(ctx), target.ID, relation.CommissionRate, req.Remark)
 		if err != nil {
+			if errors.Is(err, repository.ErrSettlementBeneficiaryNotFound) {
+				return response.BadRequest(ctx, "未找到有效的校区超级管理员结算关系")
+			}
 			return response.InternalError(ctx, "结算失败")
 		}
 		if result.BatchNo != "" {
