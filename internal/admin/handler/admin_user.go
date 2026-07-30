@@ -70,8 +70,8 @@ func (s *AdminServer) ListAdmins(ctx echo.Context) error {
 			return response.Forbidden(ctx, "当前校区管理员未绑定学校")
 		}
 		params.SchoolID = schoolID
-		params.IncludeAllEventManagers = true
-		params.IncludeSchoolSuperAdmin = true
+		params.SchoolAdminScope = true
+		params.ViewerAdminID = &callerID
 	case models.AdminRoleSchoolSuperAdmin:
 		schoolIDs, err := s.adminSchoolIDs(ctx)
 		if err != nil {
@@ -82,7 +82,6 @@ func (s *AdminServer) ListAdmins(ctx echo.Context) error {
 		}
 		params.SchoolIDs = schoolIDs
 		params.ViewerAdminID = &callerID
-		params.IncludeAllEventManagers = true
 	case models.AdminRoleEventManager:
 		params.OnlyAdminID = &callerID
 	}

@@ -17,21 +17,11 @@ func canViewAdminDetail(callerRole, callerID int, target *models.AdminUser, call
 	case models.AdminRoleSuperAdmin:
 		return true
 	case models.AdminRoleSchoolSuperAdmin:
-		return target.Role == models.AdminRoleEventManager ||
-			(target.Role == models.AdminRoleSchoolAdmin && schoolIDsMatch(callerSchoolID, target.SchoolID))
+		return (target.Role == models.AdminRoleSchoolAdmin || target.Role == models.AdminRoleEventManager) &&
+			schoolIDsMatch(callerSchoolID, target.SchoolID)
 	case models.AdminRoleSchoolAdmin:
-		if target.Role == models.AdminRoleEventManager ||
-			(target.Role == models.AdminRoleSchoolAdmin && schoolIDsMatch(callerSchoolID, target.SchoolID)) {
-			return true
-		}
-		if target.Role == models.AdminRoleSchoolSuperAdmin && callerSchoolID != nil {
-			for _, school := range target.Schools {
-				if school.SchoolID == *callerSchoolID {
-					return true
-				}
-			}
-		}
-		return false
+		return target.Role == models.AdminRoleEventManager &&
+			schoolIDsMatch(callerSchoolID, target.SchoolID)
 	default:
 		return false
 	}
@@ -46,12 +36,10 @@ func canViewAdminPassword(callerRole, callerID int, target *models.AdminUser, ca
 	}
 	switch callerRole {
 	case models.AdminRoleSuperAdmin:
-		return true
+		return target.Role > callerRole
 	case models.AdminRoleSchoolSuperAdmin:
-		return target.Role == models.AdminRoleEventManager ||
-			(target.Role == models.AdminRoleSchoolAdmin && schoolIDsMatch(callerSchoolID, target.SchoolID))
-	case models.AdminRoleSchoolAdmin:
-		return target.Role == models.AdminRoleEventManager
+		return (target.Role == models.AdminRoleSchoolAdmin || target.Role == models.AdminRoleEventManager) &&
+			schoolIDsMatch(callerSchoolID, target.SchoolID)
 	default:
 		return false
 	}
@@ -68,26 +56,13 @@ func (s *AdminServer) canViewAdminDetailInScope(ctx echo.Context, target *models
 	if target.ID == currentAdminID(ctx) {
 		return true
 	}
-	if target.Role == models.AdminRoleEventManager &&
-		(role == models.AdminRoleSchoolSuperAdmin || role == models.AdminRoleSchoolAdmin) {
-		return true
-	}
 	if role == models.AdminRoleSchoolAdmin {
 		callerSchoolID := adminSchoolID(ctx)
-		if target.Role == models.AdminRoleSchoolAdmin {
-			return schoolIDsMatch(callerSchoolID, target.SchoolID)
-		}
-		if target.Role != models.AdminRoleSchoolSuperAdmin || callerSchoolID == nil {
-			return false
-		}
-		for _, school := range target.Schools {
-			if school.SchoolID == *callerSchoolID {
-				return true
-			}
-		}
-		return false
+		return target.Role == models.AdminRoleEventManager &&
+			schoolIDsMatch(callerSchoolID, target.SchoolID)
 	}
-	if role != models.AdminRoleSchoolSuperAdmin || target.Role != models.AdminRoleSchoolAdmin {
+	if role != models.AdminRoleSchoolSuperAdmin ||
+		(target.Role != models.AdminRoleSchoolAdmin && target.Role != models.AdminRoleEventManager) {
 		return false
 	}
 	schoolIDs, err := s.adminSchoolIDs(ctx)
@@ -98,14 +73,14 @@ func (s *AdminServer) canViewAdminPasswordInScope(ctx echo.Context, target *mode
 	if target == nil {
 		return false
 	}
-	if target.ID == currentAdminID(ctx) || adminRole(ctx) == models.AdminRoleSuperAdmin {
+	role := adminRole(ctx)
+	if target.ID == currentAdminID(ctx) {
 		return true
 	}
-	if target.Role == models.AdminRoleEventManager &&
-		(adminRole(ctx) == models.AdminRoleSchoolSuperAdmin || adminRole(ctx) == models.AdminRoleSchoolAdmin) {
-		return true
+	if role == models.AdminRoleSuperAdmin {
+		return target.Role > role
 	}
-	if adminRole(ctx) == models.AdminRoleSchoolAdmin {
+	if role == models.AdminRoleSchoolAdmin {
 		return false
 	}
 	return s.canViewAdminDetailInScope(ctx, target)

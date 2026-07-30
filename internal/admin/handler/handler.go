@@ -153,7 +153,11 @@ func (s *AdminServer) canEditAdminInScope(ctx echo.Context, target *models.Admin
 	if target.ID == callerID {
 		return true
 	}
-	return target.Role == models.AdminRoleEventManager
+	if target.Role != models.AdminRoleEventManager {
+		return false
+	}
+	schoolIDs, err := s.adminSchoolIDs(ctx)
+	return err == nil && schoolIDInScope(target.SchoolID, schoolIDs)
 }
 
 // canEditAdmin reports whether the caller may edit/delete the target admin.
@@ -175,7 +179,7 @@ func canEditAdmin(callerRole, callerID, targetRole, targetID int, callerSchoolID
 		if targetID == callerID {
 			return true // always allowed to edit self
 		}
-		return targetRole == models.AdminRoleEventManager
+		return targetRole == models.AdminRoleEventManager && schoolIDsMatch(callerSchoolID, targetSchoolID)
 	case models.AdminRoleSchoolAdmin: // role=3
 		return targetID == callerID // only self
 	case models.AdminRoleEventManager:

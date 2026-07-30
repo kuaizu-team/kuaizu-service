@@ -89,8 +89,7 @@ type AdminUserListParams struct {
 	Role                    *int    // 按角色筛选（1/2/3）
 	Status                  *int    // 按状态筛选（0/1）
 	SchoolID                *int    // 校区管理员只能看本校，超级管理员不传
-	IncludeAllEventManagers bool    // legacy compatibility; normally false to preserve school isolation
-	IncludeSchoolSuperAdmin bool
+	SchoolAdminScope        bool
 	SchoolIDs               []int // all schools owned by a school super admin
 	OnlyAdminID             *int
 	ViewerAdminID           *int // include the current school super admin in scoped lists
@@ -118,17 +117,9 @@ func (r *AdminUserRepository) List(ctx context.Context, params AdminUserListPara
 		args = append(args, *params.Status)
 	}
 	if params.SchoolID != nil {
-		if params.IncludeAllEventManagers && params.IncludeSchoolSuperAdmin {
-			conditions = append(conditions, `(au.school_id = ? OR au.role = ? OR (
-				au.role = ? AND EXISTS (
-					SELECT 1 FROM admin_school_relation rel
-					WHERE rel.admin_user_id = au.id AND rel.school_id = ?
-				)
-			))`)
-			args = append(args, *params.SchoolID, models.AdminRoleEventManager, models.AdminRoleSchoolSuperAdmin, *params.SchoolID)
-		} else if params.IncludeAllEventManagers {
-			conditions = append(conditions, "(au.school_id = ? OR au.role = ?)")
-			args = append(args, *params.SchoolID, models.AdminRoleEventManager)
+		if params.SchoolAdminScope && params.ViewerAdminID != nil {
+			conditions = append(conditions, "(au.id = ? OR (au.role = ? AND au.school_id = ?))")
+			args = append(args, *params.ViewerAdminID, models.AdminRoleEventManager, *params.SchoolID)
 		} else {
 			conditions = append(conditions, "au.school_id = ?")
 			args = append(args, *params.SchoolID)
@@ -139,15 +130,9 @@ func (r *AdminUserRepository) List(ctx context.Context, params AdminUserListPara
 		if params.ViewerAdminID != nil {
 			viewerID = *params.ViewerAdminID
 		}
-		scopeCondition := `(
+		condition, inArgs, err := sqlx.In(`(
 			au.id = ? OR (au.role IN (?, ?) AND au.school_id IN (?))
-		)`
-		if params.IncludeAllEventManagers {
-			scopeCondition = `(
-				au.id = ? OR au.role = ? OR (au.role = ? AND au.school_id IN (?))
-			)`
-		}
-		condition, inArgs, err := sqlx.In(scopeCondition, viewerID, models.AdminRoleEventManager, models.AdminRoleSchoolAdmin, params.SchoolIDs)
+		)`, viewerID, models.AdminRoleEventManager, models.AdminRoleSchoolAdmin, params.SchoolIDs)
 		if err != nil {
 			return nil, 0, fmt.Errorf("build admin school scope: %w", err)
 		}
@@ -389,7 +374,7 @@ func (r *AdminUserRepository) UpdateWithSchools(ctx context.Context, admin *mode
 	}
 	defer tx.Rollback()
 	query := `UPDATE admin_user SET username=?, nickname=?, phone=?, role=?, school_id=?, status=?, join_date=?, intro=?, article_url=?, updated_at=CURRENT_TIMESTAMP`
-	args := []interface{}{admin.Username, admin.Nickname, admin.Phone, admin.JoinDate, admin.Role, admin.SchoolID, admin.Status, admin.JoinDate, admin.Intro, admin.ArticleURL}
+	args := []interface{}{admin.Username, admin.Nickname, admin.Phone, admin.Role, admin.SchoolID, admin.Status, admin.JoinDate, admin.Intro, admin.ArticleURL}
 	if admin.PasswordHash != "" {
 		query += ", password_hash=?, password_encrypted=?"
 		args = append(args, admin.PasswordHash, admin.PasswordEncrypted)
@@ -576,12 +561,12 @@ func (r *AdminUserRepository) Update(ctx context.Context, admin *models.AdminUse
 		query = `UPDATE admin_user
 			SET username = ?, nickname = ?, phone = ?, role = ?, school_id = ?, status = ?, join_date = ?, intro = ?, article_url = ?, password_hash = ?, password_encrypted = ?, updated_at = CURRENT_TIMESTAMP
 			WHERE id = ?`
-		args = []interface{}{admin.Username, admin.Nickname, admin.Phone, admin.JoinDate, admin.Role, admin.SchoolID, admin.Status, admin.JoinDate, admin.Intro, admin.ArticleURL, admin.PasswordHash, admin.PasswordEncrypted, admin.ID}
+		args = []interface{}{admin.Username, admin.Nickname, admin.Phone, admin.Role, admin.SchoolID, admin.Status, admin.JoinDate, admin.Intro, admin.ArticleURL, admin.PasswordHash, admin.PasswordEncrypted, admin.ID}
 	} else {
 		query = `UPDATE admin_user
 			SET username = ?, nickname = ?, phone = ?, role = ?, school_id = ?, status = ?, join_date = ?, intro = ?, article_url = ?, updated_at = CURRENT_TIMESTAMP
 			WHERE id = ?`
-		args = []interface{}{admin.Username, admin.Nickname, admin.Phone, admin.JoinDate, admin.Role, admin.SchoolID, admin.Status, admin.JoinDate, admin.Intro, admin.ArticleURL, admin.ID}
+		args = []interface{}{admin.Username, admin.Nickname, admin.Phone, admin.Role, admin.SchoolID, admin.Status, admin.JoinDate, admin.Intro, admin.ArticleURL, admin.ID}
 	}
 
 	result, err := r.db.ExecContext(ctx, query, args...)
