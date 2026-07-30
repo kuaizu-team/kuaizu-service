@@ -28,6 +28,10 @@ post:
               format: password
             nickname:
               type: string
+            phone:
+              type: string
+              pattern: '^1\d{10}$'
+              description: Creating a delegated administrator requires a phone number.
   responses:
     '200':
       description: Delegation completed atomically

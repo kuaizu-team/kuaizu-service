@@ -94,9 +94,6 @@ func (s *AdminServer) ListAdmins(ctx echo.Context) error {
 	list := make([]adminvo.AdminUserAccountVO, len(admins))
 	for i, a := range admins {
 		vo := adminvo.NewAdminUserAccountVO(a)
-		if s.canViewAdminPasswordInScope(ctx, a) {
-			attachAdminPassword(vo, a)
-		}
 		s.enrichAdminFinance(ctx, vo, a, callerRole == models.AdminRoleSuperAdmin)
 		list[i] = *vo
 	}
@@ -268,42 +265,6 @@ type settleAdminRequest struct {
 	SchoolID *int    `json:"schoolId"`
 }
 
-func (s *AdminServer) settleAdminOrdersLegacy(ctx echo.Context) error {
-	if adminRole(ctx) != models.AdminRoleSuperAdmin {
-		return response.Forbidden(ctx, "权限不足")
-	}
-	id, err := strconv.Atoi(ctx.Param("id"))
-	if err != nil {
-		return response.BadRequest(ctx, "invalid admin id")
-	}
-	target, err := s.repo.AdminUser.GetByID(ctx.Request().Context(), id)
-	if err != nil {
-		return response.InternalError(ctx, "查询管理员失败")
-	}
-	if target == nil {
-		return response.NotFound(ctx, "管理员不存在")
-	}
-	if target.SchoolID == nil {
-		return response.BadRequest(ctx, "管理员未绑定学校，无法一键结算")
-	}
-	if target.CommissionRate <= 0 {
-		return response.BadRequest(ctx, "请先设置大于 0 的分成比例再进行结算")
-	}
-	var req settleAdminRequest
-	if err := ctx.Bind(&req); err != nil {
-		return response.BadRequest(ctx, "invalid request body")
-	}
-	if req.Remark != nil {
-		v := strings.TrimSpace(*req.Remark)
-		req.Remark = &v
-	}
-	result, err := s.repo.Order.SettleSchoolPendingOrders(ctx.Request().Context(), *target.SchoolID, currentAdminID(ctx), target.ID, target.CommissionRate, req.Remark)
-	if err != nil {
-		return response.InternalError(ctx, "一键结算失败")
-	}
-	return response.Success(ctx, result)
-}
-
 func (s *AdminServer) SettleAdminOrders(ctx echo.Context) error {
 	if adminRole(ctx) != models.AdminRoleSuperAdmin {
 		return response.Forbidden(ctx, "权限不足")
@@ -320,7 +281,7 @@ func (s *AdminServer) SettleAdminOrders(ctx echo.Context) error {
 		return response.NotFound(ctx, "管理员不存在")
 	}
 	if target.Role != models.AdminRoleSchoolSuperAdmin {
-		return s.settleAdminOrdersLegacy(ctx)
+		return response.BadRequest(ctx, "仅校区超级管理员支持分成结算")
 	}
 	if target.Status != models.AdminUserStatusEnabled {
 		return response.BadRequest(ctx, "校区超级管理员已禁用，无法执行结算")

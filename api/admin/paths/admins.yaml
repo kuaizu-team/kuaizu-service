@@ -13,6 +13,20 @@ get:
       schema:
         type: integer
         default: 10
+    - in: query
+      name: keyword
+      schema:
+        type: string
+    - in: query
+      name: role
+      schema:
+        type: integer
+        enum: [1, 2, 3, 4]
+    - in: query
+      name: status
+      schema:
+        type: integer
+        enum: [0, 1]
   responses:
     '200':
       description: 成功获取管理员列表
@@ -25,6 +39,76 @@ get:
                 properties:
                   data:
                     $ref: ../components/schemas/AdminAccountPagedData.yaml
+    '401':
+      $ref: ../components/responses/Unauthorized.yaml
+    '403':
+      $ref: ../components/responses/Forbidden.yaml
+    '500':
+      $ref: ../components/responses/InternalError.yaml
+post:
+  tags:
+    - Admins
+  summary: 创建管理员
+  operationId: createAdmin
+  requestBody:
+    required: true
+    content:
+      application/json:
+        schema:
+          type: object
+          required: [username, password, phone, role, status]
+          properties:
+            username:
+              type: string
+            password:
+              type: string
+              format: password
+            nickname:
+              type: string
+              nullable: true
+            phone:
+              type: string
+              pattern: '^1\d{10}$'
+            joinDate:
+              type: string
+              format: date
+              nullable: true
+              description: Platform super administrators must provide this field.
+            role:
+              type: integer
+              enum: [1, 2, 3]
+            schoolId:
+              type: integer
+              nullable: true
+            status:
+              type: integer
+              enum: [0, 1]
+            schools:
+              type: array
+              items:
+                type: object
+                required: [schoolId, commissionRate]
+                properties:
+                  schoolId:
+                    type: integer
+                  commissionRate:
+                    type: number
+                    minimum: 0
+                    maximum: 100
+  responses:
+    '200':
+      description: 创建成功
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/BaseResponse.yaml
+              - type: object
+                properties:
+                  data:
+                    $ref: ../components/schemas/AdminAccount.yaml
+    '400':
+      $ref: ../components/responses/BadRequest.yaml
     '401':
       $ref: ../components/responses/Unauthorized.yaml
     '403':

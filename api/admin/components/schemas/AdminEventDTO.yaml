@@ -1,0 +1,44 @@
+type: object
+required:
+  - name
+properties:
+  name:
+    type: string
+  isRanking:
+    type: boolean
+  registrationDeadline:
+    type: string
+    format: date
+    nullable: true
+  articleUrl:
+    type: string
+    nullable: true
+  displayOrder:
+    type: integer
+    default: 0
+  createdAt:
+    type: string
+    format: date-time
+    nullable: true
+  level:
+    type: string
+    enum: [national, regional, school]
+    nullable: true
+  summary:
+    type: string
+    nullable: true
+  schoolId:
+    type: integer
+    nullable: true
+  managerAccount:
+    type: string
+    nullable: true
+  managerPassword:
+    type: string
+    format: password
+    minLength: 6
+    nullable: true
+  managerPhone:
+    type: string
+    pattern: '^1\d{10}$'
+    nullable: true

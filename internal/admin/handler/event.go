@@ -67,6 +67,9 @@ func (s *AdminServer) ListEvents(ctx echo.Context) error {
 	default:
 		return response.BadRequest(ctx, "invalid sortBy")
 	}
+	if sortBy == "" {
+		sortBy = "updatedAt"
+	}
 	order := strings.ToLower(strings.TrimSpace(ctx.QueryParam("order")))
 	if order == "" {
 		order = "desc"

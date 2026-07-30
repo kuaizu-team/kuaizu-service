@@ -28,3 +28,115 @@ get:
       $ref: ../components/responses/NotFound.yaml
     '500':
       $ref: ../components/responses/InternalError.yaml
+put:
+  tags:
+    - Admins
+  summary: 更新管理员
+  operationId: updateAdmin
+  parameters:
+    - in: path
+      name: id
+      required: true
+      schema:
+        type: integer
+  requestBody:
+    required: true
+    content:
+      application/json:
+        schema:
+          type: object
+          properties:
+            username:
+              type: string
+            nickname:
+              type: string
+              nullable: true
+            phone:
+              type: string
+              pattern: '^1\d{10}$'
+            password:
+              type: string
+              format: password
+            role:
+              type: integer
+              enum: [1, 2, 3, 4]
+            schoolId:
+              type: integer
+              nullable: true
+            status:
+              type: integer
+              enum: [0, 1]
+            joinDate:
+              type: string
+              format: date
+              nullable: true
+            intro:
+              type: string
+              nullable: true
+            articleUrl:
+              type: string
+              nullable: true
+            schools:
+              type: array
+              items:
+                type: object
+                required: [schoolId, commissionRate]
+                properties:
+                  schoolId:
+                    type: integer
+                  commissionRate:
+                    type: number
+                    minimum: 0
+                    maximum: 100
+            removeSchoolId:
+              type: integer
+  responses:
+    '200':
+      description: 更新成功
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/BaseResponse.yaml
+              - type: object
+                properties:
+                  data:
+                    $ref: ../components/schemas/AdminAccount.yaml
+    '400':
+      $ref: ../components/responses/BadRequest.yaml
+    '401':
+      $ref: ../components/responses/Unauthorized.yaml
+    '403':
+      $ref: ../components/responses/Forbidden.yaml
+    '404':
+      $ref: ../components/responses/NotFound.yaml
+    '500':
+      $ref: ../components/responses/InternalError.yaml
+delete:
+  tags:
+    - Admins
+  summary: 删除管理员
+  operationId: deleteAdmin
+  parameters:
+    - in: path
+      name: id
+      required: true
+      schema:
+        type: integer
+  responses:
+    '200':
+      description: 删除成功
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/BaseResponse.yaml
+    '400':
+      $ref: ../components/responses/BadRequest.yaml
+    '401':
+      $ref: ../components/responses/Unauthorized.yaml
+    '403':
+      $ref: ../components/responses/Forbidden.yaml
+    '404':
+      $ref: ../components/responses/NotFound.yaml
+    '500':
+      $ref: ../components/responses/InternalError.yaml

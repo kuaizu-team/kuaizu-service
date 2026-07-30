@@ -1,8 +1,9 @@
 post:
   tags:
-    - Admins
-  summary: 结算校区超级管理员的待结算订单
-  description: 仅支持启用状态的校区超级管理员（role=2）。
+    - Events
+  summary: 向上合并赛事
+  operationId: mergeAdminEvent
+  description: 将学校级赛事合并至区域级或国家级赛事，或将区域级赛事合并至国家级赛事。
   parameters:
     - in: path
       name: id
@@ -10,14 +11,19 @@ post:
       schema:
         type: integer
   requestBody:
-    required: false
+    required: true
     content:
       application/json:
         schema:
-          $ref: ../components/schemas/AdminSettleDTO.yaml
+          type: object
+          required:
+            - targetEventId
+          properties:
+            targetEventId:
+              type: integer
   responses:
     '200':
-      description: 结算完成
+      description: 合并成功
       content:
         application/json:
           schema:
@@ -26,7 +32,7 @@ post:
               - type: object
                 properties:
                   data:
-                    $ref: ../components/schemas/AdminSettlementResult.yaml
+                    $ref: ../components/schemas/AdminEvent.yaml
     '400':
       $ref: ../components/responses/BadRequest.yaml
     '401':
