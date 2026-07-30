@@ -133,7 +133,11 @@ func (s *AdminServer) GetAdmin(ctx echo.Context) error {
 		if s.canViewAdminPasswordInScope(ctx, target) {
 			attachAdminPassword(vo, target)
 		}
-		s.enrichAdminFinance(ctx, vo, target, callerRole == models.AdminRoleSuperAdmin)
+		if canViewAdminFinanceOverview(callerRole, currentAdminID(ctx), target) {
+			s.enrichAdminFinance(ctx, vo, target, callerRole == models.AdminRoleSuperAdmin)
+		} else {
+			clearAdminFinanceOverview(vo)
+		}
 	}
 	return response.Success(ctx, vo)
 }

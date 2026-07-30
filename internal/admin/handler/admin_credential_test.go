@@ -148,3 +148,44 @@ func TestSanitizeSchoolAdminDirectoryVO(t *testing.T) {
 		t.Fatalf("directory response exposed school relations: %#v", vo.Schools)
 	}
 }
+
+func TestCanViewAdminFinanceOverview(t *testing.T) {
+	schoolSuper := &models.AdminUser{ID: 2, Role: models.AdminRoleSchoolSuperAdmin}
+	schoolAdmin := &models.AdminUser{ID: 3, Role: models.AdminRoleSchoolAdmin}
+	eventManager := &models.AdminUser{ID: 4, Role: models.AdminRoleEventManager}
+
+	if !canViewAdminFinanceOverview(models.AdminRoleSuperAdmin, 1, schoolSuper) {
+		t.Fatal("platform super admin could not view a school super admin finance overview")
+	}
+	if !canViewAdminFinanceOverview(models.AdminRoleSchoolSuperAdmin, 2, schoolSuper) {
+		t.Fatal("school super admin could not view own finance overview")
+	}
+	if canViewAdminFinanceOverview(models.AdminRoleSchoolAdmin, 3, schoolSuper) {
+		t.Fatal("school admin could view a school super admin finance overview")
+	}
+	if canViewAdminFinanceOverview(models.AdminRoleSuperAdmin, 1, schoolAdmin) {
+		t.Fatal("school admin target exposed a finance overview")
+	}
+	if canViewAdminFinanceOverview(models.AdminRoleEventManager, 4, eventManager) {
+		t.Fatal("event manager target exposed a finance overview")
+	}
+}
+
+func TestClearAdminFinanceOverview(t *testing.T) {
+	remark := "private"
+	vo := &adminvo.AdminUserAccountVO{
+		PendingSettlementAmount: 123,
+		PendingRefundOrderCount: 4,
+		FinanceRemark:           &remark,
+		Schools: []adminvo.AdminSchoolVO{{
+			SchoolID: 10, PendingSettlementAmount: 88,
+		}},
+	}
+
+	clearAdminFinanceOverview(vo)
+
+	if vo.PendingSettlementAmount != 0 || vo.PendingRefundOrderCount != 0 ||
+		vo.FinanceRemark != nil || vo.Schools[0].PendingSettlementAmount != 0 {
+		t.Fatalf("finance overview was not cleared: %#v", vo)
+	}
+}

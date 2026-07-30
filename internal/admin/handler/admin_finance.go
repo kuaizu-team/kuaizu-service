@@ -145,6 +145,26 @@ func attachAdminPassword(vo *adminvo.AdminUserAccountVO, target *models.AdminUse
 	vo.Password = &password
 }
 
+func canViewAdminFinanceOverview(callerRole, callerID int, target *models.AdminUser) bool {
+	if target == nil || target.Role != models.AdminRoleSchoolSuperAdmin {
+		return false
+	}
+	return callerRole == models.AdminRoleSuperAdmin ||
+		(callerRole == models.AdminRoleSchoolSuperAdmin && target.ID == callerID)
+}
+
+func clearAdminFinanceOverview(vo *adminvo.AdminUserAccountVO) {
+	if vo == nil {
+		return
+	}
+	vo.PendingSettlementAmount = 0
+	vo.PendingRefundOrderCount = 0
+	vo.FinanceRemark = nil
+	for i := range vo.Schools {
+		vo.Schools[i].PendingSettlementAmount = 0
+	}
+}
+
 func (s *AdminServer) enrichAdminFinance(ctx echo.Context, vo *adminvo.AdminUserAccountVO, admin *models.AdminUser, includeRemark bool) {
 	if vo == nil || admin == nil {
 		return
