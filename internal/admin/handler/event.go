@@ -28,6 +28,7 @@ type adminEventRequest struct {
 	SchoolID             *int    `json:"schoolId"`
 	ManagerAccount       *string `json:"managerAccount"`
 	ManagerPassword      *string `json:"managerPassword"`
+	ManagerPhone         *string `json:"managerPhone"`
 }
 
 type adminEventMergeRequest struct {
@@ -213,20 +214,27 @@ func (s *AdminServer) buildAdminEventModelForRequest(ctx echo.Context, req admin
 func (s *AdminServer) upsertEventManager(ctx echo.Context, exec eventManagerExecer, event *models.Event, req adminEventRequest) error {
 	account := ""
 	password := ""
+	phone := ""
 	if req.ManagerAccount != nil {
 		account = strings.TrimSpace(*req.ManagerAccount)
 	}
 	if req.ManagerPassword != nil {
 		password = strings.TrimSpace(*req.ManagerPassword)
 	}
-	if event.AdminID == nil && account == "" && password == "" {
+	if req.ManagerPhone != nil {
+		phone = strings.TrimSpace(*req.ManagerPhone)
+	}
+	if event.AdminID == nil && account == "" && password == "" && phone == "" {
 		return nil
 	}
 	if !s.canManageEventInScope(ctx, event) {
 		return response.Forbidden(ctx, "无权管理该赛事的赛事管理员")
 	}
-	if event.AdminID == nil && (account == "" || password == "") {
-		return response.BadRequest(ctx, "新建赛事管理员时账号和密码均为必填")
+	if event.AdminID == nil && (account == "" || password == "" || phone == "") {
+		return response.BadRequest(ctx, "新建赛事管理员时账号、密码和电话均为必填")
+	}
+	if phone != "" && !adminPhonePattern.MatchString(phone) {
+		return response.BadRequest(ctx, "请输入正确的手机号")
 	}
 	if password != "" && len(password) < 6 {
 		return response.BadRequest(ctx, "密码至少 6 位")
@@ -241,7 +249,7 @@ func (s *AdminServer) upsertEventManager(ctx echo.Context, exec eventManagerExec
 		if err != nil {
 			return response.InternalError(ctx, "赛事管理员密码安全存储失败")
 		}
-		result, err := exec.ExecContext(ctx.Request().Context(), `INSERT INTO admin_user(username,password_hash,password_encrypted,nickname,role,school_id,status) VALUES(?,?,?,?,?,?,1)`, account, string(hash), encrypted, nickname, models.AdminRoleEventManager, event.SchoolID)
+		result, err := exec.ExecContext(ctx.Request().Context(), `INSERT INTO admin_user(username,password_hash,password_encrypted,nickname,phone,role,school_id,status) VALUES(?,?,?,?,?,?,?,1)`, account, string(hash), encrypted, nickname, phone, models.AdminRoleEventManager, event.SchoolID)
 		if err != nil {
 			return response.BadRequest(ctx, "赛事管理员账号已存在")
 		}
@@ -263,6 +271,10 @@ func (s *AdminServer) upsertEventManager(ctx echo.Context, exec eventManagerExec
 	if account != "" {
 		sets = append(sets, "username=?")
 		args = append(args, account)
+	}
+	if phone != "" {
+		sets = append(sets, "phone=?")
+		args = append(args, phone)
 	}
 	if password != "" {
 		hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)

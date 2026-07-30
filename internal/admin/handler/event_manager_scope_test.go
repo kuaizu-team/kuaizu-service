@@ -76,3 +76,29 @@ func TestUpsertExistingEventManagerSyncsSchoolScope(t *testing.T) {
 		})
 	}
 }
+
+func TestCreateEventManagerRequiresPhone(t *testing.T) {
+	account := "event_manager"
+	password := "secret123"
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodPost, "/admin/events", nil)
+	rec := httptest.NewRecorder()
+	ctx := e.NewContext(req, rec)
+	ctx.Set("adminRole", models.AdminRoleSuperAdmin)
+	exec := &recordingEventManagerExecer{}
+	event := &models.Event{Name: "Example"}
+
+	err := (&AdminServer{}).upsertEventManager(ctx, exec, event, adminEventRequest{
+		ManagerAccount:  &account,
+		ManagerPassword: &password,
+	})
+	if err != nil {
+		t.Fatalf("upsertEventManager returned error: %v", err)
+	}
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusBadRequest)
+	}
+	if exec.calls != 0 {
+		t.Fatalf("ExecContext calls = %d, want 0", exec.calls)
+	}
+}

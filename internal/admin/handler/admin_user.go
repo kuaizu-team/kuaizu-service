@@ -54,18 +54,24 @@ func (s *AdminServer) ListAdmins(ctx echo.Context) error {
 		}
 		params.Status = &st
 	}
+	if v := ctx.QueryParam("role"); v != "" {
+		r, err := strconv.Atoi(v)
+		if err != nil {
+			return response.BadRequest(ctx, "invalid role")
+		}
+		params.Role = &r
+	}
 
 	switch callerRole {
 	case models.AdminRoleSuperAdmin:
-		if v := ctx.QueryParam("role"); v != "" {
-			r, err := strconv.Atoi(v)
-			if err != nil {
-				return response.BadRequest(ctx, "invalid role")
-			}
-			params.Role = &r
-		}
 	case models.AdminRoleSchoolAdmin:
-		params.OnlyAdminID = &callerID
+		schoolID := adminSchoolID(ctx)
+		if schoolID == nil {
+			return response.Forbidden(ctx, "当前校区管理员未绑定学校")
+		}
+		params.SchoolID = schoolID
+		params.IncludeAllEventManagers = true
+		params.IncludeSchoolSuperAdmin = true
 	case models.AdminRoleSchoolSuperAdmin:
 		schoolIDs, err := s.adminSchoolIDs(ctx)
 		if err != nil {
@@ -76,7 +82,9 @@ func (s *AdminServer) ListAdmins(ctx echo.Context) error {
 		}
 		params.SchoolIDs = schoolIDs
 		params.ViewerAdminID = &callerID
-		params.IncludeAllEventManagers = false
+		params.IncludeAllEventManagers = true
+	case models.AdminRoleEventManager:
+		params.OnlyAdminID = &callerID
 	}
 
 	admins, total, err := s.repo.AdminUser.List(ctx.Request().Context(), params)
@@ -87,6 +95,9 @@ func (s *AdminServer) ListAdmins(ctx echo.Context) error {
 	list := make([]adminvo.AdminUserAccountVO, len(admins))
 	for i, a := range admins {
 		vo := adminvo.NewAdminUserAccountVO(a)
+		if s.canViewAdminPasswordInScope(ctx, a) {
+			attachAdminPassword(vo, a)
+		}
 		s.enrichAdminFinance(ctx, vo, a, callerRole == models.AdminRoleSuperAdmin)
 		list[i] = *vo
 	}
@@ -484,7 +495,7 @@ func (s *AdminServer) validateSchoolCommissionCapacity(ctx echo.Context, adminID
 // CreateAdmin handles POST /admin/admins
 func (s *AdminServer) CreateAdmin(ctx echo.Context) error {
 	callerRole := adminRole(ctx)
-	if callerRole == models.AdminRoleSchoolAdmin {
+	if callerRole != models.AdminRoleSuperAdmin && callerRole != models.AdminRoleSchoolSuperAdmin {
 		return response.Forbidden(ctx, adminCenterForbiddenMessage)
 	}
 
@@ -635,16 +646,25 @@ func (s *AdminServer) UpdateAdmin(ctx echo.Context) error {
 	if err := ctx.Bind(&req); err != nil {
 		return response.BadRequest(ctx, "invalid request body")
 	}
+	isSelf := id == callerID
+	schoolSuperEditingEvent := callerRole == models.AdminRoleSchoolSuperAdmin &&
+		!isSelf && target.Role == models.AdminRoleEventManager
 	if callerRole != models.AdminRoleSuperAdmin {
-		if req.Username != nil || req.Role != nil || req.JoinDate != nil {
+		if req.Role != nil || req.JoinDate != nil || req.SchoolID != nil || req.Schools != nil ||
+			req.RemoveSchoolID != nil || req.Intro != nil || req.ArticleURL != nil {
 			return response.Forbidden(ctx, "当前角色不可修改账号、加入日期或角色")
 		}
-		if id != callerID && (req.Nickname != nil || req.Phone != nil) {
-			return response.Forbidden(ctx, "只能修改自己的姓名和电话")
+		if req.Username != nil && !schoolSuperEditingEvent {
+			return response.Forbidden(ctx, "当前角色不可修改账号")
+		}
+		if !isSelf && !schoolSuperEditingEvent &&
+			(req.Nickname != nil || req.Phone != nil || req.Password != "" || req.Status != nil) {
+			return response.Forbidden(ctx, "无权修改其他管理员")
 		}
 	}
-	if callerRole == models.AdminRoleSchoolAdmin && (id != callerID || req.Password != "" || req.SchoolID != nil || req.Status != nil || req.Intro != nil || req.ArticleURL != nil || req.Schools != nil || req.RemoveSchoolID != nil) {
-		return response.Forbidden(ctx, "校区管理员只能修改自己的姓名和电话")
+	if isSelf && (callerRole == models.AdminRoleSchoolAdmin || callerRole == models.AdminRoleEventManager) &&
+		(req.Username != nil || req.Nickname != nil || req.Status != nil) {
+		return response.Forbidden(ctx, "校区管理员和赛事管理员只能修改自己的密码和电话")
 	}
 	if req.RemoveSchoolID != nil {
 		if callerRole != models.AdminRoleSuperAdmin {
@@ -759,9 +779,8 @@ func (s *AdminServer) UpdateAdmin(ctx echo.Context) error {
 		target.ArticleURL = &value
 	}
 	if callerRole == models.AdminRoleSchoolSuperAdmin && id != callerID {
-		allowed, err := s.canAccessSchool(ctx, target.SchoolID)
-		if err != nil || (target.Role != models.AdminRoleSchoolAdmin && target.Role != models.AdminRoleEventManager) || !allowed {
-			return response.Forbidden(ctx, "校区超级管理员只能编辑本校管理员")
+		if target.Role != models.AdminRoleEventManager {
+			return response.Forbidden(ctx, "校区超级管理员只能编辑赛事管理员")
 		}
 	}
 
@@ -807,7 +826,7 @@ func (s *AdminServer) UpdateAdminStatus(ctx echo.Context) error {
 	callerRole := adminRole(ctx)
 	callerID := currentAdminID(ctx)
 
-	if callerRole == models.AdminRoleSchoolAdmin {
+	if callerRole == models.AdminRoleSchoolAdmin || callerRole == models.AdminRoleEventManager {
 		return response.Forbidden(ctx, adminCenterForbiddenMessage)
 	}
 
@@ -854,7 +873,7 @@ func (s *AdminServer) DeleteAdmin(ctx echo.Context) error {
 	callerRole := adminRole(ctx)
 	callerID := currentAdminID(ctx)
 
-	if callerRole == models.AdminRoleSchoolAdmin {
+	if callerRole != models.AdminRoleSuperAdmin {
 		return response.Forbidden(ctx, adminCenterForbiddenMessage)
 	}
 

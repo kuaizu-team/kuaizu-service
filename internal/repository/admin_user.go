@@ -90,7 +90,8 @@ type AdminUserListParams struct {
 	Status                  *int    // 按状态筛选（0/1）
 	SchoolID                *int    // 校区管理员只能看本校，超级管理员不传
 	IncludeAllEventManagers bool    // legacy compatibility; normally false to preserve school isolation
-	SchoolIDs               []int   // all schools owned by a school super admin
+	IncludeSchoolSuperAdmin bool
+	SchoolIDs               []int // all schools owned by a school super admin
 	OnlyAdminID             *int
 	ViewerAdminID           *int // include the current school super admin in scoped lists
 }
@@ -117,7 +118,15 @@ func (r *AdminUserRepository) List(ctx context.Context, params AdminUserListPara
 		args = append(args, *params.Status)
 	}
 	if params.SchoolID != nil {
-		if params.IncludeAllEventManagers {
+		if params.IncludeAllEventManagers && params.IncludeSchoolSuperAdmin {
+			conditions = append(conditions, `(au.school_id = ? OR au.role = ? OR (
+				au.role = ? AND EXISTS (
+					SELECT 1 FROM admin_school_relation rel
+					WHERE rel.admin_user_id = au.id AND rel.school_id = ?
+				)
+			))`)
+			args = append(args, *params.SchoolID, models.AdminRoleEventManager, models.AdminRoleSchoolSuperAdmin, *params.SchoolID)
+		} else if params.IncludeAllEventManagers {
 			conditions = append(conditions, "(au.school_id = ? OR au.role = ?)")
 			args = append(args, *params.SchoolID, models.AdminRoleEventManager)
 		} else {
@@ -130,9 +139,15 @@ func (r *AdminUserRepository) List(ctx context.Context, params AdminUserListPara
 		if params.ViewerAdminID != nil {
 			viewerID = *params.ViewerAdminID
 		}
-		condition, inArgs, err := sqlx.In(`(
+		scopeCondition := `(
 			au.id = ? OR (au.role IN (?, ?) AND au.school_id IN (?))
-		)`, viewerID, models.AdminRoleSchoolAdmin, models.AdminRoleEventManager, params.SchoolIDs)
+		)`
+		if params.IncludeAllEventManagers {
+			scopeCondition = `(
+				au.id = ? OR au.role = ? OR (au.role = ? AND au.school_id IN (?))
+			)`
+		}
+		condition, inArgs, err := sqlx.In(scopeCondition, viewerID, models.AdminRoleEventManager, models.AdminRoleSchoolAdmin, params.SchoolIDs)
 		if err != nil {
 			return nil, 0, fmt.Errorf("build admin school scope: %w", err)
 		}
