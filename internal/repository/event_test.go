@@ -47,6 +47,16 @@ func TestEventListUsesExplicitAdminOrder(t *testing.T) {
 	}
 }
 
+func TestEventListCanSortByProjectCount(t *testing.T) {
+	query := captureEventListQuery(t, EventListParams{
+		Page: 1, Size: 10, SortBy: "projectCount", Order: "asc",
+	})
+	want := "ORDER BY project_count ASC, e.id DESC"
+	if !strings.Contains(query, want) {
+		t.Fatalf("project count order missing: %s", query)
+	}
+}
+
 func TestEventListCanRestrictSchoolAdminToSchoolEvents(t *testing.T) {
 	query := captureEventListQuery(t, EventListParams{
 		Page: 1, Size: 10, SchoolIDs: []int{22}, SchoolOnly: true,

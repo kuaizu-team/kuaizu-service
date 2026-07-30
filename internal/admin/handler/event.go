@@ -93,7 +93,7 @@ func (s *AdminServer) ListEvents(ctx echo.Context) error {
 	}
 	sortBy := strings.TrimSpace(ctx.QueryParam("sortBy"))
 	switch sortBy {
-	case "", "updatedAt", "id", "registrationDeadline", "displayOrder":
+	case "", "updatedAt", "id", "registrationDeadline", "displayOrder", "projectCount":
 	default:
 		return response.BadRequest(ctx, "invalid sortBy")
 	}

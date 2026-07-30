@@ -23,7 +23,7 @@ get:
       name: sortBy
       schema:
         type: string
-        enum: [id, registrationDeadline, displayOrder, updatedAt]
+        enum: [id, registrationDeadline, displayOrder, updatedAt, projectCount]
         default: updatedAt
     - in: query
       name: order
