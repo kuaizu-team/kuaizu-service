@@ -1,9 +1,41 @@
+get:
+  tags:
+    - Events
+  summary: 获取赛事详情
+  operationId: getAdminEvent
+  description: 返回赛事信息、按角色脱敏的赛事管理员信息及当前请求人的操作权限。
+  parameters:
+    - in: path
+      name: id
+      required: true
+      schema:
+        type: integer
+  responses:
+    '200':
+      description: 获取成功
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/BaseResponse.yaml
+              - type: object
+                properties:
+                  data:
+                    $ref: ../components/schemas/AdminEventDetail.yaml
+    '401':
+      $ref: ../components/responses/Unauthorized.yaml
+    '403':
+      $ref: ../components/responses/Forbidden.yaml
+    '404':
+      $ref: ../components/responses/NotFound.yaml
+    '500':
+      $ref: ../components/responses/InternalError.yaml
 put:
   tags:
     - Events
   summary: 更新赛事
   operationId: updateAdminEvent
-  description: 校区管理员只能更新本校学校级赛事及其赛事管理员。
+  description: 平台超管可完整编辑；校区角色仅可编辑报名截止时间。校区超管可编辑本人创建的本校学校赛事管理员；校区管理员可为本校无管理员赛事创建管理员，但不可修改已有管理员。
   parameters:
     - in: path
       name: id

@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"strconv"
 	"strings"
@@ -35,6 +36,29 @@ type adminEventMergeRequest struct {
 	TargetEventID int `json:"targetEventId"`
 }
 
+type adminEventManagerVO struct {
+	ID       int     `json:"id"`
+	Nickname *string `json:"nickname"`
+	Phone    *string `json:"phone"`
+	Account  *string `json:"account,omitempty"`
+	Password *string `json:"password,omitempty"`
+}
+
+type adminEventPermissionsVO struct {
+	CanEdit               bool `json:"canEdit"`
+	CanEditDeadline       bool `json:"canEditDeadline"`
+	CanMerge              bool `json:"canMerge"`
+	CanDelete             bool `json:"canDelete"`
+	CanCreateEventManager bool `json:"canCreateEventManager"`
+	CanEditEventManager   bool `json:"canEditEventManager"`
+}
+
+type adminEventDetailVO struct {
+	*adminvo.AdminEventVO
+	Manager     *adminEventManagerVO    `json:"manager"`
+	Permissions adminEventPermissionsVO `json:"permissions"`
+}
+
 type eventManagerExecer interface {
 	ExecContext(ctx context.Context, query string, args ...interface{}) (sql.Result, error)
 }
@@ -46,7 +70,7 @@ func canManageEvents(role int) bool {
 }
 
 func canMergeEvents(role int) bool {
-	return role == models.AdminRoleSuperAdmin || role == models.AdminRoleSchoolSuperAdmin
+	return role == models.AdminRoleSuperAdmin
 }
 
 func requireEventManagementRole(ctx echo.Context) error {
@@ -92,7 +116,6 @@ func (s *AdminServer) ListEvents(ctx echo.Context) error {
 			return response.InternalError(ctx, "查询学校权限失败")
 		}
 		listParams.SchoolIDs = schoolIDs
-		listParams.SchoolOnly = adminRole(ctx) == models.AdminRoleSchoolAdmin
 	}
 	result, err := s.svc.Event.ListEvents(ctx.Request().Context(), listParams)
 	if err != nil {
@@ -100,11 +123,37 @@ func (s *AdminServer) ListEvents(ctx echo.Context) error {
 	}
 	list := make([]adminvo.AdminEventVO, len(result.List))
 	for i := range result.List {
-		list[i] = *adminvo.NewAdminEventVO(&result.List[i])
+		item := adminvo.NewAdminEventVO(&result.List[i])
+		if adminRole(ctx) != models.AdminRoleSuperAdmin {
+			item.ManagerUsername = nil
+			item.ManagerNickname = nil
+		}
+		list[i] = *item
 	}
 	return response.Success(ctx, map[string]interface{}{
 		"list": list, "total": result.Total, "page": result.Page, "size": result.Size,
 	})
+}
+
+func (s *AdminServer) GetEvent(ctx echo.Context) error {
+	if err := requireEventManagementRole(ctx); err != nil {
+		return err
+	}
+	id, err := parseIDParam(ctx, "id", "event")
+	if err != nil {
+		return err
+	}
+	event, err := s.repo.Event.GetByID(ctx.Request().Context(), id)
+	if err != nil {
+		return response.InternalError(ctx, "查询赛事失败")
+	}
+	if event == nil {
+		return response.NotFound(ctx, "赛事不存在")
+	}
+	if !s.canViewEventInScope(ctx, event) {
+		return response.Forbidden(ctx, "无权查看该赛事")
+	}
+	return response.Success(ctx, s.buildAdminEventDetailVO(ctx, event))
 }
 
 func (s *AdminServer) CreateEvent(ctx echo.Context) error {
@@ -153,8 +202,13 @@ func (s *AdminServer) UpdateEvent(ctx echo.Context) error {
 	if err != nil {
 		return err
 	}
+	var raw map[string]json.RawMessage
+	if err := json.NewDecoder(ctx.Request().Body).Decode(&raw); err != nil {
+		return response.BadRequest(ctx, "invalid request body")
+	}
+	payload, _ := json.Marshal(raw)
 	var req adminEventRequest
-	if err := ctx.Bind(&req); err != nil {
+	if err := json.Unmarshal(payload, &req); err != nil {
 		return response.BadRequest(ctx, "invalid request body")
 	}
 	requestCtx := ctx.Request().Context()
@@ -162,8 +216,11 @@ func (s *AdminServer) UpdateEvent(ctx echo.Context) error {
 	if err != nil || existing == nil {
 		return response.NotFound(ctx, "event not found")
 	}
-	if !s.canManageEventInScope(ctx, existing) {
-		return response.Forbidden(ctx, "只能编辑本校学校层级赛事")
+	if !s.canViewEventInScope(ctx, existing) {
+		return response.Forbidden(ctx, "无权编辑该赛事")
+	}
+	if adminRole(ctx) != models.AdminRoleSuperAdmin {
+		return s.updateScopedEvent(ctx, existing, req, raw)
 	}
 	event, err := s.buildAdminEventModelForRequest(ctx, req)
 	if err != nil {
@@ -193,6 +250,69 @@ func (s *AdminServer) UpdateEvent(ctx echo.Context) error {
 	}
 	return response.Success(ctx, adminvo.NewAdminEventVO(updated))
 }
+
+func (s *AdminServer) updateScopedEvent(ctx echo.Context, event *models.Event, req adminEventRequest, raw map[string]json.RawMessage) error {
+	managerAllowed := event.AdminID == nil && s.canCreateEventManager(ctx, event) ||
+		event.AdminID != nil && s.canEditEventManager(ctx, event)
+	for field := range raw {
+		switch field {
+		case "registrationDeadline":
+		case "managerAccount", "managerPassword", "managerPhone":
+			if !managerAllowed {
+				return response.Forbidden(ctx, "无权修改该赛事管理员")
+			}
+		default:
+			return response.Forbidden(ctx, "校区角色只能修改报名截止时间和获授权的赛事管理员信息")
+		}
+	}
+	if len(raw) == 0 {
+		return response.BadRequest(ctx, "request body cannot be empty")
+	}
+
+	var deadline *time.Time
+	if _, ok := raw["registrationDeadline"]; ok && req.RegistrationDeadline != nil &&
+		strings.TrimSpace(*req.RegistrationDeadline) != "" {
+		parsed, err := models.ParseEventDate(strings.TrimSpace(*req.RegistrationDeadline))
+		if err != nil {
+			return response.BadRequest(ctx, "报名截止时间格式无效")
+		}
+		deadline = &parsed
+	}
+
+	requestCtx := ctx.Request().Context()
+	tx, err := s.repo.DB().BeginTxx(requestCtx, nil)
+	if err != nil {
+		return response.InternalError(ctx, "更新赛事失败")
+	}
+	defer tx.Rollback()
+	if _, ok := raw["registrationDeadline"]; ok {
+		if _, err := tx.ExecContext(requestCtx, `UPDATE event SET registration_deadline=?,updated_at=CURRENT_TIMESTAMP WHERE id=?`, deadline, event.ID); err != nil {
+			return response.InternalError(ctx, "更新报名截止时间失败")
+		}
+	}
+	if _, account := raw["managerAccount"]; account {
+		if err := s.upsertEventManager(ctx, tx, event, req); err != nil {
+			return err
+		}
+	} else if _, password := raw["managerPassword"]; password {
+		if err := s.upsertEventManager(ctx, tx, event, req); err != nil {
+			return err
+		}
+	} else if _, phone := raw["managerPhone"]; phone {
+		if err := s.upsertEventManager(ctx, tx, event, req); err != nil {
+			return err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return response.InternalError(ctx, "更新赛事失败")
+	}
+	updated, err := s.repo.Event.GetByID(requestCtx, event.ID)
+	if err != nil || updated == nil {
+		return response.InternalError(ctx, "获取赛事信息失败")
+	}
+	return response.Success(ctx, adminvo.NewAdminEventVO(updated))
+}
+
 func (s *AdminServer) canManageEventInScope(ctx echo.Context, event *models.Event) bool {
 	if adminRole(ctx) == models.AdminRoleSuperAdmin {
 		return true
@@ -203,6 +323,102 @@ func (s *AdminServer) canManageEventInScope(ctx echo.Context, event *models.Even
 	}
 	allowed, err := s.canAccessSchool(ctx, event.SchoolID)
 	return err == nil && allowed
+}
+
+func (s *AdminServer) canViewEventInScope(ctx echo.Context, event *models.Event) bool {
+	if event == nil {
+		return false
+	}
+	role := adminRole(ctx)
+	if role == models.AdminRoleSuperAdmin {
+		return true
+	}
+	if role != models.AdminRoleSchoolSuperAdmin && role != models.AdminRoleSchoolAdmin {
+		return false
+	}
+	if event.Level == nil || *event.Level != "school" {
+		return true
+	}
+	allowed, err := s.canAccessSchool(ctx, event.SchoolID)
+	return err == nil && allowed
+}
+
+func (s *AdminServer) isOwnSchoolEvent(ctx echo.Context, event *models.Event) bool {
+	if event == nil || event.Level == nil || *event.Level != "school" {
+		return false
+	}
+	allowed, err := s.canAccessSchool(ctx, event.SchoolID)
+	return err == nil && allowed
+}
+
+func (s *AdminServer) canViewEventManagerCredentials(ctx echo.Context, event *models.Event) bool {
+	switch adminRole(ctx) {
+	case models.AdminRoleSuperAdmin:
+		return true
+	case models.AdminRoleSchoolSuperAdmin:
+		return s.isOwnSchoolEvent(ctx, event) && event.CreatorID != nil && *event.CreatorID == currentAdminID(ctx)
+	case models.AdminRoleSchoolAdmin:
+		return s.isOwnSchoolEvent(ctx, event)
+	default:
+		return false
+	}
+}
+
+func (s *AdminServer) canCreateEventManager(ctx echo.Context, event *models.Event) bool {
+	if adminRole(ctx) == models.AdminRoleSuperAdmin {
+		return true
+	}
+	if adminRole(ctx) == models.AdminRoleSchoolAdmin {
+		return s.isOwnSchoolEvent(ctx, event)
+	}
+	return adminRole(ctx) == models.AdminRoleSchoolSuperAdmin &&
+		s.isOwnSchoolEvent(ctx, event) && event.CreatorID != nil && *event.CreatorID == currentAdminID(ctx)
+}
+
+func (s *AdminServer) canEditEventManager(ctx echo.Context, event *models.Event) bool {
+	return adminRole(ctx) == models.AdminRoleSuperAdmin ||
+		adminRole(ctx) == models.AdminRoleSchoolSuperAdmin &&
+			s.isOwnSchoolEvent(ctx, event) && event.CreatorID != nil && *event.CreatorID == currentAdminID(ctx)
+}
+
+func (s *AdminServer) buildAdminEventDetailVO(ctx echo.Context, event *models.Event) *adminEventDetailVO {
+	detail := &adminEventDetailVO{
+		AdminEventVO: adminvo.NewAdminEventVO(event),
+		Permissions: adminEventPermissionsVO{
+			CanEdit:               adminRole(ctx) == models.AdminRoleSuperAdmin,
+			CanEditDeadline:       adminRole(ctx) != models.AdminRoleEventManager,
+			CanMerge:              canMergeEvents(adminRole(ctx)),
+			CanDelete:             adminRole(ctx) == models.AdminRoleSuperAdmin,
+			CanCreateEventManager: event.AdminID == nil && s.canCreateEventManager(ctx, event),
+			CanEditEventManager:   event.AdminID != nil && s.canEditEventManager(ctx, event),
+		},
+	}
+	detail.ManagerUsername = nil
+	detail.ManagerNickname = nil
+	if event.AdminID == nil {
+		return detail
+	}
+	manager, err := s.repo.AdminUser.GetByID(ctx.Request().Context(), *event.AdminID)
+	if err != nil || manager == nil || manager.Role != models.AdminRoleEventManager {
+		return detail
+	}
+	managerSchoolMatches := schoolIDsMatch(event.SchoolID, manager.SchoolID)
+	if adminRole(ctx) != models.AdminRoleSuperAdmin && event.Level != nil && *event.Level == "school" &&
+		!managerSchoolMatches {
+		return detail
+	}
+	detail.Manager = &adminEventManagerVO{ID: manager.ID, Nickname: manager.Nickname, Phone: manager.Phone}
+	if s.canViewEventManagerCredentials(ctx, event) &&
+		(adminRole(ctx) == models.AdminRoleSuperAdmin || managerSchoolMatches) {
+		account := manager.Username
+		detail.Manager.Account = &account
+		if manager.PasswordEncrypted != nil {
+			if password, err := decryptAdminCredential(*manager.PasswordEncrypted); err == nil {
+				detail.Manager.Password = &password
+			}
+		}
+	}
+	return detail
 }
 
 func (s *AdminServer) buildAdminEventModelForRequest(ctx echo.Context, req adminEventRequest) (*models.Event, error) {
@@ -249,7 +465,9 @@ func (s *AdminServer) upsertEventManager(ctx echo.Context, exec eventManagerExec
 	if event.AdminID == nil && account == "" && password == "" && phone == "" {
 		return nil
 	}
-	if !s.canManageEventInScope(ctx, event) {
+	managerAllowed := event.AdminID == nil && s.canCreateEventManager(ctx, event) ||
+		event.AdminID != nil && s.canEditEventManager(ctx, event)
+	if !managerAllowed {
 		return response.Forbidden(ctx, "无权管理该赛事的赛事管理员")
 	}
 	if event.AdminID == nil && (account == "" || password == "" || phone == "") {

@@ -139,7 +139,7 @@ func TestSchoolAdminEventRequestForcesCurrentSchool(t *testing.T) {
 	}
 }
 
-func TestSchoolAdminEventManagerUpdateIncludesSchoolScope(t *testing.T) {
+func TestSchoolAdminCannotUpdateExistingEventManager(t *testing.T) {
 	schoolID := 22
 	managerID := 8
 	e := echo.New()
@@ -151,13 +151,40 @@ func TestSchoolAdminEventManagerUpdateIncludesSchoolScope(t *testing.T) {
 	level := "school"
 	event := &models.Event{Name: "School Event", Level: &level, AdminID: &managerID, SchoolID: &schoolID}
 
+	rec := httptest.NewRecorder()
+	ctx = e.NewContext(req, rec)
+	ctx.Set("adminRole", models.AdminRoleSchoolAdmin)
+	ctx.Set("adminSchoolID", schoolID)
 	if err := (&AdminServer{}).upsertEventManager(ctx, exec, event, adminEventRequest{}); err != nil {
 		t.Fatalf("upsertEventManager returned error: %v", err)
 	}
-	if !strings.Contains(exec.query, "WHERE id=? AND role=4 AND school_id=?") {
-		t.Fatalf("manager update is not school-scoped: %s", exec.query)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusForbidden)
 	}
-	if len(exec.args) != 4 {
-		t.Fatalf("update args = %d, want 4", len(exec.args))
+	if exec.calls != 0 {
+		t.Fatalf("ExecContext calls = %d, want 0", exec.calls)
+	}
+}
+
+func TestSchoolAdminCanCreateManagerForOwnSchoolEvent(t *testing.T) {
+	t.Setenv("ADMIN_CREDENTIAL_KEY", "test-only-credential-key")
+	schoolID := 22
+	level := "school"
+	account, password, phone := "school_event_manager", "secret123", "13800138000"
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodPost, "/admin/events", nil)
+	ctx := e.NewContext(req, httptest.NewRecorder())
+	ctx.Set("adminRole", models.AdminRoleSchoolAdmin)
+	ctx.Set("adminSchoolID", schoolID)
+	exec := &recordingEventManagerExecer{}
+	event := &models.Event{ID: 7, Name: "School Event", Level: &level, SchoolID: &schoolID}
+
+	if err := (&AdminServer{}).upsertEventManager(ctx, exec, event, adminEventRequest{
+		ManagerAccount: &account, ManagerPassword: &password, ManagerPhone: &phone,
+	}); err != nil {
+		t.Fatalf("upsertEventManager returned error: %v", err)
+	}
+	if exec.calls != 2 {
+		t.Fatalf("ExecContext calls = %d, want 2", exec.calls)
 	}
 }

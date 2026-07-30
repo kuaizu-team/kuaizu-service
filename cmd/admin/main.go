@@ -115,6 +115,7 @@ func main() {
 	adminGroup.PATCH("/feedbacks/:id", server.ReplyFeedback)
 
 	adminGroup.GET("/events", server.ListEvents)
+	adminGroup.GET("/events/:id", server.GetEvent)
 	adminGroup.POST("/events", server.CreateEvent)
 	adminGroup.PUT("/events/:id", server.UpdateEvent)
 	adminGroup.DELETE("/events/:id", server.DeleteEvent)

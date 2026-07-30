@@ -3,7 +3,7 @@ post:
     - Events
   summary: 向上合并赛事
   operationId: mergeAdminEvent
-  description: 仅平台超级管理员和校区超级管理员可用。将学校级赛事合并至区域级或国家级赛事，或将区域级赛事合并至国家级赛事。
+  description: 仅平台超级管理员可用。将学校级赛事合并至区域级或国家级赛事，或将区域级赛事合并至国家级赛事。
   parameters:
     - in: path
       name: id

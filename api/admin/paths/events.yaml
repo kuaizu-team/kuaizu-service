@@ -3,7 +3,7 @@ get:
     - Events
   summary: 获取后台赛事列表
   operationId: listAdminEvents
-  description: 校区管理员仅返回本校学校级赛事；校区超级管理员保留原有赛事可见范围。
+  description: 校区角色可查看全国、区域赛事及权限范围内的本校学校赛事；列表不返回校区角色无权查看的赛事管理员凭据。
   parameters:
     - in: query
       name: page

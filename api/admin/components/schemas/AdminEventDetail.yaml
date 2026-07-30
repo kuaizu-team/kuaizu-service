@@ -1,0 +1,40 @@
+allOf:
+  - $ref: ./AdminEvent.yaml
+  - type: object
+    required: [permissions]
+    properties:
+      manager:
+        type: object
+        nullable: true
+        required: [id]
+        properties:
+          id:
+            type: integer
+          nickname:
+            type: string
+            nullable: true
+          phone:
+            type: string
+            nullable: true
+          account:
+            type: string
+            description: 仅在当前角色具有本赛事凭据查看权时返回
+          password:
+            type: string
+            description: 仅在当前角色具有本赛事凭据查看权且密码可解密时返回
+      permissions:
+        type: object
+        required: [canEdit, canEditDeadline, canMerge, canDelete, canCreateEventManager, canEditEventManager]
+        properties:
+          canEdit:
+            type: boolean
+          canEditDeadline:
+            type: boolean
+          canMerge:
+            type: boolean
+          canDelete:
+            type: boolean
+          canCreateEventManager:
+            type: boolean
+          canEditEventManager:
+            type: boolean
