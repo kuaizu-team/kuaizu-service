@@ -3,6 +3,7 @@ package handler
 import (
 	"testing"
 
+	adminvo "github.com/kuaizu-team/kuaizu-service/internal/admin/vo"
 	"github.com/kuaizu-team/kuaizu-service/internal/models"
 )
 
@@ -77,8 +78,9 @@ func TestSchoolAdminDetailPermissionMatrix(t *testing.T) {
 		want   bool
 	}{
 		{"self", &models.AdminUser{ID: 3, Role: models.AdminRoleSchoolAdmin, SchoolID: &schoolID}, true},
-		{"same-school member", &models.AdminUser{ID: 5, Role: models.AdminRoleSchoolAdmin, SchoolID: &schoolID}, false},
-		{"school owner", &models.AdminUser{ID: 2, Role: models.AdminRoleSchoolSuperAdmin, Schools: []models.AdminSchoolRelation{{SchoolID: schoolID}}}, false},
+		{"same-school member", &models.AdminUser{ID: 5, Role: models.AdminRoleSchoolAdmin, SchoolID: &schoolID}, true},
+		{"school owner", &models.AdminUser{ID: 2, Role: models.AdminRoleSchoolSuperAdmin, Schools: []models.AdminSchoolRelation{{SchoolID: schoolID, CommissionRate: 70}}}, true},
+		{"school owner without access", &models.AdminUser{ID: 9, Role: models.AdminRoleSchoolSuperAdmin, Schools: []models.AdminSchoolRelation{{SchoolID: schoolID}}}, false},
 		{"other-school member", &models.AdminUser{ID: 6, Role: models.AdminRoleSchoolAdmin, SchoolID: &otherSchoolID}, false},
 		{"same-school event manager", &models.AdminUser{ID: 7, Role: models.AdminRoleEventManager, SchoolID: &schoolID}, true},
 		{"other-school event manager", &models.AdminUser{ID: 8, Role: models.AdminRoleEventManager, SchoolID: &otherSchoolID}, false},
@@ -100,13 +102,49 @@ func TestCanEditAdminPermissionMatrix(t *testing.T) {
 	if canEditAdmin(models.AdminRoleSchoolSuperAdmin, 2, models.AdminRoleEventManager, 4, &schoolID, &otherSchoolID) {
 		t.Fatal("school super admin could edit another school's event manager")
 	}
-	if !canEditAdmin(models.AdminRoleSchoolSuperAdmin, 2, models.AdminRoleEventManager, 4, &schoolID, &schoolID) {
-		t.Fatal("school super admin could not edit a same-school event manager")
+	if canEditAdmin(models.AdminRoleSchoolSuperAdmin, 2, models.AdminRoleEventManager, 4, &schoolID, &schoolID) {
+		t.Fatal("school super admin could edit a same-school event manager")
 	}
 	if !canEditAdmin(models.AdminRoleSchoolAdmin, 3, models.AdminRoleSchoolAdmin, 3, &schoolID, &schoolID) {
 		t.Fatal("school admin could not edit self")
 	}
 	if !canEditAdmin(models.AdminRoleEventManager, 4, models.AdminRoleEventManager, 4, &schoolID, &schoolID) {
 		t.Fatal("event manager could not edit self")
+	}
+}
+
+func TestSanitizeSchoolAdminDirectoryVO(t *testing.T) {
+	schoolID, otherSchoolID := 10, 20
+	password := "secret"
+	financeRemark := "private"
+	intro := "private intro"
+	articleURL := "https://example.com/private"
+	target := &models.AdminUser{
+		ID: 2, Username: "school-owner", PasswordEncrypted: &password,
+		Role: models.AdminRoleSchoolSuperAdmin, FinanceRemark: &financeRemark,
+		CommissionRate: 70, Intro: &intro, ArticleURL: &articleURL,
+		Schools: []models.AdminSchoolRelation{
+			{SchoolID: schoolID, SchoolName: "Current School", CommissionRate: 70},
+			{SchoolID: otherSchoolID, SchoolName: "Other School", CommissionRate: 30},
+		},
+	}
+	vo := adminvo.NewAdminUserAccountVO(target)
+	vo.Password = &password
+	vo.PendingSettlementAmount = 123
+	vo.PendingRefundOrderCount = 4
+
+	sanitizeSchoolAdminDirectoryVO(vo, target, &schoolID)
+
+	if vo.Username != "" || vo.Password != nil || vo.FinanceRemark != nil ||
+		vo.CommissionRate != 0 || vo.PendingSettlementAmount != 0 ||
+		vo.PendingRefundOrderCount != 0 || vo.Intro != nil || vo.ArticleURL != nil {
+		t.Fatalf("directory response retained sensitive fields: %#v", vo)
+	}
+	if vo.SchoolID == nil || *vo.SchoolID != schoolID ||
+		vo.SchoolName == nil || *vo.SchoolName != "Current School" {
+		t.Fatalf("directory school = (%v, %v), want current school", vo.SchoolID, vo.SchoolName)
+	}
+	if len(vo.Schools) != 0 {
+		t.Fatalf("directory response exposed school relations: %#v", vo.Schools)
 	}
 }

@@ -102,3 +102,62 @@ func TestCreateEventManagerRequiresPhone(t *testing.T) {
 		t.Fatalf("ExecContext calls = %d, want 0", exec.calls)
 	}
 }
+
+func TestSchoolAdminEventRequestForcesCurrentSchool(t *testing.T) {
+	schoolID := 22
+	requestSchoolID := 22
+	level := "school"
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodPost, "/admin/events", nil)
+	ctx := e.NewContext(req, httptest.NewRecorder())
+	ctx.Set("adminRole", models.AdminRoleSchoolAdmin)
+	ctx.Set("adminSchoolID", schoolID)
+
+	event, err := (&AdminServer{}).buildAdminEventModelForRequest(ctx, adminEventRequest{
+		Name: "School Event", Level: &level, SchoolID: &requestSchoolID,
+	})
+	if err != nil {
+		t.Fatalf("buildAdminEventModelForRequest returned error: %v", err)
+	}
+	if event.Level == nil || *event.Level != "school" ||
+		event.SchoolID == nil || *event.SchoolID != schoolID {
+		t.Fatalf("event scope = (%v, %v), want school/%d", event.Level, event.SchoolID, schoolID)
+	}
+
+	otherSchoolID := 23
+	if _, err := (&AdminServer{}).buildAdminEventModelForRequest(ctx, adminEventRequest{
+		Name: "Other School Event", Level: &level, SchoolID: &otherSchoolID,
+	}); err == nil {
+		t.Fatal("school admin could submit another schoolId")
+	}
+
+	national := "national"
+	if _, err := (&AdminServer{}).buildAdminEventModelForRequest(ctx, adminEventRequest{
+		Name: "National Event", Level: &national,
+	}); err == nil {
+		t.Fatal("school admin could create a national event")
+	}
+}
+
+func TestSchoolAdminEventManagerUpdateIncludesSchoolScope(t *testing.T) {
+	schoolID := 22
+	managerID := 8
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodPut, "/admin/events/7", nil)
+	ctx := e.NewContext(req, httptest.NewRecorder())
+	ctx.Set("adminRole", models.AdminRoleSchoolAdmin)
+	ctx.Set("adminSchoolID", schoolID)
+	exec := &recordingEventManagerExecer{}
+	level := "school"
+	event := &models.Event{Name: "School Event", Level: &level, AdminID: &managerID, SchoolID: &schoolID}
+
+	if err := (&AdminServer{}).upsertEventManager(ctx, exec, event, adminEventRequest{}); err != nil {
+		t.Fatalf("upsertEventManager returned error: %v", err)
+	}
+	if !strings.Contains(exec.query, "WHERE id=? AND role=4 AND school_id=?") {
+		t.Fatalf("manager update is not school-scoped: %s", exec.query)
+	}
+	if len(exec.args) != 4 {
+		t.Fatalf("update args = %d, want 4", len(exec.args))
+	}
+}

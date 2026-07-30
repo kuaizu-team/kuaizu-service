@@ -3,6 +3,7 @@ put:
     - Events
   summary: 更新赛事
   operationId: updateAdminEvent
+  description: 校区管理员只能更新本校学校级赛事及其赛事管理员。
   parameters:
     - in: path
       name: id

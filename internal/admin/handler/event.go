@@ -40,6 +40,12 @@ type eventManagerExecer interface {
 }
 
 func canManageEvents(role int) bool {
+	return role == models.AdminRoleSuperAdmin ||
+		role == models.AdminRoleSchoolSuperAdmin ||
+		role == models.AdminRoleSchoolAdmin
+}
+
+func canMergeEvents(role int) bool {
 	return role == models.AdminRoleSuperAdmin || role == models.AdminRoleSchoolSuperAdmin
 }
 
@@ -80,12 +86,13 @@ func (s *AdminServer) ListEvents(ctx echo.Context) error {
 	listParams := repository.EventListParams{
 		Page: page, Size: size, Keyword: keywordPtr, SortBy: sortBy, Order: order,
 	}
-	if adminRole(ctx) == models.AdminRoleSchoolSuperAdmin {
+	if adminRole(ctx) == models.AdminRoleSchoolSuperAdmin || adminRole(ctx) == models.AdminRoleSchoolAdmin {
 		schoolIDs, err := s.adminSchoolIDs(ctx)
 		if err != nil {
 			return response.InternalError(ctx, "查询学校权限失败")
 		}
 		listParams.SchoolIDs = schoolIDs
+		listParams.SchoolOnly = adminRole(ctx) == models.AdminRoleSchoolAdmin
 	}
 	result, err := s.svc.Event.ListEvents(ctx.Request().Context(), listParams)
 	if err != nil {
@@ -190,7 +197,8 @@ func (s *AdminServer) canManageEventInScope(ctx echo.Context, event *models.Even
 	if adminRole(ctx) == models.AdminRoleSuperAdmin {
 		return true
 	}
-	if adminRole(ctx) != models.AdminRoleSchoolSuperAdmin || event == nil || event.Level == nil || *event.Level != "school" {
+	if (adminRole(ctx) != models.AdminRoleSchoolSuperAdmin && adminRole(ctx) != models.AdminRoleSchoolAdmin) ||
+		event == nil || event.Level == nil || *event.Level != "school" {
 		return false
 	}
 	allowed, err := s.canAccessSchool(ctx, event.SchoolID)
@@ -198,11 +206,22 @@ func (s *AdminServer) canManageEventInScope(ctx echo.Context, event *models.Even
 }
 
 func (s *AdminServer) buildAdminEventModelForRequest(ctx echo.Context, req adminEventRequest) (*models.Event, error) {
-	if adminRole(ctx) != models.AdminRoleSchoolSuperAdmin {
+	role := adminRole(ctx)
+	if role != models.AdminRoleSchoolSuperAdmin && role != models.AdminRoleSchoolAdmin {
 		return buildAdminEventModel(req, adminRole(ctx), adminSchoolID(ctx))
 	}
 	if req.Level == nil || strings.TrimSpace(*req.Level) != "school" {
-		return nil, errors.New("school super admins can only manage school-level events")
+		return nil, errors.New("school administrators can only manage school-level events")
+	}
+	if role == models.AdminRoleSchoolAdmin {
+		schoolID := adminSchoolID(ctx)
+		if schoolID == nil {
+			return nil, errors.New("current admin is not associated with a school")
+		}
+		if req.SchoolID != nil && *req.SchoolID != *schoolID {
+			return nil, errors.New("schoolId is outside the current admin scope")
+		}
+		return buildAdminEventModel(req, role, schoolID)
 	}
 	if req.SchoolID == nil {
 		return nil, errors.New("schoolId is required for school-level events")
@@ -292,7 +311,12 @@ func (s *AdminServer) upsertEventManager(ctx echo.Context, exec eventManagerExec
 		args = append(args, string(hash), encrypted)
 	}
 	args = append(args, *event.AdminID)
-	if _, err := exec.ExecContext(ctx.Request().Context(), `UPDATE admin_user SET `+strings.Join(sets, ",")+`,updated_at=CURRENT_TIMESTAMP WHERE id=? AND role=4`, args...); err != nil {
+	managerScope := ""
+	if adminRole(ctx) != models.AdminRoleSuperAdmin {
+		managerScope = " AND school_id=?"
+		args = append(args, event.SchoolID)
+	}
+	if _, err := exec.ExecContext(ctx.Request().Context(), `UPDATE admin_user SET `+strings.Join(sets, ",")+`,updated_at=CURRENT_TIMESTAMP WHERE id=? AND role=4`+managerScope, args...); err != nil {
 		return response.BadRequest(ctx, "赛事管理员账号更新失败")
 	}
 	return nil
@@ -313,8 +337,8 @@ func (s *AdminServer) DeleteEvent(ctx echo.Context) error {
 }
 
 func (s *AdminServer) MergeEvent(ctx echo.Context) error {
-	if err := requireEventManagementRole(ctx); err != nil {
-		return err
+	if !canMergeEvents(adminRole(ctx)) {
+		return response.Forbidden(ctx, "event merge requires a super admin role")
 	}
 	id, err := parseIDParam(ctx, "id", "event")
 	if err != nil {

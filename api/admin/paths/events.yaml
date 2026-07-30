@@ -3,6 +3,7 @@ get:
     - Events
   summary: 获取后台赛事列表
   operationId: listAdminEvents
+  description: 校区管理员仅返回本校学校级赛事；校区超级管理员保留原有赛事可见范围。
   parameters:
     - in: query
       name: page
@@ -68,6 +69,7 @@ post:
     - Events
   summary: 创建赛事
   operationId: createAdminEvent
+  description: 校区管理员只能创建本校学校级赛事，并可同时创建赛事管理员。
   requestBody:
     required: true
     content:

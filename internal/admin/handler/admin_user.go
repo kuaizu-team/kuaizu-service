@@ -94,7 +94,11 @@ func (s *AdminServer) ListAdmins(ctx echo.Context) error {
 	list := make([]adminvo.AdminUserAccountVO, len(admins))
 	for i, a := range admins {
 		vo := adminvo.NewAdminUserAccountVO(a)
-		s.enrichAdminFinance(ctx, vo, a, callerRole == models.AdminRoleSuperAdmin)
+		if callerRole == models.AdminRoleSchoolAdmin && a.ID != callerID {
+			sanitizeSchoolAdminDirectoryVO(vo, a, adminSchoolID(ctx))
+		} else {
+			s.enrichAdminFinance(ctx, vo, a, callerRole == models.AdminRoleSuperAdmin)
+		}
 		list[i] = *vo
 	}
 
@@ -123,10 +127,14 @@ func (s *AdminServer) GetAdmin(ctx echo.Context) error {
 	}
 
 	vo := adminvo.NewAdminUserAccountVO(target)
-	if s.canViewAdminPasswordInScope(ctx, target) {
-		attachAdminPassword(vo, target)
+	if callerRole == models.AdminRoleSchoolAdmin && target.ID != currentAdminID(ctx) {
+		sanitizeSchoolAdminDirectoryVO(vo, target, adminSchoolID(ctx))
+	} else {
+		if s.canViewAdminPasswordInScope(ctx, target) {
+			attachAdminPassword(vo, target)
+		}
+		s.enrichAdminFinance(ctx, vo, target, callerRole == models.AdminRoleSuperAdmin)
 	}
-	s.enrichAdminFinance(ctx, vo, target, callerRole == models.AdminRoleSuperAdmin)
 	return response.Success(ctx, vo)
 }
 

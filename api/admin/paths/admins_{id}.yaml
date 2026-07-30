@@ -2,6 +2,7 @@ get:
   tags:
     - Admins
   summary: 管理员详情
+  description: 校区管理员只能查看本人或本校人员；非本人账号、密码和财务字段会被隐藏。校区超级管理员可在本校人员详情中按需查看凭据。
   parameters:
     - in: path
       name: id

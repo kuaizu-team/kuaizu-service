@@ -46,3 +46,16 @@ func TestEventListUsesExplicitAdminOrder(t *testing.T) {
 		t.Fatalf("explicit event order missing: %s", query)
 	}
 }
+
+func TestEventListCanRestrictSchoolAdminToSchoolEvents(t *testing.T) {
+	query := captureEventListQuery(t, EventListParams{
+		Page: 1, Size: 10, SchoolIDs: []int{22}, SchoolOnly: true,
+	})
+	want := "e.level = 'school' AND e.school_id IN (?)"
+	if !strings.Contains(query, want) {
+		t.Fatalf("school-only event filter missing: %s", query)
+	}
+	if strings.Contains(query, "COALESCE(e.level,'') <> 'school'") {
+		t.Fatalf("school-only list still includes non-school events: %s", query)
+	}
+}

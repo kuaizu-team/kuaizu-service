@@ -2,6 +2,7 @@ get:
   tags:
     - Admins
   summary: 管理员列表
+  description: 校区管理员仅返回本校通讯录范围，且非本人账号、密码和财务字段会被隐藏；所有角色的列表均不返回密码。
   parameters:
     - in: query
       name: page

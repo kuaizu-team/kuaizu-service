@@ -23,6 +23,7 @@ type EventListParams struct {
 	RegistrationDeadlineFrom *time.Time
 	RegistrationDeadlineTo   *time.Time
 	SchoolIDs                []int
+	SchoolOnly               bool
 	SortBy                   string
 	Order                    string
 }
@@ -73,7 +74,18 @@ func (r *EventRepository) List(ctx context.Context, params EventListParams) ([]m
 		conditions = append(conditions, "e.registration_deadline <= ?")
 		args = append(args, *params.RegistrationDeadlineTo)
 	}
-	if len(params.SchoolIDs) > 0 {
+	if params.SchoolOnly {
+		if len(params.SchoolIDs) == 0 {
+			conditions = append(conditions, "1=0")
+		} else {
+			condition, inArgs, err := sqlx.In("(e.level = 'school' AND e.school_id IN (?))", params.SchoolIDs)
+			if err != nil {
+				return nil, 0, fmt.Errorf("build school-only event filter: %w", err)
+			}
+			conditions = append(conditions, condition)
+			args = append(args, inArgs...)
+		}
+	} else if len(params.SchoolIDs) > 0 {
 		condition, inArgs, err := sqlx.In("(COALESCE(e.level,'') <> 'school' OR e.school_id IN (?))", params.SchoolIDs)
 		if err != nil {
 			return nil, 0, fmt.Errorf("build event school filter: %w", err)

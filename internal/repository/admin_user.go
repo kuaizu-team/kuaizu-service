@@ -105,7 +105,11 @@ func (r *AdminUserRepository) List(ctx context.Context, params AdminUserListPara
 		args = append(args, *params.OnlyAdminID)
 	}
 	if params.Keyword != nil && *params.Keyword != "" {
-		conditions = append(conditions, "(au.username LIKE ? OR au.nickname LIKE ?)")
+		if params.SchoolAdminScope {
+			conditions = append(conditions, "(au.nickname LIKE ? OR au.phone LIKE ?)")
+		} else {
+			conditions = append(conditions, "(au.username LIKE ? OR au.nickname LIKE ?)")
+		}
 		args = append(args, "%"+*params.Keyword+"%", "%"+*params.Keyword+"%")
 	}
 	if params.Role != nil {
@@ -118,8 +122,28 @@ func (r *AdminUserRepository) List(ctx context.Context, params AdminUserListPara
 	}
 	if params.SchoolID != nil {
 		if params.SchoolAdminScope && params.ViewerAdminID != nil {
-			conditions = append(conditions, "(au.id = ? OR (au.role = ? AND au.school_id = ?))")
-			args = append(args, *params.ViewerAdminID, models.AdminRoleEventManager, *params.SchoolID)
+			conditions = append(conditions, `(
+				au.id = ?
+				OR (au.role IN (?, ?) AND au.school_id = ?)
+				OR (
+					au.role = ?
+					AND EXISTS (
+						SELECT 1
+						FROM admin_school_relation scope_rel
+						WHERE scope_rel.admin_user_id = au.id
+						  AND scope_rel.school_id = ?
+						  AND scope_rel.commission_rate > 0
+					)
+				)
+			)`)
+			args = append(args,
+				*params.ViewerAdminID,
+				models.AdminRoleSchoolAdmin,
+				models.AdminRoleEventManager,
+				*params.SchoolID,
+				models.AdminRoleSchoolSuperAdmin,
+				*params.SchoolID,
+			)
 		} else {
 			conditions = append(conditions, "au.school_id = ?")
 			args = append(args, *params.SchoolID)
