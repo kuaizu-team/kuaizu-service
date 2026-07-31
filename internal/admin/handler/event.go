@@ -115,7 +115,11 @@ func (s *AdminServer) ListEvents(ctx echo.Context) error {
 		if err != nil {
 			return response.InternalError(ctx, "查询学校权限失败")
 		}
+		if schoolIDs == nil {
+			schoolIDs = []int{}
+		}
 		listParams.SchoolIDs = schoolIDs
+		listParams.ProjectSchoolIDs = schoolIDs
 	}
 	result, err := s.svc.Event.ListEvents(ctx.Request().Context(), listParams)
 	if err != nil {
@@ -143,7 +147,17 @@ func (s *AdminServer) GetEvent(ctx echo.Context) error {
 	if err != nil {
 		return err
 	}
-	event, err := s.repo.Event.GetByID(ctx.Request().Context(), id)
+	var projectSchoolIDs []int
+	if adminRole(ctx) == models.AdminRoleSchoolSuperAdmin || adminRole(ctx) == models.AdminRoleSchoolAdmin {
+		projectSchoolIDs, err = s.adminSchoolIDs(ctx)
+		if err != nil {
+			return response.InternalError(ctx, "查询学校权限失败")
+		}
+		if projectSchoolIDs == nil {
+			projectSchoolIDs = []int{}
+		}
+	}
+	event, err := s.repo.Event.GetByIDWithProjectSchoolIDs(ctx.Request().Context(), id, projectSchoolIDs)
 	if err != nil {
 		return response.InternalError(ctx, "查询赛事失败")
 	}
