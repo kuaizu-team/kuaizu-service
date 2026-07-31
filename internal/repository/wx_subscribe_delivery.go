@@ -161,7 +161,7 @@ func (r *WxSubscribeDeliveryRepository) ListRecent(ctx context.Context, limit in
 	if limit <= 0 || limit > 200 {
 		limit = 50
 	}
-	var deliveries []models.WxSubscribeDelivery
+	deliveries := make([]models.WxSubscribeDelivery, 0)
 	err := r.db.SelectContext(ctx, &deliveries, `
 		SELECT id, user_id, biz_key, template_id, business_data, page_path,
 			status, attempt_count, next_attempt_at, claimed_at, sent_at,
