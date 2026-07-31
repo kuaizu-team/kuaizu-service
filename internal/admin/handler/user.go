@@ -103,6 +103,22 @@ func (s *AdminServer) ListUsers(ctx echo.Context) error {
 		params.UserStatus = &us
 	}
 
+	if v := ctx.QueryParam("invitationFeedbackStatus"); v != "" {
+		if adminRole(ctx) == models.AdminRoleSchoolAdmin {
+			return response.Forbidden(ctx, "permission denied")
+		}
+		switch v {
+		case models.InvitationConversationStatusInProgress,
+			models.InvitationFeedbackStatusInterested,
+			models.InvitationFeedbackStatusNotInterested,
+			models.InvitationConversationStatusAccepted,
+			models.InvitationConversationStatusRejected:
+			params.InvitationFeedbackStatus = &v
+		default:
+			return response.BadRequest(ctx, "invalid invitationFeedbackStatus")
+		}
+	}
+
 	result, err := s.svc.User.ListUsers(ctx.Request().Context(), params)
 	if err != nil {
 		return mapServiceError(ctx, err)
@@ -132,7 +148,7 @@ func (s *AdminServer) ListUsers(ctx echo.Context) error {
 		}
 
 		// 邀请反馈只对平台超级管理员和校区超级管理员返回。数据库分别记录
-		// 初始意向与后续沟通状态，这里归一化为列表展示所需的四种状态。
+		// 初始意向与后续沟通状态，这里归一化为列表展示使用的有效状态。
 		if adminRole(ctx) != models.AdminRoleSchoolAdmin {
 			type invitationFeedbackRow struct {
 				UserID int    `db:"user_id"`
@@ -140,14 +156,7 @@ func (s *AdminServer) ListUsers(ctx echo.Context) error {
 			}
 			q, args, err := sqlx.In(`
 				SELECT f.user_id,
-					CASE
-						WHEN f.conversation_status = 'in_progress' AND p.user_id IS NOT NULL THEN 'in_progress'
-						WHEN f.conversation_status = 'in_progress' THEN 'pending'
-						WHEN f.conversation_status IS NOT NULL THEN f.conversation_status
-						WHEN f.status = 'interested' THEN 'in_progress'
-						WHEN f.status = 'not_interested' THEN 'rejected'
-						ELSE 'pending'
-					END AS status
+					`+repository.InvitationFeedbackEffectiveStatusSQL+` AS status
 				FROM invitation_feedback f
 				LEFT JOIN pending_invitation p
 					ON p.user_id = f.user_id
