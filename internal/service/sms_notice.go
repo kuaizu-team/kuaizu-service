@@ -864,6 +864,11 @@ func (s *SmsNoticeService) prepareNotice(notice *models.SmsNotice, branch *model
 }
 
 func (s *SmsNoticeService) startAsyncSubmission(notice *models.SmsNotice) {
+	var projectID *int
+	if notice.ProjectID != nil {
+		value := *notice.ProjectID
+		projectID = &value
+	}
 	req := messagecenter.SmsNoticeRequest{
 		TraceID:             stringValue(notice.TraceID),
 		NoticeID:            notice.ID,
@@ -871,50 +876,36 @@ func (s *SmsNoticeService) startAsyncSubmission(notice *models.SmsNotice) {
 		SenderUserID:        notice.SenderID,
 		ReceiverUserID:      notice.ReceiverID,
 		OliveBranchRecordID: notice.OliveBranchRecordID,
-		ProjectID:           notice.ProjectID,
+		ProjectID:           projectID,
 		Content:             notice.SmsContent,
 	}
 	go func() {
 		submitter, initErr, baseURL := s.resolveMessageCenter()
 		if initErr != nil {
-			log.Printf("[SmsNoticeService] message center unavailable, notice_id=%d base_url_empty=%t: %v", notice.ID, baseURL == "", initErr)
-			s.markFailed(notice, "message center is not configured: "+initErr.Error())
+			log.Printf("[SmsNoticeService] message center unavailable, notice_id=%d base_url_empty=%t: %v", req.NoticeID, baseURL == "", initErr)
+			s.markFailed(req.NoticeID, req.OrderID, "message center is not configured: "+initErr.Error())
 			return
 		}
 		if submitter == nil {
-			s.markFailed(notice, "message center client is nil")
+			s.markFailed(req.NoticeID, req.OrderID, "message center client is nil")
 			return
 		}
 
-		var (
-			resp *messagecenter.SmsNoticeResponse
-			err  error
-		)
+		var err error
 		for attempt := 1; attempt <= 3; attempt++ {
 			callCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-			resp, err = submitter.SubmitSmsNotice(callCtx, req)
+			_, err = submitter.SubmitSmsNotice(callCtx, req)
 			cancel()
 			if err == nil {
 				break
 			}
-			log.Printf("[SmsNoticeService] submit sms notice failed, notice_id=%d attempt=%d: %v", notice.ID, attempt, err)
+			log.Printf("[SmsNoticeService] submit sms notice failed, notice_id=%d attempt=%d: %v", req.NoticeID, attempt, err)
 			if attempt < 3 {
 				time.Sleep(time.Duration(attempt) * 200 * time.Millisecond)
 			}
 		}
 		if err != nil {
-			s.markFailed(notice, "submit message center failed: "+err.Error())
-			return
-		}
-		if resp != nil && resp.Accepted != nil && !*resp.Accepted {
-			fresh, getErr := s.repo.SmsNotice.GetByID(context.Background(), notice.ID)
-			if getErr != nil {
-				log.Printf("[SmsNoticeService] reload rejected sms notice failed, notice_id=%d: %v", notice.ID, getErr)
-				return
-			}
-			if fresh != nil {
-				*notice = *fresh
-			}
+			s.markFailed(req.NoticeID, req.OrderID, "submit message center failed: "+err.Error())
 			return
 		}
 	}()
@@ -953,29 +944,12 @@ func smsMessageCenterBaseURL(submitter smsNoticeSubmitter) string {
 	return ""
 }
 
-func (s *SmsNoticeService) markFailed(notice *models.SmsNotice, message string) {
+func (s *SmsNoticeService) markFailed(noticeID, orderID int, message string) {
 	now := time.Now()
-	ctx := context.Background()
-	updated, err := s.repo.SmsNotice.MarkFailedAndOrderPushIfNotCompleted(
-		ctx, notice.ID, notice.OrderID, message, now)
+	_, err := s.repo.SmsNotice.MarkFailedAndOrderPushIfNotCompleted(
+		context.Background(), noticeID, orderID, message, now)
 	if err != nil {
-		log.Printf("[SmsNoticeService] atomically fail sms notice and order failed, notice_id=%d: %v", notice.ID, err)
-		return
-	}
-	if updated {
-		notice.Status = models.SmsNoticeStatusFailed
-		notice.ErrorMessage = &message
-		notice.CompletedAt = &now
-		return
-	}
-
-	fresh, getErr := s.repo.SmsNotice.GetByID(ctx, notice.ID)
-	if getErr != nil {
-		log.Printf("[SmsNoticeService] reload sms notice after protected failure failed, notice_id=%d: %v", notice.ID, getErr)
-		return
-	}
-	if fresh != nil {
-		*notice = *fresh
+		log.Printf("[SmsNoticeService] atomically fail sms notice and order failed, notice_id=%d: %v", noticeID, err)
 	}
 }
 
