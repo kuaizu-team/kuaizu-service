@@ -139,15 +139,21 @@ func (s *AdminServer) ListUsers(ctx echo.Context) error {
 				Status string `db:"status"`
 			}
 			q, args, err := sqlx.In(`
-				SELECT user_id,
+				SELECT f.user_id,
 					CASE
-						WHEN conversation_status IS NOT NULL THEN conversation_status
-						WHEN status = 'interested' THEN 'in_progress'
-						WHEN status = 'not_interested' THEN 'rejected'
+						WHEN f.conversation_status = 'in_progress' AND p.user_id IS NOT NULL THEN 'in_progress'
+						WHEN f.conversation_status = 'in_progress' THEN 'pending'
+						WHEN f.conversation_status IS NOT NULL THEN f.conversation_status
+						WHEN f.status = 'interested' THEN 'in_progress'
+						WHEN f.status = 'not_interested' THEN 'rejected'
 						ELSE 'pending'
 					END AS status
-				FROM invitation_feedback
-				WHERE user_id IN (?)`, userIDs)
+				FROM invitation_feedback f
+				LEFT JOIN pending_invitation p
+					ON p.user_id = f.user_id
+					AND p.invite_type = 'SUPER_ADMIN'
+					AND p.expire_at > CURRENT_TIMESTAMP
+				WHERE f.user_id IN (?)`, userIDs)
 			if err == nil {
 				q = s.repo.DB().Rebind(q)
 				var rows []invitationFeedbackRow

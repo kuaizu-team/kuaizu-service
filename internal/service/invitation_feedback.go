@@ -77,6 +77,21 @@ func (s *InvitationFeedbackService) GetStatus(ctx context.Context, userID int) (
 			Status: models.InvitationFeedbackStatusPending,
 		}, nil
 	}
+	// "in_progress" is only valid while the matching display invitation is
+	// active. Once its seven-day TTL expires, expose the conversation as
+	// released so the admin UI no longer keeps showing "正在聊".
+	if f.ConversationStatus != nil &&
+		*f.ConversationStatus == models.InvitationConversationStatusInProgress &&
+		s.repo.PendingInvitation != nil {
+		pending, err := s.repo.PendingInvitation.GetActiveByUserID(ctx, userID, time.Now())
+		if err != nil {
+			log.Printf("[InvitationFeedbackService.GetStatus] pending invitation repository error: %v", err)
+			return nil, ErrInternal("get pending invitation failed")
+		}
+		if pending == nil {
+			f.ConversationStatus = nil
+		}
+	}
 	return f, nil
 }
 
