@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 
 	"github.com/joho/godotenv"
 	"github.com/kuaizu-team/kuaizu-service/api"
@@ -86,11 +87,16 @@ func main() {
 			"/api/v2/dictionaries/majors",               // Major list
 			"/api/v2/email/unsubscribe",                 // Email unsubscribe
 			"/api/v2/information/list",                  // Information center list
-			"/api/v2/info-center/events",                // Information center event timeline
 			"/api/v2/recommendations/projects/featured", // Featured project recommendation
 			"/api/v2/recommendations/podcasts",          // Info-center podcast recommendations
 			"/api/v2/recommendations/news",              // Info-center news recommendations
 			"/api/v2/roadmap",                           // Platform roadmap
+		}
+
+		// Keep the legacy timeline public. Personalized school-event views use
+		// the same route with a view parameter and require the current user.
+		if path == "/api/v2/info-center/events" && strings.TrimSpace(c.QueryParam("view")) == "" {
+			return true
 		}
 
 		// Check exact matches
