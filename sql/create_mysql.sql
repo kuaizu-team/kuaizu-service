@@ -474,7 +474,6 @@ DROP TABLE IF EXISTS `msg_template_config`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
 CREATE TABLE `msg_template_config` (
-  `id` int NOT NULL AUTO_INCREMENT,
   `biz_key` varchar(50) NOT NULL COMMENT '业务标识',
   `template_id` varchar(100) NOT NULL COMMENT '微信模板ID',
   `template_title` varchar(100) DEFAULT NULL COMMENT '模板标题',
@@ -486,8 +485,7 @@ CREATE TABLE `msg_template_config` (
   `platform_verified_at` datetime DEFAULT NULL COMMENT '最近微信平台核验时间',
   `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `uk_msg_template_biz_key` (`biz_key`),
+  PRIMARY KEY (`biz_key`),
   UNIQUE KEY `uk_msg_template_template_id` (`template_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='订阅消息模板配置表';
 /*!40101 SET character_set_client = @saved_cs_client */;
@@ -515,6 +513,7 @@ CREATE TABLE `wx_subscribe_delivery` (
   `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   KEY `idx_wx_subscribe_due` (`status`, `next_attempt_at`, `id`),
+  KEY `idx_wx_subscribe_created_status` (`created_at`, `status`),
   KEY `idx_wx_subscribe_user_time` (`user_id`, `created_at`),
   KEY `idx_wx_subscribe_biz_time` (`biz_key`, `created_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='微信订阅消息可靠投递与审计日志';

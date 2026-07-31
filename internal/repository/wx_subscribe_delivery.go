@@ -19,11 +19,16 @@ func NewWxSubscribeDeliveryRepository(db *sqlx.DB) *WxSubscribeDeliveryRepositor
 
 func (r *WxSubscribeDeliveryRepository) CheckSchema(ctx context.Context) error {
 	var value int
-	if err := r.db.GetContext(ctx, &value, "SELECT COUNT(*) FROM wx_subscribe_delivery"); err != nil {
-		return fmt.Errorf("wx_subscribe_delivery migration is required: %w", err)
-	}
-	if err := r.db.GetContext(ctx, &value, "SELECT COUNT(*) FROM wx_subscribe_status_history"); err != nil {
-		return fmt.Errorf("wx_subscribe_status_history migration is required: %w", err)
+	for _, tableName := range []string{"wx_subscribe_delivery", "wx_subscribe_status_history"} {
+		if err := r.db.GetContext(ctx, &value, `
+			SELECT COUNT(*) FROM information_schema.tables
+			WHERE table_schema = DATABASE() AND table_name = ?
+		`, tableName); err != nil {
+			return fmt.Errorf("check %s schema: %w", tableName, err)
+		}
+		if value != 1 {
+			return fmt.Errorf("%s migration is required", tableName)
+		}
 	}
 	if err := r.db.GetContext(ctx, &value, `
 		SELECT COUNT(*) FROM (

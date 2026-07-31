@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS `wx_subscribe_delivery` (
   `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   KEY `idx_wx_subscribe_due` (`status`, `next_attempt_at`, `id`),
+  KEY `idx_wx_subscribe_created_status` (`created_at`, `status`),
   KEY `idx_wx_subscribe_user_time` (`user_id`, `created_at`),
   KEY `idx_wx_subscribe_biz_time` (`biz_key`, `created_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='微信订阅消息可靠投递与审计日志';

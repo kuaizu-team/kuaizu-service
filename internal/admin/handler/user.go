@@ -104,7 +104,7 @@ func (s *AdminServer) ListUsers(ctx echo.Context) error {
 	}
 
 	if v := ctx.QueryParam("invitationFeedbackStatus"); v != "" {
-		if adminRole(ctx) == models.AdminRoleSchoolAdmin {
+		if !canViewInvitationFeedback(adminRole(ctx)) {
 			return response.Forbidden(ctx, "permission denied")
 		}
 		switch v {
@@ -149,7 +149,7 @@ func (s *AdminServer) ListUsers(ctx echo.Context) error {
 
 		// 邀请反馈只对平台超级管理员和校区超级管理员返回。数据库分别记录
 		// 初始意向与后续沟通状态，这里归一化为列表展示使用的有效状态。
-		if adminRole(ctx) != models.AdminRoleSchoolAdmin {
+		if canViewInvitationFeedback(adminRole(ctx)) {
 			type invitationFeedbackRow struct {
 				UserID int    `db:"user_id"`
 				Status string `db:"status"`
@@ -195,6 +195,10 @@ func (s *AdminServer) ListUsers(ctx echo.Context) error {
 		"page":  result.Page,
 		"size":  result.Size,
 	})
+}
+
+func canViewInvitationFeedback(role int) bool {
+	return role == models.AdminRoleSuperAdmin || role == models.AdminRoleSchoolSuperAdmin
 }
 
 // GetUser handles GET /admin/users/:id
