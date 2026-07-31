@@ -380,7 +380,7 @@ type UserListParams struct {
 	TalentProfileStatus *int // 按名片状态过滤（0=已驳回/下架, 1=已上架, 2=审核中）
 	UserID              *int // 按用户 ID 精确查询
 
-	UserStatus              *int    // 按账号状态过滤（0=正常, 1=封禁, 2=已毕业）
+	UserStatus               *int    // 按账号状态过滤（0=正常, 1=封禁, 2=已毕业）
 	InvitationFeedbackStatus *string // 按列表展示的邀请反馈状态过滤
 
 	// Admin sort control
