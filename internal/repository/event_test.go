@@ -57,6 +57,33 @@ func TestEventListCanSortByProjectCount(t *testing.T) {
 	}
 }
 
+func TestEventGetByIDIncludesProjectCount(t *testing.T) {
+	db := openCaptureDB(t)
+	defer db.Close()
+	repo := NewEventRepository(sqlx.NewDb(db, "capture_user_repo"))
+	setCapturedQuery([]string{"id", "project_count"}, [][]driver.Value{{int64(42), int64(3)}})
+
+	event, err := repo.GetByID(context.Background(), 42)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if event == nil || event.ID != 42 || event.ProjectCount != 3 {
+		t.Fatalf("unexpected event: %#v", event)
+	}
+	queries, args := capturedQueriesAndArgs()
+	if len(queries) != 1 {
+		t.Fatalf("query count = %d, want 1", len(queries))
+	}
+	query := normalizeSQL(queries[0])
+	want := "(SELECT COUNT(DISTINCT pe.project_id) FROM project_event pe WHERE pe.event_id = event.id) AS project_count"
+	if !strings.Contains(query, want) {
+		t.Fatalf("project count missing from event detail query: %s", query)
+	}
+	if len(args) != 1 || args[0].Value != int64(42) {
+		t.Fatalf("args = %#v, want event id 42", args)
+	}
+}
+
 func TestEventListCanRestrictSchoolAdminToSchoolEvents(t *testing.T) {
 	query := captureEventListQuery(t, EventListParams{
 		Page: 1, Size: 10, SchoolIDs: []int{22}, SchoolOnly: true,

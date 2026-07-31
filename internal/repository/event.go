@@ -149,7 +149,7 @@ func (r *EventRepository) ListTimeline(ctx context.Context, limit int) ([]models
 }
 
 func (r *EventRepository) GetByID(ctx context.Context, id int) (*models.Event, error) {
-	query := fmt.Sprintf(`SELECT %s FROM event WHERE id = ?`, eventSelectColumns("event"))
+	query := fmt.Sprintf(`SELECT %s, (SELECT COUNT(DISTINCT pe.project_id) FROM project_event pe WHERE pe.event_id = event.id) AS project_count FROM event WHERE id = ?`, eventSelectColumns("event"))
 	var event models.Event
 	if err := r.db.QueryRowxContext(ctx, query, id).StructScan(&event); err != nil {
 		if err == sql.ErrNoRows {
