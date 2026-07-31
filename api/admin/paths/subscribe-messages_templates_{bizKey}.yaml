@@ -1,0 +1,40 @@
+patch:
+  tags:
+    - SubscribeMessages
+  summary: 更新微信订阅模板启停状态
+  description: 仅平台超级管理员可访问。
+  parameters:
+    - in: path
+      name: bizKey
+      required: true
+      schema:
+        type: string
+        pattern: ^MSG_
+  requestBody:
+    required: true
+    content:
+      application/json:
+        schema:
+          type: object
+          required:
+            - enabled
+          properties:
+            enabled:
+              type: boolean
+  responses:
+    '200':
+      description: 更新成功
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/BaseResponse.yaml
+    '400':
+      $ref: ../components/responses/BadRequest.yaml
+    '401':
+      $ref: ../components/responses/Unauthorized.yaml
+    '403':
+      $ref: ../components/responses/Forbidden.yaml
+    '404':
+      $ref: ../components/responses/NotFound.yaml
+    '500':
+      $ref: ../components/responses/InternalError.yaml

@@ -1425,29 +1425,23 @@ func (s *ProjectService) ApplyToProject(ctx context.Context, input ApplyToProjec
 		return nil, ErrInternal("提交申请失败")
 	}
 
-	// 向项目所有者发送「收到名片通知」
-	go func(asyncCtx context.Context) {
-		// 1. 获取申请人信息
-		applicant, err := s.repo.User.GetByID(asyncCtx, input.UserID)
-		if err != nil {
-			log.Printf("[ProjectService.ApplyToProject] error getting applicant: %v", err)
-			return
-		}
-
+	// Persist the notification before returning; delivery itself remains asynchronous.
+	applicant, applicantErr := s.repo.User.GetByID(context.WithoutCancel(ctx), input.UserID)
+	if applicantErr != nil {
+		log.Printf("[ProjectService.ApplyToProject] error getting applicant for notification: %v", applicantErr)
+	} else {
 		senderName := "匿名用户"
-		if applicant.Nickname != nil && *applicant.Nickname != "" {
+		if applicant != nil && applicant.Nickname != nil && *applicant.Nickname != "" {
 			senderName = *applicant.Nickname
 		}
-
-		// 2. 发送订阅消息，跳转页面由数据库 page_path 字段决定
 		data := map[string]string{
-			"sender": senderName,
+			"sender": truncate20(senderName),
 			"remark": "恭喜，请在我的项目中及时处理哦。",
 		}
-		if err := s.message.SendSubscribeMsgByBizKey(asyncCtx, project.CreatorID, models.MsgBizKeyCardReceived, data); err != nil {
-			log.Printf("[ProjectService.ApplyToProject] notification error: %v", err)
+		if queueErr := s.message.SendSubscribeMsgByBizKey(context.WithoutCancel(ctx), project.CreatorID, models.MsgBizKeyCardReceived, data); queueErr != nil {
+			log.Printf("[ProjectService.ApplyToProject] queue notification error: %v", queueErr)
 		}
-	}(context.WithoutCancel(ctx))
+	}
 
 	return application, nil
 }
@@ -1544,25 +1538,20 @@ func (s *ProjectService) ReviewApplication(ctx context.Context, applicationID, u
 		return ErrInternal("提交事务失败")
 	}
 
-	go func(asyncCtx context.Context) {
-		resultStr := "互相了解"
-		remark := "请及时查看投递进展。"
-		if status == models.ApplicationStatusRejected {
-			resultStr = "不合适"
-			remark = "更多校园项目等你探索。"
-		}
-
-		data := map[string]string{
-			"project_name":    truncate20(project.Name),
-			"delivery_result": resultStr,
-			"remark":          remark,
-		}
-
-		err = s.message.SendSubscribeMsgByBizKey(asyncCtx, app.UserID, models.MsgBizKeyCardDeliveryResult, data)
-		if err != nil {
-			log.Printf("[ProjectService.ReviewApplication] notification error: %v", err)
-		}
-	}(context.WithoutCancel(ctx))
+	resultStr := "互相了解"
+	remark := "请及时查看投递进展。"
+	if status == models.ApplicationStatusRejected {
+		resultStr = "不合适"
+		remark = "更多校园项目等你探索。"
+	}
+	data := map[string]string{
+		"project_name":    truncate20(project.Name),
+		"delivery_result": resultStr,
+		"remark":          remark,
+	}
+	if queueErr := s.message.SendSubscribeMsgByBizKey(context.WithoutCancel(ctx), app.UserID, models.MsgBizKeyCardDeliveryResult, data); queueErr != nil {
+		log.Printf("[ProjectService.ReviewApplication] queue notification error: %v", queueErr)
+	}
 
 	return nil
 }
@@ -1675,16 +1664,14 @@ func (s *ProjectService) AssignApplicationRole(ctx context.Context, input Assign
 	if err := tx.Commit(); err != nil {
 		return ErrInternal("提交事务失败")
 	}
-	go func(asyncCtx context.Context) {
-		data := map[string]string{
-			"project_name":    truncate20(project.Name),
-			"delivery_result": "同意入队",
-			"remark":          "恭喜加入团队，请及时查看项目。",
-		}
-		if err := s.message.SendSubscribeMsgByBizKey(asyncCtx, app.UserID, models.MsgBizKeyCardDeliveryResult, data); err != nil {
-			log.Printf("[ProjectService.AssignApplicationRole] notification error: %v", err)
-		}
-	}(context.WithoutCancel(ctx))
+	data := map[string]string{
+		"project_name":    truncate20(project.Name),
+		"delivery_result": "同意入队",
+		"remark":          "恭喜加入团队，请及时查看项目。",
+	}
+	if queueErr := s.message.SendSubscribeMsgByBizKey(context.WithoutCancel(ctx), app.UserID, models.MsgBizKeyCardDeliveryResult, data); queueErr != nil {
+		log.Printf("[ProjectService.AssignApplicationRole] queue notification error: %v", queueErr)
+	}
 	return nil
 }
 
@@ -1707,20 +1694,18 @@ func (s *ProjectService) TakedownProject(ctx context.Context, id int, rejectReas
 		return ErrInternal("下架失败")
 	}
 
-	go func(asyncCtx context.Context) {
-		remark := "请按照审核意见重新提交项目。"
-		if rejectReason != nil && strings.TrimSpace(*rejectReason) != "" {
-			remark = truncate20WithEllipsis(strings.TrimSpace(*rejectReason))
-		}
-		data := map[string]string{
-			"project_name": truncate20(project.Name),
-			"status":       "审核拒绝",
-			"remark":       remark,
-		}
-		if err := s.message.SendSubscribeMsgByBizKey(asyncCtx, project.CreatorID, models.MsgBizKeyAuditResultProj, data); err != nil {
-			log.Printf("[ProjectService.TakedownProject] notification error: %v", err)
-		}
-	}(context.WithoutCancel(ctx))
+	remark := "请按照审核意见重新提交项目。"
+	if rejectReason != nil && strings.TrimSpace(*rejectReason) != "" {
+		remark = truncate20WithEllipsis(strings.TrimSpace(*rejectReason))
+	}
+	data := map[string]string{
+		"project_name": truncate20(project.Name),
+		"status":       "审核拒绝",
+		"remark":       remark,
+	}
+	if queueErr := s.message.SendSubscribeMsgByBizKey(context.WithoutCancel(ctx), project.CreatorID, models.MsgBizKeyAuditResultProj, data); queueErr != nil {
+		log.Printf("[ProjectService.TakedownProject] queue notification error: %v", queueErr)
+	}
 
 	return nil
 }
@@ -1753,30 +1738,24 @@ func (s *ProjectService) ReviewProject(ctx context.Context, id, status int, reje
 		}
 	}
 
-	// 向项目负责人发送审核结果通知
-	go func(asyncCtx context.Context) {
-		statusStr := "审核通过"
-		remark := "项目已上线，快去查看吧！" // 12 字 ≤ thing7 上限 20 字
-		if status == models.ProjectStatusRejected {
-			statusStr = "审核拒绝"
-			if rejectReason != nil && strings.TrimSpace(*rejectReason) != "" {
-				remark = truncate20WithEllipsis(strings.TrimSpace(*rejectReason))
-			} else {
-				remark = "请按照审核意见重新提交项目。" // 14 字 ≤ thing7 上限 20 字
-			}
+	statusStr := "审核通过"
+	remark := "项目已上线，快去查看吧！"
+	if status == models.ProjectStatusRejected {
+		statusStr = "审核拒绝"
+		if rejectReason != nil && strings.TrimSpace(*rejectReason) != "" {
+			remark = truncate20WithEllipsis(strings.TrimSpace(*rejectReason))
+		} else {
+			remark = "请按照审核意见重新提交项目。"
 		}
-
-		data := map[string]string{
-			"project_name": truncate20(project.Name), // thing15 ≤ 20 字
-			"status":       statusStr,
-			"remark":       remark,
-		}
-
-		err = s.message.SendSubscribeMsgByBizKey(asyncCtx, project.CreatorID, models.MsgBizKeyAuditResultProj, data)
-		if err != nil {
-			log.Printf("[ProjectService.ReviewProject] notification error: %v", err)
-		}
-	}(context.WithoutCancel(ctx))
+	}
+	data := map[string]string{
+		"project_name": truncate20(project.Name),
+		"status":       statusStr,
+		"remark":       remark,
+	}
+	if queueErr := s.message.SendSubscribeMsgByBizKey(context.WithoutCancel(ctx), project.CreatorID, models.MsgBizKeyAuditResultProj, data); queueErr != nil {
+		log.Printf("[ProjectService.ReviewProject] queue notification error: %v", queueErr)
+	}
 
 	return nil
 }

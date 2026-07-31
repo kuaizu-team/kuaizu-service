@@ -13,11 +13,10 @@ const (
 
 // SubscribeConfig 订阅消息配置
 type SubscribeConfig struct {
-	ID             int             `db:"id"`
-	UserID         int             `db:"user_id"`
-	BizKey         string          `db:"biz_key"`
-	SubscribeCount *int            `db:"subscribe_count"`
-	Status         SubscribeStatus `db:"status"`
-	CreatedAt      *time.Time      `db:"created_at"`
-	UpdatedAt      *time.Time      `db:"updated_at"`
+	ID        int             `db:"id"`
+	UserID    int             `db:"user_id"`
+	BizKey    string          `db:"biz_key"`
+	Status    SubscribeStatus `db:"status"`
+	CreatedAt *time.Time      `db:"created_at"`
+	UpdatedAt *time.Time      `db:"updated_at"`
 }

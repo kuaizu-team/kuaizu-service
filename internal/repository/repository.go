@@ -31,6 +31,7 @@ type Repository struct {
 	PendingInvitation    PendingInvitationRepo
 	MsgTemplate          MsgTemplateConfigRepo
 	SubscribeConfig      SubscribeConfigRepo
+	WxSubscribeDelivery  WxSubscribeDeliveryRepo
 	ProjectViewLog       ProjectViewLogRepo
 	TalentViewLog        TalentViewLogRepo
 	Interaction          *InteractionRepository
@@ -69,6 +70,7 @@ func New(db *sqlx.DB) *Repository {
 		PendingInvitation:    NewPendingInvitationRepository(db),
 		MsgTemplate:          NewMsgTemplateConfigRepository(db),
 		SubscribeConfig:      NewSubscribeConfigRepository(db),
+		WxSubscribeDelivery:  NewWxSubscribeDeliveryRepository(db),
 		ProjectViewLog:       NewProjectViewLogRepository(db),
 		TalentViewLog:        NewTalentViewLogRepository(db),
 		Interaction:          NewInteractionRepository(db),

@@ -447,14 +447,11 @@ func (s *TalentProfileService) ReviewTalentProfile(ctx context.Context, id, stat
 		return ErrInternal("审核失败")
 	}
 
-	// 异步发送审核结果通知
-	go func(asyncCtx context.Context, userID int) {
-		user, err := s.repo.User.GetByID(asyncCtx, userID)
-		if err != nil || user == nil {
-			log.Printf("[TalentProfileService.ReviewTalentProfile] get user for notification error: %v", err)
-			return
-		}
-
+	userID := profile.UserID
+	user, err := s.repo.User.GetByID(context.WithoutCancel(ctx), userID)
+	if err != nil || user == nil {
+		log.Printf("[TalentProfileService.ReviewTalentProfile] get user for notification error: %v", err)
+	} else {
 		resultStr := "审核通过"
 		remark := "名片已上架人才库，快去看看吧！"
 		if status == models.TalentStatusPrivate {
@@ -464,7 +461,7 @@ func (s *TalentProfileService) ReviewTalentProfile(ctx context.Context, id, stat
 
 		userName := "同学"
 		if user.Nickname != nil && *user.Nickname != "" {
-			userName = *user.Nickname
+			userName = truncate20(*user.Nickname)
 		}
 
 		data := map[string]string{
@@ -473,35 +470,33 @@ func (s *TalentProfileService) ReviewTalentProfile(ctx context.Context, id, stat
 			"remark":    remark,
 		}
 
-		if err := s.message.SendSubscribeMsgByBizKey(asyncCtx, userID, models.MsgBizKeyAuditResultUser, data); err != nil {
-			log.Printf("[TalentProfileService.ReviewTalentProfile] notification error: %v", err)
+		if queueErr := s.message.SendSubscribeMsgByBizKey(context.WithoutCancel(ctx), userID, models.MsgBizKeyAuditResultUser, data); queueErr != nil {
+			log.Printf("[TalentProfileService.ReviewTalentProfile] queue notification error: %v", queueErr)
 		}
-	}(context.WithoutCancel(ctx), profile.UserID)
+	}
 
 	return nil
 }
 
 func (s *TalentProfileService) notifyTalentReviewResult(ctx context.Context, userID int, resultStr string, remark string) {
-	go func(asyncCtx context.Context) {
-		user, err := s.repo.User.GetByID(asyncCtx, userID)
-		if err != nil || user == nil {
-			log.Printf("[TalentProfileService.notifyTalentReviewResult] get user for notification error: %v", err)
-			return
-		}
+	user, err := s.repo.User.GetByID(context.WithoutCancel(ctx), userID)
+	if err != nil || user == nil {
+		log.Printf("[TalentProfileService.notifyTalentReviewResult] get user for notification error: %v", err)
+		return
+	}
 
-		userName := "同学"
-		if user.Nickname != nil && *user.Nickname != "" {
-			userName = *user.Nickname
-		}
+	userName := "同学"
+	if user.Nickname != nil && *user.Nickname != "" {
+		userName = truncate20(*user.Nickname)
+	}
 
-		data := map[string]string{
-			"user_name": userName,
-			"result":    resultStr,
-			"remark":    remark,
-		}
+	data := map[string]string{
+		"user_name": userName,
+		"result":    resultStr,
+		"remark":    remark,
+	}
 
-		if err := s.message.SendSubscribeMsgByBizKey(asyncCtx, userID, models.MsgBizKeyAuditResultUser, data); err != nil {
-			log.Printf("[TalentProfileService.notifyTalentReviewResult] notification error: %v", err)
-		}
-	}(context.WithoutCancel(ctx))
+	if queueErr := s.message.SendSubscribeMsgByBizKey(context.WithoutCancel(ctx), userID, models.MsgBizKeyAuditResultUser, data); queueErr != nil {
+		log.Printf("[TalentProfileService.notifyTalentReviewResult] queue notification error: %v", queueErr)
+	}
 }
