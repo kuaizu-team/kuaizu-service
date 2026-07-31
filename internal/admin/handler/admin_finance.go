@@ -10,14 +10,20 @@ func canViewAdminDetail(callerRole, callerID int, target *models.AdminUser, call
 	if target == nil {
 		return false
 	}
+	if target.ID == callerID {
+		return true
+	}
 	switch callerRole {
 	case models.AdminRoleSuperAdmin:
 		return true
 	case models.AdminRoleSchoolSuperAdmin:
-		if target.ID == callerID {
-			return true
-		}
-		return (target.Role == models.AdminRoleEventManager || target.Role == models.AdminRoleSchoolAdmin) && schoolIDsMatch(callerSchoolID, target.SchoolID)
+		return (target.Role == models.AdminRoleSchoolAdmin || target.Role == models.AdminRoleEventManager) &&
+			schoolIDsMatch(callerSchoolID, target.SchoolID)
+	case models.AdminRoleSchoolAdmin:
+		return (target.Role == models.AdminRoleSchoolSuperAdmin ||
+			target.Role == models.AdminRoleSchoolAdmin ||
+			target.Role == models.AdminRoleEventManager) &&
+			adminBelongsToSchool(target, callerSchoolID)
 	default:
 		return false
 	}
@@ -32,9 +38,10 @@ func canViewAdminPassword(callerRole, callerID int, target *models.AdminUser, ca
 	}
 	switch callerRole {
 	case models.AdminRoleSuperAdmin:
-		return true
+		return target.Role > callerRole
 	case models.AdminRoleSchoolSuperAdmin:
-		return (target.Role == models.AdminRoleSchoolAdmin || target.Role == models.AdminRoleEventManager) && schoolIDsMatch(callerSchoolID, target.SchoolID)
+		return (target.Role == models.AdminRoleSchoolAdmin || target.Role == models.AdminRoleEventManager) &&
+			schoolIDsMatch(callerSchoolID, target.SchoolID)
 	default:
 		return false
 	}
@@ -48,25 +55,81 @@ func (s *AdminServer) canViewAdminDetailInScope(ctx echo.Context, target *models
 	if role == models.AdminRoleSuperAdmin {
 		return true
 	}
-	if role != models.AdminRoleSchoolSuperAdmin {
-		return false
-	}
 	if target.ID == currentAdminID(ctx) {
 		return true
 	}
-	if target.Role != models.AdminRoleSchoolAdmin && target.Role != models.AdminRoleEventManager {
+	if role == models.AdminRoleSchoolAdmin {
+		callerSchoolID := adminSchoolID(ctx)
+		return (target.Role == models.AdminRoleSchoolSuperAdmin ||
+			target.Role == models.AdminRoleSchoolAdmin ||
+			target.Role == models.AdminRoleEventManager) &&
+			adminBelongsToSchool(target, callerSchoolID)
+	}
+	if role != models.AdminRoleSchoolSuperAdmin ||
+		(target.Role != models.AdminRoleSchoolAdmin && target.Role != models.AdminRoleEventManager) {
 		return false
 	}
 	schoolIDs, err := s.adminSchoolIDs(ctx)
 	return err == nil && schoolIDInScope(target.SchoolID, schoolIDs)
 }
 
+func adminBelongsToSchool(target *models.AdminUser, schoolID *int) bool {
+	if target == nil || schoolID == nil {
+		return false
+	}
+	if target.Role != models.AdminRoleSchoolSuperAdmin {
+		return schoolIDsMatch(schoolID, target.SchoolID)
+	}
+	for _, school := range target.Schools {
+		if school.SchoolID == *schoolID && school.CommissionRate > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func sanitizeSchoolAdminDirectoryVO(vo *adminvo.AdminUserAccountVO, target *models.AdminUser, schoolID *int) {
+	if vo == nil || target == nil {
+		return
+	}
+	vo.Username = ""
+	vo.Password = nil
+	vo.PendingSettlementAmount = 0
+	vo.PendingRefundOrderCount = 0
+	vo.FinanceRemark = nil
+	vo.CommissionRate = 0
+	vo.Intro = nil
+	vo.ArticleURL = nil
+	vo.Schools = []adminvo.AdminSchoolVO{}
+
+	if target.Role != models.AdminRoleSchoolSuperAdmin || schoolID == nil {
+		return
+	}
+	for _, school := range target.Schools {
+		if school.SchoolID != *schoolID || school.CommissionRate <= 0 {
+			continue
+		}
+		id := school.SchoolID
+		name := school.SchoolName
+		vo.SchoolID = &id
+		vo.SchoolName = &name
+		return
+	}
+}
+
 func (s *AdminServer) canViewAdminPasswordInScope(ctx echo.Context, target *models.AdminUser) bool {
 	if target == nil {
 		return false
 	}
-	if target.ID == currentAdminID(ctx) || adminRole(ctx) == models.AdminRoleSuperAdmin {
+	role := adminRole(ctx)
+	if target.ID == currentAdminID(ctx) {
 		return true
+	}
+	if role == models.AdminRoleSuperAdmin {
+		return target.Role > role
+	}
+	if role == models.AdminRoleSchoolAdmin {
+		return false
 	}
 	return s.canViewAdminDetailInScope(ctx, target)
 }
@@ -80,6 +143,26 @@ func attachAdminPassword(vo *adminvo.AdminUserAccountVO, target *models.AdminUse
 		return
 	}
 	vo.Password = &password
+}
+
+func canViewAdminFinanceOverview(callerRole, callerID int, target *models.AdminUser) bool {
+	if target == nil || target.Role != models.AdminRoleSchoolSuperAdmin {
+		return false
+	}
+	return callerRole == models.AdminRoleSuperAdmin ||
+		(callerRole == models.AdminRoleSchoolSuperAdmin && target.ID == callerID)
+}
+
+func clearAdminFinanceOverview(vo *adminvo.AdminUserAccountVO) {
+	if vo == nil {
+		return
+	}
+	vo.PendingSettlementAmount = 0
+	vo.PendingRefundOrderCount = 0
+	vo.FinanceRemark = nil
+	for i := range vo.Schools {
+		vo.Schools[i].PendingSettlementAmount = 0
+	}
 }
 
 func (s *AdminServer) enrichAdminFinance(ctx echo.Context, vo *adminvo.AdminUserAccountVO, admin *models.AdminUser, includeRemark bool) {
@@ -99,6 +182,11 @@ func (s *AdminServer) enrichAdminFinance(ctx echo.Context, vo *adminvo.AdminUser
 		for i := range vo.Schools {
 			vo.Schools[i].PendingSettlementAmount = stats.PendingBySchool[vo.Schools[i].SchoolID]
 		}
+		return
+	}
+	if admin.Role == models.AdminRoleSchoolAdmin {
+		vo.PendingSettlementAmount = 0
+		vo.PendingRefundOrderCount = 0
 		return
 	}
 	if admin.SchoolID == nil {

@@ -2,12 +2,15 @@ package handler
 
 import (
 	"database/sql"
+	"log"
 	"math"
 	"strconv"
 	"time"
 
 	"github.com/kuaizu-team/kuaizu-service/internal/models"
+	"github.com/kuaizu-team/kuaizu-service/internal/repository"
 	"github.com/kuaizu-team/kuaizu-service/internal/response"
+	"github.com/kuaizu-team/kuaizu-service/internal/service"
 	"github.com/labstack/echo/v4"
 )
 
@@ -164,6 +167,11 @@ func (s *AdminServer) UpdateProjectRating(ctx echo.Context) error {
 		}
 		return response.InternalError(ctx, "锁定评分记录失败")
 	}
+	var previousCollaborationScore float64
+	if err := tx.GetContext(ctx.Request().Context(), &previousCollaborationScore,
+		"SELECT COALESCE(collaboration_score, 90) FROM `user` WHERE id=? FOR UPDATE", record.TargetID); err != nil {
+		return response.InternalError(ctx, "获取原协作指数失败")
+	}
 	if _, err := tx.ExecContext(ctx.Request().Context(),
 		"UPDATE project_member_rating SET score=? WHERE id=?", req.Score, ratingID); err != nil {
 		return response.InternalError(ctx, "更新评分失败")
@@ -227,17 +235,30 @@ func (s *AdminServer) UpdateProjectRating(ctx echo.Context) error {
 				projectScore.Float64, ratingCount, frozenScoreID); err != nil {
 				return response.InternalError(ctx, "同步历史协作评分失败")
 			}
-			if _, err := tx.ExecContext(ctx.Request().Context(), `UPDATE `+"`user`"+` SET collaboration_score=(
-				SELECT avg_score FROM (SELECT COALESCE(AVG(score),100) AS avg_score FROM collaboration_score WHERE user_id=?) t
-			) WHERE id=?`, record.TargetID, record.TargetID); err != nil {
-				return response.InternalError(ctx, "更新用户协作指数失败")
-			}
 			historicalScoreUpdated = true
 		}
 	}
 
+	if err := repository.UpdateUserCollaborationScoreTx(ctx.Request().Context(), tx, record.TargetID); err != nil {
+		return response.InternalError(ctx, "更新用户协作指数失败")
+	}
+	var collaborationScore float64
+	if err := tx.GetContext(ctx.Request().Context(), &collaborationScore,
+		"SELECT COALESCE(collaboration_score, 90) FROM `user` WHERE id=?", record.TargetID); err != nil {
+		return response.InternalError(ctx, "获取最新协作指数失败")
+	}
+
 	if err := tx.Commit(); err != nil {
 		return response.InternalError(ctx, "提交事务失败")
+	}
+	if previousCollaborationScore != collaborationScore {
+		service.SendCollaborationScoreUpdateNotificationAsync(
+			ctx.Request().Context(), s.messageService(), record.TargetID, collaborationScore, time.Now(),
+			"AdminServer.UpdateProjectRating",
+		)
+	} else {
+		log.Printf("[AdminServer.UpdateProjectRating] collaboration score unchanged, notification skipped, user_id=%d score=%v",
+			record.TargetID, collaborationScore)
 	}
 
 	return response.Success(ctx, map[string]interface{}{

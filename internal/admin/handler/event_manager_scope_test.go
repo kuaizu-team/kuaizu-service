@@ -76,3 +76,115 @@ func TestUpsertExistingEventManagerSyncsSchoolScope(t *testing.T) {
 		})
 	}
 }
+
+func TestCreateEventManagerRequiresPhone(t *testing.T) {
+	account := "event_manager"
+	password := "secret123"
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodPost, "/admin/events", nil)
+	rec := httptest.NewRecorder()
+	ctx := e.NewContext(req, rec)
+	ctx.Set("adminRole", models.AdminRoleSuperAdmin)
+	exec := &recordingEventManagerExecer{}
+	event := &models.Event{Name: "Example"}
+
+	err := (&AdminServer{}).upsertEventManager(ctx, exec, event, adminEventRequest{
+		ManagerAccount:  &account,
+		ManagerPassword: &password,
+	})
+	if err != nil {
+		t.Fatalf("upsertEventManager returned error: %v", err)
+	}
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusBadRequest)
+	}
+	if exec.calls != 0 {
+		t.Fatalf("ExecContext calls = %d, want 0", exec.calls)
+	}
+}
+
+func TestSchoolAdminEventRequestForcesCurrentSchool(t *testing.T) {
+	schoolID := 22
+	requestSchoolID := 22
+	level := "school"
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodPost, "/admin/events", nil)
+	ctx := e.NewContext(req, httptest.NewRecorder())
+	ctx.Set("adminRole", models.AdminRoleSchoolAdmin)
+	ctx.Set("adminSchoolID", schoolID)
+
+	event, err := (&AdminServer{}).buildAdminEventModelForRequest(ctx, adminEventRequest{
+		Name: "School Event", Level: &level, SchoolID: &requestSchoolID,
+	})
+	if err != nil {
+		t.Fatalf("buildAdminEventModelForRequest returned error: %v", err)
+	}
+	if event.Level == nil || *event.Level != "school" ||
+		event.SchoolID == nil || *event.SchoolID != schoolID {
+		t.Fatalf("event scope = (%v, %v), want school/%d", event.Level, event.SchoolID, schoolID)
+	}
+
+	otherSchoolID := 23
+	if _, err := (&AdminServer{}).buildAdminEventModelForRequest(ctx, adminEventRequest{
+		Name: "Other School Event", Level: &level, SchoolID: &otherSchoolID,
+	}); err == nil {
+		t.Fatal("school admin could submit another schoolId")
+	}
+
+	national := "national"
+	if _, err := (&AdminServer{}).buildAdminEventModelForRequest(ctx, adminEventRequest{
+		Name: "National Event", Level: &national,
+	}); err == nil {
+		t.Fatal("school admin could create a national event")
+	}
+}
+
+func TestSchoolAdminCannotUpdateExistingEventManager(t *testing.T) {
+	schoolID := 22
+	managerID := 8
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodPut, "/admin/events/7", nil)
+	ctx := e.NewContext(req, httptest.NewRecorder())
+	ctx.Set("adminRole", models.AdminRoleSchoolAdmin)
+	ctx.Set("adminSchoolID", schoolID)
+	exec := &recordingEventManagerExecer{}
+	level := "school"
+	event := &models.Event{Name: "School Event", Level: &level, AdminID: &managerID, SchoolID: &schoolID}
+
+	rec := httptest.NewRecorder()
+	ctx = e.NewContext(req, rec)
+	ctx.Set("adminRole", models.AdminRoleSchoolAdmin)
+	ctx.Set("adminSchoolID", schoolID)
+	if err := (&AdminServer{}).upsertEventManager(ctx, exec, event, adminEventRequest{}); err != nil {
+		t.Fatalf("upsertEventManager returned error: %v", err)
+	}
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusForbidden)
+	}
+	if exec.calls != 0 {
+		t.Fatalf("ExecContext calls = %d, want 0", exec.calls)
+	}
+}
+
+func TestSchoolAdminCanCreateManagerForOwnSchoolEvent(t *testing.T) {
+	t.Setenv("ADMIN_CREDENTIAL_KEY", "test-only-credential-key")
+	schoolID := 22
+	level := "school"
+	account, password, phone := "school_event_manager", "secret123", "13800138000"
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodPost, "/admin/events", nil)
+	ctx := e.NewContext(req, httptest.NewRecorder())
+	ctx.Set("adminRole", models.AdminRoleSchoolAdmin)
+	ctx.Set("adminSchoolID", schoolID)
+	exec := &recordingEventManagerExecer{}
+	event := &models.Event{ID: 7, Name: "School Event", Level: &level, SchoolID: &schoolID}
+
+	if err := (&AdminServer{}).upsertEventManager(ctx, exec, event, adminEventRequest{
+		ManagerAccount: &account, ManagerPassword: &password, ManagerPhone: &phone,
+	}); err != nil {
+		t.Fatalf("upsertEventManager returned error: %v", err)
+	}
+	if exec.calls != 2 {
+		t.Fatalf("ExecContext calls = %d, want 2", exec.calls)
+	}
+}

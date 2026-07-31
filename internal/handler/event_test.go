@@ -2,6 +2,7 @@ package handler
 
 import (
 	"testing"
+	"time"
 
 	"github.com/kuaizu-team/kuaizu-service/internal/models"
 )
@@ -37,5 +38,49 @@ func TestBuildEventModelUsesBusinessTimezoneForDeadline(t *testing.T) {
 	}
 	if _, offset := event.RegistrationDeadline.Zone(); offset != 8*60*60 {
 		t.Fatalf("deadline UTC offset = %d, want %d", offset, 8*60*60)
+	}
+}
+
+func TestParseInfoCenterEventView(t *testing.T) {
+	tests := []struct {
+		raw  string
+		want infoCenterEventView
+		ok   bool
+	}{
+		{"recommend", infoCenterEventViewRecommend, true},
+		{" support ", infoCenterEventViewSupport, true},
+		{"", "", false},
+		{"other", "", false},
+	}
+
+	for _, tt := range tests {
+		got, ok := parseInfoCenterEventView(tt.raw)
+		if ok != tt.ok || got != tt.want {
+			t.Fatalf("parseInfoCenterEventView(%q) = (%q, %v), want (%q, %v)", tt.raw, got, ok, tt.want, tt.ok)
+		}
+	}
+}
+
+func TestInfoCenterSchoolEventParams(t *testing.T) {
+	now := time.Date(2026, time.July, 31, 23, 30, 0, 0, time.FixedZone("Asia/Shanghai", 8*60*60))
+
+	recommend := infoCenterSchoolEventParams(infoCenterEventViewRecommend, 42, now)
+	if recommend.Size != 1 {
+		t.Fatalf("recommend size = %d, want 1", recommend.Size)
+	}
+	if !recommend.SchoolOnly || len(recommend.SchoolIDs) != 1 || recommend.SchoolIDs[0] != 42 {
+		t.Fatalf("recommend school filter = %#v", recommend)
+	}
+	if recommend.RegistrationDeadlineFrom == nil ||
+		recommend.RegistrationDeadlineFrom.Format("2006-01-02") != "2026-07-31" {
+		t.Fatalf("recommend deadline filter = %v", recommend.RegistrationDeadlineFrom)
+	}
+
+	support := infoCenterSchoolEventParams(infoCenterEventViewSupport, 42, now)
+	if support.Size != 100 {
+		t.Fatalf("support size = %d, want 100", support.Size)
+	}
+	if !support.SchoolOnly || len(support.SchoolIDs) != 1 || support.SchoolIDs[0] != 42 {
+		t.Fatalf("support school filter = %#v", support)
 	}
 }

@@ -9,6 +9,7 @@ type AdminUser struct {
 	PasswordHash      string     `db:"password_hash"`
 	PasswordEncrypted *string    `db:"password_encrypted"`
 	Nickname          *string    `db:"nickname"`
+	Phone             *string    `db:"phone"`
 	Role              int        `db:"role"`      // 1=超级管理员 2=校区超级管理员 3=校区管理员 4=赛事管理员
 	SchoolID          *int       `db:"school_id"` // 校区角色必填，超级管理员为NULL
 	Status            int        `db:"status"`    // 1=enabled, 0=disabled

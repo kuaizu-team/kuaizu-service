@@ -2,13 +2,16 @@ package handler
 
 import (
 	"database/sql"
+	"log"
 	"strconv"
+	"time"
 
 	"github.com/jmoiron/sqlx"
 	adminvo "github.com/kuaizu-team/kuaizu-service/internal/admin/vo"
 	"github.com/kuaizu-team/kuaizu-service/internal/models"
 	"github.com/kuaizu-team/kuaizu-service/internal/repository"
 	"github.com/kuaizu-team/kuaizu-service/internal/response"
+	"github.com/kuaizu-team/kuaizu-service/internal/service"
 	"github.com/labstack/echo/v4"
 )
 
@@ -333,6 +336,11 @@ func (s *AdminServer) UpdateUserCollaborationScore(ctx echo.Context) error {
 	}
 	defer tx.Rollback()
 
+	var previousCollaborationScore float64
+	if err := tx.GetContext(ctx.Request().Context(), &previousCollaborationScore,
+		"SELECT COALESCE(collaboration_score, 90) FROM `user` WHERE id=? FOR UPDATE", userID); err != nil {
+		return response.InternalError(ctx, "获取原协作指数失败")
+	}
 	result, err := tx.ExecContext(ctx.Request().Context(), "UPDATE collaboration_score SET score=? WHERE id=? AND user_id=?", req.Score, scoreID, userID)
 	if err != nil {
 		return response.InternalError(ctx, "更新评分失败")
@@ -341,13 +349,25 @@ func (s *AdminServer) UpdateUserCollaborationScore(ctx echo.Context) error {
 	if affected == 0 {
 		return response.NotFound(ctx, "评分记录不存在")
 	}
-	if _, err := tx.ExecContext(ctx.Request().Context(), `UPDATE `+"`user`"+` SET collaboration_score=(
-		SELECT avg_score FROM (SELECT COALESCE(AVG(score), 100) AS avg_score FROM collaboration_score WHERE user_id=?) t
-	) WHERE id=?`, userID, userID); err != nil {
+	if err := repository.UpdateUserCollaborationScoreTx(ctx.Request().Context(), tx, userID); err != nil {
 		return response.InternalError(ctx, "更新协作指数失败")
+	}
+	var collaborationScore float64
+	if err := tx.GetContext(ctx.Request().Context(), &collaborationScore,
+		"SELECT COALESCE(collaboration_score, 90) FROM `user` WHERE id=?", userID); err != nil {
+		return response.InternalError(ctx, "获取最新协作指数失败")
 	}
 	if err := tx.Commit(); err != nil {
 		return response.InternalError(ctx, "提交事务失败")
+	}
+	if previousCollaborationScore != collaborationScore {
+		service.SendCollaborationScoreUpdateNotificationAsync(
+			ctx.Request().Context(), s.messageService(), userID, collaborationScore, time.Now(),
+			"AdminServer.UpdateUserCollaborationScore",
+		)
+	} else {
+		log.Printf("[AdminServer.UpdateUserCollaborationScore] collaboration score unchanged, notification skipped, user_id=%d score=%v",
+			userID, collaborationScore)
 	}
 	return response.Success(ctx, map[string]interface{}{"ok": true})
 }

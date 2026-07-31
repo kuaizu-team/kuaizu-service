@@ -1,8 +1,9 @@
 get:
   tags:
-    - Admins
-  summary: 管理员详情
-  description: 校区管理员只能查看本人或本校人员；非本人账号、密码和财务字段会被隐藏。校区超级管理员可在本校人员详情中按需查看凭据。
+    - Events
+  summary: 获取赛事详情
+  operationId: getAdminEvent
+  description: 返回赛事信息、按角色脱敏的赛事管理员信息及当前请求人的操作权限。
   parameters:
     - in: path
       name: id
@@ -11,7 +12,7 @@ get:
         type: integer
   responses:
     '200':
-      description: 成功获取管理员详情
+      description: 获取成功
       content:
         application/json:
           schema:
@@ -20,7 +21,7 @@ get:
               - type: object
                 properties:
                   data:
-                    $ref: ../components/schemas/AdminAccount.yaml
+                    $ref: ../components/schemas/AdminEventDetail.yaml
     '401':
       $ref: ../components/responses/Unauthorized.yaml
     '403':
@@ -31,9 +32,10 @@ get:
       $ref: ../components/responses/InternalError.yaml
 put:
   tags:
-    - Admins
-  summary: 更新管理员
-  operationId: updateAdmin
+    - Events
+  summary: 更新赛事
+  operationId: updateAdminEvent
+  description: 平台超管可完整编辑；校区角色仅可编辑报名截止时间。校区超管可编辑本人创建的本校学校赛事管理员；校区管理员可为本校无管理员赛事创建管理员，但不可修改已有管理员。
   parameters:
     - in: path
       name: id
@@ -45,52 +47,7 @@ put:
     content:
       application/json:
         schema:
-          type: object
-          properties:
-            username:
-              type: string
-            nickname:
-              type: string
-              nullable: true
-            phone:
-              type: string
-              pattern: '^1\d{10}$'
-            password:
-              type: string
-              format: password
-            role:
-              type: integer
-              enum: [1, 2, 3, 4]
-            schoolId:
-              type: integer
-              nullable: true
-            status:
-              type: integer
-              enum: [0, 1]
-            joinDate:
-              type: string
-              format: date
-              nullable: true
-            intro:
-              type: string
-              nullable: true
-            articleUrl:
-              type: string
-              nullable: true
-            schools:
-              type: array
-              items:
-                type: object
-                required: [schoolId, commissionRate]
-                properties:
-                  schoolId:
-                    type: integer
-                  commissionRate:
-                    type: number
-                    minimum: 0
-                    maximum: 100
-            removeSchoolId:
-              type: integer
+          $ref: ../components/schemas/AdminEventDTO.yaml
   responses:
     '200':
       description: 更新成功
@@ -102,7 +59,7 @@ put:
               - type: object
                 properties:
                   data:
-                    $ref: ../components/schemas/AdminAccount.yaml
+                    $ref: ../components/schemas/AdminEvent.yaml
     '400':
       $ref: ../components/responses/BadRequest.yaml
     '401':
@@ -115,9 +72,9 @@ put:
       $ref: ../components/responses/InternalError.yaml
 delete:
   tags:
-    - Admins
-  summary: 删除管理员
-  operationId: deleteAdmin
+    - Events
+  summary: 删除赛事
+  operationId: deleteAdminEvent
   parameters:
     - in: path
       name: id

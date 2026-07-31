@@ -26,6 +26,12 @@ get:
         type: string
       description: 关键词筛选（name/description）
     - in: query
+      name: eventId
+      schema:
+        type: integer
+        minimum: 1
+      description: 按关联赛事筛选项目；校区角色仍受本校数据范围约束
+    - in: query
       name: sortBy
       schema:
         type: string

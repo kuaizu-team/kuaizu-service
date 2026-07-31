@@ -168,4 +168,5 @@ const (
 	MsgBizKeyTalentShare        = "MSG_TALENT_SHARE"         // 名片转发提醒
 	MsgBizKeyTalentVisit        = "MSG_TALENT_VISIT"         // 名片被访提醒
 	MsgBizKeyVersionUpdate      = "MSG_VERSION_UPDATE"       // 版本更新通知
+	MsgBizKeyCollaborationScore = "MSG_COLLABORATION_SCORE_UPDATE" // 协作指数更新提醒
 )

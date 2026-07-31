@@ -31,6 +31,22 @@ func (s *AdminServer) ListProjects(ctx echo.Context) error {
 			return err
 		}
 		params.EventID = &eventID
+	} else if v := ctx.QueryParam("eventId"); v != "" {
+		eventID, err := strconv.Atoi(v)
+		if err != nil || eventID <= 0 {
+			return response.BadRequest(ctx, "invalid eventId")
+		}
+		event, err := s.repo.Event.GetByID(ctx.Request().Context(), eventID)
+		if err != nil {
+			return response.InternalError(ctx, "查询赛事失败")
+		}
+		if event == nil {
+			return response.NotFound(ctx, "赛事不存在")
+		}
+		if !s.canViewEventInScope(ctx, event) {
+			return response.Forbidden(ctx, "无权查看该赛事的关联项目")
+		}
+		params.EventID = &eventID
 	}
 
 	if v := ctx.QueryParam("status"); v != "" {

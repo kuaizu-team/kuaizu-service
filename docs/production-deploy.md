@@ -16,6 +16,10 @@ the following files exactly once and in this order:
 5. `sql/20260715_admin_multi_school_delegation.sql`
 6. `sql/20260715_add_welcome_email_delivery.sql`
 7. `sql/migration_order_push_status.sql`
+8. `sql/20260725_admin_phone.sql`
+9. `sql/20260725_collaboration_score_default.sql`
+10. `sql/20260725_realtime_collaboration_score.sql`
+11. `sql/20260728_collaboration_score_update_notification.sql`
 
 `20260713_event_manager.sql` depends on the `event.school_id` column created by
 the first migration. The multi-school migration also assumes the existing
@@ -24,6 +28,9 @@ may be safely rerun when deployment history is uncertain. The other ALTER
 statements are not rerunnable; if a database was already migrated, run
 `sql/20260718_release_preflight.sql` instead
 of applying them again. The preflight is read-only and must return no rows.
+`20260725_admin_phone.sql` is also not rerunnable; skip it when
+`admin_user.phone` already exists. The remaining three collaboration-score
+migrations are safe to rerun.
 
 Take a database backup before the first migration. Deploy the application only
 after the preflight passes, and keep `ADMIN_CREDENTIAL_KEY` configured and

@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/kuaizu-team/kuaizu-service/api"
 	"github.com/kuaizu-team/kuaizu-service/internal/models"
@@ -101,12 +102,85 @@ func (s *Server) GetEvent(ctx echo.Context) error {
 	})
 }
 
+type infoCenterEventView string
+
+const (
+	infoCenterEventViewRecommend infoCenterEventView = "recommend"
+	infoCenterEventViewSupport   infoCenterEventView = "support"
+)
+
+func parseInfoCenterEventView(raw string) (infoCenterEventView, bool) {
+	view := infoCenterEventView(strings.TrimSpace(raw))
+	switch view {
+	case infoCenterEventViewRecommend, infoCenterEventViewSupport:
+		return view, true
+	default:
+		return "", false
+	}
+}
+
+func infoCenterSchoolEventParams(view infoCenterEventView, schoolID int, now time.Time) repository.EventListParams {
+	businessNow := now.In(time.FixedZone("Asia/Shanghai", 8*60*60))
+	deadlineFrom, _ := models.ParseEventDate(businessNow.Format("2006-01-02"))
+	size := 100
+	if view == infoCenterEventViewRecommend {
+		size = 1
+	}
+	return repository.EventListParams{
+		Page:                     1,
+		Size:                     size,
+		RegistrationDeadlineFrom: &deadlineFrom,
+		SchoolIDs:                []int{schoolID},
+		SchoolOnly:               true,
+	}
+}
+
 func (s *Server) ListInfoCenterEvents(ctx echo.Context) error {
+	rawView := strings.TrimSpace(ctx.QueryParam("view"))
+	if rawView != "" {
+		view, ok := parseInfoCenterEventView(rawView)
+		if !ok {
+			return BadRequest(ctx, "invalid view")
+		}
+		user, err := s.repo.User.GetByID(ctx.Request().Context(), GetUserID(ctx))
+		if err != nil {
+			return InternalError(ctx, "get current user failed")
+		}
+		if user == nil {
+			return NotFound(ctx, "user not found")
+		}
+
+		events := make([]models.Event, 0)
+		if user.SchoolID != nil {
+			params := infoCenterSchoolEventParams(view, *user.SchoolID, time.Now())
+			result, err := s.svc.Event.ListEvents(ctx.Request().Context(), params)
+			if err != nil {
+				return mapServiceError(ctx, err)
+			}
+			events = append(events, result.List...)
+			if view == infoCenterEventViewSupport {
+				for page := 2; page <= result.TotalPages; page++ {
+					params.Page = page
+					next, err := s.svc.Event.ListEvents(ctx.Request().Context(), params)
+					if err != nil {
+						return mapServiceError(ctx, err)
+					}
+					events = append(events, next.List...)
+				}
+			}
+		}
+		return writeInfoCenterEvents(ctx, events)
+	}
+
 	limit, _ := strconv.Atoi(ctx.QueryParam("limit"))
 	events, err := s.svc.Event.ListTimeline(ctx.Request().Context(), limit)
 	if err != nil {
 		return mapServiceError(ctx, err)
 	}
+	return writeInfoCenterEvents(ctx, events)
+}
+
+func writeInfoCenterEvents(ctx echo.Context, events []models.Event) error {
 	list := make([]api.EventVO, len(events))
 	for i := range events {
 		list[i] = events[i].ToVO()

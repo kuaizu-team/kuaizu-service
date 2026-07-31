@@ -1,0 +1,98 @@
+get:
+  tags:
+    - Events
+  summary: 获取后台赛事列表
+  operationId: listAdminEvents
+  description: 校区角色可查看全国、区域赛事及权限范围内的本校学校赛事；列表不返回校区角色无权查看的赛事管理员凭据。
+  parameters:
+    - in: query
+      name: page
+      schema:
+        type: integer
+        default: 1
+    - in: query
+      name: size
+      schema:
+        type: integer
+        default: 10
+    - in: query
+      name: keyword
+      schema:
+        type: string
+    - in: query
+      name: sortBy
+      schema:
+        type: string
+        enum: [id, registrationDeadline, displayOrder, updatedAt, projectCount]
+        default: updatedAt
+    - in: query
+      name: order
+      schema:
+        type: string
+        enum: [asc, desc]
+        default: desc
+  responses:
+    '200':
+      description: 获取成功
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/BaseResponse.yaml
+              - type: object
+                properties:
+                  data:
+                    type: object
+                    required: [list, total, page, size]
+                    properties:
+                      list:
+                        type: array
+                        items:
+                          $ref: ../components/schemas/AdminEvent.yaml
+                      total:
+                        type: integer
+                        format: int64
+                      page:
+                        type: integer
+                      size:
+                        type: integer
+    '400':
+      $ref: ../components/responses/BadRequest.yaml
+    '401':
+      $ref: ../components/responses/Unauthorized.yaml
+    '403':
+      $ref: ../components/responses/Forbidden.yaml
+    '500':
+      $ref: ../components/responses/InternalError.yaml
+post:
+  tags:
+    - Events
+  summary: 创建赛事
+  operationId: createAdminEvent
+  description: 校区管理员只能创建本校学校级赛事，并可同时创建赛事管理员。
+  requestBody:
+    required: true
+    content:
+      application/json:
+        schema:
+          $ref: ../components/schemas/AdminEventDTO.yaml
+  responses:
+    '200':
+      description: 创建成功
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/BaseResponse.yaml
+              - type: object
+                properties:
+                  data:
+                    $ref: ../components/schemas/AdminEvent.yaml
+    '400':
+      $ref: ../components/responses/BadRequest.yaml
+    '401':
+      $ref: ../components/responses/Unauthorized.yaml
+    '403':
+      $ref: ../components/responses/Forbidden.yaml
+    '500':
+      $ref: ../components/responses/InternalError.yaml

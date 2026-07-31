@@ -22,6 +22,13 @@ func NewAdminServer(repo *repository.Repository, svc *service.Services) *AdminSe
 	return &AdminServer{repo: repo, svc: svc}
 }
 
+func (s *AdminServer) messageService() *service.MessageService {
+	if s.svc == nil {
+		return nil
+	}
+	return s.svc.Message
+}
+
 // mapServiceError maps a service.ServiceError to the appropriate HTTP error response.
 func mapServiceError(ctx echo.Context, err error) error {
 	var svcErr *service.ServiceError
@@ -134,17 +141,16 @@ func (s *AdminServer) canEditAdminInScope(ctx echo.Context, target *models.Admin
 	if role == models.AdminRoleSuperAdmin {
 		return target.ID == callerID || target.Role > models.AdminRoleSuperAdmin
 	}
+	if role == models.AdminRoleSchoolAdmin {
+		return target.ID == callerID
+	}
+	if role == models.AdminRoleEventManager {
+		return target.ID == callerID
+	}
 	if role != models.AdminRoleSchoolSuperAdmin {
 		return false
 	}
-	if target.ID == callerID {
-		return true
-	}
-	if target.Role != models.AdminRoleSchoolAdmin && target.Role != models.AdminRoleEventManager {
-		return false
-	}
-	schoolIDs, err := s.adminSchoolIDs(ctx)
-	return err == nil && schoolIDInScope(target.SchoolID, schoolIDs)
+	return target.ID == callerID
 }
 
 // canEditAdmin reports whether the caller may edit/delete the target admin.
@@ -152,7 +158,7 @@ func (s *AdminServer) canEditAdminInScope(ctx echo.Context, target *models.Admin
 // Permission matrix:
 //
 //	role=1 (super admin)         → can edit self and any role=2/3; cannot edit other role=1.
-//	role=2 (school super admin)  → can edit self and same-school role=3; cannot edit role=1/2 (non-self).
+//	role=2 (school super admin)  → can only edit self in the administrator center.
 //	role=3 (school admin)        → can only edit self; cannot edit anyone else.
 func canEditAdmin(callerRole, callerID, targetRole, targetID int, callerSchoolID, targetSchoolID *int) bool {
 	switch callerRole {
@@ -163,13 +169,11 @@ func canEditAdmin(callerRole, callerID, targetRole, targetID int, callerSchoolID
 		// may edit role=2 or role=3, but NOT another role=1
 		return targetRole > models.AdminRoleSuperAdmin
 	case models.AdminRoleSchoolSuperAdmin: // role=2
-		if targetID == callerID {
-			return true // always allowed to edit self
-		}
-		// may edit role=3 in the same school
-		return (targetRole == models.AdminRoleSchoolAdmin || targetRole == models.AdminRoleEventManager) && schoolIDsMatch(callerSchoolID, targetSchoolID)
+		return targetID == callerID
 	case models.AdminRoleSchoolAdmin: // role=3
 		return targetID == callerID // only self
+	case models.AdminRoleEventManager:
+		return targetID == callerID
 	}
 	return false
 }

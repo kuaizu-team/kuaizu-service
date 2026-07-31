@@ -780,11 +780,6 @@ func (s *ProjectService) RemoveMember(ctx context.Context, projectID int, operat
 			log.Printf("[ProjectService.RemoveMember] insert frozen score failed: %v", err)
 			return nil, ErrInternal("固化项目最终评分失败")
 		}
-		if _, err := tx.ExecContext(ctx, `UPDATE `+"`user`"+` SET collaboration_score=(
-			SELECT avg_score FROM (SELECT COALESCE(AVG(score),100) AS avg_score FROM collaboration_score WHERE user_id=?) t
-		) WHERE id=?`, memberID, memberID); err != nil {
-			return nil, ErrInternal("更新协作指数失败")
-		}
 	}
 
 	result, err := tx.ExecContext(ctx, "DELETE FROM project_members WHERE project_id=? AND user_id=?", projectID, memberID)

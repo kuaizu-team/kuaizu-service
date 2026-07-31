@@ -23,6 +23,9 @@ type EventListParams struct {
 	RegistrationDeadlineFrom *time.Time
 	RegistrationDeadlineTo   *time.Time
 	SchoolIDs                []int
+	SchoolOnly               bool
+	SortBy                   string
+	Order                    string
 }
 
 func NewEventRepository(db *sqlx.DB) *EventRepository {
@@ -71,7 +74,18 @@ func (r *EventRepository) List(ctx context.Context, params EventListParams) ([]m
 		conditions = append(conditions, "e.registration_deadline <= ?")
 		args = append(args, *params.RegistrationDeadlineTo)
 	}
-	if len(params.SchoolIDs) > 0 {
+	if params.SchoolOnly {
+		if len(params.SchoolIDs) == 0 {
+			conditions = append(conditions, "1=0")
+		} else {
+			condition, inArgs, err := sqlx.In("(e.level = 'school' AND e.school_id IN (?))", params.SchoolIDs)
+			if err != nil {
+				return nil, 0, fmt.Errorf("build school-only event filter: %w", err)
+			}
+			conditions = append(conditions, condition)
+			args = append(args, inArgs...)
+		}
+	} else if len(params.SchoolIDs) > 0 {
 		condition, inArgs, err := sqlx.In("(COALESCE(e.level,'') <> 'school' OR e.school_id IN (?))", params.SchoolIDs)
 		if err != nil {
 			return nil, 0, fmt.Errorf("build event school filter: %w", err)
@@ -88,7 +102,32 @@ func (r *EventRepository) List(ctx context.Context, params EventListParams) ([]m
 		return nil, 0, fmt.Errorf("count events: %w", err)
 	}
 
-	query := fmt.Sprintf(`SELECT %s, COALESCE(COUNT(DISTINCT pe.project_id), 0) AS project_count FROM event e LEFT JOIN project_event pe ON pe.event_id = e.id WHERE %s GROUP BY e.id ORDER BY CASE WHEN e.registration_deadline IS NULL THEN 1 ELSE 0 END ASC, e.registration_deadline ASC, e.display_order DESC, e.created_at DESC, e.id DESC LIMIT ? OFFSET ?`, eventSelectColumns("e"), where)
+	orderBy := `CASE WHEN e.registration_deadline IS NULL THEN 1 ELSE 0 END ASC,
+		e.registration_deadline ASC, e.display_order DESC, e.created_at DESC, e.id DESC`
+	if params.SortBy != "" {
+		sortDirection := "DESC"
+		if strings.EqualFold(params.Order, "asc") {
+			sortDirection = "ASC"
+		}
+		if params.SortBy == "projectCount" {
+			orderBy = fmt.Sprintf("project_count %s, e.id DESC", sortDirection)
+		} else {
+			sortColumn := "e.updated_at"
+			switch params.SortBy {
+			case "id":
+				sortColumn = "e.id"
+			case "registrationDeadline":
+				sortColumn = "e.registration_deadline"
+			case "displayOrder":
+				sortColumn = "e.display_order"
+			case "updatedAt":
+				sortColumn = "e.updated_at"
+			}
+			orderBy = fmt.Sprintf("CASE WHEN %s IS NULL THEN 1 ELSE 0 END ASC, %s %s, e.id DESC", sortColumn, sortColumn, sortDirection)
+		}
+	}
+
+	query := fmt.Sprintf(`SELECT %s, COALESCE(COUNT(DISTINCT pe.project_id), 0) AS project_count FROM event e LEFT JOIN project_event pe ON pe.event_id = e.id WHERE %s GROUP BY e.id ORDER BY %s LIMIT ? OFFSET ?`, eventSelectColumns("e"), where, orderBy)
 	args = append(args, params.Size, (params.Page-1)*params.Size)
 	var events []models.Event
 	if err := r.db.SelectContext(ctx, &events, query, args...); err != nil {
@@ -110,7 +149,7 @@ func (r *EventRepository) ListTimeline(ctx context.Context, limit int) ([]models
 }
 
 func (r *EventRepository) GetByID(ctx context.Context, id int) (*models.Event, error) {
-	query := fmt.Sprintf(`SELECT %s FROM event WHERE id = ?`, eventSelectColumns("event"))
+	query := fmt.Sprintf(`SELECT %s, (SELECT COUNT(DISTINCT pe.project_id) FROM project_event pe WHERE pe.event_id = event.id) AS project_count FROM event WHERE id = ?`, eventSelectColumns("event"))
 	var event models.Event
 	if err := r.db.QueryRowxContext(ctx, query, id).StructScan(&event); err != nil {
 		if err == sql.ErrNoRows {

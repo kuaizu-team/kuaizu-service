@@ -4,11 +4,13 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"log"
 	"math"
 	"time"
 
 	"github.com/jmoiron/sqlx"
 	"github.com/kuaizu-team/kuaizu-service/internal/models"
+	"github.com/kuaizu-team/kuaizu-service/internal/repository"
 )
 
 type ratingMemberRow struct {
@@ -181,8 +183,30 @@ func (s *ProjectService) RateProjectMember(ctx context.Context, projectID, rater
 		projectID, target.ID, targetUserID, currentScore, now); err != nil {
 		return nil, ErrInternal("更新项目成员评分失败")
 	}
+	var previousCollaborationScore float64
+	if err := tx.GetContext(ctx, &previousCollaborationScore,
+		"SELECT COALESCE(collaboration_score, 90) FROM `user` WHERE id=? FOR UPDATE", targetUserID); err != nil {
+		return nil, ErrInternal("获取原协作指数失败")
+	}
+	if err := repository.UpdateUserCollaborationScoreTx(ctx, tx, targetUserID); err != nil {
+		return nil, ErrInternal("更新协作指数失败")
+	}
+	var collaborationScore float64
+	if err := tx.GetContext(ctx, &collaborationScore,
+		"SELECT COALESCE(collaboration_score, 90) FROM `user` WHERE id=?", targetUserID); err != nil {
+		return nil, ErrInternal("获取最新协作指数失败")
+	}
 	if err := tx.Commit(); err != nil {
 		return nil, ErrInternal("提交评分事务失败")
+	}
+
+	if previousCollaborationScore != collaborationScore {
+		SendCollaborationScoreUpdateNotificationAsync(
+			ctx, s.message, targetUserID, collaborationScore, now, "ProjectService.RateProjectMember",
+		)
+	} else {
+		log.Printf("[ProjectService.RateProjectMember] collaboration score unchanged, notification skipped, user_id=%d score=%v",
+			targetUserID, collaborationScore)
 	}
 
 	nextRateAt := now.Add(models.ProjectRatingCooldown)

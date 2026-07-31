@@ -1,0 +1,55 @@
+type: object
+required:
+  - id
+  - name
+  - isRanking
+  - displayOrder
+  - projectCount
+  - createdAt
+  - updatedAt
+properties:
+  id:
+    type: integer
+  name:
+    type: string
+  isRanking:
+    type: boolean
+  registrationDeadline:
+    type: string
+    format: date-time
+    nullable: true
+  articleUrl:
+    type: string
+    nullable: true
+  level:
+    type: string
+    enum: [national, regional, school]
+    nullable: true
+  summary:
+    type: string
+    nullable: true
+  schoolId:
+    type: integer
+    nullable: true
+  schoolName:
+    type: string
+    nullable: true
+  adminId:
+    type: integer
+    nullable: true
+  managerAccount:
+    type: string
+    nullable: true
+  managerNickname:
+    type: string
+    nullable: true
+  displayOrder:
+    type: integer
+  projectCount:
+    type: integer
+  createdAt:
+    type: string
+    format: date-time
+  updatedAt:
+    type: string
+    format: date-time

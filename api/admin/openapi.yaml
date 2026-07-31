@@ -25,6 +25,8 @@ tags:
     description: 订单与退款管理接口
   - name: Admins
     description: 管理员财务与账号管理接口
+  - name: Events
+    description: 赛事管理接口
   - name: Projects
     description: 项目大厅接口
   - name: Users
@@ -62,6 +64,12 @@ paths:
     $ref: paths/projects_{id}_members_{memberId}_role.yaml
   /projects/{id}/events:
     $ref: paths/projects_{id}_events.yaml
+  /events:
+    $ref: paths/events.yaml
+  /events/{id}:
+    $ref: paths/events_{id}.yaml
+  /events/{id}/merge:
+    $ref: paths/events_{id}_merge.yaml
   /projects/{id}/admin-note:
     $ref: paths/projects_{id}_admin-note.yaml
   /projects/{id}/status:
