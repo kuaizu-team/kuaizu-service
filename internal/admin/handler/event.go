@@ -313,18 +313,6 @@ func (s *AdminServer) updateScopedEvent(ctx echo.Context, event *models.Event, r
 	return response.Success(ctx, adminvo.NewAdminEventVO(updated))
 }
 
-func (s *AdminServer) canManageEventInScope(ctx echo.Context, event *models.Event) bool {
-	if adminRole(ctx) == models.AdminRoleSuperAdmin {
-		return true
-	}
-	if (adminRole(ctx) != models.AdminRoleSchoolSuperAdmin && adminRole(ctx) != models.AdminRoleSchoolAdmin) ||
-		event == nil || event.Level == nil || *event.Level != "school" {
-		return false
-	}
-	allowed, err := s.canAccessSchool(ctx, event.SchoolID)
-	return err == nil && allowed
-}
-
 func (s *AdminServer) canViewEventInScope(ctx echo.Context, event *models.Event) bool {
 	if event == nil {
 		return false
@@ -569,9 +557,6 @@ func (s *AdminServer) MergeEvent(ctx echo.Context) error {
 	source, err := s.repo.Event.GetByID(ctx.Request().Context(), id)
 	if err != nil || source == nil {
 		return response.NotFound(ctx, "event not found")
-	}
-	if adminRole(ctx) == models.AdminRoleSchoolSuperAdmin && !s.canManageEventInScope(ctx, source) {
-		return response.Forbidden(ctx, "只能合并自己负责学校的赛事")
 	}
 	target, err := s.repo.Event.GetByID(ctx.Request().Context(), req.TargetEventID)
 	if err != nil || target == nil {
