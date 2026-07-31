@@ -454,7 +454,6 @@ DROP TABLE IF EXISTS `subscribe`;
 CREATE TABLE `subscribe` (
   `id` int(11) NOT NULL AUTO_INCREMENT COMMENT 'ID',
   `user_id` int(11) NOT NULL COMMENT '用户ID',
-  `subscribe_count` int(11) DEFAULT NULL COMMENT '剩余可发送次数(估计)',
   `status` tinyint(4) DEFAULT '1' COMMENT '状态（0-允许/1-拒绝/2-总是保持）',
   `biz_key` varchar(100) NOT NULL COMMENT '业务标识',
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
@@ -462,6 +461,7 @@ CREATE TABLE `subscribe` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_user_biz` (`user_id`, `biz_key`),
   KEY `idx_subscribe_user` (`user_id`),
+  KEY `idx_subscribe_biz_status_user` (`biz_key`, `status`, `user_id`),
   CONSTRAINT `fk_sub_user` FOREIGN KEY (`user_id`) REFERENCES `user` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='消息订阅配置表';
 /*!40101 SET character_set_client = @saved_cs_client */;
@@ -479,11 +479,63 @@ CREATE TABLE `msg_template_config` (
   `template_title` varchar(100) DEFAULT NULL COMMENT '模板标题',
   `content_json` json NOT NULL COMMENT '字段映射配置',
   `page_path` varchar(255) DEFAULT NULL COMMENT '点击订阅消息卡片后跳转的小程序页面路径',
+  `remark` varchar(20) DEFAULT NULL COMMENT '模板字段备注（最多20字符）',
+  `enabled` tinyint(1) NOT NULL DEFAULT '1' COMMENT '是否启用',
+  `platform_status` varchar(32) DEFAULT NULL COMMENT '微信平台核验状态',
+  `platform_verified_at` datetime DEFAULT NULL COMMENT '最近微信平台核验时间',
   `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (`biz_key`)
+  PRIMARY KEY (`biz_key`),
+  UNIQUE KEY `uk_msg_template_template_id` (`template_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='订阅消息模板配置表';
 /*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `wx_subscribe_delivery`
+--
+
+DROP TABLE IF EXISTS `wx_subscribe_delivery`;
+CREATE TABLE `wx_subscribe_delivery` (
+  `id` bigint NOT NULL AUTO_INCREMENT,
+  `user_id` int NOT NULL,
+  `biz_key` varchar(100) NOT NULL,
+  `template_id` varchar(100) DEFAULT NULL,
+  `business_data` json NOT NULL,
+  `page_path` varchar(255) DEFAULT NULL,
+  `status` varchar(20) NOT NULL DEFAULT 'PENDING',
+  `attempt_count` int NOT NULL DEFAULT '0',
+  `next_attempt_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `claimed_at` datetime DEFAULT NULL,
+  `sent_at` datetime DEFAULT NULL,
+  `last_errcode` int DEFAULT NULL,
+  `last_errmsg` varchar(1000) DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_wx_subscribe_due` (`status`, `next_attempt_at`, `id`),
+  KEY `idx_wx_subscribe_created_status` (`created_at`, `status`),
+  KEY `idx_wx_subscribe_user_time` (`user_id`, `created_at`),
+  KEY `idx_wx_subscribe_biz_time` (`biz_key`, `created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='微信订阅消息可靠投递与审计日志';
+
+--
+-- Table structure for table `wx_subscribe_status_history`
+--
+
+DROP TABLE IF EXISTS `wx_subscribe_status_history`;
+CREATE TABLE `wx_subscribe_status_history` (
+  `id` bigint NOT NULL AUTO_INCREMENT,
+  `user_id` int NOT NULL,
+  `biz_key` varchar(100) NOT NULL,
+  `template_id` varchar(100) NOT NULL,
+  `result` varchar(20) NOT NULL,
+  `status` tinyint NOT NULL,
+  `source` varchar(32) NOT NULL,
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_wx_sub_history_user_biz_time` (`user_id`, `biz_key`, `created_at`),
+  KEY `idx_wx_sub_history_biz_time` (`biz_key`, `created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='微信订阅授权状态变更历史';
 
 --
 -- Table structure for table `roadmap`

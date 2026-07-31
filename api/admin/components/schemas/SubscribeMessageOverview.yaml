@@ -1,0 +1,100 @@
+type: object
+required:
+  - templates
+  - deliveries
+  - last7Days
+properties:
+  templates:
+    type: array
+    items:
+      type: object
+      required:
+        - bizKey
+        - templateId
+        - templateTitle
+        - contentJson
+        - enabled
+      properties:
+        bizKey:
+          type: string
+        templateId:
+          type: string
+        templateTitle:
+          type: string
+        contentJson:
+          type: string
+        pagePath:
+          type: string
+          nullable: true
+        remark:
+          type: string
+          maxLength: 20
+          nullable: true
+        enabled:
+          type: boolean
+        platformStatus:
+          type: string
+          nullable: true
+        platformVerifiedAt:
+          type: string
+          format: date-time
+          nullable: true
+  deliveries:
+    type: array
+    items:
+      type: object
+      required:
+        - id
+        - userId
+        - bizKey
+        - status
+        - attemptCount
+        - nextAttemptAt
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: integer
+          format: int64
+        userId:
+          type: integer
+        bizKey:
+          type: string
+        templateId:
+          type: string
+          nullable: true
+        pagePath:
+          type: string
+          nullable: true
+        status:
+          type: string
+          enum: [PENDING, PROCESSING, RETRY, SENT, SKIPPED, FAILED]
+        attemptCount:
+          type: integer
+        nextAttemptAt:
+          type: string
+          format: date-time
+        claimedAt:
+          type: string
+          format: date-time
+          nullable: true
+        sentAt:
+          type: string
+          format: date-time
+          nullable: true
+        lastErrcode:
+          type: integer
+          nullable: true
+        lastErrmsg:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+  last7Days:
+    type: object
+    additionalProperties:
+      type: integer

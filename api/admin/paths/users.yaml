@@ -42,6 +42,12 @@ get:
         type: string
         enum: [asc, desc]
       description: Sort direction
+    - in: query
+      name: invitationFeedbackStatus
+      schema:
+        type: string
+        enum: [in_progress, interested, not_interested, accepted, rejected]
+      description: 邀请反馈状态筛选，仅平台超级管理员和校区超级管理员可用
   responses:
     '200':
       description: 成功获取用户列表

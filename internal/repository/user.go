@@ -358,6 +358,16 @@ func (r *UserRepository) UpdateAuthStatus(ctx context.Context, userID int, authS
 	return nil
 }
 
+// InvitationFeedbackEffectiveStatusSQL normalizes the feedback and conversation
+// columns to the single status shown in the admin user list. It expects the
+// invitation_feedback and pending_invitation aliases to be f and p.
+const InvitationFeedbackEffectiveStatusSQL = `CASE
+	WHEN f.conversation_status = 'in_progress' AND p.user_id IS NOT NULL THEN 'in_progress'
+	WHEN f.conversation_status = 'in_progress' THEN 'pending'
+	WHEN f.conversation_status IS NOT NULL THEN f.conversation_status
+	ELSE f.status
+END`
+
 // UserListParams contains parameters for listing users
 type UserListParams struct {
 	Page                int
@@ -370,7 +380,8 @@ type UserListParams struct {
 	TalentProfileStatus *int // 按名片状态过滤（0=已驳回/下架, 1=已上架, 2=审核中）
 	UserID              *int // 按用户 ID 精确查询
 
-	UserStatus *int // 按账号状态过滤（0=正常, 1=封禁, 2=已毕业）
+	UserStatus               *int    // 按账号状态过滤（0=正常, 1=封禁, 2=已毕业）
+	InvitationFeedbackStatus *string // 按列表展示的邀请反馈状态过滤
 
 	// Admin sort control
 	// SortBy: "pendingCount" | "lastActiveDate" — unknown values fall back to created_at DESC
@@ -439,6 +450,20 @@ func (r *UserRepository) ListUsers(ctx context.Context, params UserListParams) (
 	if params.UserStatus != nil {
 		conditions = append(conditions, "u.user_status = ?")
 		args = append(args, *params.UserStatus)
+	}
+
+	if params.InvitationFeedbackStatus != nil {
+		conditions = append(conditions, `EXISTS (
+			SELECT 1
+			FROM invitation_feedback f
+			LEFT JOIN pending_invitation p
+				ON p.user_id = f.user_id
+				AND p.invite_type = 'SUPER_ADMIN'
+				AND p.expire_at > CURRENT_TIMESTAMP
+			WHERE f.user_id = u.id
+				AND `+InvitationFeedbackEffectiveStatusSQL+` = ?
+		)`)
+		args = append(args, *params.InvitationFeedbackStatus)
 	}
 
 	whereClause := strings.Join(conditions, " AND ")

@@ -63,6 +63,10 @@ func main() {
 	}
 
 	svc := service.New(repo, deps)
+	if err := svc.Message.CheckSubscribeDeliverySchema(ctx); err != nil {
+		log.Fatalf("Failed to initialize WeChat subscribe delivery: %v", err)
+	}
+	svc.Message.StartSubscribeDeliveryRecovery(ctx)
 	svc.WelcomeEmail.StartPendingRecovery(ctx)
 	server := handler.NewServer(repo, svc)
 

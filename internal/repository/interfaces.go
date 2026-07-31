@@ -285,17 +285,31 @@ type StatusNotificationRepo interface {
 type SubscribeConfigRepo interface {
 	GetByUserIDAndBizKey(ctx context.Context, userID int, bizKey string) (*models.SubscribeConfig, error)
 	ListByUserID(ctx context.Context, userID int) ([]models.SubscribeConfig, error)
-	ListAcceptedUserIDsByBizKey(ctx context.Context, bizKey string, limit int, offset int) ([]int, error)
-	Upsert(ctx context.Context, config *models.SubscribeConfig) error
+	ListAcceptedUserIDsByBizKey(ctx context.Context, bizKey string, limit int, afterUserID int) ([]int, error)
+	UpsertWithHistory(ctx context.Context, config *models.SubscribeConfig, templateID, result, source string) error
 	UpdateStatus(ctx context.Context, userID int, bizKey string, status models.SubscribeStatus) error
-	DecrementCount(ctx context.Context, userID int, bizKey string) error
-	IncrementCount(ctx context.Context, userID int, bizKey string, count int) error
 }
 
 // MsgTemplateConfigRepo defines the interface for fetching message template configurations.
 type MsgTemplateConfigRepo interface {
 	GetByBizKey(ctx context.Context, bizKey string) (*models.MsgTemplateConfig, error)
 	GetByBizKeys(ctx context.Context, bizKeys []string) ([]models.MsgTemplateConfig, error)
+	ListAll(ctx context.Context) ([]models.MsgTemplateConfig, error)
+	UpdateEnabled(ctx context.Context, bizKey string, enabled bool) (bool, error)
+}
+
+type WxSubscribeDeliveryRepo interface {
+	CheckSchema(ctx context.Context) error
+	Create(ctx context.Context, delivery *models.WxSubscribeDelivery) (int64, error)
+	GetByID(ctx context.Context, id int64) (*models.WxSubscribeDelivery, error)
+	ListDue(ctx context.Context, staleBefore time.Time, limit int) ([]int64, error)
+	Claim(ctx context.Context, id int64, staleBefore time.Time) (bool, error)
+	MarkSent(ctx context.Context, id int64, templateID string) error
+	MarkSkipped(ctx context.Context, id int64, templateID string, errCode int, message string) error
+	MarkFailed(ctx context.Context, id int64, templateID string, errCode *int, message string) error
+	ScheduleRetry(ctx context.Context, id int64, templateID string, errCode *int, message string, nextAttemptAt time.Time) error
+	ListRecent(ctx context.Context, limit int) ([]models.WxSubscribeDelivery, error)
+	CountByStatusSince(ctx context.Context, since time.Time) (map[string]int, error)
 }
 
 // ProjectViewLogRepo defines the interface for project view log operations.

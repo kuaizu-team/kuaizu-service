@@ -54,6 +54,10 @@ func main() {
 	}
 
 	svc := service.New(repo, deps)
+	if err := svc.Message.CheckSubscribeDeliverySchema(ctx); err != nil {
+		log.Fatalf("Failed to initialize WeChat subscribe delivery: %v", err)
+	}
+	svc.Message.StartSubscribeDeliveryRecovery(ctx)
 	server := adminhandler.NewAdminServer(repo, svc)
 
 	// Public routes
@@ -70,6 +74,8 @@ func main() {
 	adminGroup.GET("/auth/me", server.GetCurrentAdmin)
 
 	adminGroup.GET("/dashboard/stats", server.GetDashboardStats)
+	adminGroup.GET("/subscribe-messages/overview", server.GetSubscribeMessageOverview)
+	adminGroup.PATCH("/subscribe-messages/templates/:bizKey", server.UpdateSubscribeMessageTemplate)
 	adminGroup.GET("/stats/revenue", server.GetRevenueStats)
 	adminGroup.GET("/stats/registrations", server.GetRegistrationStats)
 	adminGroup.GET("/stats/activations", server.GetActivationStats)

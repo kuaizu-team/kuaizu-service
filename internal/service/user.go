@@ -77,26 +77,21 @@ func (s *UserService) ReviewUserAuth(ctx context.Context, id, status int) error 
 		return ErrInternal("审核失败")
 	}
 
-	// 向用户发送认证结果通知
-	go func(asyncCtx context.Context) {
-		resultStr := "认证通过"
-		remark := "恭喜！您的身份认证已通过。"
-		if status == models.UserAuthStatusFailed {
-			resultStr = "认证失败"
-			remark = "请修改后重新上传认证资料。"
-		}
-
-		data := map[string]string{
-			"identity": "在校学生",
-			"result":   resultStr,
-			"remark":   remark,
-		}
-
-		err = s.message.SendSubscribeMsgByBizKey(asyncCtx, id, models.MsgBizKeyIdentityAuth, data)
-		if err != nil {
-			log.Printf("[UserService.ReviewUserAuth] notification error: %v", err)
-		}
-	}(context.WithoutCancel(ctx))
+	// Persist the notification before returning; delivery itself remains asynchronous.
+	resultStr := "认证通过"
+	remark := "恭喜！您的身份认证已通过。"
+	if status == models.UserAuthStatusFailed {
+		resultStr = "认证失败"
+		remark = "请修改后重新上传认证资料。"
+	}
+	data := map[string]string{
+		"identity": "在校学生",
+		"result":   resultStr,
+		"remark":   remark,
+	}
+	if sendErr := s.message.SendSubscribeMsgByBizKey(context.WithoutCancel(ctx), id, models.MsgBizKeyIdentityAuth, data); sendErr != nil {
+		log.Printf("[UserService.ReviewUserAuth] queue notification error: %v", sendErr)
+	}
 
 	return nil
 }

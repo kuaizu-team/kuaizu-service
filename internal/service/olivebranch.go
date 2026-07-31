@@ -150,24 +150,18 @@ func (s *OliveBranchService) SendOliveBranch(ctx context.Context, userID int, re
 	ob.Sender = sender
 	ob.Receiver = receiver
 
-	// 向接收方推送「收到橄榄枝通知」（MSG_INVITE_JOIN）
-	// sender、project 均已在本函数内查询，直接捕获，无额外 DB 开销
-	go func(asyncCtx context.Context) {
-		inviterName := "匿名用户"
-		if sender.Nickname != nil && *sender.Nickname != "" {
-			inviterName = *sender.Nickname
-		}
-
-		data := map[string]string{
-			"project_name": truncate20(project.Name), // thing1 ≤ 20 字
-			"inviter":      truncate20(inviterName),  // thing2 ≤ 20 字
-			"remark":       "您收到一条橄榄枝邀请",             // thing4，10 字 ≤ 20
-		}
-
-		if err := s.message.SendSubscribeMsgByBizKey(asyncCtx, req.ReceiverID, models.MsgBizKeyInviteJoin, data); err != nil {
-			log.Printf("[OliveBranchService.SendOliveBranch] notification error: %v", err)
-		}
-	}(context.WithoutCancel(ctx))
+	inviterName := "匿名用户"
+	if sender.Nickname != nil && *sender.Nickname != "" {
+		inviterName = *sender.Nickname
+	}
+	data := map[string]string{
+		"project_name": truncate20(project.Name),
+		"inviter":      truncate20(inviterName),
+		"remark":       "您收到一条橄榄枝邀请",
+	}
+	if queueErr := s.message.SendSubscribeMsgByBizKey(context.WithoutCancel(ctx), req.ReceiverID, models.MsgBizKeyInviteJoin, data); queueErr != nil {
+		log.Printf("[OliveBranchService.SendOliveBranch] queue notification error: %v", queueErr)
+	}
 
 	return ob, nil
 }
@@ -255,12 +249,10 @@ func (s *OliveBranchService) ResendOliveBranch(ctx context.Context, userID, bran
 	ob.OperatorRoleName = operatorRoleName
 	ob.ProjectName = &project.Name
 
-	go func(asyncCtx context.Context) {
-		sender, err := s.repo.User.GetByID(asyncCtx, userID)
-		if err != nil || sender == nil {
-			log.Printf("[OliveBranchService.ResendOliveBranch] notification: failed to get sender: %v", err)
-			return
-		}
+	sender, senderErr := s.repo.User.GetByID(context.WithoutCancel(ctx), userID)
+	if senderErr != nil || sender == nil {
+		log.Printf("[OliveBranchService.ResendOliveBranch] notification: failed to get sender: %v", senderErr)
+	} else {
 		inviterName := "匿名用户"
 		if sender.Nickname != nil && *sender.Nickname != "" {
 			inviterName = *sender.Nickname
@@ -270,10 +262,10 @@ func (s *OliveBranchService) ResendOliveBranch(ctx context.Context, userID, bran
 			"inviter":      truncate20(inviterName),
 			"remark":       "您收到一条新的橄榄枝邀请",
 		}
-		if err := s.message.SendSubscribeMsgByBizKey(asyncCtx, ob.ReceiverID, models.MsgBizKeyInviteJoin, data); err != nil {
-			log.Printf("[OliveBranchService.ResendOliveBranch] notification error: %v", err)
+		if queueErr := s.message.SendSubscribeMsgByBizKey(context.WithoutCancel(ctx), ob.ReceiverID, models.MsgBizKeyInviteJoin, data); queueErr != nil {
+			log.Printf("[OliveBranchService.ResendOliveBranch] queue notification error: %v", queueErr)
 		}
-	}(context.WithoutCancel(ctx))
+	}
 
 	return ob, nil
 }
@@ -419,28 +411,26 @@ func (s *OliveBranchService) ensureCanOperateDiscussingBranch(ctx context.Contex
 }
 
 func (s *OliveBranchService) notifyOliveBranchResult(ctx context.Context, targetUserID, responderID, status int) {
-	go func(asyncCtx context.Context) {
-		responder, err := s.repo.User.GetByID(asyncCtx, responderID)
-		if err != nil || responder == nil {
-			log.Printf("[OliveBranchService.HandleOliveBranch] notification: failed to get responder: %v", err)
-			return
-		}
-		responderName := "\u5bf9\u65b9"
-		if responder.Nickname != nil && *responder.Nickname != "" {
-			responderName = *responder.Nickname
-		}
-		resultStr := "\u5df2\u8fdb\u5165\u4e92\u76f8\u4e86\u89e3"
-		remark := "\u8bf7\u524d\u5f80\u9879\u76ee\u6216\u4eba\u624d\u8be6\u60c5\u7ee7\u7eed\u6c9f\u901a"
-		if status == models.OliveBranchStatusRejected {
-			resultStr = "\u4e0d\u5408\u9002"
-			remark = "\u5bf9\u65b9\u6682\u672a\u7ee7\u7eed\u63a8\u8fdb\u672c\u6b21\u9080\u7ea6"
-		} else if status == models.OliveBranchStatusAccepted {
-			resultStr = "\u5df2\u5165\u961f"
-			remark = "\u5df2\u51c6\u8bb8\u52a0\u5165\u56e2\u961f"
-		}
-		data := map[string]string{"nickname": truncate20(responderName), "result": resultStr, "remark": remark}
-		if err := s.message.SendSubscribeMsgByBizKey(asyncCtx, targetUserID, models.MsgBizKeyUserReply, data); err != nil {
-			log.Printf("[OliveBranchService.HandleOliveBranch] notification error: %v", err)
-		}
-	}(context.WithoutCancel(ctx))
+	responder, err := s.repo.User.GetByID(context.WithoutCancel(ctx), responderID)
+	if err != nil || responder == nil {
+		log.Printf("[OliveBranchService.HandleOliveBranch] notification: failed to get responder: %v", err)
+		return
+	}
+	responderName := "\u5bf9\u65b9"
+	if responder.Nickname != nil && *responder.Nickname != "" {
+		responderName = *responder.Nickname
+	}
+	resultStr := "\u4e92\u76f8\u4e86\u89e3"
+	remark := "\u8bf7\u524d\u5f80\u9879\u76ee\u6216\u4eba\u624d\u8be6\u60c5\u7ee7\u7eed\u6c9f\u901a"
+	if status == models.OliveBranchStatusRejected {
+		resultStr = "\u4e0d\u5408\u9002"
+		remark = "\u5bf9\u65b9\u6682\u672a\u7ee7\u7eed\u63a8\u8fdb\u672c\u6b21\u9080\u7ea6"
+	} else if status == models.OliveBranchStatusAccepted {
+		resultStr = "\u5df2\u5165\u961f"
+		remark = "\u5df2\u51c6\u8bb8\u52a0\u5165\u56e2\u961f"
+	}
+	data := map[string]string{"nickname": truncate20(responderName), "result": resultStr, "remark": remark}
+	if queueErr := s.message.SendSubscribeMsgByBizKey(context.WithoutCancel(ctx), targetUserID, models.MsgBizKeyUserReply, data); queueErr != nil {
+		log.Printf("[OliveBranchService.HandleOliveBranch] queue notification error: %v", queueErr)
+	}
 }

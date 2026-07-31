@@ -39,6 +39,8 @@ tags:
     description: 反馈管理接口
   - name: Roadmap
     description: Platform roadmap management APIs
+  - name: SubscribeMessages
+    description: 微信订阅模板开关与投递监控接口
 security:
   - bearerAuth: []
 paths:
@@ -130,6 +132,10 @@ paths:
     $ref: paths/roadmap_{id}.yaml
   /send-version-update:
     $ref: paths/send-version-update.yaml
+  /subscribe-messages/overview:
+    $ref: paths/subscribe-messages_overview.yaml
+  /subscribe-messages/templates/{bizKey}:
+    $ref: paths/subscribe-messages_templates_{bizKey}.yaml
 components:
   securitySchemes:
     bearerAuth:

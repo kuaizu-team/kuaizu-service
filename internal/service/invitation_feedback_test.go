@@ -147,6 +147,54 @@ func TestInvitationFeedbackCreateAndGetPendingInvitation(t *testing.T) {
 	}
 }
 
+func TestInvitationFeedbackGetStatusKeepsActiveInProgressConversation(t *testing.T) {
+	conversationStatus := models.InvitationConversationStatusInProgress
+	repo := &fakeInvitationFeedbackRepo{
+		existing: &models.InvitationFeedback{
+			UserID:             1001,
+			Status:             models.InvitationFeedbackStatusPending,
+			ConversationStatus: &conversationStatus,
+		},
+	}
+	pendingRepo := &fakePendingInvitationRepo{expireAt: time.Now().Add(time.Hour)}
+	svc := NewInvitationFeedbackService(&repository.Repository{
+		InvitationFeedback: repo,
+		PendingInvitation:  pendingRepo,
+	})
+
+	got, err := svc.GetStatus(context.Background(), 1001)
+	if err != nil {
+		t.Fatalf("GetStatus returned error: %v", err)
+	}
+	if got.ConversationStatus == nil || *got.ConversationStatus != models.InvitationConversationStatusInProgress {
+		t.Fatalf("conversation_status = %v, want in_progress", got.ConversationStatus)
+	}
+}
+
+func TestInvitationFeedbackGetStatusReleasesExpiredInProgressConversation(t *testing.T) {
+	conversationStatus := models.InvitationConversationStatusInProgress
+	repo := &fakeInvitationFeedbackRepo{
+		existing: &models.InvitationFeedback{
+			UserID:             1001,
+			Status:             models.InvitationFeedbackStatusPending,
+			ConversationStatus: &conversationStatus,
+		},
+	}
+	pendingRepo := &fakePendingInvitationRepo{expireAt: time.Now().Add(-time.Minute)}
+	svc := NewInvitationFeedbackService(&repository.Repository{
+		InvitationFeedback: repo,
+		PendingInvitation:  pendingRepo,
+	})
+
+	got, err := svc.GetStatus(context.Background(), 1001)
+	if err != nil {
+		t.Fatalf("GetStatus returned error: %v", err)
+	}
+	if got.ConversationStatus != nil {
+		t.Fatalf("conversation_status = %v, want nil after invitation expiry", *got.ConversationStatus)
+	}
+}
+
 func TestInvitationFeedbackGetPendingClearsWhenUserResponded(t *testing.T) {
 	repo := &fakeInvitationFeedbackRepo{
 		existing: &models.InvitationFeedback{
@@ -259,7 +307,10 @@ func (f *fakePendingInvitationRepo) Upsert(_ context.Context, userID int, invite
 	return nil
 }
 
-func (f *fakePendingInvitationRepo) GetActiveByUserID(_ context.Context, userID int, _ time.Time) (*models.PendingInvitation, error) {
+func (f *fakePendingInvitationRepo) GetActiveByUserID(_ context.Context, userID int, now time.Time) (*models.PendingInvitation, error) {
+	if !f.expireAt.After(now) {
+		return nil, nil
+	}
 	return &models.PendingInvitation{
 		UserID:     userID,
 		InviteType: models.PendingInvitationTypeSuperAdmin,
