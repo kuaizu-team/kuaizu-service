@@ -58,6 +58,7 @@ type EventRepo interface {
 	List(ctx context.Context, params EventListParams) ([]models.Event, int64, error)
 	ListTimeline(ctx context.Context, limit int) ([]models.Event, error)
 	GetByID(ctx context.Context, id int) (*models.Event, error)
+	GetByIDWithProjectSchoolIDs(ctx context.Context, id int, projectSchoolIDs []int) (*models.Event, error)
 	Create(ctx context.Context, event *models.Event) error
 	Update(ctx context.Context, event *models.Event) error
 	Delete(ctx context.Context, id int) error

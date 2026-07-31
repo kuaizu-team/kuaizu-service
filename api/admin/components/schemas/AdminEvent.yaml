@@ -47,6 +47,7 @@ properties:
     type: integer
   projectCount:
     type: integer
+    description: Number of distinct related projects visible within the current administrator's school scope.
   createdAt:
     type: string
     format: date-time

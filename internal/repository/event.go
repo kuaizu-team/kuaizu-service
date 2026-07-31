@@ -23,6 +23,7 @@ type EventListParams struct {
 	RegistrationDeadlineFrom *time.Time
 	RegistrationDeadlineTo   *time.Time
 	SchoolIDs                []int
+	ProjectSchoolIDs         []int
 	SchoolOnly               bool
 	SortBy                   string
 	Order                    string
@@ -127,10 +128,28 @@ func (r *EventRepository) List(ctx context.Context, params EventListParams) ([]m
 		}
 	}
 
-	query := fmt.Sprintf(`SELECT %s, COALESCE(COUNT(DISTINCT pe.project_id), 0) AS project_count FROM event e LEFT JOIN project_event pe ON pe.event_id = e.id WHERE %s GROUP BY e.id ORDER BY %s LIMIT ? OFFSET ?`, eventSelectColumns("e"), where, orderBy)
-	args = append(args, params.Size, (params.Page-1)*params.Size)
+	projectCountExpression := "COUNT(DISTINCT pe.project_id)"
+	projectJoin := ""
+	projectScopeArgs := []interface{}{}
+	if params.ProjectSchoolIDs != nil {
+		if len(params.ProjectSchoolIDs) == 0 {
+			projectCountExpression = "0"
+		} else {
+			scopeCondition, scopeArgs, err := sqlx.In("p.school_id IN (?)", params.ProjectSchoolIDs)
+			if err != nil {
+				return nil, 0, fmt.Errorf("build event project school filter: %w", err)
+			}
+			projectJoin = " LEFT JOIN project p ON p.id = pe.project_id AND " + scopeCondition
+			projectCountExpression = "COUNT(DISTINCT p.id)"
+			projectScopeArgs = append(projectScopeArgs, scopeArgs...)
+		}
+	}
+
+	query := fmt.Sprintf(`SELECT %s, COALESCE(%s, 0) AS project_count FROM event e LEFT JOIN project_event pe ON pe.event_id = e.id%s WHERE %s GROUP BY e.id ORDER BY %s LIMIT ? OFFSET ?`, eventSelectColumns("e"), projectCountExpression, projectJoin, where, orderBy)
+	queryArgs := append(projectScopeArgs, args...)
+	queryArgs = append(queryArgs, params.Size, (params.Page-1)*params.Size)
 	var events []models.Event
-	if err := r.db.SelectContext(ctx, &events, query, args...); err != nil {
+	if err := r.db.SelectContext(ctx, &events, query, queryArgs...); err != nil {
 		return nil, 0, fmt.Errorf("query events: %w", err)
 	}
 	return events, total, nil
@@ -149,9 +168,32 @@ func (r *EventRepository) ListTimeline(ctx context.Context, limit int) ([]models
 }
 
 func (r *EventRepository) GetByID(ctx context.Context, id int) (*models.Event, error) {
-	query := fmt.Sprintf(`SELECT %s, (SELECT COUNT(DISTINCT pe.project_id) FROM project_event pe WHERE pe.event_id = event.id) AS project_count FROM event WHERE id = ?`, eventSelectColumns("event"))
+	return r.getByID(ctx, id, nil)
+}
+
+func (r *EventRepository) GetByIDWithProjectSchoolIDs(ctx context.Context, id int, projectSchoolIDs []int) (*models.Event, error) {
+	return r.getByID(ctx, id, projectSchoolIDs)
+}
+
+func (r *EventRepository) getByID(ctx context.Context, id int, projectSchoolIDs []int) (*models.Event, error) {
+	projectCountExpression := "(SELECT COUNT(DISTINCT pe.project_id) FROM project_event pe WHERE pe.event_id = event.id)"
+	args := []interface{}{}
+	if projectSchoolIDs != nil {
+		if len(projectSchoolIDs) == 0 {
+			projectCountExpression = "0"
+		} else {
+			scopeCondition, scopeArgs, err := sqlx.In("p.school_id IN (?)", projectSchoolIDs)
+			if err != nil {
+				return nil, fmt.Errorf("build event detail project school filter: %w", err)
+			}
+			projectCountExpression = "(SELECT COUNT(DISTINCT pe.project_id) FROM project_event pe JOIN project p ON p.id = pe.project_id AND " + scopeCondition + " WHERE pe.event_id = event.id)"
+			args = append(args, scopeArgs...)
+		}
+	}
+	query := fmt.Sprintf(`SELECT %s, %s AS project_count FROM event WHERE id = ?`, eventSelectColumns("event"), projectCountExpression)
+	args = append(args, id)
 	var event models.Event
-	if err := r.db.QueryRowxContext(ctx, query, id).StructScan(&event); err != nil {
+	if err := r.db.QueryRowxContext(ctx, query, args...).StructScan(&event); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
 		}
