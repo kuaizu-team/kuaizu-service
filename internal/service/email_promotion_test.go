@@ -1139,15 +1139,16 @@ func TestTriggerPromotion_RetryReusesOriginalRecipientSnapshot(t *testing.T) {
 
 func TestMarkPromotionFailedDoesNotDowngradeCompletedPromotion(t *testing.T) {
 	mockEmailPromotion := new(MockEmailPromotionRepo)
-	completed := &models.EmailPromotion{ID: 77, OrderID: 100, CreatorID: 1, Status: models.EmailPromotionStatusCompleted}
 	mockEmailPromotion.On("MarkFailedIfNotCompleted", mock.Anything, 77, "response lost", mock.Anything).Return(false, nil)
-	mockEmailPromotion.On("GetByID", mock.Anything, 77).Return(completed, nil)
 	svc := NewEmailPromotionService(&repository.Repository{EmailPromotion: mockEmailPromotion})
-	stale := &models.EmailPromotion{ID: 77, OrderID: 100, CreatorID: 1, Status: models.EmailPromotionStatusSending}
 
-	svc.markPromotionFailed(stale, "response lost")
+	svc.markPromotionFailed(messagecenter.ProjectPromotionRequest{
+		PromotionID: 77,
+		OrderID:     100,
+		ProjectID:   200,
+	}, "response lost")
 
-	assert.Equal(t, models.EmailPromotionStatusCompleted, stale.Status)
+	mockEmailPromotion.AssertNotCalled(t, "GetByID", mock.Anything, 77)
 	mockEmailPromotion.AssertExpectations(t)
 }
 
@@ -1166,9 +1167,7 @@ func TestPromotionSubmissionSuccessDoesNotWriteSendingState(t *testing.T) {
 	}
 	svc := NewEmailPromotionService(&repository.Repository{EmailPromotion: mockEmailPromotion})
 	svc.messageCenter = submitter
-	promotion := &models.EmailPromotion{ID: 77, OrderID: 100, ProjectID: 200, Status: models.EmailPromotionStatusPending}
-
-	svc.startAsyncPromotionSubmission(promotion, messagecenter.ProjectPromotionRequest{
+	svc.startAsyncPromotionSubmission(messagecenter.ProjectPromotionRequest{
 		PromotionID: 77, OrderID: 100, ProjectID: 200,
 	})
 

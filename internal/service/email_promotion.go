@@ -159,7 +159,7 @@ func (s *EmailPromotionService) TriggerPromotionWithInput(ctx context.Context, u
 				TraceID:          traceID,
 				RecipientUserIDs: recipientUserIDs,
 			}
-			s.startAsyncPromotionSubmission(existingPromotion, req)
+			s.startAsyncPromotionSubmission(req)
 		}
 		return &TriggerPromotionResult{
 			Promotion:     existingPromotion,
@@ -215,7 +215,7 @@ func (s *EmailPromotionService) TriggerPromotionWithInput(ctx context.Context, u
 		TraceID:          traceID,
 		RecipientUserIDs: recipientUserIDs,
 	}
-	s.startAsyncPromotionSubmission(promotion, req)
+	s.startAsyncPromotionSubmission(req)
 
 	return &TriggerPromotionResult{
 		Promotion:     promotion,
@@ -270,23 +270,24 @@ func (s *EmailPromotionService) calculateMaxRecipients(ctx context.Context, orde
 	return 0, ErrBadRequest("订单中没有邮件推广商品")
 }
 
-func (s *EmailPromotionService) startAsyncPromotionSubmission(promotion *models.EmailPromotion, req messagecenter.ProjectPromotionRequest) {
+func (s *EmailPromotionService) startAsyncPromotionSubmission(req messagecenter.ProjectPromotionRequest) {
+	req.RecipientUserIDs = append([]int(nil), req.RecipientUserIDs...)
 	go func() {
 		submitter, initErr, baseURL := s.resolveMessageCenter()
 		if initErr != nil {
 			log.Printf("[EmailPromotionService] message center unavailable for promotion, order_id=%d project_id=%d base_url_empty=%t: %v",
 				req.OrderID, req.ProjectID, baseURL == "", initErr)
-			s.markPromotionFailed(promotion, "message center is not configured: "+initErr.Error())
+			s.markPromotionFailed(req, "message center is not configured: "+initErr.Error())
 			return
 		}
 		if submitter == nil {
 			log.Printf("[EmailPromotionService] message center client nil for promotion, order_id=%d project_id=%d base_url_empty=%t",
 				req.OrderID, req.ProjectID, baseURL == "")
-			s.markPromotionFailed(promotion, "message center client is nil")
+			s.markPromotionFailed(req, "message center client is nil")
 			return
 		}
 		log.Printf("[EmailPromotionService] submitting project promotion, promotion_id=%d order_id=%d project_id=%d base_url=%s",
-			promotion.ID, promotion.OrderID, promotion.ProjectID, baseURL)
+			req.PromotionID, req.OrderID, req.ProjectID, baseURL)
 
 		var (
 			resp *messagecenter.ProjectPromotionResponse
@@ -306,12 +307,12 @@ func (s *EmailPromotionService) startAsyncPromotionSubmission(promotion *models.
 			}
 		}
 		if err != nil {
-			s.markPromotionFailed(promotion, "submit message center failed: "+err.Error())
+			s.markPromotionFailed(req, "submit message center failed: "+err.Error())
 			return
 		}
 
 		log.Printf("[EmailPromotionService] submitted project promotion, promotion_id=%d order_id=%d project_id=%d task_id=%s requested=%d actual=%d",
-			promotion.ID, promotion.OrderID, promotion.ProjectID, resp.TaskID, resp.RequestedCount, resp.ActualCount)
+			req.PromotionID, req.OrderID, req.ProjectID, resp.TaskID, resp.RequestedCount, resp.ActualCount)
 
 		// Recipient user IDs are selected and snapshotted before submission so
 		// the project owner can inspect the batch immediately.
@@ -353,31 +354,20 @@ func messageCenterBaseURL(submitter projectPromotionSubmitter) string {
 	return ""
 }
 
-func (s *EmailPromotionService) markPromotionFailed(promotion *models.EmailPromotion, message string) {
+func (s *EmailPromotionService) markPromotionFailed(req messagecenter.ProjectPromotionRequest, message string) {
 	log.Printf("[EmailPromotionService] project promotion submission failed, promotion_id=%d order_id=%d project_id=%d: %s",
-		promotion.ID, promotion.OrderID, promotion.ProjectID, message)
+		req.PromotionID, req.OrderID, req.ProjectID, message)
 	now := time.Now()
-	updated, err := s.repo.EmailPromotion.MarkFailedIfNotCompleted(context.Background(), promotion.ID, message, now)
+	updated, err := s.repo.EmailPromotion.MarkFailedIfNotCompleted(context.Background(), req.PromotionID, message, now)
 	if err != nil {
 		log.Printf("[EmailPromotionService] conditionally fail promotion, promotion_id=%d order_id=%d: %v",
-			promotion.ID, promotion.OrderID, err)
+			req.PromotionID, req.OrderID, err)
 		return
 	}
 	if !updated {
-		fresh, getErr := s.repo.EmailPromotion.GetByID(context.Background(), promotion.ID)
-		if getErr != nil {
-			log.Printf("[EmailPromotionService] reload promotion after protected failure, promotion_id=%d: %v", promotion.ID, getErr)
-			return
-		}
-		if fresh != nil {
-			*promotion = *fresh
-		}
 		return
 	}
-	promotion.Status = models.EmailPromotionStatusFailed
-	promotion.ErrorMessage = &message
-	promotion.CompletedAt = &now
-	_, _ = s.repo.UpdateOrderPushStatusForUser(context.Background(), promotion.OrderID, promotion.CreatorID, "failed", &message)
+	_, _ = s.repo.UpdateOrderPushStatusForUser(context.Background(), req.OrderID, req.CreatorUserID, "failed", &message)
 }
 
 // GetStatus retrieves a promotion record with ownership check.
