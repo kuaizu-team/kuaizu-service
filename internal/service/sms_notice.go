@@ -846,13 +846,13 @@ func (s *SmsNoticeService) handleExistingNotice(ctx context.Context, existing *m
 		if existing.OrderID != input.OrderID {
 			return nil, ErrBadRequest("failed sms notice can only retry with the original paid order")
 		}
+		if err := s.claimOrderPush(ctx, input, existing.SenderID); err != nil {
+			return nil, err
+		}
 		notice := s.prepareNotice(existing, branch, order, project, receiver)
 		if err := s.repo.SmsNotice.Update(ctx, notice); err != nil {
 			log.Printf("[SmsNoticeService] update failed notice for retry: %v", err)
 			return nil, ErrInternal("update sms notice failed")
-		}
-		if err := s.claimOrderPush(ctx, input, existing.SenderID); err != nil {
-			return nil, err
 		}
 		s.startAsyncSubmission(notice)
 		return notice, nil

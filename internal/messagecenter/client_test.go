@@ -45,6 +45,9 @@ func TestSubmitApplicationSmsUsesApprovedTemplateVariables(t *testing.T) {
 		var req struct {
 			TemplateCode string `json:"templateCode"`
 			BusinessTag  string `json:"businessTag"`
+			TaskKey      string `json:"taskKey"`
+			TraceID      string `json:"traceId"`
+			Retry        bool   `json:"retry"`
 			Recipients   []struct {
 				Phone string                 `json:"phone"`
 				Vars  map[string]interface{} `json:"vars"`
@@ -55,6 +58,9 @@ func TestSubmitApplicationSmsUsesApprovedTemplateVariables(t *testing.T) {
 		}
 		if req.TemplateCode != "PROJECT_APPLICATION_REJECTED" || req.BusinessTag != "project_application_sms_rejected" {
 			t.Fatalf("request = %+v", req)
+		}
+		if req.TaskKey != "PROJECT_APPLICATION_SMS:12:rejected" || req.TraceID != "PROJECT_APPLICATION_SMS:12" || !req.Retry {
+			t.Fatalf("recovery identity = %+v", req)
 		}
 		if len(req.Recipients) != 1 || req.Recipients[0].Phone != "13800138000" {
 			t.Fatalf("recipients = %+v", req.Recipients)
@@ -71,7 +77,7 @@ func TestSubmitApplicationSmsUsesApprovedTemplateVariables(t *testing.T) {
 	err := client.SubmitApplicationSms(context.Background(), ApplicationSmsRequest{
 		TaskKey: "PROJECT_APPLICATION_SMS:12:rejected", TemplateCode: "PROJECT_APPLICATION_REJECTED",
 		Phone: "13800138000", Nickname: "小明", ProjectTitle: "测试项目", TeamRole: "项目负责人",
-		BusinessTag: "project_application_sms_rejected", TraceID: "PROJECT_APPLICATION_SMS:12",
+		BusinessTag: "project_application_sms_rejected", TraceID: "PROJECT_APPLICATION_SMS:12", Retry: true,
 	})
 	if err != nil {
 		t.Fatalf("SubmitApplicationSms returned error: %v", err)

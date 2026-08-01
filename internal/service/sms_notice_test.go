@@ -622,6 +622,47 @@ func TestRecoverByOrderRedrivesPersistedOliveBranchSmsNotice(t *testing.T) {
 	}
 }
 
+func TestConcurrentFailedRetryLoserDoesNotOverwriteWinner(t *testing.T) {
+	projectID := 154
+	staleFailed := &models.SmsNotice{
+		ID: 101, OrderID: 52, OliveBranchRecordID: 76, ProjectID: &projectID,
+		SenderID: 1130, ReceiverID: 1128, SmsContent: "original failed content",
+		Status: models.SmsNoticeStatusFailed,
+	}
+	persistedWinner := &models.SmsNotice{
+		ID: 101, OrderID: 52, SmsContent: "winner completed content",
+		Status: models.SmsNoticeStatusCompleted,
+	}
+	noticeRepo := &smsNoticeRepoStub{notice: persistedWinner, updateCalls: make(chan *models.SmsNotice, 1)}
+	claimer := &orderPushClaimStub{claimed: false}
+	svc := &SmsNoticeService{
+		repo:             &repository.Repository{SmsNotice: noticeRepo},
+		orderPushClaimer: claimer,
+	}
+
+	notice, err := svc.handleExistingNotice(
+		context.Background(), staleFailed,
+		SendSmsNoticeInput{OrderID: 52, ReceiverUserID: 1128, OliveBranchRecordID: 76},
+		&models.OliveBranch{ID: 76, SenderID: 1130, ReceiverID: 1128},
+		&models.Order{ID: 52},
+		&models.Project{ID: projectID, Name: "test project"},
+		&models.User{ID: 1128},
+	)
+
+	require.Nil(t, notice)
+	require.Error(t, err)
+	assert.Equal(t, 1, claimer.calls)
+	assert.Equal(t, models.SmsNoticeStatusFailed, staleFailed.Status)
+	assert.Equal(t, "original failed content", staleFailed.SmsContent)
+	assert.Equal(t, models.SmsNoticeStatusCompleted, noticeRepo.notice.Status)
+	assert.Equal(t, "winner completed content", noticeRepo.notice.SmsContent)
+	select {
+	case <-noticeRepo.updateCalls:
+		require.Fail(t, "losing retry must not update the existing sms notice")
+	default:
+	}
+}
+
 type smsNoticeOliveBranchRepoStub struct {
 	repository.OliveBranchRepo
 	branch *models.OliveBranch
