@@ -363,9 +363,7 @@ func TestSmsNoticeSendRejectsOrderBoundToAnotherOliveBranch(t *testing.T) {
 	}
 	svc := &SmsNoticeService{repo: repo}
 
-	requestCtx, cancel := context.WithCancel(context.Background())
-	cancel()
-	notice, err := svc.Send(requestCtx, 1130, SendSmsNoticeInput{
+	notice, err := svc.Send(context.Background(), 1130, SendSmsNoticeInput{
 		OrderID:             52,
 		ReceiverUserID:      1128,
 		OliveBranchRecordID: 76,
@@ -491,7 +489,9 @@ func TestOrdinarySmsCreateFailureReleasesOrderClaim(t *testing.T) {
 	}
 	svc := &SmsNoticeService{repo: repo, orderPushClaimer: claimer}
 
-	notice, err := svc.Send(context.Background(), 1130, SendSmsNoticeInput{
+	requestCtx, cancel := context.WithCancel(context.Background())
+	cancel()
+	notice, err := svc.Send(requestCtx, 1130, SendSmsNoticeInput{
 		OrderID: 52, ReceiverUserID: 1128, OliveBranchRecordID: 76, ProjectID: intPtr(154),
 	})
 

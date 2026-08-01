@@ -111,12 +111,14 @@ func TestReleaseDeliveryClaimOnlyReleasesOwnedPendingOrder(t *testing.T) {
 	for _, want := range []string{
 		"push_status=NULL", "last_push_time=NULL",
 		"WHERE id=? AND user_id=? AND status=? AND refund_status=0 AND push_status='pending'",
+		"NOT EXISTS (SELECT 1 FROM olive_branch_sms_notice WHERE order_id=?)",
 	} {
 		if !strings.Contains(query, want) {
 			t.Fatalf("query missing %q: %s", want, query)
 		}
 	}
-	if len(args) != 3 || args[0].Value != int64(52) || args[1].Value != int64(1130) || args[2].Value != int64(1) {
+	if len(args) != 4 || args[0].Value != int64(52) || args[1].Value != int64(1130) ||
+		args[2].Value != int64(1) || args[3].Value != int64(52) {
 		t.Fatalf("args = %#v, want order id, owner id and paid status", args)
 	}
 }

@@ -454,8 +454,10 @@ func (s *SmsNoticeService) releaseOrderPushClaim(ctx context.Context, orderID, u
 	compensationCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	defer cancel()
 	released, err := releaser.ReleaseOrderPushDeliveryForUser(compensationCtx, orderID, userID)
-	if err != nil || !released {
-		log.Printf("[SmsNoticeService] release order push claim failed, order_id=%d user_id=%d released=%t err=%v", orderID, userID, released, err)
+	if err != nil {
+		log.Printf("[SmsNoticeService] release order push claim failed, order_id=%d user_id=%d: %v", orderID, userID, err)
+	} else if !released {
+		log.Printf("[SmsNoticeService] release order push claim skipped, order_id=%d user_id=%d", orderID, userID)
 	}
 }
 
