@@ -41,13 +41,14 @@ func NewSmsNoticeService(repo *repository.Repository, messageCenter *messagecent
 }
 
 type SendSmsNoticeInput struct {
-	OrderID             int
-	ReceiverUserID      int
-	OliveBranchRecordID int
-	ApplicationID       *int
-	MemberRemovalID     *int64
-	NoticeType          *string
-	ProjectID           *int
+	OrderID                 int
+	ReceiverUserID          int
+	OliveBranchRecordID     int
+	ApplicationID           *int
+	MemberRemovalID         *int64
+	NoticeType              *string
+	ProjectID               *int
+	OrderPushAlreadyPending bool
 }
 
 type applicationSmsSubmitter interface {
@@ -150,7 +151,6 @@ func (s *SmsNoticeService) Send(ctx context.Context, userID int, input SendSmsNo
 		}
 		return s.handleExistingNotice(ctx, existingByOrder, input, branch, order, project, receiver)
 	}
-
 	notice := s.prepareNotice(&models.SmsNotice{}, branch, order, project, receiver)
 	if err := s.repo.SmsNotice.Create(ctx, notice); err != nil {
 		log.Printf("[SmsNoticeService] create sms notice: %v", err)
@@ -165,7 +165,7 @@ func (s *SmsNoticeService) Send(ctx context.Context, userID int, input SendSmsNo
 	if err := s.recordOrderSmsTemplate(ctx, order.ID, "OLIVE_BRANCH_SMS_NOTICE"); err != nil {
 		return nil, err
 	}
-	if err := s.beginOrderPush(ctx, order.ID, userID); err != nil {
+	if err := s.claimOrderPush(ctx, input, userID); err != nil {
 		return nil, err
 	}
 	s.startAsyncSubmission(notice)
@@ -267,7 +267,7 @@ func (s *SmsNoticeService) sendOliveOutcomeSms(ctx context.Context, userID int, 
 	if err := s.recordOrderSmsTemplate(ctx, order.ID, templateCode); err != nil {
 		return nil, err
 	}
-	if err := s.beginOrderPush(ctx, order.ID, userID); err != nil {
+	if err := s.claimOrderPush(ctx, input, userID); err != nil {
 		return nil, err
 	}
 	if err := applicationSubmitter.SubmitApplicationSms(ctx, messagecenter.ApplicationSmsRequest{
@@ -353,7 +353,7 @@ func (s *SmsNoticeService) sendMemberRemovalSms(ctx context.Context, userID int,
 	if err := s.recordOrderSmsTemplate(ctx, order.ID, "MEMBER_REMOVAL_THANKS"); err != nil {
 		return nil, err
 	}
-	if err := s.beginOrderPush(ctx, order.ID, userID); err != nil {
+	if err := s.claimOrderPush(ctx, input, userID); err != nil {
 		return nil, err
 	}
 	if err := applicationSubmitter.SubmitApplicationSms(ctx, messagecenter.ApplicationSmsRequest{
@@ -402,14 +402,21 @@ func (s *SmsNoticeService) recordOrderSmsTemplate(ctx context.Context, orderID i
 }
 
 func (s *SmsNoticeService) beginOrderPush(ctx context.Context, orderID, userID int) error {
-	updated, err := s.repo.UpdateOrderPushStatusForUser(ctx, orderID, userID, "pending", nil)
+	updated, err := s.repo.BeginOrderPushDeliveryForUser(ctx, orderID, userID)
 	if err != nil {
 		return ErrInternal("update order push status failed")
 	}
 	if !updated {
-		return ErrForbidden("no permission to update order push status")
+		return ErrBadRequest("order delivery is already pending or completed")
 	}
 	return nil
+}
+
+func (s *SmsNoticeService) claimOrderPush(ctx context.Context, input SendSmsNoticeInput, userID int) error {
+	if input.OrderPushAlreadyPending {
+		return nil
+	}
+	return s.beginOrderPush(ctx, input.OrderID, userID)
 }
 
 func (s *SmsNoticeService) syncOrderPush(ctx context.Context, orderID, userID int, status string, message *string) {
@@ -581,7 +588,7 @@ func (s *SmsNoticeService) sendApplicationSms(ctx context.Context, userID int, i
 	if err := s.recordOrderSmsTemplate(ctx, order.ID, templateCode); err != nil {
 		return nil, err
 	}
-	if err := s.beginOrderPush(ctx, order.ID, userID); err != nil {
+	if err := s.claimOrderPush(ctx, input, userID); err != nil {
 		return nil, err
 	}
 	err = applicationSubmitter.SubmitApplicationSms(ctx, messagecenter.ApplicationSmsRequest{
@@ -662,6 +669,7 @@ func (s *SmsNoticeService) RetryByOrder(ctx context.Context, userID, orderID int
 		return s.Send(ctx, userID, SendSmsNoticeInput{
 			OrderID: orderID, ReceiverUserID: notice.ReceiverID,
 			OliveBranchRecordID: notice.OliveBranchRecordID, ProjectID: notice.ProjectID,
+			OrderPushAlreadyPending: true,
 		})
 	}
 	if order.TemplateCode == nil || strings.TrimSpace(*order.TemplateCode) == "" {
@@ -788,7 +796,7 @@ func (s *SmsNoticeService) handleExistingNotice(ctx context.Context, existing *m
 			log.Printf("[SmsNoticeService] update failed notice for retry: %v", err)
 			return nil, ErrInternal("update sms notice failed")
 		}
-		if err := s.beginOrderPush(ctx, order.ID, existing.SenderID); err != nil {
+		if err := s.claimOrderPush(ctx, input, existing.SenderID); err != nil {
 			return nil, err
 		}
 		s.startAsyncSubmission(notice)

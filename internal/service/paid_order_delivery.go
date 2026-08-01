@@ -63,13 +63,14 @@ func (s *PaidOrderDeliveryService) Deliver(ctx context.Context, order *models.Or
 			oliveBranchRecordID = *intent.OliveBranchRecordID
 		}
 		_, err = s.sms.Send(ctx, order.UserID, SendSmsNoticeInput{
-			OrderID:             order.ID,
-			ReceiverUserID:      *intent.ReceiverUserID,
-			OliveBranchRecordID: oliveBranchRecordID,
-			ApplicationID:       intent.ApplicationID,
-			MemberRemovalID:     intent.MemberRemovalID,
-			NoticeType:          intent.NoticeType,
-			ProjectID:           intent.ProjectID,
+			OrderID:                 order.ID,
+			ReceiverUserID:          *intent.ReceiverUserID,
+			OliveBranchRecordID:     oliveBranchRecordID,
+			ApplicationID:           intent.ApplicationID,
+			MemberRemovalID:         intent.MemberRemovalID,
+			NoticeType:              intent.NoticeType,
+			ProjectID:               intent.ProjectID,
+			OrderPushAlreadyPending: true,
 		})
 		return err
 	default:

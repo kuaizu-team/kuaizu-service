@@ -56,11 +56,19 @@ func (s *EventService) GetEvent(ctx context.Context, id int) (*models.Event, []m
 		return nil, nil, ErrNotFound("event not found")
 	}
 	approved := models.ProjectStatusApproved
-	projects, _, err := s.repo.Project.List(ctx, repository.ListParams{
-		Page: 1, Size: 1000, EventID: &id, Status: &approved,
-	})
-	if err != nil {
-		return nil, nil, ErrInternal("get event projects failed")
+	const projectPageSize = 1000
+	projects := make([]models.Project, 0)
+	for page := 1; ; page++ {
+		batch, total, listErr := s.repo.Project.List(ctx, repository.ListParams{
+			Page: page, Size: projectPageSize, EventID: &id, Status: &approved,
+		})
+		if listErr != nil {
+			return nil, nil, ErrInternal("get event projects failed")
+		}
+		projects = append(projects, batch...)
+		if len(batch) == 0 || len(projects) >= int(total) {
+			break
+		}
 	}
 	return event, projects, nil
 }

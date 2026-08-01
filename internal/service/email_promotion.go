@@ -201,8 +201,10 @@ func (s *EmailPromotionService) TriggerPromotionWithInput(ctx context.Context, u
 		log.Printf("[EmailPromotionService] failed to create promotion recipients: %v", err)
 		return nil, ErrInternal("create promotion recipients failed")
 	}
-	if err := s.markOrderPushPending(ctx, orderID, userID); err != nil {
-		return nil, err
+	if !input.OrderPushAlreadyPending {
+		if err := s.markOrderPushPending(ctx, orderID, userID); err != nil {
+			return nil, err
+		}
 	}
 
 	req := messagecenter.ProjectPromotionRequest{
@@ -230,12 +232,12 @@ type TriggerPromotionResult struct {
 }
 
 func (s *EmailPromotionService) markOrderPushPending(ctx context.Context, orderID, userID int) error {
-	updated, err := s.repo.UpdateOrderPushStatusForUser(ctx, orderID, userID, "pending", nil)
+	updated, err := s.repo.BeginOrderPushDeliveryForUser(ctx, orderID, userID)
 	if err != nil {
 		return ErrInternal("update order push status failed")
 	}
 	if !updated {
-		return ErrForbidden("no permission to update order push status")
+		return ErrBadRequest("order delivery is already pending or completed")
 	}
 	return nil
 }

@@ -21,6 +21,35 @@ const emailPromotionSelectColumns = `
 	ep.error_message, ep.started_at, ep.completed_at, ep.created_at
 `
 
+const emailPromotionUpdateQuery = `
+	UPDATE email_promotion SET
+		channel = :channel,
+		business_tag = :business_tag,
+		trace_id = :trace_id,
+		project_id = :project_id,
+		creator_id = :creator_id,
+		strategy = :strategy,
+		max_recipients = :max_recipients,
+		total_sent = :total_sent,
+		status = :status,
+		error_message = :error_message,
+		started_at = :started_at,
+		completed_at = :completed_at
+	WHERE id = :id
+`
+
+const emailPromotionMetadataUpdateQuery = `
+	UPDATE email_promotion SET
+		channel = :channel,
+		business_tag = :business_tag,
+		trace_id = :trace_id,
+		project_id = :project_id,
+		creator_id = :creator_id,
+		strategy = :strategy,
+		max_recipients = :max_recipients
+	WHERE id = :id
+`
+
 // EmailPromotionRepository handles email promotion database operations
 type EmailPromotionRepository struct {
 	db *sqlx.DB
@@ -33,25 +62,36 @@ func NewEmailPromotionRepository(db *sqlx.DB) *EmailPromotionRepository {
 
 // Create creates or updates the single promotion record for an order/project pair.
 func (r *EmailPromotionRepository) Create(ctx context.Context, promotion *models.EmailPromotion) error {
-	existing, err := r.getPreferredByOrderAndProject(ctx, promotion.OrderID, promotion.ProjectID)
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin email promotion create: %w", err)
+	}
+	defer tx.Rollback()
+
+	var lockedOrderID int
+	if err := tx.GetContext(ctx, &lockedOrderID,
+		"SELECT id FROM `order` WHERE id = ? FOR UPDATE", promotion.OrderID); err != nil {
+		return fmt.Errorf("lock email promotion order: %w", err)
+	}
+
+	existing, err := getPreferredByOrderAndProjectTx(ctx, tx, promotion.OrderID, promotion.ProjectID)
 	if err != nil {
 		return err
 	}
 	if existing != nil {
 		promotion.ID = existing.ID
-		if promotion.StartedAt == nil {
-			promotion.StartedAt = existing.StartedAt
+		if _, err := tx.NamedExecContext(ctx, emailPromotionMetadataUpdateQuery, promotion); err != nil {
+			return fmt.Errorf("update existing email promotion: %w", err)
 		}
-		if promotion.CompletedAt == nil {
-			promotion.CompletedAt = existing.CompletedAt
+		promotion.TotalSent = existing.TotalSent
+		promotion.Status = existing.Status
+		promotion.ErrorMessage = existing.ErrorMessage
+		promotion.StartedAt = existing.StartedAt
+		promotion.CompletedAt = existing.CompletedAt
+		if err := tx.Commit(); err != nil {
+			return fmt.Errorf("commit existing email promotion: %w", err)
 		}
-		if promotion.ErrorMessage == nil {
-			promotion.ErrorMessage = existing.ErrorMessage
-		}
-		if promotion.TotalSent == 0 {
-			promotion.TotalSent = existing.TotalSent
-		}
-		return r.Update(ctx, promotion)
+		return nil
 	}
 
 	query := `
@@ -64,16 +104,8 @@ func (r *EmailPromotionRepository) Create(ctx context.Context, promotion *models
 		)
 	`
 
-	result, err := r.db.NamedExecContext(ctx, query, promotion)
+	result, err := tx.NamedExecContext(ctx, query, promotion)
 	if err != nil {
-		existing, getErr := r.getPreferredByOrderAndProject(ctx, promotion.OrderID, promotion.ProjectID)
-		if getErr != nil {
-			return getErr
-		}
-		if existing != nil {
-			promotion.ID = existing.ID
-			return r.Update(ctx, promotion)
-		}
 		return fmt.Errorf("create email promotion: %w", err)
 	}
 
@@ -83,11 +115,39 @@ func (r *EmailPromotionRepository) Create(ctx context.Context, promotion *models
 	}
 
 	promotion.ID = int(id)
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit email promotion create: %w", err)
+	}
 	return nil
 }
 
+func getPreferredByOrderAndProjectTx(ctx context.Context, tx *sqlx.Tx, orderID, projectID int) (*models.EmailPromotion, error) {
+	query := preferredEmailPromotionQuery()
+	var promotion models.EmailPromotion
+	if err := tx.QueryRowxContext(ctx, query, orderID, projectID).StructScan(&promotion); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get preferred email promotion in transaction: %w", err)
+	}
+	return &promotion, nil
+}
+
 func (r *EmailPromotionRepository) getPreferredByOrderAndProject(ctx context.Context, orderID, projectID int) (*models.EmailPromotion, error) {
-	query := `
+	query := preferredEmailPromotionQuery()
+
+	var promotion models.EmailPromotion
+	if err := r.db.QueryRowxContext(ctx, query, orderID, projectID).StructScan(&promotion); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get preferred email promotion: %w", err)
+	}
+	return &promotion, nil
+}
+
+func preferredEmailPromotionQuery() string {
+	return `
 		SELECT ` + emailPromotionSelectColumns + `
 		FROM email_promotion ep
 		WHERE ep.order_id = ? AND ep.project_id = ?
@@ -98,15 +158,6 @@ func (r *EmailPromotionRepository) getPreferredByOrderAndProject(ctx context.Con
 		         ep.id DESC
 		LIMIT 1
 	`
-
-	var promotion models.EmailPromotion
-	if err := r.db.QueryRowxContext(ctx, query, orderID, projectID).StructScan(&promotion); err != nil {
-		if err == sql.ErrNoRows {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("get preferred email promotion: %w", err)
-	}
-	return &promotion, nil
 }
 
 // GetByID retrieves an email promotion by ID
@@ -164,24 +215,7 @@ func (r *EmailPromotionRepository) GetByOrderAndProject(ctx context.Context, ord
 
 // Update updates an email promotion record
 func (r *EmailPromotionRepository) Update(ctx context.Context, promotion *models.EmailPromotion) error {
-	query := `
-		UPDATE email_promotion SET
-			channel = :channel,
-			business_tag = :business_tag,
-			trace_id = :trace_id,
-			project_id = :project_id,
-			creator_id = :creator_id,
-			strategy = :strategy,
-			max_recipients = :max_recipients,
-			total_sent = :total_sent,
-			status = :status,
-			error_message = :error_message,
-			started_at = :started_at,
-			completed_at = :completed_at
-		WHERE id = :id
-	`
-
-	_, err := r.db.NamedExecContext(ctx, query, promotion)
+	_, err := r.db.NamedExecContext(ctx, emailPromotionUpdateQuery, promotion)
 	if err != nil {
 		return fmt.Errorf("update email promotion: %w", err)
 	}
@@ -191,19 +225,7 @@ func (r *EmailPromotionRepository) Update(ctx context.Context, promotion *models
 
 // UpdateMetadata normalizes routing metadata without writing message-center-owned execution state.
 func (r *EmailPromotionRepository) UpdateMetadata(ctx context.Context, promotion *models.EmailPromotion) error {
-	query := `
-		UPDATE email_promotion SET
-			channel = :channel,
-			business_tag = :business_tag,
-			trace_id = :trace_id,
-			project_id = :project_id,
-			creator_id = :creator_id,
-			strategy = :strategy,
-			max_recipients = :max_recipients
-		WHERE id = :id
-	`
-
-	_, err := r.db.NamedExecContext(ctx, query, promotion)
+	_, err := r.db.NamedExecContext(ctx, emailPromotionMetadataUpdateQuery, promotion)
 	if err != nil {
 		return fmt.Errorf("update email promotion metadata: %w", err)
 	}

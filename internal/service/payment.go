@@ -12,41 +12,140 @@ import (
 	"github.com/wechatpay-apiv3/wechatpay-go/services/payments"
 )
 
-// PaymentService handles payment-related business logic.
-type PaymentService struct {
-	repo       *repository.Repository
-	payClient  *wechat.PayClient
-	payInitErr error
-	delivery   *PaidOrderDeliveryService
+const (
+	paidOrderDeliveryTimeout       = 30 * time.Second
+	paidOrderDeliveryStaleAfter    = 5 * time.Minute
+	paidOrderDeliveryRecoveryEvery = 30 * time.Second
+	paidOrderDeliveryRecoveryLimit = 100
+	paidOrderDeliveryWorkers       = 8
+)
+
+type paidOrderDeliverer interface {
+	Deliver(ctx context.Context, order *models.Order, orderPushAlreadyPending bool) error
 }
 
-func (s *PaymentService) SetPaidOrderDeliveryService(delivery *PaidOrderDeliveryService) {
+type orderDeliveryStateRepository interface {
+	BeginOrderPushDeliveryForUser(ctx context.Context, id, userID int) (bool, error)
+	ListRecoverableOrderDeliveries(ctx context.Context, staleBefore time.Time, limit int) ([]*models.Order, error)
+	ClaimRecoverableOrderDelivery(ctx context.Context, id int, staleBefore time.Time) (bool, error)
+	UpdateOrderPushStatus(ctx context.Context, id int, status string, errorMessage *string) error
+}
+
+// PaymentService handles payment-related business logic.
+type PaymentService struct {
+	repo          *repository.Repository
+	payClient     *wechat.PayClient
+	payInitErr    error
+	delivery      paidOrderDeliverer
+	deliveryState orderDeliveryStateRepository
+	recoverySlots chan struct{}
+}
+
+func (s *PaymentService) SetPaidOrderDeliveryService(delivery paidOrderDeliverer) {
 	s.delivery = delivery
 }
 
-// EnsurePaidOrderDelivery runs after the payment transaction commits. Delivery failure must not roll back payment.
-func (s *PaymentService) EnsurePaidOrderDelivery(ctx context.Context, order *models.Order) {
+// EnsurePaidOrderDelivery durably claims delivery after payment commits and detaches it from the webhook context.
+func (s *PaymentService) EnsurePaidOrderDelivery(_ context.Context, order *models.Order) {
 	if s.delivery == nil || order == nil {
 		return
 	}
-	if order.PushStatus != nil && (*order.PushStatus == "pending" || *order.PushStatus == "success") {
+	intent, err := order.ParseDeliveryIntent()
+	if err != nil {
+		s.markOrderDeliveryFailed(order.ID, err)
 		return
 	}
-	if err := s.delivery.Deliver(ctx, order, false); err != nil {
-		message := err.Error()
-		if updateErr := s.repo.UpdateOrderPushStatus(ctx, order.ID, "failed", &message); updateErr != nil {
-			log.Printf("[PaymentService.EnsurePaidOrderDelivery] update failed state, order_id=%d: %v", order.ID, updateErr)
-		}
-		log.Printf("[PaymentService.EnsurePaidOrderDelivery] delivery failed, order_id=%d: %v", order.ID, err)
+	if intent == nil {
+		return
 	}
+	claimCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	claimed, claimErr := s.deliveryState.BeginOrderPushDeliveryForUser(claimCtx, order.ID, order.UserID)
+	cancel()
+	if claimErr != nil {
+		log.Printf("[PaymentService.EnsurePaidOrderDelivery] claim failed, order_id=%d: %v", order.ID, claimErr)
+		return
+	}
+	if claimed {
+		go s.deliverClaimedOrder(order)
+	}
+}
+
+// StartOrderDeliveryRecovery recovers paid orders left unclaimed or stale after an interruption.
+func (s *PaymentService) StartOrderDeliveryRecovery(ctx context.Context) {
+	go func() {
+		s.recoverOrderDeliveries(ctx)
+		ticker := time.NewTicker(paidOrderDeliveryRecoveryEvery)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				s.recoverOrderDeliveries(ctx)
+			}
+		}
+	}()
+}
+
+func (s *PaymentService) recoverOrderDeliveries(ctx context.Context) {
+	queryCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	staleBefore := time.Now().Add(-paidOrderDeliveryStaleAfter)
+	orders, err := s.deliveryState.ListRecoverableOrderDeliveries(queryCtx, staleBefore, paidOrderDeliveryRecoveryLimit)
+	if err != nil {
+		log.Printf("[PaymentService] list recoverable order deliveries failed: %v", err)
+		return
+	}
+	for _, order := range orders {
+		select {
+		case s.recoverySlots <- struct{}{}:
+		case <-ctx.Done():
+			return
+		}
+		go func(candidate *models.Order) {
+			defer func() { <-s.recoverySlots }()
+			claimCtx, claimCancel := context.WithTimeout(context.Background(), 5*time.Second)
+			claimed, claimErr := s.deliveryState.ClaimRecoverableOrderDelivery(claimCtx, candidate.ID, staleBefore)
+			claimCancel()
+			if claimErr != nil {
+				log.Printf("[PaymentService] claim recoverable order_id=%d failed: %v", candidate.ID, claimErr)
+				return
+			}
+			if claimed {
+				s.deliverClaimedOrder(candidate)
+			}
+		}(order)
+	}
+}
+
+func (s *PaymentService) deliverClaimedOrder(order *models.Order) {
+	deliveryCtx, cancel := context.WithTimeout(context.Background(), paidOrderDeliveryTimeout)
+	err := s.delivery.Deliver(deliveryCtx, order, true)
+	cancel()
+	if err != nil {
+		s.markOrderDeliveryFailed(order.ID, err)
+	}
+}
+
+func (s *PaymentService) markOrderDeliveryFailed(orderID int, deliveryErr error) {
+	message := deliveryErr.Error()
+	updateCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := s.deliveryState.UpdateOrderPushStatus(updateCtx, orderID, "failed", &message); err != nil {
+		log.Printf("[PaymentService] delivery failed and state update failed, order_id=%d delivery_error=%v update_error=%v", orderID, deliveryErr, err)
+		return
+	}
+	log.Printf("[PaymentService] delivery failed, order_id=%d: %v", orderID, deliveryErr)
 }
 
 // NewPaymentService creates a new PaymentService.
 func NewPaymentService(repo *repository.Repository, payClient *wechat.PayClient, payInitErr error) *PaymentService {
 	return &PaymentService{
-		repo:       repo,
-		payClient:  payClient,
-		payInitErr: payInitErr,
+		repo:          repo,
+		payClient:     payClient,
+		payInitErr:    payInitErr,
+		deliveryState: repo,
+		recoverySlots: make(chan struct{}, paidOrderDeliveryWorkers),
 	}
 }
 
