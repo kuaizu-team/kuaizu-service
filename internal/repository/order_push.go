@@ -27,6 +27,22 @@ func (r *Repository) BeginOrderPushDeliveryForUser(ctx context.Context, id, user
 	return affected == 1, err
 }
 
+// ReleaseOrderPushDeliveryForUser conditionally releases a preparation claim when no delivery record was created.
+func (r *Repository) ReleaseOrderPushDeliveryForUser(ctx context.Context, id, userID int) (bool, error) {
+	if r == nil || r.db == nil {
+		return true, nil
+	}
+	result, err := r.db.ExecContext(ctx, `UPDATE `+"`order`"+` SET
+		push_status=NULL, push_error_message=NULL, last_push_time=NULL, updated_at=NOW()
+		WHERE id=? AND user_id=? AND status=? AND refund_status=0 AND push_status='pending'`,
+		id, userID, models.OrderStatusPaid)
+	if err != nil {
+		return false, fmt.Errorf("release owned order delivery: %w", err)
+	}
+	affected, err := result.RowsAffected()
+	return affected == 1, err
+}
+
 // ListRecoverableOrderDeliveries finds committed delivery intents that are unclaimed or stale pending.
 // Failed deliveries require the bounded, explicit retry flow.
 func (r *Repository) ListRecoverableOrderDeliveries(ctx context.Context, staleBefore time.Time, limit int) ([]*models.Order, error) {

@@ -2,9 +2,14 @@ package service
 
 import (
 	"context"
+	"database/sql"
+	"database/sql/driver"
+	"errors"
+	"io"
 	"testing"
 	"time"
 
+	"github.com/jmoiron/sqlx"
 	"github.com/kuaizu-team/kuaizu-service/internal/messagecenter"
 	"github.com/kuaizu-team/kuaizu-service/internal/models"
 	"github.com/kuaizu-team/kuaizu-service/internal/repository"
@@ -40,13 +45,23 @@ type smsNoticeFailureCall struct {
 }
 
 type orderPushClaimStub struct {
-	claimed bool
-	calls   int
+	claimed       bool
+	calls         int
+	released      bool
+	releaseCalls  int
+	releaseErr    error
+	releaseCtxErr error
 }
 
 func (s *orderPushClaimStub) BeginOrderPushDeliveryForUser(context.Context, int, int) (bool, error) {
 	s.calls++
 	return s.claimed, nil
+}
+
+func (s *orderPushClaimStub) ReleaseOrderPushDeliveryForUser(ctx context.Context, _ int, _ int) (bool, error) {
+	s.releaseCalls++
+	s.releaseCtxErr = ctx.Err()
+	return s.released, s.releaseErr
 }
 
 type smsNoticeRepoStub struct {
@@ -57,20 +72,54 @@ type smsNoticeRepoStub struct {
 	markFailedCalls  chan smsNoticeFailureCall
 	markFailedResult bool
 	markFailedErr    error
+	createErr        error
+	createAppErr     error
+	createOutcomeErr error
+	createRemovalErr error
 }
 
 func (s *smsNoticeRepoStub) Create(ctx context.Context, notice *models.SmsNotice) error {
+	if s.createErr != nil {
+		return s.createErr
+	}
+	notice.ID = 101
 	s.notice = notice
 	return nil
 }
 
 func (s *smsNoticeRepoStub) CreateApplication(ctx context.Context, notice *models.SmsNotice) error {
+	if s.createAppErr != nil {
+		return s.createAppErr
+	}
 	notice.ID = 101
 	s.notice = notice
 	if s.createApp != nil {
 		s.createApp <- notice
 	}
 	return nil
+}
+
+func (s *smsNoticeRepoStub) CreateOutcome(ctx context.Context, notice *models.SmsNotice) error {
+	if s.createOutcomeErr != nil {
+		return s.createOutcomeErr
+	}
+	notice.ID = 101
+	s.notice = notice
+	return nil
+}
+
+func (s *smsNoticeRepoStub) CreateMemberRemoval(ctx context.Context, notice *models.SmsNotice, removalID int64) error {
+	if s.createRemovalErr != nil {
+		return s.createRemovalErr
+	}
+	notice.ID = 101
+	notice.MemberRemovalID = &removalID
+	s.notice = notice
+	return nil
+}
+
+func (s *smsNoticeRepoStub) CompleteMemberRemoval(ctx context.Context, notice *models.SmsNotice) error {
+	return s.Update(ctx, notice)
 }
 
 func (s *smsNoticeRepoStub) Update(ctx context.Context, notice *models.SmsNotice) error {
@@ -314,7 +363,9 @@ func TestSmsNoticeSendRejectsOrderBoundToAnotherOliveBranch(t *testing.T) {
 	}
 	svc := &SmsNoticeService{repo: repo}
 
-	notice, err := svc.Send(context.Background(), 1130, SendSmsNoticeInput{
+	requestCtx, cancel := context.WithCancel(context.Background())
+	cancel()
+	notice, err := svc.Send(requestCtx, 1130, SendSmsNoticeInput{
 		OrderID:             52,
 		ReceiverUserID:      1128,
 		OliveBranchRecordID: 76,
@@ -422,6 +473,160 @@ func TestApplicationSmsLosingOrderClaimCreatesNoNoticeOrMessage(t *testing.T) {
 	assert.Equal(t, 1, claimer.calls)
 	assert.Nil(t, noticeRepo.notice)
 	assert.Empty(t, submitter.appReqs)
+}
+
+func TestOrdinarySmsCreateFailureReleasesOrderClaim(t *testing.T) {
+	sceneConfig := `{"scene":"olive_branch_sms_notice"}`
+	phone := "13800138000"
+	claimer := &orderPushClaimStub{claimed: true, released: true}
+	repo := &repository.Repository{
+		OliveBranch: smsNoticeOliveBranchRepoStub{branch: &models.OliveBranch{
+			ID: 76, SenderID: 1130, ReceiverID: 1128, RelatedProjectID: 154,
+		}},
+		Order:     smsNoticeOrderRepoStub{order: &models.Order{ID: 52, UserID: 1130, ProductID: 2, Status: models.OrderStatusPaid}},
+		Product:   smsNoticeProductRepoStub{product: &models.Product{ID: 2, ConfigJSON: &sceneConfig}},
+		Project:   smsNoticeProjectRepoStub{project: &models.Project{ID: 154, Name: "project"}},
+		User:      smsNoticeUserRepoStub{user: &models.User{ID: 1128, Phone: &phone}},
+		SmsNotice: &smsNoticeRepoStub{createErr: errors.New("insert failed")},
+	}
+	svc := &SmsNoticeService{repo: repo, orderPushClaimer: claimer}
+
+	notice, err := svc.Send(context.Background(), 1130, SendSmsNoticeInput{
+		OrderID: 52, ReceiverUserID: 1128, OliveBranchRecordID: 76, ProjectID: intPtr(154),
+	})
+
+	require.Nil(t, notice)
+	require.Error(t, err)
+	assert.Equal(t, 1, claimer.calls)
+	assert.Equal(t, 1, claimer.releaseCalls)
+	assert.NoError(t, claimer.releaseCtxErr, "claim compensation must survive request cancellation")
+}
+
+func TestOutcomeSmsCreateFailureReleasesOrderClaim(t *testing.T) {
+	sceneConfig := `{"scene":"olive_branch_sms_notice"}`
+	phone := "13800138000"
+	noticeType := "rejected"
+	claimer := &orderPushClaimStub{claimed: true, released: true}
+	repo := &repository.Repository{
+		OliveBranch: smsNoticeOliveBranchRepoStub{branch: &models.OliveBranch{
+			ID: 76, SenderID: 1130, ReceiverID: 1128, RelatedProjectID: 154, Status: models.OliveBranchStatusRejected,
+		}},
+		Order:     smsNoticeOrderRepoStub{order: &models.Order{ID: 52, UserID: 1130, ProductID: 2, Status: models.OrderStatusPaid}},
+		Product:   smsNoticeProductRepoStub{product: &models.Product{ID: 2, ConfigJSON: &sceneConfig}},
+		Project:   smsNoticeProjectRepoStub{project: &models.Project{ID: 154, Name: "project"}},
+		User:      smsNoticeUserRepoStub{user: &models.User{ID: 1128, Phone: &phone}},
+		SmsNotice: &smsNoticeRepoStub{createOutcomeErr: errors.New("insert failed")},
+	}
+	svc := &SmsNoticeService{repo: repo, orderPushClaimer: claimer, messageCenter: &fakeSmsNoticeSubmitter{}}
+
+	notice, err := svc.Send(context.Background(), 1130, SendSmsNoticeInput{
+		OrderID: 52, ReceiverUserID: 1128, OliveBranchRecordID: 76, NoticeType: &noticeType,
+	})
+
+	require.Nil(t, notice)
+	require.Error(t, err)
+	assert.Equal(t, 1, claimer.calls)
+	assert.Equal(t, 1, claimer.releaseCalls)
+}
+
+func TestApplicationSmsCreateFailureReleasesOrderClaim(t *testing.T) {
+	sceneConfig := `{"scene":"olive_branch_sms_notice"}`
+	phone := "13800138000"
+	noticeType := "rejected"
+	applicationID, projectID := 7, 154
+	claimer := &orderPushClaimStub{claimed: true, released: true}
+	repo := &repository.Repository{
+		Application: smsNoticeApplicationRepoStub{application: &models.ProjectApplication{
+			ID: applicationID, ProjectID: projectID, UserID: 1128,
+			Status: models.ApplicationStatusRejected, ReviewerID: intPtr(1130),
+		}},
+		Order:     smsNoticeOrderRepoStub{order: &models.Order{ID: 52, UserID: 1130, ProductID: 2, Status: models.OrderStatusPaid}},
+		Product:   smsNoticeProductRepoStub{product: &models.Product{ID: 2, ConfigJSON: &sceneConfig}},
+		Project:   smsNoticeProjectRepoStub{project: &models.Project{ID: projectID, Name: "project"}},
+		User:      smsNoticeUserRepoStub{user: &models.User{ID: 1128, Phone: &phone}},
+		SmsNotice: &smsNoticeRepoStub{createAppErr: errors.New("insert failed")},
+	}
+	svc := &SmsNoticeService{repo: repo, orderPushClaimer: claimer, messageCenter: &fakeSmsNoticeSubmitter{}}
+
+	notice, err := svc.Send(context.Background(), 1130, SendSmsNoticeInput{
+		OrderID: 52, ReceiverUserID: 1128, ApplicationID: &applicationID,
+		NoticeType: &noticeType, ProjectID: &projectID,
+	})
+
+	require.Nil(t, notice)
+	require.Error(t, err)
+	assert.Equal(t, 1, claimer.calls)
+	assert.Equal(t, 1, claimer.releaseCalls)
+}
+
+func TestMemberRemovalSmsCreateFailureReleasesOrderClaim(t *testing.T) {
+	const driverName = "member_removal_sms_create_failure"
+	sql.Register(driverName, memberRemovalSmsDriver{})
+	db, err := sql.Open(driverName, "")
+	require.NoError(t, err)
+	defer db.Close()
+
+	sceneConfig := `{"scene":"olive_branch_sms_notice"}`
+	phone := "13800138000"
+	removalID := int64(77)
+	claimer := &orderPushClaimStub{claimed: true, released: true}
+	repo := repository.New(sqlx.NewDb(db, driverName))
+	repo.Order = smsNoticeOrderRepoStub{order: &models.Order{ID: 52, UserID: 9, ProductID: 2, Status: models.OrderStatusPaid}}
+	repo.Product = smsNoticeProductRepoStub{product: &models.Product{ID: 2, ConfigJSON: &sceneConfig}}
+	repo.User = smsNoticeUserRepoStub{user: &models.User{ID: 12, Phone: &phone}}
+	repo.SmsNotice = &smsNoticeRepoStub{createRemovalErr: errors.New("insert failed")}
+	svc := &SmsNoticeService{repo: repo, orderPushClaimer: claimer, messageCenter: &fakeSmsNoticeSubmitter{}}
+
+	notice, err := svc.Send(context.Background(), 9, SendSmsNoticeInput{
+		OrderID: 52, ReceiverUserID: 12, MemberRemovalID: &removalID,
+	})
+
+	require.Nil(t, notice)
+	require.Error(t, err)
+	assert.Equal(t, 1, claimer.calls)
+	assert.Equal(t, 1, claimer.releaseCalls)
+}
+
+func TestTemplateWriteFailureAtomicallyFailsCreatedNoticeAndOrder(t *testing.T) {
+	sceneConfig := `{"scene":"olive_branch_sms_notice"}`
+	phone := "13800138000"
+	noticeType := "rejected"
+	applicationID, projectID := 7, 154
+	claimer := &orderPushClaimStub{claimed: true}
+	noticeRepo := &smsNoticeRepoStub{
+		markFailedCalls: make(chan smsNoticeFailureCall, 1), markFailedResult: true,
+	}
+	repo := &repository.Repository{
+		Application: smsNoticeApplicationRepoStub{application: &models.ProjectApplication{
+			ID: applicationID, ProjectID: projectID, UserID: 1128,
+			Status: models.ApplicationStatusRejected, ReviewerID: intPtr(1130),
+		}},
+		Order:     smsNoticeOrderRepoStub{order: &models.Order{ID: 52, UserID: 1130, ProductID: 2, Status: models.OrderStatusPaid}},
+		Product:   smsNoticeProductRepoStub{product: &models.Product{ID: 2, ConfigJSON: &sceneConfig}},
+		Project:   smsNoticeProjectRepoStub{project: &models.Project{ID: projectID, Name: "project"}},
+		User:      smsNoticeUserRepoStub{user: &models.User{ID: 1128, Phone: &phone}},
+		SmsNotice: noticeRepo,
+	}
+	svc := &SmsNoticeService{
+		repo: repo, orderPushClaimer: claimer, messageCenter: &fakeSmsNoticeSubmitter{},
+		orderTemplateRecorder: func(context.Context, int, string) error { return errors.New("template write failed") },
+	}
+
+	notice, err := svc.Send(context.Background(), 1130, SendSmsNoticeInput{
+		OrderID: 52, ReceiverUserID: 1128, ApplicationID: &applicationID,
+		NoticeType: &noticeType, ProjectID: &projectID,
+	})
+
+	require.Nil(t, notice)
+	require.Error(t, err)
+	select {
+	case call := <-noticeRepo.markFailedCalls:
+		assert.Equal(t, 101, call.noticeID)
+		assert.Equal(t, 52, call.orderID)
+		assert.Contains(t, call.message, "template write failed")
+	default:
+		require.Fail(t, "template failure must atomically fail notice and order")
+	}
 }
 
 func TestApplicationSmsRejectsInvalidReceiverPhoneBeforeCreatingNotice(t *testing.T) {
@@ -747,6 +952,39 @@ type smsNoticeApplicationRepoStub struct {
 
 func (s smsNoticeApplicationRepoStub) GetByID(ctx context.Context, id int) (*models.ProjectApplication, error) {
 	return s.application, nil
+}
+
+type memberRemovalSmsDriver struct{}
+
+func (memberRemovalSmsDriver) Open(string) (driver.Conn, error) { return memberRemovalSmsConn{}, nil }
+
+type memberRemovalSmsConn struct{}
+
+func (memberRemovalSmsConn) Prepare(string) (driver.Stmt, error) {
+	return nil, errors.New("prepare is not supported")
+}
+func (memberRemovalSmsConn) Close() error { return nil }
+func (memberRemovalSmsConn) Begin() (driver.Tx, error) {
+	return nil, errors.New("transaction is not supported")
+}
+func (memberRemovalSmsConn) QueryContext(context.Context, string, []driver.NamedValue) (driver.Rows, error) {
+	return &memberRemovalSmsRows{}, nil
+}
+
+type memberRemovalSmsRows struct{ read bool }
+
+func (*memberRemovalSmsRows) Columns() []string {
+	return []string{"id", "user_id", "project_id", "operator_id", "role", "project_name"}
+}
+func (*memberRemovalSmsRows) Close() error { return nil }
+func (r *memberRemovalSmsRows) Next(values []driver.Value) error {
+	if r.read {
+		return io.EOF
+	}
+	r.read = true
+	values[0], values[1], values[2], values[3] = int64(77), int64(12), int64(42), int64(9)
+	values[4], values[5] = "member", "project"
+	return nil
 }
 
 var (

@@ -87,6 +87,40 @@ func TestInitialDeliveryClaimDoesNotReclaimFailedOrder(t *testing.T) {
 	}
 }
 
+func TestReleaseDeliveryClaimOnlyReleasesOwnedPendingOrder(t *testing.T) {
+	db := openCaptureDB(t)
+	defer db.Close()
+	capturedExec.Lock()
+	capturedExec.query = ""
+	capturedExec.args = nil
+	capturedExec.Unlock()
+	repo := New(sqlx.NewDb(db, "capture_user_repo"))
+
+	released, err := repo.ReleaseOrderPushDeliveryForUser(context.Background(), 52, 1130)
+	if err != nil {
+		t.Fatalf("ReleaseOrderPushDeliveryForUser returned error: %v", err)
+	}
+	if !released {
+		t.Fatal("ReleaseOrderPushDeliveryForUser should report one affected row")
+	}
+
+	capturedExec.Lock()
+	query := normalizeSQL(capturedExec.query)
+	args := append([]driver.NamedValue(nil), capturedExec.args...)
+	capturedExec.Unlock()
+	for _, want := range []string{
+		"push_status=NULL", "last_push_time=NULL",
+		"WHERE id=? AND user_id=? AND status=? AND refund_status=0 AND push_status='pending'",
+	} {
+		if !strings.Contains(query, want) {
+			t.Fatalf("query missing %q: %s", want, query)
+		}
+	}
+	if len(args) != 3 || args[0].Value != int64(52) || args[1].Value != int64(1130) || args[2].Value != int64(1) {
+		t.Fatalf("args = %#v, want order id, owner id and paid status", args)
+	}
+}
+
 func TestRecoveryClaimExcludesFailedOrders(t *testing.T) {
 	db := openCaptureDB(t)
 	defer db.Close()
