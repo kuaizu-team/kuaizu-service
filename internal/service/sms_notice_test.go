@@ -424,6 +424,37 @@ func TestApplicationSmsLosingOrderClaimCreatesNoNoticeOrMessage(t *testing.T) {
 	assert.Empty(t, submitter.appReqs)
 }
 
+func TestApplicationSmsRejectsInvalidReceiverPhoneBeforeCreatingNotice(t *testing.T) {
+	sceneConfig := `{"scene":"olive_branch_sms_notice"}`
+	invalidPhone := "11111"
+	reviewerID, applicationID, projectID := 1130, 7, 154
+	noticeType := "rejected"
+	submitter := &fakeSmsNoticeSubmitter{}
+	noticeRepo := &smsNoticeRepoStub{}
+	repo := &repository.Repository{
+		Application: smsNoticeApplicationRepoStub{application: &models.ProjectApplication{
+			ID: applicationID, ProjectID: projectID, UserID: 1128,
+			Status: models.ApplicationStatusRejected, ReviewerID: &reviewerID,
+		}},
+		Order:     smsNoticeOrderRepoStub{order: &models.Order{ID: 52, UserID: reviewerID, ProductID: 2, Status: models.OrderStatusPaid}},
+		Product:   smsNoticeProductRepoStub{product: &models.Product{ID: 2, ConfigJSON: &sceneConfig}},
+		Project:   smsNoticeProjectRepoStub{project: &models.Project{ID: projectID, Name: "test project"}},
+		User:      smsNoticeUserRepoStub{user: &models.User{ID: 1128, Phone: &invalidPhone}},
+		SmsNotice: noticeRepo,
+	}
+	svc := &SmsNoticeService{repo: repo, messageCenter: submitter}
+
+	notice, err := svc.Send(context.Background(), reviewerID, SendSmsNoticeInput{
+		OrderID: 52, ReceiverUserID: 1128, ApplicationID: &applicationID,
+		NoticeType: &noticeType, ProjectID: &projectID,
+	})
+
+	require.Nil(t, notice)
+	require.Error(t, err)
+	assert.Nil(t, noticeRepo.notice)
+	assert.Empty(t, submitter.appReqs)
+}
+
 func TestApplicationSmsRejectsOrderWithTemplateCodeButNoNoticeRecord(t *testing.T) {
 	templateCode := "PROJECT_APPLICATION_APPLICANT_REJECTED"
 	reviewerID := 1130
@@ -624,6 +655,7 @@ func TestRecoverByOrderRedrivesPersistedOliveBranchSmsNotice(t *testing.T) {
 
 func TestConcurrentFailedRetryLoserDoesNotOverwriteWinner(t *testing.T) {
 	projectID := 154
+	phone := "13800138000"
 	staleFailed := &models.SmsNotice{
 		ID: 101, OrderID: 52, OliveBranchRecordID: 76, ProjectID: &projectID,
 		SenderID: 1130, ReceiverID: 1128, SmsContent: "original failed content",
@@ -646,7 +678,7 @@ func TestConcurrentFailedRetryLoserDoesNotOverwriteWinner(t *testing.T) {
 		&models.OliveBranch{ID: 76, SenderID: 1130, ReceiverID: 1128},
 		&models.Order{ID: 52},
 		&models.Project{ID: projectID, Name: "test project"},
-		&models.User{ID: 1128},
+		&models.User{ID: 1128, Phone: &phone},
 	)
 
 	require.Nil(t, notice)

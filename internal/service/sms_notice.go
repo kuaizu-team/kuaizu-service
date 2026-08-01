@@ -137,7 +137,6 @@ func (s *SmsNoticeService) Send(ctx context.Context, userID int, input SendSmsNo
 	if receiver == nil {
 		return nil, ErrNotFound("receiver not found")
 	}
-
 	existing, err := s.repo.SmsNotice.GetByOliveBranchRecordID(ctx, input.OliveBranchRecordID)
 	if err != nil {
 		return nil, ErrInternal("check sms notice failed")
@@ -156,6 +155,9 @@ func (s *SmsNoticeService) Send(ctx context.Context, userID int, input SendSmsNo
 			return nil, ErrBadRequest("order has already been used for another sms notice")
 		}
 		return s.handleExistingNotice(ctx, existingByOrder, input, branch, order, project, receiver)
+	}
+	if !hasValidMainlandPhone(receiver) {
+		return nil, ErrBadRequest("receiver phone is unavailable")
 	}
 	if err := s.claimOrderPush(ctx, input, userID); err != nil {
 		return nil, err
@@ -221,7 +223,7 @@ func (s *SmsNoticeService) sendOliveOutcomeSms(ctx context.Context, userID int, 
 		return nil, ErrNotFound("project not found")
 	}
 	receiver, err := s.repo.User.GetByID(ctx, smsReceiverID)
-	if err != nil || receiver == nil || receiver.Phone == nil || strings.TrimSpace(*receiver.Phone) == "" {
+	if err != nil || !hasValidMainlandPhone(receiver) {
 		return nil, ErrBadRequest("receiver phone is unavailable")
 	}
 	nickname := models.DefaultUserNickname
@@ -328,7 +330,7 @@ func (s *SmsNoticeService) sendMemberRemovalSms(ctx context.Context, userID int,
 		return nil, ErrBadRequest("order has already been used for another sms notice")
 	}
 	receiver, err := s.repo.User.GetByID(ctx, removal.UserID)
-	if err != nil || receiver == nil || receiver.Phone == nil || strings.TrimSpace(*receiver.Phone) == "" {
+	if err != nil || !hasValidMainlandPhone(receiver) {
 		return nil, ErrBadRequest("receiver phone is unavailable")
 	}
 	nickname := models.DefaultUserNickname
@@ -541,7 +543,7 @@ func (s *SmsNoticeService) sendApplicationSms(ctx context.Context, userID int, i
 	if err != nil {
 		return nil, ErrInternal("get receiver failed")
 	}
-	if receiver == nil || receiver.Phone == nil || strings.TrimSpace(*receiver.Phone) == "" {
+	if !hasValidMainlandPhone(receiver) {
 		return nil, ErrBadRequest("receiver phone is unavailable")
 	}
 	nickname := models.DefaultUserNickname
@@ -718,7 +720,7 @@ func (s *SmsNoticeService) redriveByOrder(ctx context.Context, userID, orderID i
 		})
 	}
 	receiver, err := s.repo.User.GetByID(ctx, notice.ReceiverID)
-	if err != nil || receiver == nil || receiver.Phone == nil || strings.TrimSpace(*receiver.Phone) == "" {
+	if err != nil || !hasValidMainlandPhone(receiver) {
 		return nil, ErrBadRequest("receiver phone is unavailable")
 	}
 	projectTitle := "项目邀约"
@@ -849,6 +851,9 @@ func (s *SmsNoticeService) handleExistingNotice(ctx context.Context, existing *m
 	case models.SmsNoticeStatusFailed:
 		if existing.OrderID != input.OrderID {
 			return nil, ErrBadRequest("failed sms notice can only retry with the original paid order")
+		}
+		if !hasValidMainlandPhone(receiver) {
+			return nil, ErrBadRequest("receiver phone is unavailable")
 		}
 		if err := s.claimOrderPush(ctx, input, existing.SenderID); err != nil {
 			return nil, err
@@ -1037,6 +1042,10 @@ func isSmsNoticeProduct(product *models.Product) bool {
 		return false
 	}
 	return cfg.Scene == smsNoticeScene
+}
+
+func hasValidMainlandPhone(user *models.User) bool {
+	return user != nil && user.Phone != nil && mainlandPhonePattern.MatchString(strings.TrimSpace(*user.Phone))
 }
 
 func displayName(user *models.User) string {

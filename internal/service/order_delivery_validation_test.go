@@ -2,9 +2,13 @@ package service
 
 import (
 	"context"
+	"database/sql"
+	"database/sql/driver"
 	"errors"
+	"io"
 	"testing"
 
+	"github.com/jmoiron/sqlx"
 	"github.com/kuaizu-team/kuaizu-service/internal/models"
 	"github.com/kuaizu-team/kuaizu-service/internal/repository"
 	"github.com/stretchr/testify/assert"
@@ -75,6 +79,10 @@ func TestValidateDeliveryIntentRejectsApplicationBusinessMismatchesBeforePayment
 		}},
 		{name: "receiver has no phone", mutate: func(_ *models.OrderDeliveryIntent, repo *repository.Repository) {
 			repo.User = smsNoticeUserRepoStub{user: &models.User{ID: receiverID}}
+		}},
+		{name: "receiver phone format is invalid", mutate: func(_ *models.OrderDeliveryIntent, repo *repository.Repository) {
+			invalidPhone := "11111"
+			repo.User = smsNoticeUserRepoStub{user: &models.User{ID: receiverID, Phone: &invalidPhone}}
 		}},
 	}
 	for _, test := range tests {
@@ -191,4 +199,110 @@ func TestInitiatePaymentRevalidatesPersistedDeliveryIntent(t *testing.T) {
 	var serviceErr *ServiceError
 	require.ErrorAs(t, err, &serviceErr)
 	assert.Equal(t, ErrCodeBadRequest, serviceErr.Code)
+}
+
+func TestInitiatePaymentRejectsPersistedInvalidReceiverPhone(t *testing.T) {
+	invalidPhone := "53339458637"
+	reviewerID, receiverID, applicationID, projectID := 9, 12, 7, 42
+	scene := models.OrderDeliverySceneSMSNotice
+	payload := `{"scene":"sms_notice","receiverUserId":12,"applicationId":7,"projectId":42,"noticeType":"accepted"}`
+	repo := &repository.Repository{
+		Order: smsNoticeOrderRepoStub{order: &models.Order{
+			ID: 52, UserID: reviewerID, ProductID: 2, Status: models.OrderStatusPending,
+			DeliveryScene: &scene, DeliveryPayload: &payload,
+		}},
+		Product: smsNoticeProductRepoStub{product: smsDeliveryIntentProduct()},
+		Application: smsNoticeApplicationRepoStub{application: &models.ProjectApplication{
+			ID: applicationID, ProjectID: projectID, UserID: receiverID, ReviewerID: &reviewerID,
+			Status: models.ApplicationStatusJoined,
+		}},
+		User:    smsNoticeUserRepoStub{user: &models.User{ID: receiverID, Phone: &invalidPhone}},
+		Project: smsNoticeProjectRepoStub{project: &models.Project{ID: projectID}},
+	}
+	svc := NewOrderService(repo, nil, errors.New("payment client must not be reached"))
+
+	params, err := svc.InitiatePayment(context.Background(), reviewerID, "openid", 52)
+
+	require.Nil(t, params)
+	require.Error(t, err)
+	var serviceErr *ServiceError
+	require.ErrorAs(t, err, &serviceErr)
+	assert.Equal(t, ErrCodeBadRequest, serviceErr.Code)
+}
+
+func TestMemberRemovalDeliveryRevalidatesPhoneAtCreateAndPayment(t *testing.T) {
+	const driverName = "member_removal_delivery_validation"
+	sql.Register(driverName, memberRemovalValidationDriver{})
+	db, err := sql.Open(driverName, "")
+	require.NoError(t, err)
+	defer db.Close()
+
+	phone := "13800138000"
+	operatorID, receiverID, projectID := 9, 12, 42
+	removalID := int64(77)
+	noticeType := "removed"
+	repo := repository.New(sqlx.NewDb(db, driverName))
+	repo.User = smsNoticeUserRepoStub{user: &models.User{ID: receiverID, Phone: &phone}}
+	repo.Project = smsNoticeProjectRepoStub{project: &models.Project{ID: projectID}}
+	repo.Product = smsNoticeProductRepoStub{product: smsDeliveryIntentProduct()}
+	intent := &models.OrderDeliveryIntent{
+		Scene: models.OrderDeliverySceneSMSNotice, ReceiverUserID: &receiverID,
+		MemberRemovalID: &removalID, ProjectID: &projectID, NoticeType: &noticeType,
+	}
+	svc := NewOrderService(repo, nil, errors.New("payment client must not be reached"))
+
+	require.NoError(t, svc.validateDeliveryIntent(context.Background(), operatorID, smsDeliveryIntentProduct(), intent),
+		"valid member-removal intent must pass order creation validation")
+
+	invalidPhone := "11111"
+	repo.User = smsNoticeUserRepoStub{user: &models.User{ID: receiverID, Phone: &invalidPhone}}
+	scene := models.OrderDeliverySceneSMSNotice
+	payload := `{"scene":"sms_notice","receiverUserId":12,"memberRemovalId":77,"projectId":42,"noticeType":"removed"}`
+	repo.Order = smsNoticeOrderRepoStub{order: &models.Order{
+		ID: 52, UserID: operatorID, ProductID: 2, Status: models.OrderStatusPending,
+		DeliveryScene: &scene, DeliveryPayload: &payload,
+	}}
+
+	params, err := svc.InitiatePayment(context.Background(), operatorID, "openid", 52)
+	require.Nil(t, params)
+	require.Error(t, err)
+	var serviceErr *ServiceError
+	require.ErrorAs(t, err, &serviceErr)
+	assert.Equal(t, ErrCodeBadRequest, serviceErr.Code)
+}
+
+type memberRemovalValidationDriver struct{}
+
+func (memberRemovalValidationDriver) Open(string) (driver.Conn, error) {
+	return memberRemovalValidationConn{}, nil
+}
+
+type memberRemovalValidationConn struct{}
+
+func (memberRemovalValidationConn) Prepare(string) (driver.Stmt, error) {
+	return nil, errors.New("prepare is not supported")
+}
+func (memberRemovalValidationConn) Close() error { return nil }
+func (memberRemovalValidationConn) Begin() (driver.Tx, error) {
+	return nil, errors.New("transaction is not supported")
+}
+func (memberRemovalValidationConn) QueryContext(context.Context, string, []driver.NamedValue) (driver.Rows, error) {
+	return &memberRemovalValidationRows{}, nil
+}
+
+type memberRemovalValidationRows struct {
+	read bool
+}
+
+func (*memberRemovalValidationRows) Columns() []string {
+	return []string{"user_id", "project_id", "operator_id"}
+}
+func (*memberRemovalValidationRows) Close() error { return nil }
+func (r *memberRemovalValidationRows) Next(values []driver.Value) error {
+	if r.read {
+		return io.EOF
+	}
+	r.read = true
+	values[0], values[1], values[2] = int64(12), int64(42), int64(9)
+	return nil
 }

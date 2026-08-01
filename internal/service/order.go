@@ -232,7 +232,7 @@ func (s *OrderService) validateSmsDeliveryIntent(ctx context.Context, userID int
 		if err != nil {
 			return ErrInternal("获取短信接收人失败")
 		}
-		if receiver == nil || receiver.Phone == nil || strings.TrimSpace(*receiver.Phone) == "" {
+		if !hasValidMainlandPhone(receiver) {
 			return ErrBadRequest("短信接收人手机号不可用")
 		}
 		return nil
