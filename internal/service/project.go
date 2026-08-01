@@ -187,7 +187,7 @@ func (s *ProjectService) GetProjectDetail(ctx context.Context, id, viewerUserID,
 		return project, nil
 	}
 
-	submitInteractionBackgroundTask(ctx, func(asyncCtx context.Context) {
+	go func(asyncCtx context.Context) {
 		_ = s.repo.Project.IncrementViewCount(asyncCtx, id)
 		uid := viewerUserID
 		var uidPtr *int
@@ -225,7 +225,7 @@ func (s *ProjectService) GetProjectDetail(ctx context.Context, id, viewerUserID,
 		if ok {
 			sendSubscribeNotification(asyncCtx, s.message, notification)
 		}
-	})
+	}(context.WithoutCancel(ctx))
 
 	return project, nil
 }

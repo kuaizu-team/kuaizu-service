@@ -175,7 +175,7 @@ func (s *InteractionService) notifyInteractionAsync(ctx context.Context, target,
 		return
 	}
 
-	submitInteractionBackgroundTask(ctx, func(asyncCtx context.Context) {
+	go func(asyncCtx context.Context) {
 		operator, err := s.repo.User.GetByID(asyncCtx, operatorUserID)
 		if err != nil {
 			log.Printf("[Interaction.notifyInteractionAsync] get operator error (non-fatal): %v", err)
@@ -232,7 +232,7 @@ func (s *InteractionService) notifyInteractionAsync(ctx context.Context, target,
 			return
 		}
 		sendSubscribeNotification(asyncCtx, s.message, notification)
-	})
+	}(context.WithoutCancel(ctx))
 }
 
 func shouldSendGroupedInteractionNotification(progress repository.InteractionNotifyProgress) bool {

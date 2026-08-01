@@ -5,6 +5,7 @@ import (
 	"database/sql/driver"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jmoiron/sqlx"
 )
@@ -35,13 +36,74 @@ func TestBeginOrderPushRetryUsesAtomicFailedStateGuard(t *testing.T) {
 		"push_status='pending'",
 		"push_retry_count=push_retry_count+1",
 		"WHERE id=? AND push_status='failed' AND refund_status=0",
+		"push_retry_count < ?",
 	} {
 		if !strings.Contains(query, want) {
 			t.Fatalf("query missing %q: %s", want, query)
 		}
 	}
-	if len(args) != 1 || args[0].Value != int64(52) {
-		t.Fatalf("args = %#v, want order id 52", args)
+	if len(args) != 2 || args[0].Value != int64(52) || args[1].Value != int64(maxOrderPushRetries) {
+		t.Fatalf("args = %#v, want order id 52 and retry limit %d", args, maxOrderPushRetries)
+	}
+}
+
+func TestAutomaticDeliveryRecoveryExcludesFailedOrders(t *testing.T) {
+	db := openCaptureDB(t)
+	defer db.Close()
+	setCapturedQuery([]string{"id"}, nil)
+	repo := New(sqlx.NewDb(db, "capture_user_repo"))
+
+	if _, err := repo.ListRecoverableOrderDeliveries(context.Background(), time.Now(), 100); err != nil {
+		t.Fatal(err)
+	}
+	capturedQuery.Lock()
+	query := normalizeSQL(capturedQuery.query)
+	capturedQuery.Unlock()
+	if !strings.Contains(query, "push_status IS NULL OR (push_status='pending' AND updated_at < ?)") {
+		t.Fatalf("recovery query does not limit candidates to unclaimed/stale pending: %s", query)
+	}
+	if strings.Contains(query, "'failed'") {
+		t.Fatalf("automatic recovery must not include failed orders: %s", query)
+	}
+}
+
+func TestInitialDeliveryClaimDoesNotReclaimFailedOrder(t *testing.T) {
+	db := openCaptureDB(t)
+	defer db.Close()
+	capturedExec.Lock()
+	capturedExec.query = ""
+	capturedExec.args = nil
+	capturedExec.Unlock()
+	repo := New(sqlx.NewDb(db, "capture_user_repo"))
+
+	if _, err := repo.BeginOrderPushDeliveryForUser(context.Background(), 52, 7); err != nil {
+		t.Fatal(err)
+	}
+	capturedExec.Lock()
+	query := normalizeSQL(capturedExec.query)
+	capturedExec.Unlock()
+	if !strings.Contains(query, "AND push_status IS NULL") || strings.Contains(query, "'failed'") {
+		t.Fatalf("initial claim must only claim an unclaimed order: %s", query)
+	}
+}
+
+func TestRecoveryClaimExcludesFailedOrders(t *testing.T) {
+	db := openCaptureDB(t)
+	defer db.Close()
+	capturedExec.Lock()
+	capturedExec.query = ""
+	capturedExec.args = nil
+	capturedExec.Unlock()
+	repo := New(sqlx.NewDb(db, "capture_user_repo"))
+
+	if _, err := repo.ClaimRecoverableOrderDelivery(context.Background(), 52, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	capturedExec.Lock()
+	query := normalizeSQL(capturedExec.query)
+	capturedExec.Unlock()
+	if !strings.Contains(query, "push_status IS NULL OR (push_status='pending' AND updated_at < ?)") || strings.Contains(query, "'failed'") {
+		t.Fatalf("recovery claim must exclude failed orders: %s", query)
 	}
 }
 

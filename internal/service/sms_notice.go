@@ -628,17 +628,21 @@ func (s *SmsNoticeService) sendApplicationSms(ctx context.Context, userID int, i
 }
 
 func (s *SmsNoticeService) isApplicantInitiatedRejection(ctx context.Context, app *models.ProjectApplication) (bool, error) {
+	return isApplicantInitiatedRejection(ctx, s.repo, app)
+}
+
+func isApplicantInitiatedRejection(ctx context.Context, repo *repository.Repository, app *models.ProjectApplication) (bool, error) {
 	if app == nil || app.Status != models.ApplicationStatusRejected {
 		return false, nil
 	}
 	if app.ApplicantRejected != nil {
 		return *app.ApplicantRejected, nil
 	}
-	if s.repo == nil || s.repo.DB() == nil {
+	if repo == nil || repo.DB() == nil {
 		return false, nil
 	}
 	var reviewerRejectedCount int
-	if err := s.repo.DB().GetContext(ctx, &reviewerRejectedCount,
+	if err := repo.DB().GetContext(ctx, &reviewerRejectedCount,
 		`SELECT COUNT(*) FROM status_notification WHERE application_id = ? AND type = ?`,
 		app.ID, models.StatusNotificationApplicationRejected,
 	); err != nil {

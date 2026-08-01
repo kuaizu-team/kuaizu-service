@@ -8,6 +8,8 @@ import (
 	"github.com/kuaizu-team/kuaizu-service/internal/models"
 )
 
+const maxOrderPushRetries = 3
+
 // BeginOrderPushDeliveryForUser atomically claims a paid order for one delivery attempt.
 func (r *Repository) BeginOrderPushDeliveryForUser(ctx context.Context, id, userID int) (bool, error) {
 	if r == nil || r.db == nil {
@@ -16,7 +18,7 @@ func (r *Repository) BeginOrderPushDeliveryForUser(ctx context.Context, id, user
 	result, err := r.db.ExecContext(ctx, `UPDATE `+"`order`"+` SET
 		push_status='pending', push_error_message=NULL, last_push_time=NOW(), updated_at=NOW()
 		WHERE id=? AND user_id=? AND status=? AND refund_status=0
-		  AND (push_status IS NULL OR push_status='failed')`,
+		  AND push_status IS NULL`,
 		id, userID, models.OrderStatusPaid)
 	if err != nil {
 		return false, fmt.Errorf("begin owned order delivery: %w", err)
@@ -25,7 +27,8 @@ func (r *Repository) BeginOrderPushDeliveryForUser(ctx context.Context, id, user
 	return affected == 1, err
 }
 
-// ListRecoverableOrderDeliveries finds committed delivery intents that are unclaimed, failed, or stale.
+// ListRecoverableOrderDeliveries finds committed delivery intents that are unclaimed or stale pending.
+// Failed deliveries require the bounded, explicit retry flow.
 func (r *Repository) ListRecoverableOrderDeliveries(ctx context.Context, staleBefore time.Time, limit int) ([]*models.Order, error) {
 	if r == nil || r.db == nil {
 		return nil, nil
@@ -37,7 +40,7 @@ func (r *Repository) ListRecoverableOrderDeliveries(ctx context.Context, staleBe
 		FROM `+"`order`"+`
 		WHERE status=? AND refund_status=0
 		  AND delivery_scene IS NOT NULL AND delivery_payload IS NOT NULL
-		  AND (push_status IS NULL OR (push_status IN ('failed', 'pending') AND updated_at < ?))
+		  AND (push_status IS NULL OR (push_status='pending' AND updated_at < ?))
 		ORDER BY updated_at ASC, id ASC
 		LIMIT ?`, models.OrderStatusPaid, staleBefore, limit)
 	if err != nil {
@@ -55,7 +58,7 @@ func (r *Repository) ClaimRecoverableOrderDelivery(ctx context.Context, id int, 
 		push_status='pending', push_error_message=NULL, last_push_time=NOW(), updated_at=NOW()
 		WHERE id=? AND status=? AND refund_status=0
 		  AND delivery_scene IS NOT NULL AND delivery_payload IS NOT NULL
-		  AND (push_status IS NULL OR (push_status IN ('failed', 'pending') AND updated_at < ?))`,
+		  AND (push_status IS NULL OR (push_status='pending' AND updated_at < ?))`,
 		id, models.OrderStatusPaid, staleBefore)
 	if err != nil {
 		return false, fmt.Errorf("claim recoverable order delivery: %w", err)
@@ -108,7 +111,8 @@ func (r *Repository) BeginOrderPushRetry(ctx context.Context, id int) (bool, err
 	result, err := r.db.ExecContext(ctx, `UPDATE `+"`order`"+` SET
 		push_status='pending', push_retry_count=push_retry_count+1,
 		push_error_message=NULL, last_push_time=NOW(), updated_at=NOW()
-		WHERE id=? AND push_status='failed' AND refund_status=0`, id)
+		WHERE id=? AND push_status='failed' AND refund_status=0
+		  AND push_retry_count < ?`, id, maxOrderPushRetries)
 	if err != nil {
 		return false, fmt.Errorf("begin order push retry: %w", err)
 	}

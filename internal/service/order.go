@@ -208,10 +208,154 @@ func (s *OrderService) validateDeliveryIntent(ctx context.Context, userID int, p
 			trimmed := strings.TrimSpace(*intent.NoticeType)
 			intent.NoticeType = &trimmed
 		}
+		if err := s.validateSmsDeliveryIntent(ctx, userID, intent); err != nil {
+			return err
+		}
 	default:
 		return ErrBadRequest("不支持的订单交付场景")
 	}
 	return nil
+}
+
+// validateSmsDeliveryIntent rejects business-invalid delivery intents before an order can be paid.
+// Mutable business state is checked again by SmsNoticeService when delivery actually runs.
+func (s *OrderService) validateSmsDeliveryIntent(ctx context.Context, userID int, intent *models.OrderDeliveryIntent) error {
+	if intent == nil || intent.ReceiverUserID == nil || *intent.ReceiverUserID <= 0 {
+		return ErrBadRequest("短信通知交付参数无效")
+	}
+	receiverID := *intent.ReceiverUserID
+	validateReceiver := func(expectedID int) error {
+		if receiverID != expectedID {
+			return ErrBadRequest("receiverUserId与业务记录不匹配")
+		}
+		receiver, err := s.repo.User.GetByID(ctx, expectedID)
+		if err != nil {
+			return ErrInternal("获取短信接收人失败")
+		}
+		if receiver == nil || receiver.Phone == nil || strings.TrimSpace(*receiver.Phone) == "" {
+			return ErrBadRequest("短信接收人手机号不可用")
+		}
+		return nil
+	}
+	validateProject := func(expectedID int) error {
+		if intent.ProjectID != nil && *intent.ProjectID != expectedID {
+			return ErrBadRequest("projectId与业务记录不匹配")
+		}
+		project, err := s.repo.Project.GetByID(ctx, expectedID)
+		if err != nil {
+			return ErrInternal("获取短信关联项目失败")
+		}
+		if project == nil {
+			return ErrNotFound("短信关联项目不存在")
+		}
+		return nil
+	}
+
+	switch {
+	case intent.ApplicationID != nil:
+		if intent.NoticeType == nil || *intent.NoticeType == "" {
+			return ErrBadRequest("申请短信必须提供noticeType")
+		}
+		noticeType := *intent.NoticeType
+		if noticeType != "accepted" && noticeType != "rejected" && noticeType != "applicant_rejected" {
+			return ErrBadRequest("申请短信noticeType无效")
+		}
+		app, err := s.repo.Application.GetByID(ctx, *intent.ApplicationID)
+		if err != nil {
+			return ErrInternal("获取申请记录失败")
+		}
+		if app == nil {
+			return ErrNotFound("申请记录不存在")
+		}
+		expectedReceiverID := app.UserID
+		if noticeType == "applicant_rejected" {
+			if app.UserID != userID || app.ReviewerID == nil {
+				return ErrForbidden("无权发送该申请短信")
+			}
+			expectedReceiverID = *app.ReviewerID
+			initiated, checkErr := isApplicantInitiatedRejection(ctx, s.repo, app)
+			if checkErr != nil {
+				return ErrInternal("检查申请拒绝来源失败")
+			}
+			if !initiated {
+				return ErrBadRequest("该申请不是申请人主动拒绝")
+			}
+		} else if app.ReviewerID == nil || *app.ReviewerID != userID {
+			return ErrForbidden("无权发送该申请短信")
+		}
+		if (noticeType == "accepted" && app.Status != models.ApplicationStatusJoined) ||
+			((noticeType == "rejected" || noticeType == "applicant_rejected") && app.Status != models.ApplicationStatusRejected) {
+			return ErrBadRequest("申请状态与noticeType不匹配")
+		}
+		if err := validateReceiver(expectedReceiverID); err != nil {
+			return err
+		}
+		return validateProject(app.ProjectID)
+
+	case intent.MemberRemovalID != nil:
+		if intent.NoticeType != nil && *intent.NoticeType != "removed" {
+			return ErrBadRequest("成员移除短信不支持noticeType")
+		}
+		if s.repo.DB() == nil {
+			return ErrInternal("数据库不可用")
+		}
+		var removal struct {
+			UserID     int `db:"user_id"`
+			ProjectID  int `db:"project_id"`
+			OperatorID int `db:"operator_id"`
+		}
+		if err := s.repo.DB().GetContext(ctx, &removal,
+			`SELECT user_id,project_id,operator_id FROM project_member_removal WHERE id=?`, *intent.MemberRemovalID); err != nil {
+			return ErrNotFound("成员移除记录不存在")
+		}
+		if removal.OperatorID != userID {
+			return ErrForbidden("无权发送该成员移除短信")
+		}
+		if err := validateReceiver(removal.UserID); err != nil {
+			return err
+		}
+		return validateProject(removal.ProjectID)
+
+	case intent.OliveBranchRecordID != nil:
+		branch, err := s.repo.OliveBranch.GetByID(ctx, *intent.OliveBranchRecordID)
+		if err != nil {
+			return ErrInternal("获取橄榄枝记录失败")
+		}
+		if branch == nil {
+			return ErrNotFound("橄榄枝记录不存在")
+		}
+		expectedReceiverID := branch.ReceiverID
+		if intent.NoticeType == nil {
+			if branch.SenderID != userID || branch.Status != models.OliveBranchStatusPending {
+				return ErrBadRequest("橄榄枝状态或操作人不允许发送短信")
+			}
+		} else {
+			noticeType := *intent.NoticeType
+			if noticeType != "accepted" && noticeType != "rejected" && noticeType != "talent_rejected" {
+				return ErrBadRequest("橄榄枝短信noticeType无效")
+			}
+			expectedStatus := models.OliveBranchStatusRejected
+			if noticeType == "accepted" {
+				expectedStatus = models.OliveBranchStatusAccepted
+			}
+			if noticeType == "talent_rejected" {
+				expectedReceiverID = branch.SenderID
+				if branch.ReceiverID != userID {
+					return ErrForbidden("无权发送该橄榄枝结果短信")
+				}
+			} else if branch.SenderID != userID {
+				return ErrForbidden("无权发送该橄榄枝结果短信")
+			}
+			if branch.Status != expectedStatus {
+				return ErrBadRequest("橄榄枝状态与noticeType不匹配")
+			}
+		}
+		if err := validateReceiver(expectedReceiverID); err != nil {
+			return err
+		}
+		return validateProject(branch.RelatedProjectID)
+	}
+	return ErrBadRequest("短信通知必须关联业务记录")
 }
 
 // GetOrder retrieves an order with ownership check.
@@ -252,6 +396,22 @@ func (s *OrderService) InitiatePayment(ctx context.Context, userID int, openID s
 	}
 	if order.Status != models.OrderStatusPending {
 		return nil, ErrBadRequest("订单状态不允许支付")
+	}
+	intent, err := order.ParseDeliveryIntent()
+	if err != nil {
+		return nil, ErrBadRequest("订单交付信息无效")
+	}
+	if intent != nil {
+		product, productErr := s.repo.Product.GetByID(ctx, order.ProductID)
+		if productErr != nil {
+			return nil, ErrInternal("获取商品信息失败")
+		}
+		if product == nil {
+			return nil, ErrNotFound("商品不存在")
+		}
+		if validateErr := s.validateDeliveryIntent(ctx, userID, product, intent); validateErr != nil {
+			return nil, validateErr
+		}
 	}
 
 	if s.payInitErr != nil {
