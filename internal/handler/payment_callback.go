@@ -79,6 +79,7 @@ func (s *Server) WechatPayCallback(ctx echo.Context) error {
 	}
 
 	if order.Status == models.OrderStatusPaid {
+		s.svc.Payment.EnsurePaidOrderDelivery(ctx.Request().Context(), order)
 		return ctx.JSON(http.StatusOK, successResponse())
 	}
 
@@ -87,6 +88,8 @@ func (s *Server) WechatPayCallback(ctx echo.Context) error {
 	if err := s.svc.Payment.ProcessPayment(ctx.Request().Context(), order, transactionID, payTime); err != nil {
 		return ctx.JSON(http.StatusInternalServerError, failResponse("处理支付失败"))
 	}
+	order.Status = models.OrderStatusPaid
+	s.svc.Payment.EnsurePaidOrderDelivery(ctx.Request().Context(), order)
 
 	return ctx.JSON(http.StatusOK, successResponse())
 }

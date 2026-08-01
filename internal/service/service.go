@@ -37,13 +37,16 @@ func New(repo *repository.Repository, deps *Dependencies) *Services {
 	message := NewMessageService(repo, deps.WechatClient)
 	emailPromotion := NewEmailPromotionServiceWithMessageCenter(repo, deps.MessageCenter, deps.MessageCenterInitError)
 	smsNotice := NewSmsNoticeService(repo, deps.MessageCenter, deps.MessageCenterInitError)
+	paidOrderDelivery := NewPaidOrderDeliveryService(repo, emailPromotion, smsNotice)
+	payment := NewPaymentService(repo, deps.PayClient, deps.PayInitError)
+	payment.SetPaidOrderDeliveryService(paidOrderDelivery)
 	return &Services{
 		Auth:                NewAuthService(repo, deps.WechatClient),
 		AdminSms:            NewAdminSmsService(deps.MessageCenter, deps.MessageCenterInitError),
 		EmailPromotion:      emailPromotion,
 		SmsNotice:           smsNotice,
 		PushRetry:           NewPushRetryService(repo, emailPromotion, smsNotice),
-		Payment:             NewPaymentService(repo, deps.PayClient, deps.PayInitError),
+		Payment:             payment,
 		EmailUnsubscribe:    NewEmailUnsubscribeService(repo),
 		Order:               NewOrderService(repo, deps.PayClient, deps.PayInitError),
 		OliveBranch:         NewOliveBranchService(repo, message),

@@ -55,19 +55,12 @@ func (s *EventService) GetEvent(ctx context.Context, id int) (*models.Event, []m
 	if event == nil {
 		return nil, nil, ErrNotFound("event not found")
 	}
-	projectIDs, err := s.repo.Event.ListProjectIDs(ctx, id)
+	approved := models.ProjectStatusApproved
+	projects, _, err := s.repo.Project.List(ctx, repository.ListParams{
+		Page: 1, Size: 1000, EventID: &id, Status: &approved,
+	})
 	if err != nil {
 		return nil, nil, ErrInternal("get event projects failed")
-	}
-	projects := make([]models.Project, 0, len(projectIDs))
-	for _, projectID := range projectIDs {
-		project, err := s.repo.Project.GetByID(ctx, projectID)
-		if err != nil {
-			return nil, nil, ErrInternal("get event projects failed")
-		}
-		if project != nil && project.Status == models.ProjectStatusApproved {
-			projects = append(projects, *project)
-		}
 	}
 	return event, projects, nil
 }

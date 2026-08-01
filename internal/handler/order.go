@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/kuaizu-team/kuaizu-service/api"
+	"github.com/kuaizu-team/kuaizu-service/internal/models"
 	"github.com/kuaizu-team/kuaizu-service/internal/repository"
 	"github.com/kuaizu-team/kuaizu-service/internal/service"
 	"github.com/labstack/echo/v4"
@@ -92,6 +93,22 @@ func (s *Server) CreateOrder(ctx echo.Context) error {
 	item := service.CreateOrderItem{
 		ProductID: reqItem.ProductId,
 		Quantity:  reqItem.Quantity,
+	}
+	if reqItem.Delivery != nil {
+		strategy := ""
+		if reqItem.Delivery.Strategy != nil {
+			strategy = string(*reqItem.Delivery.Strategy)
+		}
+		item.Delivery = &models.OrderDeliveryIntent{
+			Scene:               string(reqItem.Delivery.Scene),
+			ProjectID:           reqItem.Delivery.ProjectId,
+			Strategy:            strategy,
+			ReceiverUserID:      reqItem.Delivery.ReceiverUserId,
+			OliveBranchRecordID: reqItem.Delivery.OliveBranchRecordId,
+			ApplicationID:       reqItem.Delivery.ApplicationId,
+			MemberRemovalID:     reqItem.Delivery.MemberRemovalId,
+			NoticeType:          reqItem.Delivery.NoticeType,
+		}
 	}
 
 	createdOrder, err := s.svc.Order.CreateOrder(ctx.Request().Context(), userID, item)

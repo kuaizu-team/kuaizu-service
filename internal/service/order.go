@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"strings"
@@ -109,6 +110,7 @@ func NewOrderService(repo *repository.Repository, payClient *wechat.PayClient, p
 type CreateOrderItem struct {
 	ProductID int
 	Quantity  int
+	Delivery  *models.OrderDeliveryIntent
 }
 
 // CreateOrder validates product, calculates price, and creates an order.
@@ -129,15 +131,31 @@ func (s *OrderService) CreateOrder(ctx context.Context, userID int, item CreateO
 		return nil, ErrNotFound(fmt.Sprintf("商品ID %d 不存在", item.ProductID))
 	}
 
+	var deliveryScene, deliveryPayload *string
+	if item.Delivery != nil {
+		if err := s.validateDeliveryIntent(ctx, userID, product, item.Delivery); err != nil {
+			return nil, err
+		}
+		payload, err := json.Marshal(item.Delivery)
+		if err != nil {
+			return nil, ErrInternal("创建订单交付信息失败")
+		}
+		deliveryScene = &item.Delivery.Scene
+		encoded := string(payload)
+		deliveryPayload = &encoded
+	}
+
 	actualPaid := product.Price * float64(item.Quantity)
 
 	order := &models.Order{
-		UserID:     userID,
-		ProductID:  item.ProductID,
-		Price:      product.Price,
-		Quantity:   item.Quantity,
-		ActualPaid: actualPaid,
-		Status:     models.OrderStatusPending,
+		UserID:          userID,
+		ProductID:       item.ProductID,
+		Price:           product.Price,
+		Quantity:        item.Quantity,
+		ActualPaid:      actualPaid,
+		Status:          models.OrderStatusPending,
+		DeliveryScene:   deliveryScene,
+		DeliveryPayload: deliveryPayload,
 	}
 
 	createdOrder, err := s.repo.Order.Create(ctx, order)
@@ -147,6 +165,53 @@ func (s *OrderService) CreateOrder(ctx context.Context, userID int, item CreateO
 	}
 
 	return createdOrder, nil
+}
+
+func (s *OrderService) validateDeliveryIntent(ctx context.Context, userID int, product *models.Product, intent *models.OrderDeliveryIntent) error {
+	if product.Type != models.ProductTypeBenefit {
+		return ErrBadRequest("该商品不支持支付后自动交付")
+	}
+	switch intent.Scene {
+	case models.OrderDeliverySceneEmailPromotion:
+		if isSmsNoticeProduct(product) || intent.ProjectID == nil || *intent.ProjectID <= 0 {
+			return ErrBadRequest("邮件推广交付参数无效")
+		}
+		intent.Strategy = normalizePromotionStrategy(intent.Strategy)
+		if !isValidPromotionStrategy(intent.Strategy) {
+			return ErrBadRequest("邮件推广策略无效")
+		}
+		project, err := s.repo.Project.GetByID(ctx, *intent.ProjectID)
+		if err != nil {
+			return ErrInternal("获取推广项目失败")
+		}
+		if project == nil || project.CreatorID != userID {
+			return ErrForbidden("只能推广自己创建的项目")
+		}
+	case models.OrderDeliverySceneSMSNotice:
+		if !isSmsNoticeProduct(product) || intent.ReceiverUserID == nil || *intent.ReceiverUserID <= 0 {
+			return ErrBadRequest("短信通知交付参数无效")
+		}
+		referenceCount := 0
+		if intent.OliveBranchRecordID != nil && *intent.OliveBranchRecordID > 0 {
+			referenceCount++
+		}
+		if intent.ApplicationID != nil && *intent.ApplicationID > 0 {
+			referenceCount++
+		}
+		if intent.MemberRemovalID != nil && *intent.MemberRemovalID > 0 {
+			referenceCount++
+		}
+		if referenceCount != 1 {
+			return ErrBadRequest("短信通知必须且只能关联一条业务记录")
+		}
+		if intent.NoticeType != nil {
+			trimmed := strings.TrimSpace(*intent.NoticeType)
+			intent.NoticeType = &trimmed
+		}
+	default:
+		return ErrBadRequest("不支持的订单交付场景")
+	}
+	return nil
 }
 
 // GetOrder retrieves an order with ownership check.

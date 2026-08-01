@@ -17,6 +17,28 @@ type PaymentService struct {
 	repo       *repository.Repository
 	payClient  *wechat.PayClient
 	payInitErr error
+	delivery   *PaidOrderDeliveryService
+}
+
+func (s *PaymentService) SetPaidOrderDeliveryService(delivery *PaidOrderDeliveryService) {
+	s.delivery = delivery
+}
+
+// EnsurePaidOrderDelivery runs after the payment transaction commits. Delivery failure must not roll back payment.
+func (s *PaymentService) EnsurePaidOrderDelivery(ctx context.Context, order *models.Order) {
+	if s.delivery == nil || order == nil {
+		return
+	}
+	if order.PushStatus != nil && (*order.PushStatus == "pending" || *order.PushStatus == "success") {
+		return
+	}
+	if err := s.delivery.Deliver(ctx, order, false); err != nil {
+		message := err.Error()
+		if updateErr := s.repo.UpdateOrderPushStatus(ctx, order.ID, "failed", &message); updateErr != nil {
+			log.Printf("[PaymentService.EnsurePaidOrderDelivery] update failed state, order_id=%d: %v", order.ID, updateErr)
+		}
+		log.Printf("[PaymentService.EnsurePaidOrderDelivery] delivery failed, order_id=%d: %v", order.ID, err)
+	}
 }
 
 // NewPaymentService creates a new PaymentService.

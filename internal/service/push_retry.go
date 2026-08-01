@@ -9,13 +9,12 @@ import (
 
 // PushRetryService retries delivery while preserving the original paid order.
 type PushRetryService struct {
-	repo  *repository.Repository
-	email *EmailPromotionService
-	sms   *SmsNoticeService
+	repo     *repository.Repository
+	delivery *PaidOrderDeliveryService
 }
 
 func NewPushRetryService(repo *repository.Repository, email *EmailPromotionService, sms *SmsNoticeService) *PushRetryService {
-	return &PushRetryService{repo: repo, email: email, sms: sms}
+	return &PushRetryService{repo: repo, delivery: NewPaidOrderDeliveryService(repo, email, sms)}
 }
 
 func (s *PushRetryService) Retry(ctx context.Context, userID, orderID int) (*models.Order, error) {
@@ -40,17 +39,7 @@ func (s *PushRetryService) Retry(ctx context.Context, userID, orderID int) (*mod
 		return nil, ErrBadRequest("仅发送失败的订单可以重试")
 	}
 
-	promotion, err := s.repo.EmailPromotion.GetByOrderID(ctx, orderID)
-	if err != nil {
-		return s.fail(ctx, orderID, userID, "查询邮件推广记录失败")
-	}
-	if promotion != nil {
-		_, err = s.email.TriggerPromotionWithInput(ctx, userID, TriggerPromotionInput{
-			OrderID: orderID, ProjectID: promotion.ProjectID, Strategy: promotion.Strategy, OrderPushAlreadyPending: true,
-		})
-	} else {
-		_, err = s.sms.RetryByOrder(ctx, userID, orderID)
-	}
+	err = s.delivery.Deliver(ctx, order, true)
 	if err != nil {
 		message := err.Error()
 		_, _ = s.fail(ctx, orderID, userID, message)

@@ -181,7 +181,7 @@ func (s *TalentProfileService) GetTalentProfileWithView(ctx context.Context, id,
 		return nil, err
 	}
 
-	go func(asyncCtx context.Context) {
+	submitInteractionBackgroundTask(ctx, func(asyncCtx context.Context) {
 		if err := s.repo.TalentProfile.IncrementViewCount(asyncCtx, id); err != nil {
 			log.Printf("[TalentProfileService.GetTalentProfileWithView] increment view error (non-fatal): %v", err)
 		}
@@ -221,7 +221,7 @@ func (s *TalentProfileService) GetTalentProfileWithView(ctx context.Context, id,
 		if ok {
 			sendSubscribeNotification(asyncCtx, s.message, notification)
 		}
-	}(context.WithoutCancel(ctx))
+	})
 
 	return profile, nil
 }
