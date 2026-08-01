@@ -52,11 +52,8 @@ func (s *PaidOrderDeliveryService) Deliver(ctx context.Context, order *models.Or
 			return ErrInternal("查询短信通知记录失败")
 		}
 		if existing != nil {
-			if existing.Status == models.SmsNoticeStatusFailed {
-				_, err = s.sms.RetryByOrder(ctx, order.UserID, order.ID)
-				return err
-			}
-			return nil
+			_, err = s.sms.RecoverByOrder(ctx, order.UserID, order.ID)
+			return err
 		}
 		oliveBranchRecordID := 0
 		if intent.OliveBranchRecordID != nil {

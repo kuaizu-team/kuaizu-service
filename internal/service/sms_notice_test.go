@@ -39,6 +39,16 @@ type smsNoticeFailureCall struct {
 	completedAt time.Time
 }
 
+type orderPushClaimStub struct {
+	claimed bool
+	calls   int
+}
+
+func (s *orderPushClaimStub) BeginOrderPushDeliveryForUser(context.Context, int, int) (bool, error) {
+	s.calls++
+	return s.claimed, nil
+}
+
 type smsNoticeRepoStub struct {
 	notice           *models.SmsNotice
 	noticeByOrder    *models.SmsNotice
@@ -379,6 +389,41 @@ func TestApplicationSmsCreatesNoticeRecordBeforeSubmitting(t *testing.T) {
 	assert.Equal(t, "PROJECT_APPLICATION_REJECTED", submitter.appReqs[0].TemplateCode)
 }
 
+func TestApplicationSmsLosingOrderClaimCreatesNoNoticeOrMessage(t *testing.T) {
+	sceneConfig := `{"scene":"olive_branch_sms_notice"}`
+	phone := "13200000000"
+	reviewerID := 1130
+	applicationID := 7
+	projectID := 154
+	noticeType := "rejected"
+	submitter := &fakeSmsNoticeSubmitter{}
+	noticeRepo := &smsNoticeRepoStub{}
+	claimer := &orderPushClaimStub{claimed: false}
+	repo := &repository.Repository{
+		Application: smsNoticeApplicationRepoStub{application: &models.ProjectApplication{
+			ID: applicationID, ProjectID: projectID, UserID: 1128,
+			Status: models.ApplicationStatusRejected, ReviewerID: &reviewerID,
+		}},
+		Order:     smsNoticeOrderRepoStub{order: &models.Order{ID: 52, UserID: reviewerID, ProductID: 2, Status: models.OrderStatusPaid}},
+		Product:   smsNoticeProductRepoStub{product: &models.Product{ID: 2, ConfigJSON: &sceneConfig}},
+		Project:   smsNoticeProjectRepoStub{project: &models.Project{ID: projectID, Name: "test project"}},
+		User:      smsNoticeUserRepoStub{user: &models.User{ID: 1128, Phone: &phone}},
+		SmsNotice: noticeRepo,
+	}
+	svc := &SmsNoticeService{repo: repo, orderPushClaimer: claimer, messageCenter: submitter}
+
+	notice, err := svc.Send(context.Background(), reviewerID, SendSmsNoticeInput{
+		OrderID: 52, ReceiverUserID: 1128, ApplicationID: &applicationID,
+		NoticeType: &noticeType, ProjectID: &projectID,
+	})
+
+	require.Nil(t, notice)
+	require.Error(t, err)
+	assert.Equal(t, 1, claimer.calls)
+	assert.Nil(t, noticeRepo.notice)
+	assert.Empty(t, submitter.appReqs)
+}
+
 func TestApplicationSmsRejectsOrderWithTemplateCodeButNoNoticeRecord(t *testing.T) {
 	templateCode := "PROJECT_APPLICATION_APPLICANT_REJECTED"
 	reviewerID := 1130
@@ -510,6 +555,71 @@ func TestRetryByOrderReusesApplicationSmsTaskKey(t *testing.T) {
 	assert.Equal(t, businessTag, req.BusinessTag)
 	assert.True(t, req.Retry)
 	assert.Equal(t, models.SmsNoticeStatusCompleted, notice.Status)
+}
+
+func TestRecoverByOrderRedrivesPendingApplicationSmsWithStableTaskKey(t *testing.T) {
+	phone := "13200000000"
+	reviewerID := 1130
+	applicationID := 7
+	projectID := 154
+	traceID := "PROJECT_APPLICATION_SMS:52"
+	businessTag := "project_application_sms_rejected"
+	submitter := &fakeSmsNoticeSubmitter{}
+	noticeRepo := &smsNoticeRepoStub{noticeByOrder: &models.SmsNotice{
+		ID: 101, OrderID: 52, ProjectID: &projectID, SenderID: reviewerID, ReceiverID: 1128,
+		SmsContent: "PROJECT_APPLICATION_SMS:7:rejected", Channel: stringPtr("SMS"),
+		BusinessTag: &businessTag, TraceID: &traceID, Status: models.SmsNoticeStatusPending,
+	}}
+	repo := &repository.Repository{
+		Order:       smsNoticeOrderRepoStub{order: &models.Order{ID: 52, UserID: reviewerID, Status: models.OrderStatusPaid}},
+		SmsNotice:   noticeRepo,
+		User:        smsNoticeUserRepoStub{user: &models.User{ID: 1128, Phone: &phone}},
+		Project:     smsNoticeProjectRepoStub{project: &models.Project{ID: projectID, Name: "test project"}},
+		Application: smsNoticeApplicationRepoStub{application: &models.ProjectApplication{ID: applicationID, ProjectID: projectID, UserID: 1128}},
+	}
+	svc := &SmsNoticeService{repo: repo, messageCenter: submitter}
+
+	notice, err := svc.RecoverByOrder(context.Background(), reviewerID, 52)
+
+	require.NoError(t, err)
+	require.NotNil(t, notice)
+	require.Len(t, submitter.appReqs, 1)
+	assert.Equal(t, "PROJECT_APPLICATION_SMS:52:rejected", submitter.appReqs[0].TaskKey)
+	assert.Equal(t, traceID, submitter.appReqs[0].TraceID)
+	assert.Equal(t, "PROJECT_APPLICATION_REJECTED", submitter.appReqs[0].TemplateCode)
+	assert.True(t, submitter.appReqs[0].Retry)
+	assert.Equal(t, models.SmsNoticeStatusCompleted, notice.Status)
+}
+
+func TestRecoverByOrderRedrivesPersistedOliveBranchSmsNotice(t *testing.T) {
+	traceID := "OLIVE_BRANCH_SMS:52"
+	businessTag := smsNoticeScene
+	projectID := 154
+	smsReqs := make(chan messagecenter.SmsNoticeRequest, 1)
+	noticeRepo := &smsNoticeRepoStub{noticeByOrder: &models.SmsNotice{
+		ID: 101, OrderID: 52, OliveBranchRecordID: 76, ProjectID: &projectID,
+		SenderID: 1130, ReceiverID: 1128, SmsContent: "persisted content",
+		BusinessTag: &businessTag, TraceID: &traceID, Status: models.SmsNoticeStatusSending,
+	}}
+	repo := &repository.Repository{
+		Order:     smsNoticeOrderRepoStub{order: &models.Order{ID: 52, UserID: 1130, Status: models.OrderStatusPaid}},
+		SmsNotice: noticeRepo,
+	}
+	svc := &SmsNoticeService{repo: repo, messageCenter: fakeSmsNoticeSubmitter{smsReqs: smsReqs}}
+
+	notice, err := svc.RecoverByOrder(context.Background(), 1130, 52)
+
+	require.NoError(t, err)
+	require.NotNil(t, notice)
+	select {
+	case req := <-smsReqs:
+		assert.Equal(t, traceID, req.TraceID)
+		assert.Equal(t, 101, req.NoticeID)
+		assert.Equal(t, 52, req.OrderID)
+		assert.Equal(t, 76, req.OliveBranchRecordID)
+	case <-time.After(time.Second):
+		require.Fail(t, "timed out waiting for recovered sms submission")
+	}
 }
 
 type smsNoticeOliveBranchRepoStub struct {
