@@ -1,10 +1,29 @@
 package models
 
 import (
+	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/kuaizu-team/kuaizu-service/api"
 )
+
+const (
+	OrderDeliverySceneEmailPromotion = "email_promotion"
+	OrderDeliverySceneSMSNotice      = "sms_notice"
+)
+
+// OrderDeliveryIntent is persisted with an order so a paid callback can deliver it without client orchestration.
+type OrderDeliveryIntent struct {
+	Scene               string  `json:"scene"`
+	ProjectID           *int    `json:"projectId,omitempty"`
+	Strategy            string  `json:"strategy,omitempty"`
+	ReceiverUserID      *int    `json:"receiverUserId,omitempty"`
+	OliveBranchRecordID *int    `json:"oliveBranchRecordId,omitempty"`
+	ApplicationID       *int    `json:"applicationId,omitempty"`
+	MemberRemovalID     *int64  `json:"memberRemovalId,omitempty"`
+	NoticeType          *string `json:"noticeType,omitempty"`
+}
 
 // Order represents an order in the database.
 type Order struct {
@@ -21,6 +40,8 @@ type Order struct {
 	PushRetryCount            int        `db:"push_retry_count"`
 	LastPushTime              *time.Time `db:"last_push_time"`
 	PushErrorMessage          *string    `db:"push_error_message"`
+	DeliveryScene             *string    `db:"delivery_scene"`
+	DeliveryPayload           *string    `db:"delivery_payload"`
 	SettlementStatus          int        `db:"settlement_status"`
 	RefundStatus              int        `db:"refund_status"`
 	RefundReason              *string    `db:"refund_reason"`
@@ -49,6 +70,24 @@ type Order struct {
 	UserNickname *string `db:"user_nickname"`
 	SchoolName   *string `db:"school_name"`
 	UserSchoolID *int    `db:"user_school_id"`
+}
+
+// ParseDeliveryIntent returns nil for legacy orders that do not have a server-side delivery intent.
+func (o *Order) ParseDeliveryIntent() (*OrderDeliveryIntent, error) {
+	if o == nil || o.DeliveryScene == nil || o.DeliveryPayload == nil || *o.DeliveryScene == "" || *o.DeliveryPayload == "" {
+		return nil, nil
+	}
+	var intent OrderDeliveryIntent
+	if err := json.Unmarshal([]byte(*o.DeliveryPayload), &intent); err != nil {
+		return nil, fmt.Errorf("parse order delivery intent: %w", err)
+	}
+	if intent.Scene == "" {
+		intent.Scene = *o.DeliveryScene
+	}
+	if intent.Scene != *o.DeliveryScene {
+		return nil, fmt.Errorf("order delivery scene does not match payload")
+	}
+	return &intent, nil
 }
 
 // ToVO converts Order to API OrderVO.

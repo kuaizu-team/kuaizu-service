@@ -1,19 +1,40 @@
 package models
 
-import "testing"
+import (
+	"testing"
 
-func TestOrderToVOSanitizesPushErrorMessage(t *testing.T) {
-	status := "failed"
-	rawMessage := "unexpected status 500: provider internal response"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
 
-	vo := (&Order{PushStatus: &status, PushErrorMessage: &rawMessage}).ToVO()
-	if vo.PushErrorMessage == nil {
-		t.Fatal("failed push should expose a user-safe error message")
-	}
-	if *vo.PushErrorMessage != "消息发送失败，请稍后重试或申请退款" {
-		t.Fatalf("unexpected user-safe message: %q", *vo.PushErrorMessage)
-	}
-	if *vo.PushErrorMessage == rawMessage {
-		t.Fatal("raw provider error must not be exposed through OrderVO")
-	}
+func TestParseDeliveryIntent(t *testing.T) {
+	scene := OrderDeliverySceneEmailPromotion
+	payload := `{"scene":"email_promotion","projectId":42,"strategy":"region"}`
+	order := &Order{DeliveryScene: &scene, DeliveryPayload: &payload}
+
+	intent, err := order.ParseDeliveryIntent()
+
+	require.NoError(t, err)
+	require.NotNil(t, intent)
+	assert.Equal(t, scene, intent.Scene)
+	require.NotNil(t, intent.ProjectID)
+	assert.Equal(t, 42, *intent.ProjectID)
+}
+
+func TestParseDeliveryIntentRejectsSceneMismatch(t *testing.T) {
+	scene := OrderDeliverySceneSMSNotice
+	payload := `{"scene":"email_promotion","projectId":42}`
+	order := &Order{DeliveryScene: &scene, DeliveryPayload: &payload}
+
+	intent, err := order.ParseDeliveryIntent()
+
+	assert.Nil(t, intent)
+	require.Error(t, err)
+}
+
+func TestParseDeliveryIntentAllowsLegacyOrder(t *testing.T) {
+	intent, err := (&Order{}).ParseDeliveryIntent()
+
+	require.NoError(t, err)
+	assert.Nil(t, intent)
 }

@@ -556,13 +556,6 @@ func TestTriggerPromotion_AlreadyTriggeredReturnsExisting(t *testing.T) {
 		Status:        models.EmailPromotionStatusCompleted,
 		MaxRecipients: 10,
 	}, nil)
-	mockEmailPromotion.On("UpdateMetadata", mock.Anything, mock.MatchedBy(func(p *models.EmailPromotion) bool {
-		return p.ID == 1 && p.OrderID == 100 && p.ProjectID == 200 && p.CreatorID == 1 &&
-			p.Channel != nil && *p.Channel == "EMAIL" &&
-			p.BusinessTag != nil && *p.BusinessTag == "project_promotion" &&
-			p.TraceID != nil && *p.TraceID == "PROJECT_PROMOTION:100"
-	})).Return(nil)
-
 	repo := &repository.Repository{
 		Order:          mockOrder,
 		Project:        mockProject,
@@ -575,6 +568,7 @@ func TestTriggerPromotion_AlreadyTriggeredReturnsExisting(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	assert.Equal(t, 1, result.Promotion.ID)
+	mockEmailPromotion.AssertNotCalled(t, "UpdateMetadata", mock.Anything, mock.Anything)
 	mockOrder.AssertExpectations(t)
 	mockProject.AssertExpectations(t)
 	mockEmailPromotion.AssertExpectations(t)
@@ -598,10 +592,6 @@ func TestTriggerPromotion_MetadataNormalizationCannotDowngradeConcurrentCompleti
 	mockOrder.On("GetByID", mock.Anything, 100).Return(&models.Order{ID: 100, UserID: 1, Status: models.OrderStatusPaid}, nil)
 	mockProject.On("GetByID", mock.Anything, 200).Return(&models.Project{ID: 200, CreatorID: 1}, nil)
 	mockEmailPromotion.On("GetByOrderAndProject", mock.Anything, 100, 200).Return(stalePromotion, nil)
-	mockEmailPromotion.On("UpdateMetadata", mock.Anything, mock.MatchedBy(func(p *models.EmailPromotion) bool {
-		return p.ID == 1 && p.Status == models.EmailPromotionStatusSending && p.TotalSent == 3
-	})).Return(nil)
-
 	repo := &repository.Repository{
 		Order:          mockOrder,
 		Project:        mockProject,
@@ -615,6 +605,7 @@ func TestTriggerPromotion_MetadataNormalizationCannotDowngradeConcurrentCompleti
 	require.NotNil(t, result)
 	assert.Equal(t, 1, result.Promotion.ID)
 	mockEmailPromotion.AssertNotCalled(t, "Update", mock.Anything, mock.Anything)
+	mockEmailPromotion.AssertNotCalled(t, "UpdateMetadata", mock.Anything, mock.Anything)
 	mockOrder.AssertExpectations(t)
 	mockProject.AssertExpectations(t)
 	mockEmailPromotion.AssertExpectations(t)
@@ -745,6 +736,41 @@ func TestTriggerPromotion_CreateFails(t *testing.T) {
 	mockProject.AssertExpectations(t)
 	mockEmailPromotion.AssertExpectations(t)
 	mockProduct.AssertExpectations(t)
+}
+
+func TestTriggerPromotionLosingOrderClaimDoesNotCreatePromotionOrRecipients(t *testing.T) {
+	mockOrder := new(MockOrderRepo)
+	mockProject := new(MockProjectRepo)
+	mockProduct := new(MockProductRepo)
+	mockEmailPromotion := new(MockEmailPromotionRepo)
+	claimer := &orderPushClaimStub{claimed: false}
+
+	mockOrder.On("GetByID", mock.Anything, 100).Return(&models.Order{
+		ID: 100, UserID: 1, ProductID: 10, Quantity: 50, Status: models.OrderStatusPaid,
+	}, nil)
+	mockProject.On("GetByID", mock.Anything, 200).Return(&models.Project{ID: 200, CreatorID: 1}, nil)
+	mockEmailPromotion.On("GetByOrderAndProject", mock.Anything, 100, 200).Return(nil, nil)
+	mockProduct.On("GetByID", mock.Anything, 10).Return(&models.Product{ID: 10, Type: 2}, nil)
+
+	repo := &repository.Repository{
+		Order: mockOrder, Project: mockProject, Product: mockProduct, EmailPromotion: mockEmailPromotion,
+	}
+	svc := NewEmailPromotionService(repo)
+	svc.orderPushClaimer = claimer
+
+	result, err := svc.TriggerPromotion(context.Background(), 1, 100, 200)
+
+	require.Nil(t, result)
+	require.Error(t, err)
+	assert.Equal(t, 1, claimer.calls)
+	mockEmailPromotion.AssertNotCalled(t, "Create", mock.Anything, mock.Anything)
+	mockEmailPromotion.AssertNotCalled(t, "SelectPromotionRecipients", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+	mockEmailPromotion.AssertNotCalled(t, "CreateRecipients", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+	mockEmailPromotion.AssertNotCalled(t, "UpdateMetadata", mock.Anything, mock.Anything)
+	mockOrder.AssertExpectations(t)
+	mockProject.AssertExpectations(t)
+	mockProduct.AssertExpectations(t)
+	mockEmailPromotion.AssertExpectations(t)
 }
 
 func TestResolveMessageCenter_ReloadsFromEnvAfterInitError(t *testing.T) {

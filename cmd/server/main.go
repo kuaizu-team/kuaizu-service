@@ -68,6 +68,7 @@ func main() {
 	}
 	svc.Message.StartSubscribeDeliveryRecovery(ctx)
 	svc.WelcomeEmail.StartPendingRecovery(ctx)
+	svc.Payment.StartOrderDeliveryRecovery(ctx)
 	server := handler.NewServer(repo, svc)
 
 	// Register API routes with /api/v2 prefix

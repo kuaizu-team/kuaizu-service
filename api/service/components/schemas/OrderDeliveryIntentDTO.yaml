@@ -1,0 +1,29 @@
+type: object
+required:
+  - scene
+properties:
+  scene:
+    type: string
+    enum:
+      - email_promotion
+      - sms_notice
+    description: 支付成功后由服务端执行的交付场景
+  projectId:
+    type: integer
+  strategy:
+    type: string
+    enum:
+      - region
+      - project
+      - major
+  receiverUserId:
+    type: integer
+  oliveBranchRecordId:
+    type: integer
+  applicationId:
+    type: integer
+  memberRemovalId:
+    type: integer
+    format: int64
+  noticeType:
+    type: string

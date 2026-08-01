@@ -10,3 +10,5 @@ properties:
     type: integer
     description: 购买数量
     default: 1
+  delivery:
+    $ref: ./OrderDeliveryIntentDTO.yaml

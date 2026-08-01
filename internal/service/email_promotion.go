@@ -16,6 +16,7 @@ import (
 // EmailPromotionService handles email promotion business logic.
 type EmailPromotionService struct {
 	repo                 *repository.Repository
+	orderPushClaimer     orderPushClaimRepository
 	mu                   sync.RWMutex
 	messageCenter        projectPromotionSubmitter
 	messageCenterInitErr error
@@ -30,6 +31,7 @@ type projectPromotionSubmitter interface {
 func NewEmailPromotionService(repo *repository.Repository) *EmailPromotionService {
 	return &EmailPromotionService{
 		repo:                 repo,
+		orderPushClaimer:     repo,
 		messageCenterFactory: messagecenter.NewClientFromEnv,
 	}
 }
@@ -38,6 +40,7 @@ func NewEmailPromotionService(repo *repository.Repository) *EmailPromotionServic
 func NewEmailPromotionServiceWithMessageCenter(repo *repository.Repository, messageCenter *messagecenter.Client, messageCenterInitErr error) *EmailPromotionService {
 	svc := &EmailPromotionService{
 		repo:                 repo,
+		orderPushClaimer:     repo,
 		messageCenterInitErr: messageCenterInitErr,
 		messageCenterFactory: messagecenter.NewClientFromEnv,
 	}
@@ -107,12 +110,36 @@ func (s *EmailPromotionService) TriggerPromotionWithInput(ctx context.Context, u
 		return nil, ErrInternal("检查推广记录失败")
 	}
 	if existingPromotion != nil {
+		shouldRedrive := existingPromotion.Status == models.EmailPromotionStatusPending ||
+			existingPromotion.Status == models.EmailPromotionStatusFailed ||
+			(input.OrderPushAlreadyPending && existingPromotion.Status == models.EmailPromotionStatusSending)
+		if input.OrderPushAlreadyPending && existingPromotion.Status == models.EmailPromotionStatusCompleted {
+			if err := s.completeOrderPush(ctx, orderID, userID); err != nil {
+				return nil, err
+			}
+		}
+		if !shouldRedrive {
+			return &TriggerPromotionResult{
+				Promotion:     existingPromotion,
+				MaxRecipients: existingPromotion.MaxRecipients,
+			}, nil
+		}
+		maxRecipients := existingPromotion.MaxRecipients
+		if maxRecipients == 0 {
+			maxRecipients = order.Quantity
+		}
+		if input.MaxRecipients != nil && *input.MaxRecipients != maxRecipients {
+			return nil, ErrBadRequest("maxRecipients must equal paid order quantity")
+		}
+		if !input.OrderPushAlreadyPending {
+			if err := s.markOrderPushPending(ctx, orderID, userID); err != nil {
+				return nil, err
+			}
+		}
 		if existingPromotion.Strategy == "" {
 			existingPromotion.Strategy = strategy
 		}
-		if existingPromotion.MaxRecipients == 0 {
-			existingPromotion.MaxRecipients = order.Quantity
-		}
+		existingPromotion.MaxRecipients = maxRecipients
 		existingPromotion.Channel = &channel
 		existingPromotion.BusinessTag = &businessTag
 		existingPromotion.TraceID = &traceID
@@ -122,45 +149,34 @@ func (s *EmailPromotionService) TriggerPromotionWithInput(ctx context.Context, u
 			log.Printf("[EmailPromotionService] failed to normalize existing email promotion, order_id=%d project_id=%d: %v", orderID, projectID, updateErr)
 			return nil, ErrInternal("更新推广记录失败")
 		}
-		if existingPromotion.Status == models.EmailPromotionStatusPending || existingPromotion.Status == models.EmailPromotionStatusFailed {
-			maxRecipients := existingPromotion.MaxRecipients
-			if input.MaxRecipients != nil && *input.MaxRecipients != maxRecipients {
-				return nil, ErrBadRequest("maxRecipients must equal paid order quantity")
-			}
-			recipientUserIDs, selectErr := s.repo.EmailPromotion.GetRetryRecipientUserIDs(ctx, existingPromotion.ID, maxRecipients)
-			if selectErr != nil {
-				log.Printf("[EmailPromotionService] failed to load original promotion recipients: %v", selectErr)
-				return nil, ErrInternal("load original promotion recipients failed")
-			}
-			if len(recipientUserIDs) == 0 {
-				log.Printf("[EmailPromotionService] legacy promotion has no recipient history; selecting a compatibility fallback, promotion_id=%d", existingPromotion.ID)
-				recipientUserIDs, selectErr = s.repo.EmailPromotion.SelectPromotionRecipients(ctx, projectID, userID, existingPromotion.Strategy, maxRecipients)
-				if selectErr != nil {
-					log.Printf("[EmailPromotionService] failed to select fallback recipients for existing promotion: %v", selectErr)
-					return nil, ErrInternal("select promotion recipients failed")
-				}
-			}
-			if createErr := s.repo.EmailPromotion.CreateRecipients(ctx, existingPromotion.ID, projectID, recipientUserIDs); createErr != nil {
-				log.Printf("[EmailPromotionService] failed to create recipients for existing promotion: %v", createErr)
-				return nil, ErrInternal("create promotion recipients failed")
-			}
-			if !input.OrderPushAlreadyPending {
-				if err := s.markOrderPushPending(ctx, orderID, userID); err != nil {
-					return nil, err
-				}
-			}
-			req := messagecenter.ProjectPromotionRequest{
-				PromotionID:      existingPromotion.ID,
-				ProjectID:        project.ID,
-				PromotionCount:   maxRecipients,
-				CreatorUserID:    project.CreatorID,
-				OrderID:          orderID,
-				Strategy:         existingPromotion.Strategy,
-				TraceID:          traceID,
-				RecipientUserIDs: recipientUserIDs,
-			}
-			s.startAsyncPromotionSubmission(req)
+		recipientUserIDs, selectErr := s.repo.EmailPromotion.GetRetryRecipientUserIDs(ctx, existingPromotion.ID, maxRecipients)
+		if selectErr != nil {
+			log.Printf("[EmailPromotionService] failed to load original promotion recipients: %v", selectErr)
+			return nil, ErrInternal("load original promotion recipients failed")
 		}
+		if len(recipientUserIDs) == 0 {
+			log.Printf("[EmailPromotionService] legacy promotion has no recipient history; selecting a compatibility fallback, promotion_id=%d", existingPromotion.ID)
+			recipientUserIDs, selectErr = s.repo.EmailPromotion.SelectPromotionRecipients(ctx, projectID, userID, existingPromotion.Strategy, maxRecipients)
+			if selectErr != nil {
+				log.Printf("[EmailPromotionService] failed to select fallback recipients for existing promotion: %v", selectErr)
+				return nil, ErrInternal("select promotion recipients failed")
+			}
+		}
+		if createErr := s.repo.EmailPromotion.CreateRecipients(ctx, existingPromotion.ID, projectID, recipientUserIDs); createErr != nil {
+			log.Printf("[EmailPromotionService] failed to create recipients for existing promotion: %v", createErr)
+			return nil, ErrInternal("create promotion recipients failed")
+		}
+		req := messagecenter.ProjectPromotionRequest{
+			PromotionID:      existingPromotion.ID,
+			ProjectID:        project.ID,
+			PromotionCount:   maxRecipients,
+			CreatorUserID:    project.CreatorID,
+			OrderID:          orderID,
+			Strategy:         existingPromotion.Strategy,
+			TraceID:          traceID,
+			RecipientUserIDs: recipientUserIDs,
+		}
+		s.startAsyncPromotionSubmission(req)
 		return &TriggerPromotionResult{
 			Promotion:     existingPromotion,
 			MaxRecipients: existingPromotion.MaxRecipients,
@@ -173,6 +189,11 @@ func (s *EmailPromotionService) TriggerPromotionWithInput(ctx context.Context, u
 	}
 	if input.MaxRecipients != nil && *input.MaxRecipients != maxRecipients {
 		return nil, ErrBadRequest("maxRecipients must equal paid order quantity")
+	}
+	if !input.OrderPushAlreadyPending {
+		if err := s.markOrderPushPending(ctx, orderID, userID); err != nil {
+			return nil, err
+		}
 	}
 
 	promotion := &models.EmailPromotion{
@@ -201,10 +222,6 @@ func (s *EmailPromotionService) TriggerPromotionWithInput(ctx context.Context, u
 		log.Printf("[EmailPromotionService] failed to create promotion recipients: %v", err)
 		return nil, ErrInternal("create promotion recipients failed")
 	}
-	if err := s.markOrderPushPending(ctx, orderID, userID); err != nil {
-		return nil, err
-	}
-
 	req := messagecenter.ProjectPromotionRequest{
 		PromotionID:      promotion.ID,
 		ProjectID:        project.ID,
@@ -230,7 +247,22 @@ type TriggerPromotionResult struct {
 }
 
 func (s *EmailPromotionService) markOrderPushPending(ctx context.Context, orderID, userID int) error {
-	updated, err := s.repo.UpdateOrderPushStatusForUser(ctx, orderID, userID, "pending", nil)
+	claimer := s.orderPushClaimer
+	if claimer == nil {
+		claimer = s.repo
+	}
+	updated, err := claimer.BeginOrderPushDeliveryForUser(ctx, orderID, userID)
+	if err != nil {
+		return ErrInternal("update order push status failed")
+	}
+	if !updated {
+		return ErrBadRequest("order delivery is already pending or completed")
+	}
+	return nil
+}
+
+func (s *EmailPromotionService) completeOrderPush(ctx context.Context, orderID, userID int) error {
+	updated, err := s.repo.UpdateOrderPushStatusForUser(ctx, orderID, userID, "success", nil)
 	if err != nil {
 		return ErrInternal("update order push status failed")
 	}

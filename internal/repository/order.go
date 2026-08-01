@@ -111,6 +111,7 @@ func (r *OrderRepository) ListByUserID(ctx context.Context, params OrderListPara
 		SELECT
 			o.id, o.user_id, o.product_id, o.template_code, o.template_name, o.price, o.quantity, o.actual_paid, o.status,
 			o.push_status, o.push_retry_count, o.last_push_time, o.push_error_message,
+			o.delivery_scene, o.delivery_payload,
 			%s,
 			o.wx_pay_no, o.pay_time, o.created_at, o.updated_at,
 			p.name as product_name
@@ -140,8 +141,8 @@ func (r *OrderRepository) Create(ctx context.Context, order *models.Order) (*mod
 	defer tx.Rollback()
 
 	orderQuery := `
-		INSERT INTO ` + "`order`" + ` (user_id, product_id, price, quantity, actual_paid, status, settlement_status, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+		INSERT INTO ` + "`order`" + ` (user_id, product_id, price, quantity, actual_paid, status, settlement_status, delivery_scene, delivery_payload, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
 	`
 
 	result, err := tx.ExecContext(ctx, orderQuery,
@@ -151,7 +152,9 @@ func (r *OrderRepository) Create(ctx context.Context, order *models.Order) (*mod
 		order.Quantity,
 		order.ActualPaid,
 		order.Status,
-		2)
+		2,
+		order.DeliveryScene,
+		order.DeliveryPayload)
 	if err != nil {
 		return nil, fmt.Errorf("create order: %w", err)
 	}
@@ -179,6 +182,7 @@ func (r *OrderRepository) GetByID(ctx context.Context, id int) (*models.Order, e
 		SELECT
 			o.id, o.user_id, o.product_id, o.template_code, o.template_name, o.price, o.quantity, o.actual_paid, o.status,
 			o.push_status, o.push_retry_count, o.last_push_time, o.push_error_message,
+			o.delivery_scene, o.delivery_payload,
 			` + orderFinanceCols + `,
 			o.wx_pay_no, o.pay_time, o.created_at, o.updated_at,
 			p.name as product_name
