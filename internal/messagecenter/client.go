@@ -32,7 +32,7 @@ type ProjectPromotionRequest struct {
 	OrderID          int    `json:"orderId"`
 	Strategy         string `json:"strategy,omitempty"`
 	TraceID          string `json:"traceId,omitempty"`
-	RecipientUserIDs []int  `json:"recipientUserIds,omitempty"`
+	RecipientUserIDs []int  `json:"recipientUserIds"`
 }
 
 // ProjectPromotionResponse is the useful data returned by the message center.
@@ -200,8 +200,21 @@ func (c *Client) SubmitProjectPromotion(ctx context.Context, req ProjectPromotio
 	if req.ProjectID <= 0 {
 		return nil, fmt.Errorf("projectId is required")
 	}
-	if req.PromotionCount <= 0 {
-		return nil, fmt.Errorf("promotionCount is required")
+	if req.PromotionCount <= 0 || req.PromotionCount > 500 {
+		return nil, fmt.Errorf("promotionCount must be between 1 and 500")
+	}
+	if req.RecipientUserIDs == nil {
+		req.RecipientUserIDs = []int{}
+	}
+	uniqueRecipientIDs := make(map[int]struct{}, len(req.RecipientUserIDs))
+	for _, userID := range req.RecipientUserIDs {
+		if userID <= 0 {
+			return nil, fmt.Errorf("recipientUserIds must contain positive IDs")
+		}
+		uniqueRecipientIDs[userID] = struct{}{}
+	}
+	if len(uniqueRecipientIDs) > req.PromotionCount {
+		return nil, fmt.Errorf("recipientUserIds exceeds promotionCount")
 	}
 
 	body, err := json.Marshal(req)
