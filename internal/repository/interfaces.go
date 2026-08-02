@@ -273,6 +273,7 @@ type PendingInvitationRepo interface {
 	Upsert(ctx context.Context, userID int, inviteType string, expireAt time.Time) error
 	GetActiveByUserID(ctx context.Context, userID int, now time.Time) (*models.PendingInvitation, error)
 	ClearByUserID(ctx context.Context, userID int) error
+	DeleteExpired(ctx context.Context, now time.Time, limit int) (int64, error)
 }
 
 type StatusNotificationRepo interface {

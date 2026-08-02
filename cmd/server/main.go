@@ -5,7 +5,10 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
+	"time"
 
 	"github.com/joho/godotenv"
 	"github.com/kuaizu-team/kuaizu-service/api"
@@ -37,17 +40,20 @@ func main() {
 	e := echo.New()
 	e.HideBanner = true
 
-	// Enable method override (X-HTTP-Method-Override header)
-	e.Pre(echomiddleware.MethodOverride())
-
 	// Custom colored logger using RequestLoggerWithConfig
 	e.Use(cmd.NewRequestLogger())
 
 	e.Use(echomiddleware.Recover())
-	e.Use(echomiddleware.CORS())
+	e.Use(echomiddleware.CORSWithConfig(cmd.CORSConfig("CORS_ALLOWED_ORIGINS", []string{
+		"https://kuaizu.xyz",
+		"https://www.kuaizu.xyz",
+		"https://dev.darker233.top",
+		"http://localhost:3000",
+	})))
 
 	// Initialize database connection
-	ctx := context.Background()
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 	pool, err := db.New(ctx)
 	if err != nil {
 		log.Fatalf("Failed to connect to database: %v", err)
@@ -57,6 +63,7 @@ func main() {
 
 	// Initialize repository and shared service dependencies
 	repo := repository.New(pool)
+	startPendingInvitationCleanup(ctx, repo.PendingInvitation)
 	deps, err := service.NewDependencies(repo)
 	if err != nil {
 		log.Fatalf("Failed to initialize service dependencies: %v", err)
@@ -156,8 +163,6 @@ func main() {
 	// Project-application unread badge endpoints
 	apiGroup.GET("/project-applications/my/unread-status", server.GetMyApplicationUnreadStatus)
 	apiGroup.POST("/project-applications/my/mark-read", server.MarkMyApplicationsRead)
-	apiGroup.GET("/users/me/project-status-unread", server.GetMyProjectStatusUnread)
-	apiGroup.POST("/users/me/project-status-read", server.MarkMyProjectStatusRead)
 	apiGroup.GET("/users/me/status-notifications/pending", server.GetMyPendingStatusNotification)
 	apiGroup.POST("/users/me/status-notifications/:id/displayed", server.MarkMyStatusNotificationDisplayed)
 
@@ -179,11 +184,6 @@ func main() {
 	apiGroup.GET("/recommendations/projects/featured", server.GetFeaturedRecommendationProject)
 	apiGroup.GET("/recommendations/podcasts", server.ListRecommendationPodcasts)
 	apiGroup.GET("/recommendations/news", server.ListRecommendationNews)
-
-	apiGroup.GET("/roadmap", server.ListRoadmap)
-	apiGroup.GET("/roadmap/has-new", server.HasNewRoadmap)
-	apiGroup.POST("/roadmap/mark-read", server.MarkRoadmapRead)
-	apiGroup.POST("/roadmark-read", server.MarkRoadmapRead)
 
 	api.RegisterHandlers(apiGroup, server)
 
@@ -210,5 +210,44 @@ func main() {
 	}
 
 	log.Printf("Server starting on port %s", port)
-	log.Fatal(e.Start(":" + port))
+	if err := cmd.RunHTTPServer(ctx, e, ":"+port); err != nil {
+		log.Fatalf("Server stopped with error: %v", err)
+	}
+	drainCtx, drainCancel := context.WithTimeout(context.Background(), 12*time.Second)
+	defer drainCancel()
+	if err := svc.EmailPromotion.WaitForSubmissions(drainCtx); err != nil {
+		log.Printf("Promotion submissions did not drain cleanly: %v", err)
+	}
+}
+
+func startPendingInvitationCleanup(ctx context.Context, pending repository.PendingInvitationRepo) {
+	const batchSize = 500
+	cleanup := func() {
+		for {
+			deleted, err := pending.DeleteExpired(ctx, time.Now(), batchSize)
+			if err != nil {
+				if ctx.Err() == nil {
+					log.Printf("Failed to clean expired pending invitations: %v", err)
+				}
+				return
+			}
+			if deleted < batchSize {
+				return
+			}
+		}
+	}
+
+	go func() {
+		cleanup()
+		ticker := time.NewTicker(6 * time.Hour)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				cleanup()
+			}
+		}
+	}()
 }

@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"log"
 	"strings"
-	"time"
 
 	"github.com/jmoiron/sqlx"
 	"github.com/kuaizu-team/kuaizu-service/internal/models"
@@ -286,31 +285,18 @@ func (r *ApplicationRepository) CheckDuplicate(ctx context.Context, projectID, u
 // The result is capped at 99.
 func (r *ApplicationRepository) GetUnreadApplicationCount(ctx context.Context, userID int) (int, error) {
 	// Fetch last-viewed timestamp directly — avoids a heavy JOIN query in the handler.
-	var viewedAt *time.Time
-	if err := r.db.QueryRowxContext(ctx,
-		"SELECT applications_last_viewed_at FROM `user` WHERE id = ?",
-		userID,
-	).Scan(&viewedAt); err != nil && err != sql.ErrNoRows {
-		return 0, fmt.Errorf("get applications_last_viewed_at: %w", err)
-	}
-
 	var count int
-	if viewedAt == nil {
-		// Never viewed: count every application that is no longer in initial PENDING state
-		if err := r.db.QueryRowxContext(ctx,
-			`SELECT COUNT(*) FROM project_application WHERE user_id = ? AND status != 0`,
-			userID,
-		).Scan(&count); err != nil {
-			return 0, fmt.Errorf("count unread applications (never viewed): %w", err)
-		}
-	} else {
-		// Count applications updated after the last-viewed timestamp
-		if err := r.db.QueryRowxContext(ctx,
-			`SELECT COUNT(*) FROM project_application WHERE user_id = ? AND updated_at > ?`,
-			userID, *viewedAt,
-		).Scan(&count); err != nil {
-			return 0, fmt.Errorf("count unread applications: %w", err)
-		}
+	if err := r.db.QueryRowxContext(ctx, `
+		SELECT COUNT(*)
+		FROM project_application pa
+		LEFT JOIN `+"`user`"+` u ON u.id = pa.user_id
+		WHERE pa.user_id = ?
+		  AND (
+			u.applications_last_viewed_at IS NOT NULL AND pa.updated_at > u.applications_last_viewed_at
+			OR u.applications_last_viewed_at IS NULL AND pa.status != 0
+		  )
+	`, userID).Scan(&count); err != nil {
+		return 0, fmt.Errorf("count unread applications: %w", err)
 	}
 	if count > 99 {
 		count = 99

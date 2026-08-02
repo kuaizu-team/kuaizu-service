@@ -1,0 +1,23 @@
+get:
+  tags:
+    - Users
+  summary: Get all profile and tab bar badge counts
+  operationId: getMyBadges
+  responses:
+    '200':
+      description: Badge snapshot
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/BaseResponse.yaml
+              - type: object
+                properties:
+                  data:
+                    $ref: ../components/schemas/ProfileBadgeCounts.yaml
+    '401':
+      description: Unauthorized
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/BaseResponse.yaml

@@ -570,7 +570,7 @@ func (c *Client) SubmitApplicationSms(ctx context.Context, req ApplicationSmsReq
 	if err != nil {
 		return fmt.Errorf("marshal application sms: %w", err)
 	}
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/api/sms/send", bytes.NewReader(body))
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/api/v2/sms/application", bytes.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("create application sms request: %w", err)
 	}

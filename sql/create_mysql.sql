@@ -135,7 +135,8 @@ CREATE TABLE `email_task` (
   UNIQUE KEY `uk_email_task_task_key` (`task_key`),
   KEY `idx_promotion_id` (`promotion_id`),
   KEY `idx_status` (`status`),
-  KEY `idx_create_time` (`create_time`)
+  KEY `idx_create_time` (`create_time`),
+  KEY `idx_email_task_identity_latest` (`channel`,`business_tag`,`trace_id`,`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='邮件发送任务表';
 /*!40101 SET character_set_client = @saved_cs_client */;
 
@@ -403,9 +404,12 @@ CREATE TABLE `project` (
   `is_cross_school` tinyint(4) DEFAULT '1' COMMENT '是否跨校: 1-可以,0-不可以',
   `education_requirement` tinyint(4) DEFAULT '1' COMMENT '学历要求1-大专2-本科',
   `skill_requirement` text COMMENT '技能要求',
+  `publisher_role` varchar(32) DEFAULT NULL COMMENT 'publisher project role',
+  `initiating_school_id` int(11) DEFAULT NULL COMMENT 'initiating school ID',
   PRIMARY KEY (`id`),
   KEY `idx_project_creator` (`creator_id`),
   KEY `idx_project_school` (`school_id`),
+  KEY `idx_project_school_status` (`school_id`,`status`,`id`),
   KEY `idx_project_status` (`status`),
   KEY `idx_project_created` (`created_at`),
   CONSTRAINT `fk_project_creator` FOREIGN KEY (`creator_id`) REFERENCES `user` (`id`) ON DELETE CASCADE,
@@ -428,6 +432,10 @@ CREATE TABLE `project_application` (
   `contact` text COMMENT '联系方式',
   `status` int(11) DEFAULT '0' COMMENT '状态:0-待审核,1-已通过,2-已拒绝',
   `reply_msg` text COMMENT '队长回复',
+  `is_read` tinyint(1) NOT NULL DEFAULT '0' COMMENT 'reviewer read status',
+  `reviewer_id` bigint unsigned DEFAULT NULL COMMENT 'reviewer user ID',
+  `reviewer_role` varchar(32) DEFAULT NULL COMMENT 'reviewer project role',
+  `assigned_role` varchar(32) DEFAULT NULL COMMENT 'assigned project role',
   `applied_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP COMMENT '申请时间',
   `discussing_at` timestamp NULL DEFAULT NULL COMMENT 'Discussing status timestamp',
   `rejected_at` timestamp NULL DEFAULT NULL COMMENT 'Rejected timestamp',
@@ -438,6 +446,11 @@ CREATE TABLE `project_application` (
   KEY `idx_application_project` (`project_id`),
   KEY `idx_application_user` (`user_id`),
   KEY `idx_application_status` (`status`),
+  KEY `idx_pa_user_updated_status` (`user_id`,`updated_at`,`status`),
+  KEY `idx_pa_status_project` (`status`,`project_id`),
+  KEY `idx_project_application_reviewer` (`reviewer_id`),
+  KEY `idx_project_application_reviewer_role` (`reviewer_role`),
+  KEY `idx_project_application_assigned_role` (`assigned_role`),
   CONSTRAINT `fk_app_project` FOREIGN KEY (`project_id`) REFERENCES `project` (`id`) ON DELETE CASCADE,
   CONSTRAINT `fk_app_user` FOREIGN KEY (`user_id`) REFERENCES `user` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB AUTO_INCREMENT=562 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='项目申请表';
@@ -642,12 +655,18 @@ CREATE TABLE `user` (
   `avatar_url` varchar(100) DEFAULT NULL COMMENT '用户头像url',
   `cover_image` varchar(100) DEFAULT NULL COMMENT '用户中心封面url',
   `unionid` varchar(100) DEFAULT NULL COMMENT '微信用户unionid',
+  `wechat_id` varchar(100) DEFAULT NULL COMMENT '微信号',
+  `sent_olive_viewed_at` timestamp NULL DEFAULT NULL COMMENT '最后查看已发送橄榄枝时间',
+  `applications_last_viewed_at` timestamp NULL DEFAULT NULL COMMENT '最后查看投递管理时间',
   `last_viewed_my_projects_at` timestamp NULL DEFAULT NULL COMMENT '最后查看我的项目页时间',
+  `user_status` tinyint(4) NOT NULL DEFAULT '0' COMMENT '0-normal,1-banned,2-graduated',
+  `ban_reason` varchar(500) DEFAULT NULL COMMENT 'account ban reason',
   `collaboration_score` DECIMAL(5,2) NOT NULL DEFAULT 90.00 COMMENT 'collaboration score, 0-100',
   PRIMARY KEY (`id`),
   UNIQUE KEY `openid` (`openid`),
   KEY `idx_user_openid` (`openid`),
   KEY `idx_user_school` (`school_id`),
+  KEY `idx_user_school_auth` (`school_id`,`auth_status`,`id`),
   KEY `idx_user_major` (`major_id`),
   CONSTRAINT `fk_user_major` FOREIGN KEY (`major_id`) REFERENCES `major` (`id`) ON DELETE SET NULL,
   CONSTRAINT `fk_user_school` FOREIGN KEY (`school_id`) REFERENCES `school` (`id`) ON DELETE SET NULL

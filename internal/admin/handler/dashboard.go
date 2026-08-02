@@ -44,33 +44,23 @@ func (s *AdminServer) GetDashboardStats(ctx echo.Context) error {
 		if len(schoolIDs) == 0 {
 			return response.Success(ctx, DashboradStatsResponse{})
 		}
-		count := func(baseQuery string, destination *int64) error {
-			query, args, err := sqlx.In(baseQuery, schoolIDs)
-			if err != nil {
-				return err
-			}
-			return db.QueryRowxContext(rctx, db.Rebind(query), args...).Scan(destination)
+		query, args, err := sqlx.In(`SELECT
+			(SELECT COUNT(*) FROM `+"`user`"+` WHERE school_id IN (?)),
+			(SELECT COUNT(*) FROM project WHERE status<>3 AND school_id IN (?)),
+			(SELECT COUNT(*) FROM project WHERE status=0 AND school_id IN (?)),
+			(SELECT COUNT(*) FROM project WHERE status=4 AND school_id IN (?)),
+			(SELECT COUNT(*) FROM `+"`user`"+` WHERE auth_status=0 AND auth_img_url IS NOT NULL AND school_id IN (?)),
+			(SELECT COUNT(*) FROM feedback f JOIN `+"`user`"+` u ON u.id=f.user_id WHERE f.status=0 AND u.school_id IN (?)),
+			(SELECT COUNT(*) FROM talent_profile tp JOIN `+"`user`"+` u ON u.id=tp.user_id WHERE tp.status=2 AND u.school_id IN (?))`,
+			schoolIDs, schoolIDs, schoolIDs, schoolIDs, schoolIDs, schoolIDs, schoolIDs)
+		if err != nil {
+			return response.InternalError(ctx, "failed to build dashboard query")
 		}
-		if err := count("SELECT COUNT(*) FROM `user` WHERE school_id IN (?)", &userCount); err != nil {
-			return response.InternalError(ctx, "failed to count users")
-		}
-		if err := count("SELECT COUNT(*) FROM project WHERE status != 3 AND school_id IN (?)", &projectCount); err != nil {
-			return response.InternalError(ctx, "failed to count projects")
-		}
-		if err := count("SELECT COUNT(*) FROM project WHERE status = 0 AND school_id IN (?)", &pendingProjectCount); err != nil {
-			return response.InternalError(ctx, "failed to count pending projects")
-		}
-		if err := count("SELECT COUNT(*) FROM project WHERE status = 4 AND school_id IN (?)", &deletingProjectCount); err != nil {
-			return response.InternalError(ctx, "failed to count deleting projects")
-		}
-		if err := count("SELECT COUNT(*) FROM `user` WHERE auth_status=0 AND auth_img_url IS NOT NULL AND school_id IN (?)", &pendingAuthCount); err != nil {
-			return response.InternalError(ctx, "failed to count pending auths")
-		}
-		if err := count("SELECT COUNT(*) FROM feedback f JOIN `user` u ON f.user_id=u.id WHERE f.status=0 AND u.school_id IN (?)", &pendingFeedbackCount); err != nil {
-			return response.InternalError(ctx, "failed to count pending feedbacks")
-		}
-		if err := count("SELECT COUNT(*) FROM talent_profile tp JOIN `user` u ON tp.user_id=u.id WHERE tp.status=2 AND u.school_id IN (?)", &pendingTalentProfileCount); err != nil {
-			return response.InternalError(ctx, "failed to count pending talent profiles")
+		if err := db.QueryRowxContext(rctx, db.Rebind(query), args...).Scan(
+			&userCount, &projectCount, &pendingProjectCount, &deletingProjectCount,
+			&pendingAuthCount, &pendingFeedbackCount, &pendingTalentProfileCount,
+		); err != nil {
+			return response.InternalError(ctx, "failed to load dashboard stats")
 		}
 		return response.Success(ctx, DashboradStatsResponse{
 			UserCount: userCount, ProjectCount: projectCount, PendingProjectCount: pendingProjectCount,
@@ -81,65 +71,36 @@ func (s *AdminServer) GetDashboardStats(ctx echo.Context) error {
 
 	if sid == nil {
 		// Super admin — global counts
-		if err := db.QueryRowxContext(rctx, "SELECT COUNT(*) FROM `user`").Scan(&userCount); err != nil {
-			return response.InternalError(ctx, "failed to count users")
-		}
-		if err := db.QueryRowxContext(rctx, "SELECT COUNT(*) FROM project WHERE status != 3").Scan(&projectCount); err != nil {
-			return response.InternalError(ctx, "failed to count projects")
-		}
-		if err := db.QueryRowxContext(rctx, "SELECT COUNT(*) FROM project WHERE status = 0").Scan(&pendingProjectCount); err != nil {
-			return response.InternalError(ctx, "failed to count pending projects")
-		}
-		if err := db.QueryRowxContext(rctx, "SELECT COUNT(*) FROM project WHERE status = 4").Scan(&deletingProjectCount); err != nil {
-			return response.InternalError(ctx, "failed to count deleting projects")
-		}
-		if err := db.QueryRowxContext(rctx, "SELECT COUNT(*) FROM `user` WHERE auth_status = 0 AND auth_img_url IS NOT NULL").Scan(&pendingAuthCount); err != nil {
-			return response.InternalError(ctx, "failed to count pending auths")
-		}
-		if err := db.QueryRowxContext(rctx, "SELECT COUNT(*) FROM feedback WHERE status = 0").Scan(&pendingFeedbackCount); err != nil {
-			return response.InternalError(ctx, "failed to count pending feedbacks")
-		}
-		if err := db.QueryRowxContext(rctx, "SELECT COUNT(*) FROM talent_profile WHERE status = 2").Scan(&pendingTalentProfileCount); err != nil {
-			return response.InternalError(ctx, "failed to count pending talent profiles")
+		if err := db.QueryRowxContext(rctx, `SELECT
+			(SELECT COUNT(*) FROM `+"`user`"+`),
+			(SELECT COUNT(*) FROM project WHERE status<>3),
+			(SELECT COUNT(*) FROM project WHERE status=0),
+			(SELECT COUNT(*) FROM project WHERE status=4),
+			(SELECT COUNT(*) FROM `+"`user`"+` WHERE auth_status=0 AND auth_img_url IS NOT NULL),
+			(SELECT COUNT(*) FROM feedback WHERE status=0),
+			(SELECT COUNT(*) FROM talent_profile WHERE status=2)`).Scan(
+			&userCount, &projectCount, &pendingProjectCount, &deletingProjectCount,
+			&pendingAuthCount, &pendingFeedbackCount, &pendingTalentProfileCount,
+		); err != nil {
+			return response.InternalError(ctx, "failed to load dashboard stats")
 		}
 	} else {
 		// Campus admin — counts scoped to their school
 		schoolID := *sid
-		if err := db.QueryRowxContext(rctx,
-			"SELECT COUNT(*) FROM `user` WHERE school_id = ?", schoolID).Scan(&userCount); err != nil {
-			return response.InternalError(ctx, "failed to count users")
-		}
-		if err := db.QueryRowxContext(rctx,
-			"SELECT COUNT(*) FROM project WHERE status != 3 AND school_id = ?", schoolID).Scan(&projectCount); err != nil {
-			return response.InternalError(ctx, "failed to count projects")
-		}
-		if err := db.QueryRowxContext(rctx,
-			"SELECT COUNT(*) FROM project WHERE status = 0 AND school_id = ?", schoolID).Scan(&pendingProjectCount); err != nil {
-			return response.InternalError(ctx, "failed to count pending projects")
-		}
-		if err := db.QueryRowxContext(rctx,
-			"SELECT COUNT(*) FROM project WHERE status = 4 AND school_id = ?", schoolID).Scan(&deletingProjectCount); err != nil {
-			return response.InternalError(ctx, "failed to count deleting projects")
-		}
-		if err := db.QueryRowxContext(rctx, `
-			SELECT COUNT(*) FROM `+"`user`"+`
-			WHERE auth_status = 0 AND auth_img_url IS NOT NULL AND school_id = ?`,
-			schoolID).Scan(&pendingAuthCount); err != nil {
-			return response.InternalError(ctx, "failed to count pending auths")
-		}
-		if err := db.QueryRowxContext(rctx, `
-			SELECT COUNT(*) FROM feedback f
-			JOIN `+"`user`"+` u ON f.user_id = u.id
-			WHERE f.status = 0 AND u.school_id = ?`,
-			schoolID).Scan(&pendingFeedbackCount); err != nil {
-			return response.InternalError(ctx, "failed to count pending feedbacks")
-		}
-		if err := db.QueryRowxContext(rctx, `
-			SELECT COUNT(*) FROM talent_profile tp
-			JOIN `+"`user`"+` u ON tp.user_id = u.id
-			WHERE tp.status = 2 AND u.school_id = ?`,
-			schoolID).Scan(&pendingTalentProfileCount); err != nil {
-			return response.InternalError(ctx, "failed to count pending talent profiles")
+		if err := db.QueryRowxContext(rctx, `SELECT
+			(SELECT COUNT(*) FROM `+"`user`"+` WHERE school_id=?),
+			(SELECT COUNT(*) FROM project WHERE status<>3 AND school_id=?),
+			(SELECT COUNT(*) FROM project WHERE status=0 AND school_id=?),
+			(SELECT COUNT(*) FROM project WHERE status=4 AND school_id=?),
+			(SELECT COUNT(*) FROM `+"`user`"+` WHERE auth_status=0 AND auth_img_url IS NOT NULL AND school_id=?),
+			(SELECT COUNT(*) FROM feedback f JOIN `+"`user`"+` u ON u.id=f.user_id WHERE f.status=0 AND u.school_id=?),
+			(SELECT COUNT(*) FROM talent_profile tp JOIN `+"`user`"+` u ON u.id=tp.user_id WHERE tp.status=2 AND u.school_id=?)`,
+			schoolID, schoolID, schoolID, schoolID, schoolID, schoolID, schoolID,
+		).Scan(
+			&userCount, &projectCount, &pendingProjectCount, &deletingProjectCount,
+			&pendingAuthCount, &pendingFeedbackCount, &pendingTalentProfileCount,
+		); err != nil {
+			return response.InternalError(ctx, "failed to load dashboard stats")
 		}
 	}
 

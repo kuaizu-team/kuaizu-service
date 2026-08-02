@@ -39,8 +39,8 @@ func TestSubmitSmsNoticePreservesRejectedResponse(t *testing.T) {
 }
 func TestSubmitApplicationSmsUsesApprovedTemplateVariables(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/sms/send" {
-			t.Fatalf("path = %s, want /api/sms/send", r.URL.Path)
+		if r.URL.Path != "/api/v2/sms/application" {
+			t.Fatalf("path = %s, want /api/v2/sms/application", r.URL.Path)
 		}
 		var req struct {
 			TemplateCode string `json:"templateCode"`

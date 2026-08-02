@@ -35,6 +35,11 @@ type DashboardUnreadTotals struct {
 	TotalCount   int `db:"total_count" json:"totalCount"`
 }
 
+type ProfileProjectBadgeState struct {
+	PendingApplicationCount int  `db:"pending_application_count"`
+	HasStatusUnread         bool `db:"has_status_unread"`
+}
+
 type InteractionNotifyProgress struct {
 	DistinctUserCount int
 	IsNewUser         bool
@@ -387,15 +392,15 @@ func (r *InteractionRepository) UnreadDashboardTotals(ctx context.Context, owner
 		(
 			(SELECT COUNT(DISTINCT i.project_id, i.user_id) FROM project_like i JOIN project p ON p.id=i.project_id WHERE (p.creator_id=? OR EXISTS (
 				SELECT 1 FROM project_members pm WHERE pm.project_id=i.project_id AND pm.user_id=?
-			)) AND i.user_id<>? AND i.created_at>COALESCE(
+			)) AND p.status=1 AND i.user_id<>? AND i.created_at>COALESCE(
 				(SELECT s.last_viewed_at FROM interaction_dashboard_view_state s WHERE s.user_id=? AND s.target_type='projects' AND s.target_id=i.project_id AND s.interaction_type='like'),'1970-01-01 00:00:01'))
 			+(SELECT COUNT(DISTINCT i.project_id, i.user_id) FROM project_favorite i JOIN project p ON p.id=i.project_id WHERE (p.creator_id=? OR EXISTS (
 				SELECT 1 FROM project_members pm WHERE pm.project_id=i.project_id AND pm.user_id=?
-			)) AND i.user_id<>? AND i.created_at>COALESCE(
+			)) AND p.status=1 AND i.user_id<>? AND i.created_at>COALESCE(
 				(SELECT s.last_viewed_at FROM interaction_dashboard_view_state s WHERE s.user_id=? AND s.target_type='projects' AND s.target_id=i.project_id AND s.interaction_type='favorite'),'1970-01-01 00:00:01'))
 			+(SELECT COUNT(DISTINCT i.project_id, i.user_id) FROM project_share i JOIN project p ON p.id=i.project_id WHERE (p.creator_id=? OR EXISTS (
 				SELECT 1 FROM project_members pm WHERE pm.project_id=i.project_id AND pm.user_id=?
-			)) AND i.user_id<>? AND i.created_at>COALESCE(
+			)) AND p.status=1 AND i.user_id<>? AND i.created_at>COALESCE(
 				(SELECT s.last_viewed_at FROM interaction_dashboard_view_state s WHERE s.user_id=? AND s.target_type='projects' AND s.target_id=i.project_id AND s.interaction_type='share'),'1970-01-01 00:00:01')
 				AND NOT EXISTS (
 					SELECT 1 FROM project_share prev
@@ -403,7 +408,7 @@ func (r *InteractionRepository) UnreadDashboardTotals(ctx context.Context, owner
 				))
 			+(SELECT COUNT(DISTINCT i.project_id, i.user_id) FROM project_view_log i JOIN project p ON p.id=i.project_id WHERE (p.creator_id=? OR EXISTS (
 				SELECT 1 FROM project_members pm WHERE pm.project_id=i.project_id AND pm.user_id=?
-			)) AND i.user_id IS NOT NULL AND i.user_id<>? AND i.duration_ms IS NULL AND i.viewed_at>COALESCE(
+			)) AND p.status=1 AND i.user_id IS NOT NULL AND i.user_id<>? AND i.duration_ms IS NULL AND i.viewed_at>COALESCE(
 				(SELECT s.last_viewed_at FROM interaction_dashboard_view_state s WHERE s.user_id=? AND s.target_type='projects' AND s.target_id=i.project_id AND s.interaction_type='visit'),'1970-01-01 00:00:01')
 				AND NOT EXISTS (
 					SELECT 1 FROM project_view_log prev
@@ -442,6 +447,34 @@ func (r *InteractionRepository) UnreadDashboardTotals(ctx context.Context, owner
 	}
 	totals.TotalCount = totals.ProjectCount + totals.TalentCount
 	return totals, nil
+}
+
+func (r *InteractionRepository) ProfileProjectBadgeState(ctx context.Context, userID int) (ProfileProjectBadgeState, error) {
+	var state ProfileProjectBadgeState
+	err := r.db.QueryRowxContext(ctx, `SELECT
+		(SELECT COUNT(*)
+		 FROM project_application pa
+		 JOIN project p ON p.id = pa.project_id
+		 WHERE pa.status = 0 AND (
+			p.creator_id = ? OR EXISTS (
+				SELECT 1 FROM project_members pm WHERE pm.project_id = p.id AND pm.user_id = ?
+			)
+		 )) pending_application_count,
+		EXISTS(
+		 SELECT 1
+		 FROM project p
+		 LEFT JOIN `+"`user`"+` u ON u.id = ?
+		 WHERE (p.creator_id = ? OR EXISTS (
+			SELECT 1 FROM project_members pm WHERE pm.project_id = p.id AND pm.user_id = ?
+		 ))
+		 AND p.status IN (?, ?)
+		 AND p.passive_status_changed_at > COALESCE(u.last_viewed_my_projects_at, CAST('1970-01-01 00:00:01' AS DATETIME))
+		) has_status_unread
+	`, userID, userID, userID, userID, userID, models.ProjectStatusApproved, models.ProjectStatusRejected).StructScan(&state)
+	if err != nil {
+		return ProfileProjectBadgeState{}, fmt.Errorf("get profile project badge state: %w", err)
+	}
+	return state, nil
 }
 
 func (r *InteractionRepository) BatchProjectUnread(ctx context.Context, ownerUserID int, projectIDs []int) (map[int]int, error) {

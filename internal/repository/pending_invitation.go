@@ -57,3 +57,21 @@ func (r *PendingInvitationRepository) ClearByUserID(ctx context.Context, userID 
 	}
 	return nil
 }
+
+func (r *PendingInvitationRepository) DeleteExpired(ctx context.Context, now time.Time, limit int) (int64, error) {
+	if limit <= 0 {
+		return 0, nil
+	}
+	result, err := r.db.ExecContext(ctx,
+		`DELETE FROM pending_invitation WHERE expire_at <= ? ORDER BY expire_at LIMIT ?`,
+		now, limit,
+	)
+	if err != nil {
+		return 0, fmt.Errorf("delete expired pending invitations: %w", err)
+	}
+	count, err := result.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("get expired pending invitation delete count: %w", err)
+	}
+	return count, nil
+}
