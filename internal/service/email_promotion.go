@@ -182,7 +182,9 @@ func (s *EmailPromotionService) TriggerPromotionWithInput(ctx context.Context, u
 			TraceID:          traceID,
 			RecipientUserIDs: recipientUserIDs,
 		}
-		s.startAsyncPromotionSubmission(req)
+		if err := s.startAsyncPromotionSubmission(ctx, req); err != nil {
+			return nil, err
+		}
 		return &TriggerPromotionResult{
 			Promotion:     existingPromotion,
 			MaxRecipients: existingPromotion.MaxRecipients,
@@ -238,7 +240,9 @@ func (s *EmailPromotionService) TriggerPromotionWithInput(ctx context.Context, u
 		TraceID:          traceID,
 		RecipientUserIDs: recipientUserIDs,
 	}
-	s.startAsyncPromotionSubmission(req)
+	if err := s.startAsyncPromotionSubmission(ctx, req); err != nil {
+		return nil, err
+	}
 
 	return &TriggerPromotionResult{
 		Promotion:     promotion,
@@ -308,14 +312,13 @@ func (s *EmailPromotionService) calculateMaxRecipients(ctx context.Context, orde
 	return 0, ErrBadRequest("订单中没有邮件推广商品")
 }
 
-func (s *EmailPromotionService) startAsyncPromotionSubmission(req messagecenter.ProjectPromotionRequest) {
+func (s *EmailPromotionService) startAsyncPromotionSubmission(ctx context.Context, req messagecenter.ProjectPromotionRequest) error {
 	req.RecipientUserIDs = append([]int(nil), req.RecipientUserIDs...)
 	select {
 	case s.submissionSlots <- struct{}{}:
 		s.submissionWG.Add(1)
-	default:
-		s.markPromotionFailed(req, "promotion submission capacity is temporarily exhausted")
-		return
+	case <-ctx.Done():
+		return ctx.Err()
 	}
 	go func() {
 		defer func() {
@@ -366,6 +369,7 @@ func (s *EmailPromotionService) startAsyncPromotionSubmission(req messagecenter.
 		// Recipient user IDs are selected and snapshotted before submission so
 		// the project owner can inspect the batch immediately.
 	}()
+	return nil
 }
 
 // WaitForSubmissions lets process shutdown drain accepted promotion work.

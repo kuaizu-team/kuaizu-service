@@ -455,7 +455,7 @@ func (r *InteractionRepository) ProfileProjectBadgeState(ctx context.Context, us
 		(SELECT COUNT(*)
 		 FROM project_application pa
 		 JOIN project p ON p.id = pa.project_id
-		 WHERE pa.status = 0 AND (
+		 WHERE pa.status = 0 AND p.status <> ? AND (
 			p.creator_id = ? OR EXISTS (
 				SELECT 1 FROM project_members pm WHERE pm.project_id = p.id AND pm.user_id = ?
 			)
@@ -470,7 +470,8 @@ func (r *InteractionRepository) ProfileProjectBadgeState(ctx context.Context, us
 		 AND p.status IN (?, ?)
 		 AND p.passive_status_changed_at > COALESCE(u.last_viewed_my_projects_at, CAST('1970-01-01 00:00:01' AS DATETIME))
 		) has_status_unread
-	`, userID, userID, userID, userID, userID, models.ProjectStatusApproved, models.ProjectStatusRejected).StructScan(&state)
+	`, models.ProjectStatusDeleting, userID, userID, userID, userID, userID,
+		models.ProjectStatusApproved, models.ProjectStatusRejected).StructScan(&state)
 	if err != nil {
 		return ProfileProjectBadgeState{}, fmt.Errorf("get profile project badge state: %w", err)
 	}
