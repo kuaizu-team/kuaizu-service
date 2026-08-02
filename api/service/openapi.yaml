@@ -60,6 +60,8 @@ paths:
     $ref: paths/auth_register_phone.yaml
   /users/me:
     $ref: paths/users_me.yaml
+  /users/me/badges:
+    $ref: paths/users_me_badges.yaml
   /users/me/collaboration-history:
     $ref: paths/users_me_collaboration-history.yaml
   /users/me/certification:
@@ -210,8 +212,6 @@ paths:
     $ref: paths/roadmap_has-new.yaml
   /roadmap/mark-read:
     $ref: paths/roadmap_mark-read.yaml
-  /roadmark-read:
-    $ref: paths/roadmark-read.yaml
   /interactions/favorites/unread-count:
     $ref: paths/interactions_favorites_unread-count.yaml
   /interactions/favorites/mark-viewed:

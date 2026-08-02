@@ -6,6 +6,9 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/joho/godotenv"
 	"github.com/kuaizu-team/kuaizu-service/cmd"
@@ -35,11 +38,15 @@ func main() {
 	e.HideBanner = true
 
 	e.Use(echomiddleware.Recover())
-	e.Use(echomiddleware.CORS())
+	e.Use(echomiddleware.CORSWithConfig(cmd.CORSConfig("ADMIN_CORS_ALLOWED_ORIGINS", []string{
+		"https://admin.kuaizu.xyz",
+		"http://localhost:3000",
+	})))
 	e.Use(cmd.NewRequestLogger())
 
 	// Database
-	ctx := context.Background()
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 	pool, err := db.New(ctx)
 	if err != nil {
 		log.Fatalf("Failed to connect to database: %v", err)
@@ -157,9 +164,7 @@ func main() {
 	adminGroup.GET("/orders", server.ListOrders)
 	adminGroup.POST("/orders/:id/refund/apply", server.ApplyOrderRefund)
 	adminGroup.PATCH("/orders/:id/refund/reject", server.RejectOrderRefund)
-	adminGroup.POST("/orders/:id/refund/reject", server.RejectOrderRefund)
 	adminGroup.PATCH("/orders/:id/refund/withdraw", server.WithdrawOrderRefund)
-	adminGroup.POST("/orders/:id/refund/withdraw", server.WithdrawOrderRefund)
 	adminGroup.PATCH("/orders/:id/refund", server.ReviewOrderRefund)
 	adminGroup.GET("/orders/:id", server.GetOrder)
 
@@ -182,5 +187,12 @@ func main() {
 	}
 
 	log.Printf("Admin server starting on port %s", port)
-	log.Fatal(e.Start(":" + port))
+	if err := cmd.RunHTTPServer(ctx, e, ":"+port); err != nil {
+		log.Fatalf("Admin server stopped with error: %v", err)
+	}
+	drainCtx, drainCancel := context.WithTimeout(context.Background(), 12*time.Second)
+	defer drainCancel()
+	if err := svc.EmailPromotion.WaitForSubmissions(drainCtx); err != nil {
+		log.Printf("Promotion submissions did not drain cleanly: %v", err)
+	}
 }

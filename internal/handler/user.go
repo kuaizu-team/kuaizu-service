@@ -5,9 +5,11 @@ import (
 	"time"
 
 	"github.com/kuaizu-team/kuaizu-service/api"
+	"github.com/kuaizu-team/kuaizu-service/internal/models"
 	"github.com/kuaizu-team/kuaizu-service/internal/repository"
 	"github.com/kuaizu-team/kuaizu-service/internal/service"
 	"github.com/labstack/echo/v4"
+	"golang.org/x/sync/errgroup"
 )
 
 // GetCurrentUser handles GET /users/me
@@ -31,6 +33,63 @@ func (s *Server) GetCurrentUser(ctx echo.Context) error {
 	}
 
 	return Success(ctx, toExtendedUserVO(user))
+}
+
+// GetMyBadges returns the complete badge snapshot used by the mini-program tab bar.
+func (s *Server) GetMyBadges(ctx echo.Context) error {
+	userID := GetUserID(ctx)
+	requestContext := ctx.Request().Context()
+	group, groupContext := errgroup.WithContext(requestContext)
+
+	var applicationUnread int
+	var olive repository.OliveBranchBadgeCounts
+	var favorites models.FavoriteViewState
+	var dashboard repository.DashboardUnreadTotals
+	var projectState repository.ProfileProjectBadgeState
+
+	group.Go(func() error {
+		var err error
+		applicationUnread, err = s.repo.Application.GetUnreadApplicationCount(groupContext, userID)
+		return err
+	})
+	group.Go(func() error {
+		var err error
+		olive, err = s.repo.OliveBranch.GetBadgeCounts(groupContext, userID)
+		return err
+	})
+	group.Go(func() error {
+		var err error
+		favorites, err = s.repo.Interaction.UnreadFavorites(groupContext, userID)
+		return err
+	})
+	group.Go(func() error {
+		var err error
+		dashboard, err = s.repo.Interaction.UnreadDashboardTotals(groupContext, userID)
+		return err
+	})
+	group.Go(func() error {
+		var err error
+		projectState, err = s.repo.Interaction.ProfileProjectBadgeState(groupContext, userID)
+		return err
+	})
+
+	if err := group.Wait(); err != nil {
+		return InternalError(ctx, "get profile badge counts failed")
+	}
+
+	projectBadge := projectState.PendingApplicationCount + dashboard.ProjectCount
+	oliveBadge := olive.ReceivedPendingCount + olive.SentUnreadCount
+	return Success(ctx, api.ProfileBadgeCounts{
+		CardBadge:              applicationUnread,
+		OliveBadge:             oliveBadge,
+		ProjectBadge:           projectBadge,
+		TotalBadge:             applicationUnread + oliveBadge + projectBadge,
+		ProjectFavoriteBadge:   favorites.ProjectCount,
+		TalentFavoriteBadge:    favorites.TalentCount,
+		HomeBadge:              favorites.ProjectCount + favorites.TalentCount,
+		DashboardBadge:         dashboard.ProjectCount,
+		HasProjectStatusUnread: projectState.HasStatusUnread,
+	})
 }
 
 // GetMyCollaborationHistory handles GET /users/me/collaboration-history.

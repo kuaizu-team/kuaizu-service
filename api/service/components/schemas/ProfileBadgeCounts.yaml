@@ -1,0 +1,38 @@
+type: object
+required:
+  - cardBadge
+  - oliveBadge
+  - projectBadge
+  - totalBadge
+  - projectFavoriteBadge
+  - talentFavoriteBadge
+  - homeBadge
+  - dashboardBadge
+  - hasProjectStatusUnread
+properties:
+  cardBadge:
+    type: integer
+    minimum: 0
+  oliveBadge:
+    type: integer
+    minimum: 0
+  projectBadge:
+    type: integer
+    minimum: 0
+  totalBadge:
+    type: integer
+    minimum: 0
+  projectFavoriteBadge:
+    type: integer
+    minimum: 0
+  talentFavoriteBadge:
+    type: integer
+    minimum: 0
+  homeBadge:
+    type: integer
+    minimum: 0
+  dashboardBadge:
+    type: integer
+    minimum: 0
+  hasProjectStatusUnread:
+    type: boolean

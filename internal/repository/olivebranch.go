@@ -620,37 +620,13 @@ type OliveBranchBadgeCounts struct {
 func (r *OliveBranchRepository) GetBadgeCounts(ctx context.Context, userID int) (OliveBranchBadgeCounts, error) {
 	var counts OliveBranchBadgeCounts
 
-	// 1. received pending count
-	if err := r.db.QueryRowxContext(ctx,
-		`SELECT COUNT(*) FROM olive_branch_record WHERE receiver_id = ? AND status = 0`,
-		userID,
-	).Scan(&counts.ReceivedPendingCount); err != nil {
-		return counts, fmt.Errorf("count received pending: %w", err)
-	}
-
-	// 2. fetch sent_olive_viewed_at for this user
-	var viewedAt *time.Time
-	if err := r.db.QueryRowxContext(ctx,
-		"SELECT sent_olive_viewed_at FROM `user` WHERE id = ?",
-		userID,
-	).Scan(&viewedAt); err != nil && err != sql.ErrNoRows {
-		return counts, fmt.Errorf("get sent_olive_viewed_at: %w", err)
-	}
-
-	// 3. sent unread count — use updated_at so that a receiver's accept/reject
-	//    (which sets updated_at = CURRENT_TIMESTAMP) causes the badge to reappear
-	//    for the sender even after they previously called mark-sent-read.
-	var sentQuery string
-	var sentArgs []interface{}
-	if viewedAt == nil {
-		sentQuery = `SELECT COUNT(*) FROM olive_branch_record WHERE sender_id = ?`
-		sentArgs = []interface{}{userID}
-	} else {
-		sentQuery = `SELECT COUNT(*) FROM olive_branch_record WHERE sender_id = ? AND updated_at > ?`
-		sentArgs = []interface{}{userID, *viewedAt}
-	}
-	if err := r.db.QueryRowxContext(ctx, sentQuery, sentArgs...).Scan(&counts.SentUnreadCount); err != nil {
-		return counts, fmt.Errorf("count sent unread: %w", err)
+	if err := r.db.QueryRowxContext(ctx, `SELECT
+		(SELECT COUNT(*) FROM olive_branch_record WHERE receiver_id = ? AND status = 0),
+		(SELECT COUNT(*) FROM olive_branch_record ob
+		 LEFT JOIN `+"`user`"+` u ON u.id = ob.sender_id
+		 WHERE ob.sender_id = ? AND ob.updated_at > COALESCE(u.sent_olive_viewed_at, CAST('1970-01-01 00:00:01' AS DATETIME)))
+	`, userID, userID).Scan(&counts.ReceivedPendingCount, &counts.SentUnreadCount); err != nil {
+		return counts, fmt.Errorf("get olive branch badge counts: %w", err)
 	}
 
 	return counts, nil

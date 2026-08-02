@@ -1193,9 +1193,9 @@ func TestPromotionSubmissionSuccessDoesNotWriteSendingState(t *testing.T) {
 	}
 	svc := NewEmailPromotionService(&repository.Repository{EmailPromotion: mockEmailPromotion})
 	svc.messageCenter = submitter
-	svc.startAsyncPromotionSubmission(messagecenter.ProjectPromotionRequest{
+	require.NoError(t, svc.startAsyncPromotionSubmission(context.Background(), messagecenter.ProjectPromotionRequest{
 		PromotionID: 77, OrderID: 100, ProjectID: 200,
-	})
+	}))
 
 	select {
 	case <-responseReady:
@@ -1207,4 +1207,35 @@ func TestPromotionSubmissionSuccessDoesNotWriteSendingState(t *testing.T) {
 		require.Failf(t, "backend must not overwrite message-center execution state", "unexpected status update: %v", status)
 	case <-time.After(100 * time.Millisecond):
 	}
+}
+
+func TestPromotionSubmissionWaitsForAvailableWorker(t *testing.T) {
+	submitter := &fakeProjectPromotionSubmitter{requests: make(chan messagecenter.ProjectPromotionRequest, 1)}
+	svc := NewEmailPromotionService(&repository.Repository{})
+	svc.messageCenter = submitter
+	for i := 0; i < promotionSubmissionWorkers; i++ {
+		svc.submissionSlots <- struct{}{}
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		done <- svc.startAsyncPromotionSubmission(context.Background(), messagecenter.ProjectPromotionRequest{
+			PromotionID: 77, OrderID: 100, ProjectID: 200,
+		})
+	}()
+
+	select {
+	case err := <-done:
+		t.Fatalf("submission returned before capacity became available: %v", err)
+	case <-time.After(50 * time.Millisecond):
+	}
+	<-svc.submissionSlots
+	require.NoError(t, <-done)
+	select {
+	case req := <-submitter.requests:
+		assert.Equal(t, 77, req.PromotionID)
+	case <-time.After(time.Second):
+		require.Fail(t, "timed out waiting for queued submission")
+	}
+	require.NoError(t, svc.WaitForSubmissions(context.Background()))
 }

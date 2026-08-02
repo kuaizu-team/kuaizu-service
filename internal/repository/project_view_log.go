@@ -126,42 +126,21 @@ func (r *ProjectViewLogRepository) NotifyProgress(ctx context.Context, projectID
 // GetDashboardStats returns aggregated dashboard data for a single project.
 // Rows with duration_ms IS NOT NULL are dwell-time-only records and are excluded from view counts.
 func (r *ProjectViewLogRepository) GetDashboardStats(ctx context.Context, projectID int) (*ProjectDashboardStats, error) {
-	// 1. Total views from the denormalised counter on the project row (fast, indexed).
-	var totalViews int
-	if err := r.db.QueryRowxContext(ctx,
-		`SELECT view_count FROM project WHERE id = ?`, projectID,
-	).Scan(&totalViews); err != nil {
-		return nil, fmt.Errorf("get total_views: %w", err)
-	}
-
-	// 2. Today's views — exclude duration-only rows.
-	var todayViews int
-	if err := r.db.QueryRowxContext(ctx,
-		`SELECT COUNT(*) FROM project_view_log WHERE project_id = ? AND viewed_at >= CURDATE() AND duration_ms IS NULL`, projectID,
-	).Scan(&todayViews); err != nil {
-		return nil, fmt.Errorf("get today_views: %w", err)
-	}
-
-	// 3. Distinct applicants (all statuses).
-	var totalApplicants int
-	if err := r.db.QueryRowxContext(ctx,
-		`SELECT COUNT(DISTINCT user_id) FROM project_application WHERE project_id = ?`, projectID,
-	).Scan(&totalApplicants); err != nil {
-		return nil, fmt.Errorf("get total_applicants: %w", err)
-	}
-
-	var uniqueVisitors int
-	if err := r.db.QueryRowxContext(ctx,
-		`SELECT COUNT(DISTINCT user_id) FROM project_view_log WHERE project_id = ? AND user_id IS NOT NULL AND duration_ms IS NULL`, projectID,
-	).Scan(&uniqueVisitors); err != nil {
-		return nil, fmt.Errorf("get unique_visitors: %w", err)
-	}
-
-	var processedApplicants int
-	if err := r.db.QueryRowxContext(ctx,
-		`SELECT COUNT(*) FROM project_application WHERE project_id = ? AND status <> ?`, projectID, models.ApplicationStatusPending,
-	).Scan(&processedApplicants); err != nil {
-		return nil, fmt.Errorf("get processed_applicants: %w", err)
+	// Load independent scalar metrics in one database round-trip. Duration-only
+	// rows remain excluded from every view counter.
+	var totalViews, todayViews, totalApplicants, uniqueVisitors, processedApplicants int
+	var avgDurationMs float64
+	if err := r.db.QueryRowxContext(ctx, `SELECT
+		p.view_count,
+		(SELECT COUNT(*) FROM project_view_log vl WHERE vl.project_id=p.id AND vl.viewed_at>=CURDATE() AND vl.duration_ms IS NULL),
+		(SELECT COUNT(DISTINCT vl.user_id) FROM project_view_log vl WHERE vl.project_id=p.id AND vl.user_id IS NOT NULL AND vl.duration_ms IS NULL),
+		(SELECT COUNT(DISTINCT pa.user_id) FROM project_application pa WHERE pa.project_id=p.id),
+		(SELECT COUNT(*) FROM project_application pa WHERE pa.project_id=p.id AND pa.status<>?),
+		(SELECT COALESCE(AVG(vl.duration_ms),0) FROM project_view_log vl WHERE vl.project_id=p.id AND vl.duration_ms IS NOT NULL)
+		FROM project p WHERE p.id=?`, models.ApplicationStatusPending, projectID).Scan(
+		&totalViews, &todayViews, &uniqueVisitors, &totalApplicants, &processedApplicants, &avgDurationMs,
+	); err != nil {
+		return nil, fmt.Errorf("get dashboard scalar metrics: %w", err)
 	}
 
 	// 4. Source breakdown — exclude duration-only rows.
@@ -176,15 +155,7 @@ func (r *ProjectViewLogRepository) GetDashboardStats(ctx context.Context, projec
 		return nil, fmt.Errorf("get source_stats: %w", err)
 	}
 
-	// 5. Average dwell time in seconds.
-	var avgDurationMs float64
-	if err := r.db.QueryRowxContext(ctx,
-		`SELECT COALESCE(AVG(duration_ms), 0) FROM project_view_log WHERE project_id = ? AND duration_ms IS NOT NULL`, projectID,
-	).Scan(&avgDurationMs); err != nil {
-		return nil, fmt.Errorf("get avg_duration: %w", err)
-	}
-
-	// 6. Hourly view counts for the last 24 hours. Bucket by Unix epoch so the
+	// Hourly view counts for the last 24 hours. Bucket by Unix epoch so the
 	//    generated UTC slots stay aligned with MySQL TIMESTAMP conversion.
 	var nowEpoch int64
 	if err := r.db.QueryRowxContext(ctx,

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/jmoiron/sqlx"
+	"github.com/kuaizu-team/kuaizu-service/internal/models"
 )
 
 var capturedQuery struct {
@@ -148,6 +149,31 @@ func TestUnreadDashboardTotals(t *testing.T) {
 		if !strings.Contains(query, want) {
 			t.Fatalf("dashboard totals query missing %q: %s", want, query)
 		}
+	}
+}
+
+func TestProfileProjectBadgeStateExcludesDeletingProjects(t *testing.T) {
+	db := openCaptureDB(t)
+	defer db.Close()
+	repo := NewInteractionRepository(sqlx.NewDb(db, "capture_user_repo"))
+	setCapturedQuery([]string{"pending_application_count", "has_status_unread"}, [][]driver.Value{{int64(3), false}})
+
+	state, err := repo.ProfileProjectBadgeState(context.Background(), 7)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.PendingApplicationCount != 3 || state.HasStatusUnread {
+		t.Fatalf("unexpected badge state: %#v", state)
+	}
+	capturedQuery.Lock()
+	query := normalizeSQL(capturedQuery.query)
+	args := append([]driver.NamedValue(nil), capturedQuery.args...)
+	capturedQuery.Unlock()
+	if !strings.Contains(query, "pa.status = 0 AND p.status <> ?") {
+		t.Fatalf("pending application query must exclude deleting projects: %s", query)
+	}
+	if len(args) != 8 || args[0].Value != int64(models.ProjectStatusDeleting) {
+		t.Fatalf("deleting status argument mismatch: %#v", args)
 	}
 }
 

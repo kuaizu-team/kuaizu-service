@@ -349,12 +349,20 @@ func (r *EmailPromotionRepository) SelectPromotionRecipients(ctx context.Context
 
 	selected := make([]int, 0, limit)
 	seen := make(map[int]struct{}, limit)
+	var maxUserID int
+	if err := r.db.QueryRowxContext(ctx, "SELECT COALESCE(MAX(id),0) FROM `user`").Scan(&maxUserID); err != nil {
+		return nil, fmt.Errorf("query promotion recipient id range: %w", err)
+	}
+	if maxUserID == 0 {
+		return selected, nil
+	}
+	pivot := int(time.Now().UnixNano()%int64(maxUserID)) + 1
 	for _, tier := range tiers {
 		if len(selected) >= limit {
 			break
 		}
 		remaining := limit - len(selected)
-		ids, err := r.selectPromotionTier(ctx, projectID, creatorID, tier, selected, remaining)
+		ids, err := r.selectPromotionTier(ctx, projectID, creatorID, tier, selected, pivot, remaining)
 		if err != nil {
 			return nil, err
 		}
@@ -369,7 +377,19 @@ func (r *EmailPromotionRepository) SelectPromotionRecipients(ctx context.Context
 	return selected, nil
 }
 
-func (r *EmailPromotionRepository) selectPromotionTier(ctx context.Context, projectID, creatorID int, tier string, excluded []int, limit int) ([]int, error) {
+func (r *EmailPromotionRepository) selectPromotionTier(ctx context.Context, projectID, creatorID int, tier string, excluded []int, pivot, limit int) ([]int, error) {
+	ids, err := r.selectPromotionTierRange(ctx, projectID, creatorID, tier, excluded, "u.id >= ?", pivot, limit)
+	if err != nil || len(ids) >= limit {
+		return ids, err
+	}
+	wrapped, err := r.selectPromotionTierRange(ctx, projectID, creatorID, tier, excluded, "u.id < ?", pivot, limit-len(ids))
+	if err != nil {
+		return nil, err
+	}
+	return append(ids, wrapped...), nil
+}
+
+func (r *EmailPromotionRepository) selectPromotionTierRange(ctx context.Context, projectID, creatorID int, tier string, excluded []int, rangeClause string, pivot, limit int) ([]int, error) {
 	query := `
 		SELECT u.id
 		FROM ` + "`user`" + ` u
@@ -389,14 +409,15 @@ func (r *EmailPromotionRepository) selectPromotionTier(ctx context.Context, proj
 			    AND recent.user_id = u.id
 			    AND recent.created_at >= NOW() - INTERVAL ? DAY
 		  )
-		  AND (` + tier + `)`
+		  AND (` + tier + `)
+		  AND ` + rangeClause
 
-	args := []interface{}{projectID, creatorID, projectID, promotionRecipientRecentDays}
+	args := []interface{}{projectID, creatorID, projectID, promotionRecipientRecentDays, pivot}
 	if len(excluded) > 0 {
 		query += " AND u.id NOT IN (?)"
 		args = append(args, excluded)
 	}
-	query += " ORDER BY RAND() LIMIT ?"
+	query += " ORDER BY u.id LIMIT ?"
 	args = append(args, limit)
 
 	query, args, err := sqlx.In(query, args...)

@@ -13,6 +13,8 @@ import (
 	"github.com/kuaizu-team/kuaizu-service/internal/repository"
 )
 
+const promotionSubmissionWorkers = 8
+
 // EmailPromotionService handles email promotion business logic.
 type EmailPromotionService struct {
 	repo                 *repository.Repository
@@ -21,6 +23,8 @@ type EmailPromotionService struct {
 	messageCenter        projectPromotionSubmitter
 	messageCenterInitErr error
 	messageCenterFactory func() (*messagecenter.Client, error)
+	submissionSlots      chan struct{}
+	submissionWG         sync.WaitGroup
 }
 
 type projectPromotionSubmitter interface {
@@ -33,6 +37,7 @@ func NewEmailPromotionService(repo *repository.Repository) *EmailPromotionServic
 		repo:                 repo,
 		orderPushClaimer:     repo,
 		messageCenterFactory: messagecenter.NewClientFromEnv,
+		submissionSlots:      make(chan struct{}, promotionSubmissionWorkers),
 	}
 }
 
@@ -43,6 +48,7 @@ func NewEmailPromotionServiceWithMessageCenter(repo *repository.Repository, mess
 		orderPushClaimer:     repo,
 		messageCenterInitErr: messageCenterInitErr,
 		messageCenterFactory: messagecenter.NewClientFromEnv,
+		submissionSlots:      make(chan struct{}, promotionSubmissionWorkers),
 	}
 	if messageCenter != nil {
 		svc.messageCenter = messageCenter
@@ -176,7 +182,9 @@ func (s *EmailPromotionService) TriggerPromotionWithInput(ctx context.Context, u
 			TraceID:          traceID,
 			RecipientUserIDs: recipientUserIDs,
 		}
-		s.startAsyncPromotionSubmission(req)
+		if err := s.startAsyncPromotionSubmission(ctx, req); err != nil {
+			return nil, err
+		}
 		return &TriggerPromotionResult{
 			Promotion:     existingPromotion,
 			MaxRecipients: existingPromotion.MaxRecipients,
@@ -232,7 +240,9 @@ func (s *EmailPromotionService) TriggerPromotionWithInput(ctx context.Context, u
 		TraceID:          traceID,
 		RecipientUserIDs: recipientUserIDs,
 	}
-	s.startAsyncPromotionSubmission(req)
+	if err := s.startAsyncPromotionSubmission(ctx, req); err != nil {
+		return nil, err
+	}
 
 	return &TriggerPromotionResult{
 		Promotion:     promotion,
@@ -302,9 +312,19 @@ func (s *EmailPromotionService) calculateMaxRecipients(ctx context.Context, orde
 	return 0, ErrBadRequest("订单中没有邮件推广商品")
 }
 
-func (s *EmailPromotionService) startAsyncPromotionSubmission(req messagecenter.ProjectPromotionRequest) {
+func (s *EmailPromotionService) startAsyncPromotionSubmission(ctx context.Context, req messagecenter.ProjectPromotionRequest) error {
 	req.RecipientUserIDs = append([]int(nil), req.RecipientUserIDs...)
+	select {
+	case s.submissionSlots <- struct{}{}:
+		s.submissionWG.Add(1)
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 	go func() {
+		defer func() {
+			<-s.submissionSlots
+			s.submissionWG.Done()
+		}()
 		submitter, initErr, baseURL := s.resolveMessageCenter()
 		if initErr != nil {
 			log.Printf("[EmailPromotionService] message center unavailable for promotion, order_id=%d project_id=%d base_url_empty=%t: %v",
@@ -349,6 +369,22 @@ func (s *EmailPromotionService) startAsyncPromotionSubmission(req messagecenter.
 		// Recipient user IDs are selected and snapshotted before submission so
 		// the project owner can inspect the batch immediately.
 	}()
+	return nil
+}
+
+// WaitForSubmissions lets process shutdown drain accepted promotion work.
+func (s *EmailPromotionService) WaitForSubmissions(ctx context.Context) error {
+	done := make(chan struct{})
+	go func() {
+		s.submissionWG.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 func (s *EmailPromotionService) resolveMessageCenter() (projectPromotionSubmitter, error, string) {

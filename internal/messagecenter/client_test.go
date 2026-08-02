@@ -9,6 +9,56 @@ import (
 	"time"
 )
 
+func TestSubmitProjectPromotionSerializesEmptyRecipientList(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v2/marketing/project-promotion" {
+			t.Fatalf("path = %s, want /api/v2/marketing/project-promotion", r.URL.Path)
+		}
+		var payload map[string]json.RawMessage
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		raw, ok := payload["recipientUserIds"]
+		if !ok {
+			t.Fatal("recipientUserIds was omitted")
+		}
+		var recipientUserIDs []int
+		if err := json.Unmarshal(raw, &recipientUserIDs); err != nil {
+			t.Fatalf("decode recipientUserIds: %v", err)
+		}
+		if recipientUserIDs == nil || len(recipientUserIDs) != 0 {
+			t.Fatalf("recipientUserIds = %#v, want non-nil empty list", recipientUserIDs)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"code": 200,
+			"data": map[string]interface{}{
+				"taskId": "PROJECT_PROMOTION:9001", "promotionId": 71,
+				"requestedCount": 2, "actualCount": 0,
+			},
+		})
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, "test-token", 0)
+	_, err := client.SubmitProjectPromotion(context.Background(), ProjectPromotionRequest{
+		ProjectID: 42, PromotionCount: 2, CreatorUserID: 1001, OrderID: 9001,
+	})
+	if err != nil {
+		t.Fatalf("SubmitProjectPromotion returned error: %v", err)
+	}
+}
+
+func TestSubmitProjectPromotionRejectsRecipientCountAbovePaidCount(t *testing.T) {
+	client := NewClient("http://127.0.0.1", "test-token", 0)
+	_, err := client.SubmitProjectPromotion(context.Background(), ProjectPromotionRequest{
+		ProjectID: 42, PromotionCount: 1, CreatorUserID: 1001, OrderID: 9001,
+		RecipientUserIDs: []int{10, 11},
+	})
+	if err == nil || err.Error() != "recipientUserIds exceeds promotionCount" {
+		t.Fatalf("error = %v, want recipient count validation error", err)
+	}
+}
+
 func TestSubmitSmsNoticePreservesRejectedResponse(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/v2/sms/send" {
@@ -39,8 +89,8 @@ func TestSubmitSmsNoticePreservesRejectedResponse(t *testing.T) {
 }
 func TestSubmitApplicationSmsUsesApprovedTemplateVariables(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/sms/send" {
-			t.Fatalf("path = %s, want /api/sms/send", r.URL.Path)
+		if r.URL.Path != "/api/v2/sms/application" {
+			t.Fatalf("path = %s, want /api/v2/sms/application", r.URL.Path)
 		}
 		var req struct {
 			TemplateCode string `json:"templateCode"`
