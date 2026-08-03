@@ -39,6 +39,7 @@ func main() {
 	// Initialize Echo
 	e := echo.New()
 	e.HideBanner = true
+	e.Pre(echomiddleware.MethodOverride())
 
 	// Custom colored logger using RequestLoggerWithConfig
 	e.Use(cmd.NewRequestLogger())
