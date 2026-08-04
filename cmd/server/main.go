@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
 	"strings"
@@ -28,6 +29,17 @@ var (
 	date    = "unknown"
 )
 
+func patchMethodOverride() echo.MiddlewareFunc {
+	return echomiddleware.MethodOverrideWithConfig(echomiddleware.MethodOverrideConfig{
+		Getter: func(c echo.Context) string {
+			if c.Request().Header.Get(echo.HeaderXHTTPMethodOverride) == http.MethodPatch {
+				return http.MethodPatch
+			}
+			return ""
+		},
+	})
+}
+
 func main() {
 	fmt.Printf("Starting Kuaizu Server %s (Commit: %s, Built at: %s)\n", version, commit, date)
 	log.SetFlags(log.Ldate | log.Ltime | log.Llongfile)
@@ -39,6 +51,7 @@ func main() {
 	// Initialize Echo
 	e := echo.New()
 	e.HideBanner = true
+	e.Pre(patchMethodOverride())
 
 	// Custom colored logger using RequestLoggerWithConfig
 	e.Use(cmd.NewRequestLogger())

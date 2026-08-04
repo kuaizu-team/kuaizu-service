@@ -5,6 +5,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/labstack/echo/v4"
 	echomiddleware "github.com/labstack/echo/v4/middleware"
 )
 
@@ -21,6 +22,6 @@ func CORSConfig(envKey string, defaults []string) echomiddleware.CORSConfig {
 	return echomiddleware.CORSConfig{
 		AllowOrigins: origins,
 		AllowMethods: []string{http.MethodGet, http.MethodHead, http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete, http.MethodOptions},
-		AllowHeaders: []string{"Accept", "Authorization", "Content-Type", "Origin"},
+		AllowHeaders: []string{"Accept", "Authorization", "Content-Type", "Origin", echo.HeaderXHTTPMethodOverride},
 	}
 }

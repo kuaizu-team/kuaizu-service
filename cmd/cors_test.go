@@ -2,7 +2,10 @@ package cmd
 
 import (
 	"reflect"
+	"slices"
 	"testing"
+
+	"github.com/labstack/echo/v4"
 )
 
 func TestCORSConfigUsesScopedDefaults(t *testing.T) {
@@ -11,6 +14,9 @@ func TestCORSConfigUsesScopedDefaults(t *testing.T) {
 	got := CORSConfig("TEST_CORS_ORIGINS", want)
 	if !reflect.DeepEqual(got.AllowOrigins, want) {
 		t.Fatalf("origins = %v, want %v", got.AllowOrigins, want)
+	}
+	if !slices.Contains(got.AllowHeaders, echo.HeaderXHTTPMethodOverride) {
+		t.Fatalf("allow headers = %v, missing method override header", got.AllowHeaders)
 	}
 }
 
