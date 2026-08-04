@@ -51,7 +51,11 @@ func main() {
 	// Initialize Echo
 	e := echo.New()
 	e.HideBanner = true
+<<<<<<< HEAD
 	e.Pre(patchMethodOverride())
+=======
+	e.Pre(echomiddleware.MethodOverride())
+>>>>>>> 4962773a9d48e324fbd164cc3eace0ecfd5c0c67
 
 	// Custom colored logger using RequestLoggerWithConfig
 	e.Use(cmd.NewRequestLogger())

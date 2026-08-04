@@ -6,11 +6,19 @@ import (
 	"testing"
 
 	"github.com/labstack/echo/v4"
+<<<<<<< HEAD
+=======
+	echomiddleware "github.com/labstack/echo/v4/middleware"
+>>>>>>> 4962773a9d48e324fbd164cc3eace0ecfd5c0c67
 )
 
 func TestMethodOverrideRoutesMiniProgramPatch(t *testing.T) {
 	e := echo.New()
+<<<<<<< HEAD
 	e.Pre(patchMethodOverride())
+=======
+	e.Pre(echomiddleware.MethodOverride())
+>>>>>>> 4962773a9d48e324fbd164cc3eace0ecfd5c0c67
 	paths := []string{
 		"/api/v2/project-applications/:id",
 		"/api/v2/olive-branches/:id",
@@ -38,6 +46,7 @@ func TestMethodOverrideRoutesMiniProgramPatch(t *testing.T) {
 		}
 	}
 }
+<<<<<<< HEAD
 
 func TestMethodOverrideOnlyAllowsPatch(t *testing.T) {
 	e := echo.New()
@@ -88,3 +97,5 @@ func TestMethodOverrideOnlyAllowsPatch(t *testing.T) {
 		})
 	}
 }
+=======
+>>>>>>> 4962773a9d48e324fbd164cc3eace0ecfd5c0c67
