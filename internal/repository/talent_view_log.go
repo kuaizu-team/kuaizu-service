@@ -61,6 +61,34 @@ func (r *TalentViewLogRepository) InsertViewLog(ctx context.Context, log *models
 	return nil
 }
 
+// RecordView atomically stores the view event and updates the denormalized counter.
+func (r *TalentViewLogRepository) RecordView(ctx context.Context, log *models.TalentViewLog) error {
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin talent view transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	query := `
+		INSERT INTO talent_view_log (talent_id, user_id, source)
+		VALUES (:talent_id, :user_id, :source)
+	`
+	if _, err := tx.NamedExecContext(ctx, query, log); err != nil {
+		return fmt.Errorf("insert talent view log: %w", err)
+	}
+	result, err := tx.ExecContext(ctx, `UPDATE talent_profile SET view_count = view_count + 1 WHERE id = ?`, log.TalentID)
+	if err != nil {
+		return fmt.Errorf("increment talent view count: %w", err)
+	}
+	if rows, _ := result.RowsAffected(); rows == 0 {
+		return fmt.Errorf("increment talent view count: talent profile not found")
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit talent view transaction: %w", err)
+	}
+	return nil
+}
+
 // InsertDurationLog inserts a standalone dwell-time record and does not count it as a view.
 func (r *TalentViewLogRepository) InsertDurationLog(ctx context.Context, talentID int, userID *int, durationMs int) error {
 	query := `INSERT INTO talent_view_log (talent_id, user_id, source, duration_ms) VALUES (?, ?, 0, ?)`
@@ -198,7 +226,7 @@ func (r *TalentViewLogRepository) GetDashboardStats(ctx context.Context, talentI
 }
 
 // GetViewers returns authenticated users who viewed the talent profile in the last 24 hours.
-func (r *TalentViewLogRepository) GetViewers(ctx context.Context, talentID, limit int) ([]TalentViewer, int, error) {
+func (r *TalentViewLogRepository) GetViewers(ctx context.Context, talentID, page, limit int) ([]TalentViewer, int, error) {
 	var total int
 	if err := r.db.QueryRowxContext(ctx,
 		`SELECT COUNT(DISTINCT vl.user_id)
@@ -218,9 +246,9 @@ func (r *TalentViewLogRepository) GetViewers(ctx context.Context, talentID, limi
 		 WHERE vl.talent_id = ? AND vl.user_id IS NOT NULL
 		   AND vl.viewed_at >= NOW() - INTERVAL 24 HOUR AND vl.duration_ms IS NULL
 		 GROUP BY vl.user_id, u.nickname, u.avatar_url
-		 ORDER BY last_viewed_at DESC
-		 LIMIT ?`,
-		talentID, limit,
+		 ORDER BY last_viewed_at DESC, vl.user_id DESC
+		 LIMIT ? OFFSET ?`,
+		talentID, limit, (page-1)*limit,
 	); err != nil {
 		return nil, 0, fmt.Errorf("get talent viewers: %w", err)
 	}

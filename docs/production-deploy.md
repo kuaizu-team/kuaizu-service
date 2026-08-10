@@ -12,14 +12,13 @@ the following files exactly once and in this order:
 1. `sql/migration_event_level_summary.sql`
 2. `sql/migration_admin_user_website_profile.sql`
 3. `sql/20260713_event_manager.sql`
-4. `sql/20260714_event_manager_password.sql`
-5. `sql/20260715_admin_multi_school_delegation.sql`
-6. `sql/20260715_add_welcome_email_delivery.sql`
-7. `sql/migration_order_push_status.sql`
-8. `sql/20260725_admin_phone.sql`
-9. `sql/20260725_collaboration_score_default.sql`
-10. `sql/20260725_realtime_collaboration_score.sql`
-11. `sql/20260728_collaboration_score_update_notification.sql`
+4. `sql/20260715_admin_multi_school_delegation.sql`
+5. `sql/20260715_add_welcome_email_delivery.sql`
+6. `sql/migration_order_push_status.sql`
+7. `sql/20260725_admin_phone.sql`
+8. `sql/20260725_collaboration_score_default.sql`
+9. `sql/20260725_realtime_collaboration_score.sql`
+10. `sql/20260728_collaboration_score_update_notification.sql`
 
 `20260713_event_manager.sql` depends on the `event.school_id` column created by
 the first migration. The multi-school migration also assumes the existing
@@ -33,8 +32,18 @@ of applying them again. The preflight is read-only and must return no rows.
 migrations are safe to rerun.
 
 Take a database backup before the first migration. Deploy the application only
-after the preflight passes, and keep `ADMIN_CREDENTIAL_KEY` configured and
-stable across deployments because it encrypts event-manager credentials.
+after the preflight passes. Do not run
+`sql/20260714_event_manager_password.sql` on hash-only deployments. After
+deploying the hash-only administrator code, apply
+`sql/migration_admin_password_hash_only.sql` only when the obsolete
+`password_encrypted` column exists. This migration is intentionally not
+rerunnable.
+
+During the same maintenance window, review and manually apply
+`sql/migration_user_contact_unique.sql` before reopening user writes, followed
+by `sql/migration_operational_indexes.sql` and
+`sql/migration_remove_redundant_indexes.sql`. These files are SQL suggestions
+and are never executed by the application.
 
 For the message center, apply `sql/20260718_project_promotion_public_link.sql` from
 the `kz-message-center` repository only when the project-promotion template still

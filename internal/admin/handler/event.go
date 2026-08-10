@@ -41,7 +41,6 @@ type adminEventManagerVO struct {
 	Nickname *string `json:"nickname"`
 	Phone    *string `json:"phone"`
 	Account  *string `json:"account,omitempty"`
-	Password *string `json:"password,omitempty"`
 }
 
 type adminEventPermissionsVO struct {
@@ -414,11 +413,6 @@ func (s *AdminServer) buildAdminEventDetailVO(ctx echo.Context, event *models.Ev
 		(adminRole(ctx) == models.AdminRoleSuperAdmin || managerSchoolMatches) {
 		account := manager.Username
 		detail.Manager.Account = &account
-		if manager.PasswordEncrypted != nil {
-			if password, err := decryptAdminCredential(*manager.PasswordEncrypted); err == nil {
-				detail.Manager.Password = &password
-			}
-		}
 	}
 	return detail
 }
@@ -487,11 +481,7 @@ func (s *AdminServer) upsertEventManager(ctx echo.Context, exec eventManagerExec
 		if err != nil {
 			return response.InternalError(ctx, "密码加密失败")
 		}
-		encrypted, err := encryptAdminCredential(password)
-		if err != nil {
-			return response.InternalError(ctx, "赛事管理员密码安全存储失败")
-		}
-		result, err := exec.ExecContext(ctx.Request().Context(), `INSERT INTO admin_user(username,password_hash,password_encrypted,nickname,phone,role,school_id,status) VALUES(?,?,?,?,?,?,?,1)`, account, string(hash), encrypted, nickname, phone, models.AdminRoleEventManager, event.SchoolID)
+		result, err := exec.ExecContext(ctx.Request().Context(), `INSERT INTO admin_user(username,password_hash,nickname,phone,role,school_id,status) VALUES(?,?,?,?,?,?,1)`, account, string(hash), nickname, phone, models.AdminRoleEventManager, event.SchoolID)
 		if err != nil {
 			return response.BadRequest(ctx, "赛事管理员账号已存在")
 		}
@@ -523,12 +513,8 @@ func (s *AdminServer) upsertEventManager(ctx echo.Context, exec eventManagerExec
 		if err != nil {
 			return response.InternalError(ctx, "密码加密失败")
 		}
-		encrypted, err := encryptAdminCredential(password)
-		if err != nil {
-			return response.InternalError(ctx, "赛事管理员密码安全存储失败")
-		}
-		sets = append(sets, "password_hash=?", "password_encrypted=?")
-		args = append(args, string(hash), encrypted)
+		sets = append(sets, "password_hash=?")
+		args = append(args, string(hash))
 	}
 	args = append(args, *event.AdminID)
 	managerScope := ""

@@ -29,24 +29,6 @@ func canViewAdminDetail(callerRole, callerID int, target *models.AdminUser, call
 	}
 }
 
-func canViewAdminPassword(callerRole, callerID int, target *models.AdminUser, callerSchoolID *int) bool {
-	if target == nil {
-		return false
-	}
-	if target.ID == callerID {
-		return true
-	}
-	switch callerRole {
-	case models.AdminRoleSuperAdmin:
-		return target.Role > callerRole
-	case models.AdminRoleSchoolSuperAdmin:
-		return (target.Role == models.AdminRoleSchoolAdmin || target.Role == models.AdminRoleEventManager) &&
-			schoolIDsMatch(callerSchoolID, target.SchoolID)
-	default:
-		return false
-	}
-}
-
 func (s *AdminServer) canViewAdminDetailInScope(ctx echo.Context, target *models.AdminUser) bool {
 	if target == nil {
 		return false
@@ -93,7 +75,6 @@ func sanitizeSchoolAdminDirectoryVO(vo *adminvo.AdminUserAccountVO, target *mode
 		return
 	}
 	vo.Username = ""
-	vo.Password = nil
 	vo.PendingSettlementAmount = 0
 	vo.PendingRefundOrderCount = 0
 	vo.FinanceRemark = nil
@@ -115,34 +96,6 @@ func sanitizeSchoolAdminDirectoryVO(vo *adminvo.AdminUserAccountVO, target *mode
 		vo.SchoolName = &name
 		return
 	}
-}
-
-func (s *AdminServer) canViewAdminPasswordInScope(ctx echo.Context, target *models.AdminUser) bool {
-	if target == nil {
-		return false
-	}
-	role := adminRole(ctx)
-	if target.ID == currentAdminID(ctx) {
-		return true
-	}
-	if role == models.AdminRoleSuperAdmin {
-		return target.Role > role
-	}
-	if role == models.AdminRoleSchoolAdmin {
-		return false
-	}
-	return s.canViewAdminDetailInScope(ctx, target)
-}
-
-func attachAdminPassword(vo *adminvo.AdminUserAccountVO, target *models.AdminUser) {
-	if vo == nil || target == nil || target.PasswordEncrypted == nil {
-		return
-	}
-	password, err := decryptAdminCredential(*target.PasswordEncrypted)
-	if err != nil {
-		return
-	}
-	vo.Password = &password
 }
 
 func canViewAdminFinanceOverview(callerRole, callerID int, target *models.AdminUser) bool {

@@ -3,11 +3,18 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 
+	"github.com/go-sql-driver/mysql"
 	"github.com/jmoiron/sqlx"
 	"github.com/kuaizu-team/kuaizu-service/internal/models"
+)
+
+var (
+	ErrUserPhoneConflict = errors.New("phone is already bound to another user")
+	ErrUserEmailConflict = errors.New("email is already bound to another user")
 )
 
 // UserRepository handles user database operations
@@ -169,6 +176,9 @@ func (r *UserRepository) CreateWithPhone(ctx context.Context, openid string, pho
 
 	result, err := r.db.ExecContext(ctx, query, openid, phone, models.UserAuthStatusNone)
 	if err != nil {
+		if conflictErr := userContactConflictError(err); conflictErr != nil {
+			return nil, conflictErr
+		}
 		return nil, fmt.Errorf("create user with phone: %w", err)
 	}
 
@@ -205,6 +215,9 @@ func updateUser(ctx context.Context, exec sqlx.ExtContext, user *models.User) er
 	`
 
 	if _, err := sqlx.NamedExecContext(ctx, exec, query, user); err != nil {
+		if conflictErr := userContactConflictError(err); conflictErr != nil {
+			return conflictErr
+		}
 		return fmt.Errorf("update user: %w", err)
 	}
 	return nil
@@ -216,6 +229,9 @@ func (r *UserRepository) UpdatePhone(ctx context.Context, userID int, phone stri
 
 	result, err := r.db.ExecContext(ctx, query, phone, userID)
 	if err != nil {
+		if conflictErr := userContactConflictError(err); conflictErr != nil {
+			return conflictErr
+		}
 		return fmt.Errorf("update user phone: %w", err)
 	}
 
@@ -225,6 +241,22 @@ func (r *UserRepository) UpdatePhone(ctx context.Context, userID int, phone stri
 	}
 
 	return nil
+}
+
+func userContactConflictError(err error) error {
+	var mysqlErr *mysql.MySQLError
+	if !errors.As(err, &mysqlErr) || mysqlErr.Number != 1062 {
+		return nil
+	}
+
+	switch {
+	case strings.Contains(mysqlErr.Message, "uq_user_phone"):
+		return ErrUserPhoneConflict
+	case strings.Contains(mysqlErr.Message, "uq_user_email"):
+		return ErrUserEmailConflict
+	default:
+		return nil
+	}
 }
 
 // UpdateQuota updates user's olive branch quota fields
@@ -536,35 +568,6 @@ func (r *UserRepository) ListUsers(ctx context.Context, params UserListParams) (
 	}
 
 	return users, total, nil
-}
-
-// EmailRecipient 邮件接收者
-type EmailRecipient struct {
-	ID       int     `db:"id"`
-	Email    string  `db:"email"`
-	Nickname *string `db:"nickname"`
-}
-
-// FindEmailRecipients 查找邮件发送对象
-// 排除指定用户，排除已退订用户，随机排序后限制数量
-func (r *UserRepository) FindEmailRecipients(ctx context.Context, excludeUserID int, limit int) ([]*EmailRecipient, error) {
-	query := `
-		SELECT id, email, nickname 
-		FROM ` + "`user`" + `
-		WHERE email IS NOT NULL 
-		  AND email != ''
-		  AND email_opt_out = FALSE
-		  AND id != ?
-		ORDER BY RAND()
-		LIMIT ?
-	`
-
-	var recipients []*EmailRecipient
-	if err := r.db.SelectContext(ctx, &recipients, query, excludeUserID, limit); err != nil {
-		return nil, fmt.Errorf("query email recipients: %w", err)
-	}
-
-	return recipients, nil
 }
 
 // SetEmailOptOut 设置用户的邮件退订状态

@@ -1,0 +1,29 @@
+allOf:
+  - $ref: ./AdminUser.yaml
+  - type: object
+    required:
+      - talentProfile
+      - freeRemaining
+      - paidBalance
+    properties:
+      talentProfile:
+        type: object
+        nullable: true
+        properties:
+          id: { type: integer }
+          status: { type: integer, nullable: true }
+          selfEvaluation: { type: string, nullable: true }
+          projectExperience: { type: string, nullable: true }
+          rejectReason: { type: string, nullable: true }
+          skills:
+            type: array
+            items: { type: string }
+          mbti: { type: string, nullable: true }
+      freeRemaining:
+        type: integer
+        minimum: 0
+      paidBalance:
+        type: integer
+        minimum: 0
+      overview:
+        $ref: ./AdminUserOverview.yaml

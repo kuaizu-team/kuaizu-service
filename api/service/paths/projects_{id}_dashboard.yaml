@@ -31,9 +31,19 @@ get:
                         type: integer
                       today_views:
                         type: integer
+                      unique_visitors:
+                        type: integer
                       total_applicants:
                         type: integer
+                      processed_applicants:
+                        type: integer
                       conversion_rate:
+                        type: number
+                        format: double
+                      application_rate:
+                        type: number
+                        format: double
+                      application_process_rate:
                         type: number
                         format: double
                       avg_duration_seconds:
@@ -41,8 +51,28 @@ get:
                       like_count: { type: integer }
                       favorite_count: { type: integer }
                       share_count: { type: integer }
+                      visit_count: { type: integer }
+                      visit_unread_count: { type: integer }
                       interaction_unread:
                         $ref: ../components/schemas/InteractionUnreadVO.yaml
+                      olive_sent_total: { type: integer }
+                      olive_read_count: { type: integer }
+                      olive_accepted_count: { type: integer }
+                      olive_read_rate:
+                        type: number
+                        format: double
+                      olive_agree_rate:
+                        type: number
+                        format: double
+                      promotion_stats:
+                        type: object
+                        properties:
+                          total_recipients: { type: integer }
+                          completed_recipients: { type: integer }
+                          recent_7_day_recipients: { type: integer }
+                          reach_rate:
+                            type: number
+                            format: double
                       hourly_views:
                         type: array
                         items:

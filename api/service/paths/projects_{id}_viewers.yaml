@@ -12,6 +12,7 @@ get:
   description: Only the project creator can view authenticated viewers from the last 24 hours.
   operationId: getProjectViewers
   parameters:
+    - $ref: ../components/parameters/PageParam.yaml
     - name: limit
       in: query
       description: Max rows to return, capped at 50.
@@ -53,6 +54,10 @@ get:
                               nullable: true
                             auth_status:
                               type: integer
+                            collaboration_score:
+                              type: number
+                              format: double
+                              nullable: true
                             last_viewed_at:
                               type: string
                               format: date-time

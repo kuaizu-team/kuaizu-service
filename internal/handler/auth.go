@@ -1,10 +1,12 @@
 package handler
 
 import (
+	"errors"
 	"log"
 	"net/http"
 
 	"github.com/kuaizu-team/kuaizu-service/api"
+	"github.com/kuaizu-team/kuaizu-service/internal/repository"
 	"github.com/labstack/echo/v4"
 )
 
@@ -99,6 +101,9 @@ func (s *Server) RegisterWithPhone(ctx echo.Context) error {
 	result, err := s.svc.Auth.RegisterWithPhone(ctx.Request().Context(), req.RegisterToken, req.PhoneCode)
 	if err != nil {
 		log.Printf("RegisterWithPhone error: %v", err)
+		if errors.Is(err, repository.ErrUserPhoneConflict) {
+			return Error(ctx, 4002, "该手机号已绑定其他账号")
+		}
 		return Error(ctx, 4002, "手机号注册失败")
 	}
 

@@ -143,7 +143,6 @@ type UserRepo interface {
 	AddOliveBranchCountTx(ctx context.Context, tx *sqlx.Tx, userID int, count int) error
 	UpdateAuthStatus(ctx context.Context, userID int, authStatus int) error
 	ListUsers(ctx context.Context, params UserListParams) ([]models.User, int64, error)
-	FindEmailRecipients(ctx context.Context, excludeUserID int, limit int) ([]*EmailRecipient, error)
 	SetEmailOptOut(ctx context.Context, userID int, optOut bool) error
 	UpdateAuthImgUrl(ctx context.Context, userID int, authImgUrl string) error
 	ResubmitCertification(ctx context.Context, userID int, imgKey string) error
@@ -318,7 +317,7 @@ type ProjectViewLogRepo interface {
 	InsertViewLog(ctx context.Context, log *models.ProjectViewLog) error
 	GetDashboardStats(ctx context.Context, projectID int) (*ProjectDashboardStats, error)
 	InsertDurationLog(ctx context.Context, projectID int, userID *int, durationMs int) error
-	GetViewers(ctx context.Context, projectID int, limit int) ([]ProjectViewer, int, error)
+	GetViewers(ctx context.Context, projectID int, page int, limit int) ([]ProjectViewer, int, error)
 	CountUnreadVisits(ctx context.Context, projectID, ownerUserID int) (int, error)
 	NotifyProgress(ctx context.Context, projectID, viewerUserID, ownerUserID int) (InteractionNotifyProgress, error)
 }
@@ -328,7 +327,7 @@ type TalentViewLogRepo interface {
 	InsertViewLog(ctx context.Context, log *models.TalentViewLog) error
 	GetDashboardStats(ctx context.Context, talentID int) (*TalentDashboardStats, error)
 	InsertDurationLog(ctx context.Context, talentID int, userID *int, durationMs int) error
-	GetViewers(ctx context.Context, talentID int, limit int) ([]TalentViewer, int, error)
+	GetViewers(ctx context.Context, talentID int, page int, limit int) ([]TalentViewer, int, error)
 	GetTopViewersToday(ctx context.Context, talentID int, limit int) ([]TopTalentViewer, error)
 	CountUnreadVisits(ctx context.Context, talentID, ownerUserID int) (int, error)
 	NotifyProgress(ctx context.Context, talentID, viewerUserID, ownerUserID int) (InteractionNotifyProgress, error)

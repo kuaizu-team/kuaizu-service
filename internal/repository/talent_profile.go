@@ -321,7 +321,7 @@ func (r *TalentProfileRepository) List(ctx context.Context, params TalentProfile
 		const authExpr = "CASE WHEN u.auth_status = 1 THEN 0 ELSE 1 END"
 		orderClause = authExpr + " ASC, " + orderClause
 		if hasSchool || hasMajor {
-			orderArgs = append(orderArgs, params.RandomSeed, params.RandomSeed, params.RandomSeed)
+			orderArgs = append(orderArgs, params.RandomSeed)
 		}
 	}
 
@@ -332,19 +332,6 @@ func (r *TalentProfileRepository) List(ctx context.Context, params TalentProfile
 	}
 	if needsMajorJoin {
 		extraJoins += "\n\t\tLEFT JOIN major tm ON u.major_id = tm.id"
-	}
-	if params.SortBy != nil && *params.SortBy == "school_priority" && (hasSchool || hasMajor) {
-		extraJoins += `
-		LEFT JOIN (
-			SELECT talent_profile_id, COUNT(*) AS like_count
-			FROM talent_like
-			GROUP BY talent_profile_id
-		) tlc ON tlc.talent_profile_id = tp.id
-		LEFT JOIN (
-			SELECT talent_profile_id, COUNT(*) AS favorite_count
-			FROM talent_favorite
-			GROUP BY talent_profile_id
-		) tfc ON tfc.talent_profile_id = tp.id`
 	}
 
 	// ── Main data query ─────────────────────────────────────────────────────────
@@ -385,10 +372,8 @@ func (r *TalentProfileRepository) List(ctx context.Context, params TalentProfile
 }
 
 func talentHeatOrderClause(tierExpr string) string {
-	const heatScoreExpr = "COALESCE(tlc.like_count, 0) + COALESCE(tfc.favorite_count, 0) * 2"
+	const heatScoreExpr = "(SELECT COUNT(*) FROM talent_like tl WHERE tl.talent_profile_id = tp.id) + (SELECT COUNT(*) FROM talent_favorite tf WHERE tf.talent_profile_id = tp.id) * 2"
 	return fmt.Sprintf(`GREATEST(1, (%s) - FLOOR((%s) / 10)) ASC,
-		ROW_NUMBER() OVER (PARTITION BY tp.user_id ORDER BY CRC32(CONCAT(?, ':item:', tp.id))) ASC,
-		CRC32(CONCAT(?, ':owner:', tp.user_id)) ASC,
 		CRC32(CONCAT(?, ':item:', tp.id)) ASC, tp.id ASC`, tierExpr, heatScoreExpr)
 }
 

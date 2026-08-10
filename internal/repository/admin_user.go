@@ -23,7 +23,7 @@ func NewAdminUserRepository(db *sqlx.DB) *AdminUserRepository {
 
 // adminUserCols is the common SELECT column list (requires LEFT JOIN school s ON au.school_id = s.id)
 const adminUserCols = `
-	au.id, au.username, au.password_hash, au.password_encrypted, au.nickname, au.phone,
+	au.id, au.username, au.password_hash, au.nickname, au.phone,
 	au.role, au.school_id, au.status, au.finance_remark, au.commission_rate, au.join_date, au.intro, au.article_url, au.created_at, au.updated_at,
 	s.school_name`
 
@@ -314,8 +314,8 @@ func (r *AdminUserRepository) CreateWithSchools(ctx context.Context, admin *mode
 	defer tx.Rollback()
 
 	result, err := tx.ExecContext(ctx, `
-		INSERT INTO admin_user (username, password_hash, password_encrypted, nickname, phone, join_date, role, school_id, status)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, admin.Username, admin.PasswordHash, admin.PasswordEncrypted,
+		INSERT INTO admin_user (username, password_hash, nickname, phone, join_date, role, school_id, status)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, admin.Username, admin.PasswordHash,
 		admin.Nickname, admin.Phone, admin.JoinDate, admin.Role, admin.SchoolID, admin.Status)
 	if err != nil {
 		if isDuplicateKeyError(err) {
@@ -400,8 +400,8 @@ func (r *AdminUserRepository) UpdateWithSchools(ctx context.Context, admin *mode
 	query := `UPDATE admin_user SET username=?, nickname=?, phone=?, role=?, school_id=?, status=?, join_date=?, intro=?, article_url=?, updated_at=CURRENT_TIMESTAMP`
 	args := []interface{}{admin.Username, admin.Nickname, admin.Phone, admin.Role, admin.SchoolID, admin.Status, admin.JoinDate, admin.Intro, admin.ArticleURL}
 	if admin.PasswordHash != "" {
-		query += ", password_hash=?, password_encrypted=?"
-		args = append(args, admin.PasswordHash, admin.PasswordEncrypted)
+		query += ", password_hash=?"
+		args = append(args, admin.PasswordHash)
 	}
 	query += " WHERE id=?"
 	args = append(args, admin.ID)
@@ -487,8 +487,8 @@ func (r *AdminUserRepository) DelegateSchool(ctx context.Context, sourceAdminID 
 			return 0, ErrInvalidDelegationTarget
 		}
 		result, err := tx.ExecContext(ctx, `INSERT INTO admin_user
-			(username,password_hash,password_encrypted,nickname,phone,role,school_id,status)
-			VALUES(?,?,?,?,?,?,NULL,1)`, target.Username, target.PasswordHash, target.PasswordEncrypted,
+			(username,password_hash,nickname,phone,role,school_id,status)
+			VALUES(?,?,?,?,?,NULL,1)`, target.Username, target.PasswordHash,
 			target.Nickname, target.Phone, models.AdminRoleSchoolSuperAdmin)
 		if err != nil {
 			if isDuplicateKeyError(err) {
@@ -557,11 +557,11 @@ func (r *AdminUserRepository) DelegateSchool(ctx context.Context, sourceAdminID 
 // Create inserts a new admin user and populates its ID
 func (r *AdminUserRepository) Create(ctx context.Context, admin *models.AdminUser) error {
 	query := `
-		INSERT INTO admin_user (username, password_hash, password_encrypted, nickname, phone, join_date, role, school_id, status)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO admin_user (username, password_hash, nickname, phone, join_date, role, school_id, status)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 	`
 	result, err := r.db.ExecContext(ctx, query,
-		admin.Username, admin.PasswordHash, admin.PasswordEncrypted, admin.Nickname,
+		admin.Username, admin.PasswordHash, admin.Nickname,
 		admin.Phone, admin.JoinDate, admin.Role, admin.SchoolID, admin.Status)
 	if err != nil {
 		if strings.Contains(err.Error(), "Duplicate entry") || strings.Contains(err.Error(), "duplicate key") {
@@ -583,9 +583,9 @@ func (r *AdminUserRepository) Update(ctx context.Context, admin *models.AdminUse
 	)
 	if admin.PasswordHash != "" {
 		query = `UPDATE admin_user
-			SET username = ?, nickname = ?, phone = ?, role = ?, school_id = ?, status = ?, join_date = ?, intro = ?, article_url = ?, password_hash = ?, password_encrypted = ?, updated_at = CURRENT_TIMESTAMP
+			SET username = ?, nickname = ?, phone = ?, role = ?, school_id = ?, status = ?, join_date = ?, intro = ?, article_url = ?, password_hash = ?, updated_at = CURRENT_TIMESTAMP
 			WHERE id = ?`
-		args = []interface{}{admin.Username, admin.Nickname, admin.Phone, admin.Role, admin.SchoolID, admin.Status, admin.JoinDate, admin.Intro, admin.ArticleURL, admin.PasswordHash, admin.PasswordEncrypted, admin.ID}
+		args = []interface{}{admin.Username, admin.Nickname, admin.Phone, admin.Role, admin.SchoolID, admin.Status, admin.JoinDate, admin.Intro, admin.ArticleURL, admin.PasswordHash, admin.ID}
 	} else {
 		query = `UPDATE admin_user
 			SET username = ?, nickname = ?, phone = ?, role = ?, school_id = ?, status = ?, join_date = ?, intro = ?, article_url = ?, updated_at = CURRENT_TIMESTAMP

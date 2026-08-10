@@ -506,7 +506,6 @@ func NewAdminProjectOliveBranchVO(ob *models.OliveBranch, talentProfileStatus *i
 type AdminUserAccountVO struct {
 	ID                      int             `json:"id"`
 	Username                string          `json:"username"`
-	Password                *string         `json:"password,omitempty"`
 	Nickname                *string         `json:"nickname"`
 	Phone                   *string         `json:"phone"`
 	Role                    int             `json:"role"`

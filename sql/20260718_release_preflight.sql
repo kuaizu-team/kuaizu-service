@@ -11,8 +11,6 @@ UNION ALL SELECT 'event.admin_id'
 WHERE NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'event' AND column_name = 'admin_id')
 UNION ALL SELECT 'event.creator_id'
 WHERE NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'event' AND column_name = 'creator_id')
-UNION ALL SELECT 'admin_user.password_encrypted'
-WHERE NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'admin_user' AND column_name = 'password_encrypted')
 UNION ALL SELECT 'admin_user.join_date'
 WHERE NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'admin_user' AND column_name = 'join_date')
 UNION ALL SELECT 'admin_user.intro'

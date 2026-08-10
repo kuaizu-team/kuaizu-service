@@ -171,6 +171,13 @@ func (s *AuthService) RegisterWithPhone(ctx context.Context, registerToken, phon
 	if err != nil {
 		return nil, fmt.Errorf("get user by openid failed: %w", err)
 	}
+	existingUser, err := s.repo.User.GetByPhone(ctx, phone)
+	if err != nil {
+		return nil, fmt.Errorf("get user by phone failed: %w", err)
+	}
+	if existingUser != nil && (user == nil || existingUser.ID != user.ID) {
+		return nil, repository.ErrUserPhoneConflict
+	}
 
 	var isFirstLogin bool
 	var isNewUser bool

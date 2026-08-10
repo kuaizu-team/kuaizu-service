@@ -36,8 +36,26 @@ get:
                       like_count: { type: integer }
                       favorite_count: { type: integer }
                       share_count: { type: integer }
+                      visit_count: { type: integer }
+                      visit_unread_count: { type: integer }
                       interaction_unread:
                         $ref: ../components/schemas/InteractionUnreadVO.yaml
+                      applied_project_total: { type: integer }
+                      application_read_rate:
+                        type: number
+                        format: double
+                      application_agree_rate:
+                        type: number
+                        format: double
+                      received_olive_total: { type: integer }
+                      received_olive_read_count: { type: integer }
+                      received_olive_handled_count: { type: integer }
+                      received_olive_read_rate:
+                        type: number
+                        format: double
+                      received_olive_handle_rate:
+                        type: number
+                        format: double
                       hourly_views:
                         type: array
                         items:

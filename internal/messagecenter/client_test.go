@@ -1,6 +1,7 @@
 package messagecenter
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -8,6 +9,13 @@ import (
 	"testing"
 	"time"
 )
+
+func TestReadResponseBodyRejectsOversizedPayload(t *testing.T) {
+	_, err := readResponseBody(bytes.NewReader(make([]byte, maxResponseBodySize+1)))
+	if err == nil {
+		t.Fatal("readResponseBody accepted an oversized response")
+	}
+}
 
 func TestSubmitProjectPromotionSerializesEmptyRecipientList(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

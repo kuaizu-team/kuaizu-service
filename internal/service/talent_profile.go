@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"strings"
+	"time"
 
 	"github.com/kuaizu-team/kuaizu-service/api"
 	"github.com/kuaizu-team/kuaizu-service/internal/models"
@@ -15,6 +16,10 @@ type TalentProfileService struct {
 	repo         *repository.Repository
 	contentAudit *ContentAuditService
 	message      *MessageService
+}
+
+type talentViewRecorder interface {
+	RecordView(ctx context.Context, log *models.TalentViewLog) error
 }
 
 // NewTalentProfileService creates a new TalentProfileService.
@@ -174,37 +179,39 @@ func (s *TalentProfileService) GetTalentProfile(ctx context.Context, id int) (*m
 	return profile, nil
 }
 
-// GetTalentProfileWithView returns a talent profile and asynchronously records a real view.
+// GetTalentProfileWithView returns a talent profile and records a real view.
 func (s *TalentProfileService) GetTalentProfileWithView(ctx context.Context, id, viewerUserID, source int) (*models.TalentProfile, error) {
 	profile, err := s.GetTalentProfile(ctx, id)
 	if err != nil {
 		return nil, err
 	}
 
-	go func(asyncCtx context.Context) {
-		if err := s.repo.TalentProfile.IncrementViewCount(asyncCtx, id); err != nil {
-			log.Printf("[TalentProfileService.GetTalentProfileWithView] increment view error (non-fatal): %v", err)
+	var uidPtr *int
+	if viewerUserID > 0 {
+		uid := viewerUserID
+		uidPtr = &uid
+	}
+	entry := &models.TalentViewLog{TalentID: id, UserID: uidPtr, Source: source}
+	var recordErr error
+	if recorder, ok := s.repo.TalentViewLog.(talentViewRecorder); ok {
+		recordErr = recorder.RecordView(ctx, entry)
+	} else {
+		recordErr = s.repo.TalentViewLog.InsertViewLog(ctx, entry)
+		if recordErr == nil {
+			recordErr = s.repo.TalentProfile.IncrementViewCount(ctx, id)
 		}
-		var uidPtr *int
-		if viewerUserID > 0 {
-			uid := viewerUserID
-			uidPtr = &uid
-		}
-		entry := &models.TalentViewLog{
-			TalentID: id,
-			UserID:   uidPtr,
-			Source:   source,
-		}
-		if err := s.repo.TalentViewLog.InsertViewLog(asyncCtx, entry); err != nil {
-			log.Printf("[TalentProfileService.GetTalentProfileWithView] view log error (non-fatal): %v", err)
-			return
-		}
-		if viewerUserID <= 0 || viewerUserID == profile.UserID {
-			return
-		}
-		if s.message == nil {
-			return
-		}
+	}
+	if recordErr != nil {
+		log.Printf("[TalentProfileService.GetTalentProfileWithView] record view error (non-fatal): %v", recordErr)
+		return profile, nil
+	}
+	if viewerUserID <= 0 || viewerUserID == profile.UserID || s.message == nil {
+		return profile, nil
+	}
+
+	go func(parentCtx context.Context) {
+		asyncCtx, cancel := context.WithTimeout(context.WithoutCancel(parentCtx), 10*time.Second)
+		defer cancel()
 		progress, err := s.repo.TalentViewLog.NotifyProgress(asyncCtx, id, viewerUserID, profile.UserID)
 		if err != nil {
 			log.Printf("[TalentProfileService.GetTalentProfileWithView] get visit notify progress error (non-fatal): %v", err)
@@ -341,7 +348,15 @@ type TalentViewersResult struct {
 }
 
 // GetTalentViewers returns authenticated viewers of the talent profile in the last 24 h.
-func (s *TalentProfileService) GetTalentViewers(ctx context.Context, talentID, requesterUserID, limit int) (*TalentViewersResult, error) {
+func (s *TalentProfileService) GetTalentViewers(ctx context.Context, talentID, requesterUserID, page, limit int) (*TalentViewersResult, error) {
+	if page < 1 {
+		page = 1
+	}
+	if limit < 1 {
+		limit = 20
+	} else if limit > 50 {
+		limit = 50
+	}
 	isOwner, err := s.repo.TalentProfile.IsOwner(ctx, talentID, requesterUserID)
 	if err != nil {
 		log.Printf("[TalentProfileService.GetTalentViewers] ownership check error: %v", err)
@@ -351,7 +366,7 @@ func (s *TalentProfileService) GetTalentViewers(ctx context.Context, talentID, r
 		return nil, ErrForbidden("仅名片主人可查看")
 	}
 
-	viewers, total, err := s.repo.TalentViewLog.GetViewers(ctx, talentID, limit)
+	viewers, total, err := s.repo.TalentViewLog.GetViewers(ctx, talentID, page, limit)
 	if err != nil {
 		log.Printf("[TalentProfileService.GetTalentViewers] query error: %v", err)
 		return nil, ErrInternal("获取访客记录失败")

@@ -9,8 +9,29 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/go-sql-driver/mysql"
 	"github.com/jmoiron/sqlx"
 )
+
+func TestUserContactConflictError(t *testing.T) {
+	tests := []struct {
+		name    string
+		message string
+		want    error
+	}{
+		{name: "phone", message: "Duplicate entry '13800138000' for key 'user.uq_user_phone'", want: ErrUserPhoneConflict},
+		{name: "email", message: "Duplicate entry 'a@example.com' for key 'user.uq_user_email'", want: ErrUserEmailConflict},
+		{name: "other unique key", message: "Duplicate entry 'openid' for key 'user.openid'", want: nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := userContactConflictError(&mysql.MySQLError{Number: 1062, Message: tt.message})
+			if !errors.Is(got, tt.want) {
+				t.Fatalf("userContactConflictError() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
 
 var (
 	captureDriverOnce sync.Once

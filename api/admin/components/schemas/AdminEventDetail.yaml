@@ -19,9 +19,6 @@ allOf:
           account:
             type: string
             description: 仅在当前角色具有本赛事凭据查看权时返回
-          password:
-            type: string
-            description: 仅在当前角色具有本赛事凭据查看权且密码可解密时返回
       permissions:
         type: object
         required: [canEdit, canEditDeadline, canMerge, canDelete, canCreateEventManager, canEditEventManager]

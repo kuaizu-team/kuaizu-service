@@ -205,8 +205,12 @@ func (s *Server) GetTalentViewers(ctx echo.Context, id int, params api.GetTalent
 			limit = 50
 		}
 	}
+	page := 1
+	if params.Page != nil && *params.Page > 0 {
+		page = int(*params.Page)
+	}
 
-	result, err := s.svc.TalentProfile.GetTalentViewers(ctx.Request().Context(), id, userID, limit)
+	result, err := s.svc.TalentProfile.GetTalentViewers(ctx.Request().Context(), id, userID, page, limit)
 	if err != nil {
 		return mapServiceError(ctx, err)
 	}

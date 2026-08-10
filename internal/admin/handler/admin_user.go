@@ -130,9 +130,6 @@ func (s *AdminServer) GetAdmin(ctx echo.Context) error {
 	if callerRole == models.AdminRoleSchoolAdmin && target.ID != currentAdminID(ctx) {
 		sanitizeSchoolAdminDirectoryVO(vo, target, adminSchoolID(ctx))
 	} else {
-		if s.canViewAdminPasswordInScope(ctx, target) {
-			attachAdminPassword(vo, target)
-		}
 		if canViewAdminFinanceOverview(callerRole, currentAdminID(ctx), target) {
 			s.enrichAdminFinance(ctx, vo, target, callerRole == models.AdminRoleSuperAdmin)
 		} else {
@@ -154,9 +151,6 @@ func (s *AdminServer) GetCurrentAdmin(ctx echo.Context) error {
 	}
 
 	vo := adminvo.NewAdminUserAccountVO(target)
-	if s.canViewAdminPasswordInScope(ctx, target) {
-		attachAdminPassword(vo, target)
-	}
 	return response.Success(ctx, vo)
 }
 
@@ -392,15 +386,11 @@ func (s *AdminServer) DelegateAdminSchool(ctx echo.Context) error {
 		if err != nil {
 			return response.InternalError(ctx, "密码加密失败")
 		}
-		encrypted, err := encryptAdminCredential(req.Password)
-		if err != nil {
-			return response.InternalError(ctx, "密码安全存储失败")
-		}
 		target = &models.AdminUser{
 			Username: strings.TrimSpace(req.Username), PasswordHash: string(hash),
-			PasswordEncrypted: &encrypted, Nickname: req.Nickname,
-			Phone: func() *string { value := strings.TrimSpace(req.Phone); return &value }(),
-			Role:  models.AdminRoleSchoolSuperAdmin, Status: models.AdminUserStatusEnabled,
+			Nickname: req.Nickname,
+			Phone:    func() *string { value := strings.TrimSpace(req.Phone); return &value }(),
+			Role:     models.AdminRoleSchoolSuperAdmin, Status: models.AdminUserStatusEnabled,
 		}
 	}
 	targetID, err := s.repo.AdminUser.DelegateSchool(ctx.Request().Context(), currentAdminID(ctx), target, req.TargetUserID, req.SchoolID, req.CommissionRate)
@@ -532,11 +522,6 @@ func (s *AdminServer) CreateAdmin(ctx echo.Context) error {
 	if err != nil {
 		return response.InternalError(ctx, "密码加密失败")
 	}
-	encrypted, err := encryptAdminCredential(req.Password)
-	if err != nil {
-		return response.InternalError(ctx, "管理员密码安全存储失败")
-	}
-
 	var joinDate *time.Time
 	if strings.TrimSpace(req.JoinDate) != "" {
 		parsed, parseErr := time.Parse("2006-01-02", req.JoinDate)
@@ -547,17 +532,16 @@ func (s *AdminServer) CreateAdmin(ctx echo.Context) error {
 	}
 
 	admin := &models.AdminUser{
-		Username:          req.Username,
-		PasswordHash:      string(hash),
-		PasswordEncrypted: &encrypted,
-		Nickname:          req.Nickname,
-		Phone:             func() *string { value := strings.TrimSpace(req.Phone); return &value }(),
-		JoinDate:          joinDate,
-		Role:              req.Role,
-		SchoolID:          req.SchoolID,
-		Status:            req.Status,
-		CreatedAt:         time.Now(),
-		UpdatedAt:         time.Now(),
+		Username:     req.Username,
+		PasswordHash: string(hash),
+		Nickname:     req.Nickname,
+		Phone:        func() *string { value := strings.TrimSpace(req.Phone); return &value }(),
+		JoinDate:     joinDate,
+		Role:         req.Role,
+		SchoolID:     req.SchoolID,
+		Status:       req.Status,
+		CreatedAt:    time.Now(),
+		UpdatedAt:    time.Now(),
 	}
 
 	if admin.Role == models.AdminRoleSchoolSuperAdmin {
@@ -763,11 +747,6 @@ func (s *AdminServer) UpdateAdmin(ctx echo.Context) error {
 			return response.InternalError(ctx, "密码加密失败")
 		}
 		target.PasswordHash = string(hash)
-		encrypted, encryptErr := encryptAdminCredential(req.Password)
-		if encryptErr != nil {
-			return response.InternalError(ctx, "管理员密码安全存储失败")
-		}
-		target.PasswordEncrypted = &encrypted
 	}
 
 	if callerRole == models.AdminRoleSuperAdmin && (originalRole == models.AdminRoleSchoolSuperAdmin || target.Role == models.AdminRoleSchoolSuperAdmin) {
