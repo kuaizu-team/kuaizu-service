@@ -66,6 +66,8 @@ CREATE TABLE `email_promotion` (
   `max_recipients` int(11) NOT NULL COMMENT '购买的最大发送人数',
   `total_sent` int(11) DEFAULT '0' COMMENT '实际发送数量',
   `status` tinyint(4) DEFAULT '0' COMMENT '0-待发送, 1-发送中, 2-已完成, 3-失败',
+  `processing_epoch` int(11) NOT NULL DEFAULT '0' COMMENT '推广处理尝试版本',
+  `processing_token` varchar(64) DEFAULT NULL COMMENT 'Redis所有权令牌',
   `error_message` text COMMENT '错误信息',
   `started_at` timestamp NULL DEFAULT NULL COMMENT '开始发送时间',
   `completed_at` timestamp NULL DEFAULT NULL COMMENT '完成时间',

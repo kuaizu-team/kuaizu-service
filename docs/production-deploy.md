@@ -45,6 +45,13 @@ by `sql/migration_operational_indexes.sql` and
 `sql/migration_remove_redundant_indexes.sql`. These files are SQL suggestions
 and are never executed by the application.
 
+Before deploying the fenced message-center worker, manually apply
+`sql/migration_message_processing_fence.sql` and verify that
+`email_promotion.processing_epoch` and `email_promotion.processing_token`
+exist by running `sql/migration_message_processing_fence_verify.sql`. Its single
+row must report `expected_column_count=2`, `passed_column_count=2`, and
+`verification_status=PASS`. The migration is safe to rerun.
+
 For the message center, apply `sql/20260718_project_promotion_public_link.sql` from
 the `kz-message-center` repository only when the project-promotion template still
 contains the legacy Mini Program relative path. It is idempotent; templates

@@ -57,22 +57,6 @@ BEGIN
       ON talent_view_log (talent_id, user_id, duration_ms, viewed_at, id);
   END IF;
 
-  IF EXISTS (
-    SELECT 1 FROM information_schema.statistics
-    WHERE table_schema = DATABASE() AND table_name = 'talent_view_log'
-      AND index_name = 'idx_talent_viewed_at'
-  ) THEN
-    DROP INDEX idx_talent_viewed_at ON talent_view_log;
-  END IF;
-
-  IF EXISTS (
-    SELECT 1 FROM information_schema.statistics
-    WHERE table_schema = DATABASE() AND table_name = 'talent_view_log'
-      AND index_name = 'idx_talent_user'
-  ) THEN
-    DROP INDEX idx_talent_user ON talent_view_log;
-  END IF;
-
   IF NOT EXISTS (
     SELECT 1 FROM information_schema.statistics
     WHERE table_schema = DATABASE() AND table_name = 'email_task'
