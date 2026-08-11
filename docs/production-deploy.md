@@ -45,12 +45,55 @@ by `sql/migration_operational_indexes.sql` and
 `sql/migration_remove_redundant_indexes.sql`. These files are SQL suggestions
 and are never executed by the application.
 
-Before deploying the fenced message-center worker, manually apply
-`sql/migration_message_processing_fence.sql` and verify that
-`email_promotion.processing_epoch` and `email_promotion.processing_token`
-exist by running `sql/migration_message_processing_fence_verify.sql`. Its single
-row must report `expected_column_count=2`, `passed_column_count=2`, and
-`verification_status=PASS`. The migration is safe to rerun.
+### Fenced message-center deployment gate
+
+The fenced message-center release is a stop-the-world upgrade. A rolling upgrade
+or any overlap between the previous and fenced message-center versions is
+prohibited, including rollback. The previous worker can delete another owner's
+Redis lock and can write promotion/task state without the new epoch checks.
+
+Use this order in the maintenance window:
+
+1. Stop message intake on every previous-version message-center instance and
+   wait for all in-flight email and SMS Consumer calls to finish. Confirm that no
+   process or container running the previous artifact remains; queued RabbitMQ
+   deliveries may stay queued.
+2. Inspect Redis keys matching `idempotent:email:promo:*`, recording each exact
+   key, value, and TTL. A value of `1` is a legacy ownerless lock. Only after all
+   previous workers are stopped, either wait for those exact keys to expire or
+   remove each exact key with a compare-and-delete operation that deletes it
+   only when its value is still `1`. Never bulk-delete this prefix or delete a
+   UUID-valued lock.
+3. Manually apply `sql/migration_message_processing_fence.sql`, then run
+   `sql/migration_message_processing_fence_verify.sql`. Its single row must
+   report `expected_column_count=2`, `passed_column_count=2`, and
+   `verification_status=PASS`. The migration is safe to rerun.
+4. Start only fenced-version message-center instances. Confirm every instance is
+   on the same release before re-enabling message intake, then verify RabbitMQ
+   consumption and the promotion reconciliation log.
+
+The field migration is additive. If it was applied before this maintenance
+window, do not roll it back; steps 1, 2, and 4 are still mandatory. A rollback to
+the previous worker likewise requires stopping and draining every fenced worker
+first, so the two implementations never run concurrently.
+
+The latest reviewed export contains six unfinished project promotions that the
+first reconciliation pass is expected to settle. Before starting the fenced
+workers, run this read-only inventory and obtain business approval for the
+current rows:
+
+```sql
+SELECT id, order_id, status, total_sent, started_at, created_at,
+       processing_epoch, processing_token
+FROM email_promotion
+WHERE id IN (28, 31, 35, 69, 71, 76)
+ORDER BY id;
+```
+
+Based on that export, promotions `28`, `31`, `35`, `69`, and `71` are expected
+to become `FAILED`, while promotion `76` is expected to become `COMPLETED`.
+Re-evaluate this expectation if any returned row has changed since the export;
+do not start the worker until the business owner accepts the resulting states.
 
 For the message center, apply `sql/20260718_project_promotion_public_link.sql` from
 the `kz-message-center` repository only when the project-promotion template still
