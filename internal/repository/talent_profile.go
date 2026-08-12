@@ -489,6 +489,23 @@ func (r *TalentProfileRepository) Upsert(ctx context.Context, p *models.TalentPr
 	return nil
 }
 
+// EnsureReviewingTalentProfileTx creates the user's first talent profile once
+// school and major have been completed. Existing profiles and their statuses
+// are intentionally left unchanged.
+func EnsureReviewingTalentProfileTx(ctx context.Context, tx *sqlx.Tx, userID int) error {
+	query := `
+		INSERT INTO talent_profile (user_id, status)
+		SELECT ?, ?
+		WHERE NOT EXISTS (
+			SELECT 1 FROM talent_profile WHERE user_id = ?
+		)
+	`
+	if _, err := tx.ExecContext(ctx, query, userID, models.TalentStatusReviewing, userID); err != nil {
+		return fmt.Errorf("ensure reviewing talent profile: %w", err)
+	}
+	return nil
+}
+
 // UpdateStatus updates the status of a talent profile by ID.
 func (r *TalentProfileRepository) UpdateStatus(ctx context.Context, id int, status int, rejectReason *string) error {
 	query := `

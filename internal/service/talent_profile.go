@@ -30,11 +30,11 @@ func NewTalentProfileService(repo *repository.Repository, contentAudit *ContentA
 // resolveUpsertStatus determines the actual status to save based on the requested status and the current status.
 //
 // Rules:
-//   - User does not specify a status (nil):
-//     · If the profile is currently Online (1) → move to Reviewing (2) so admin re-approves after edit
-//     · Otherwise keep the existing status; default to Private (0) for brand-new profiles
-//   - User explicitly requests Online (1) → demote to Reviewing (2) to prevent self-approval
-//   - Any other explicit status → use as-is (after validation)
+//   - Brand-new profiles always start as Reviewing (2), regardless of the requested status.
+//   - If no status is requested, Online (1) moves to Reviewing (2) after an edit;
+//     otherwise the existing status is preserved.
+//   - An explicit Online (1) request is demoted to Reviewing (2) to prevent self-approval.
+//   - Any other valid explicit status is used as-is for an existing profile.
 func (s *TalentProfileService) resolveUpsertStatus(requestedStatus *api.TalentStatus, currentStatus *int) (*int, error) {
 	if requestedStatus == nil {
 		// Pure content edit — apply automatic status transition.
@@ -43,17 +43,21 @@ func (s *TalentProfileService) resolveUpsertStatus(requestedStatus *api.TalentSt
 			resolved := models.TalentStatusReviewing
 			return &resolved, nil
 		}
-		// 待审核或已下架 → 保持原状态不变；全新档案 → 默认下架
+		// 待审核或已下架 → 保持原状态不变；全新档案 → 默认审核中
 		if currentStatus != nil {
 			return currentStatus, nil
 		}
-		resolved := models.TalentStatusPrivate
+		resolved := models.TalentStatusReviewing
 		return &resolved, nil
 	}
 
 	statusInt := int(*requestedStatus)
 	if err := IsValidStatus("talent_profile.status", statusInt); err != nil {
 		return nil, err
+	}
+	if currentStatus == nil {
+		resolved := models.TalentStatusReviewing
+		return &resolved, nil
 	}
 
 	// 用户不能直接将自己的状态设为"已上架"，必须经过管理员审核
@@ -91,6 +95,19 @@ func (s *TalentProfileService) UpsertTalentProfile(ctx context.Context, userID i
 	var currentStatus *int
 	if existing != nil {
 		currentStatus = existing.Status
+	}
+	if existing == nil {
+		user, userErr := s.repo.User.GetByID(ctx, userID)
+		if userErr != nil {
+			log.Printf("[TalentProfileService.UpsertTalentProfile] repository error getting user: %v", userErr)
+			return nil, ErrInternal("获取用户信息失败")
+		}
+		if user == nil {
+			return nil, ErrNotFound("用户不存在")
+		}
+		if user.SchoolID == nil || *user.SchoolID <= 0 || user.MajorID == nil || *user.MajorID <= 0 {
+			return nil, ErrBadRequest("请先填写学校和专业")
+		}
 	}
 
 	status, err := s.resolveUpsertStatus(req.Status, currentStatus)
