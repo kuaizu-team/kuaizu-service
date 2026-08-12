@@ -272,7 +272,7 @@ func (s *AdminServer) GetUser(ctx echo.Context) error {
 	}
 
 	detail := adminvo.NewAdminUserDetailVO(user, profile)
-	if ctx.QueryParam("includeOverview") != "true" || adminRole(ctx) == models.AdminRoleEventManager {
+	if !shouldIncludeUserOverview(ctx.QueryParam("includeOverview"), adminRole(ctx)) {
 		return response.Success(ctx, detail)
 	}
 
@@ -284,6 +284,10 @@ func (s *AdminServer) GetUser(ctx echo.Context) error {
 		AdminUserDetailVO: detail,
 		Overview:          overview,
 	})
+}
+
+func shouldIncludeUserOverview(queryValue string, role int) bool {
+	return queryValue == "true" && role != models.AdminRoleEventManager
 }
 
 func (s *AdminServer) loadUserOverview(ctx context.Context, userID, role int) (*adminUserOverview, error) {
@@ -326,6 +330,10 @@ func (s *AdminServer) loadUserOverview(ctx context.Context, userID, role int) (*
 		return err
 	})
 
+	return waitUserOverview(group, result)
+}
+
+func waitUserOverview(group *errgroup.Group, result *adminUserOverview) (*adminUserOverview, error) {
 	if err := group.Wait(); err != nil {
 		return nil, err
 	}

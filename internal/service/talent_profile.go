@@ -349,14 +349,7 @@ type TalentViewersResult struct {
 
 // GetTalentViewers returns authenticated viewers of the talent profile in the last 24 h.
 func (s *TalentProfileService) GetTalentViewers(ctx context.Context, talentID, requesterUserID, page, limit int) (*TalentViewersResult, error) {
-	if page < 1 {
-		page = 1
-	}
-	if limit < 1 {
-		limit = 20
-	} else if limit > 50 {
-		limit = 50
-	}
+	page, limit = normalizeViewerPage(page, limit)
 	isOwner, err := s.repo.TalentProfile.IsOwner(ctx, talentID, requesterUserID)
 	if err != nil {
 		log.Printf("[TalentProfileService.GetTalentViewers] ownership check error: %v", err)

@@ -595,14 +595,7 @@ type ViewersResult struct {
 // GetProjectViewers returns authenticated viewers of the project in the last 24 h.
 // Project creators and members may call this endpoint.
 func (s *ProjectService) GetProjectViewers(ctx context.Context, projectID, requesterUserID, page, limit int) (*ViewersResult, error) {
-	if page < 1 {
-		page = 1
-	}
-	if limit < 1 {
-		limit = 20
-	} else if limit > 50 {
-		limit = 50
-	}
+	page, limit = normalizeViewerPage(page, limit)
 	isReviewer, err := s.repo.Project.IsOwnerOrMember(ctx, projectID, requesterUserID)
 	if err != nil {
 		log.Printf("[ProjectService.GetProjectViewers] ownership check error: %v", err)
@@ -619,6 +612,18 @@ func (s *ProjectService) GetProjectViewers(ctx context.Context, projectID, reque
 	}
 
 	return &ViewersResult{Total: total, List: viewers}, nil
+}
+
+func normalizeViewerPage(page, limit int) (int, int) {
+	if page < 1 {
+		page = 1
+	}
+	if limit < 1 {
+		limit = 20
+	} else if limit > 50 {
+		limit = 50
+	}
+	return page, limit
 }
 
 // CreateProjectInput is the DTO for creating a project.

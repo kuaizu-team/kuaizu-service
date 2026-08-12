@@ -33,24 +33,83 @@ migrations are safe to rerun.
 
 Take a database backup before the first migration. Deploy the application only
 after the preflight passes. Do not run
-`sql/20260714_event_manager_password.sql` on hash-only deployments. After
-deploying the hash-only administrator code, apply
-`sql/migration_admin_password_hash_only.sql` only when the obsolete
-`password_encrypted` column exists. This migration is intentionally not
-rerunnable.
+`sql/20260714_event_manager_password.sql` on hash-only deployments.
+
+### Administrator hash-only migration gate
+
+Removing `admin_user.password_encrypted` is a forward-only security migration:
+the reversible ciphertext must not be restored after removal. Before the
+maintenance window, store one encrypted full backup under least-privilege access,
+record its owner, checksum, creation time and deletion deadline, and keep it no
+longer than the approved rollback window (maximum seven days). Database and
+security administrators are the only roles permitted to access it; application
+operators must not extract the ciphertext column.
+
+Use this order:
+
+1. Run `sql/migration_admin_password_hash_only_verify.sql`. The first result must
+   report `invalid_hash_count=0`; otherwise stop. Record the current administrator
+   count and test-account IDs without exporting hashes or ciphertext.
+2. Deploy the hash-only backend and admin console while the column still exists.
+   Verify login for one platform administrator and one scoped administrator,
+   create and delete a temporary administrator, reset a temporary administrator
+   password, and edit a temporary event manager. Confirm old and new passwords
+   behave as expected and no response exposes a password field.
+3. Run `sql/migration_admin_password_hash_only.sql`. It drops the obsolete column
+   directly and is safe to rerun; there is no UPDATE/ALTER intermediate state.
+4. Run `sql/migration_admin_password_hash_only_verify.sql` again. Its second
+   result must be `PASS`, then repeat login, create, reset and event-manager edit
+   acceptance against the post-migration schema.
+
+After step 3, normal application rollback to a reversible-password release is
+forbidden. If an unrelated emergency requires the previous binary, first stop
+all hash-only instances, run
+`sql/migration_admin_password_hash_only_compat_rollback.sql` to recreate an empty
+nullable compatibility column, then start the previous binary. Do not restore
+old ciphertext: existing hashes remain authoritative and any account that cannot
+authenticate must use password reset. Return to the hash-only release as soon as
+the unrelated incident is resolved, rerun the migration and postflight, and
+securely delete the encrypted backup by its recorded deadline.
 
 During the same maintenance window, review and manually apply
 `sql/migration_user_contact_unique.sql` before reopening user writes, followed
 by `sql/migration_operational_indexes.sql` and
 `sql/migration_remove_redundant_indexes.sql`. These files are SQL suggestions
-and are never executed by the application.
+and are never executed by the application. Both index migrations are idempotent.
+Save the output of `sql/migration_user_contact_unique_verify.sql`,
+`sql/migration_message_processing_fence_verify.sql`, and
+`sql/migration_operational_indexes_verify.sql`; all verification statuses must be
+`PASS`, contact duplicate/normalization counts must be zero, and
+`remaining_removed_indexes` must be zero. Then run
+`sql/migration_operational_indexes_audit.sql` and attach its `SHOW INDEX` and
+`EXPLAIN FORMAT=JSON` result sets to the release record. Production MySQL 8.0.13
+does not support `EXPLAIN ANALYZE`; do not substitute an unsupported statement.
+If query plans regress, use
+`sql/migration_operational_indexes_rollback.sql` during a maintenance window.
 
-### Fenced message-center deployment gate
+### Fenced message-center current baseline and deployment gate
 
-The fenced message-center release is a stop-the-world upgrade. A rolling upgrade
-or any overlap between the previous and fenced message-center versions is
-prohibited, including rollback. The previous worker can delete another owner's
-Redis lock and can write promotion/task state without the new epoch checks.
+The 2026-08-12 10:06 database export is a post-deployment baseline, not a pending
+first deployment. It contains both fence columns and shows promotions `28`, `31`,
+`35`, `69`, and `71` as `FAILED` and promotion `76` as `COMPLETED`, all completed
+at `2026-08-12 09:54:18`. This proves those reconciliation results were persisted
+by that time; the export alone does not prove that the fenced artifact produced
+them, which artifact is currently running, or the present Redis and RabbitMQ
+state. Run `sql/message_center_runtime_baseline_verify.sql` for every subsequent
+release and save its results.
+
+The latest export also contains 20 unfinished legacy rows with null `channel` or
+`business_tag`. They predate the current `EMAIL/project_promotion` contract and
+are intentionally excluded from the reconciler. Classify them as legacy shadow
+records, not active sends. Do not backfill, retry, complete, or delete them under
+this deployment procedure; any cleanup requires a separately approved data
+migration tied to order/task evidence.
+
+Any future transition from an unfenced worker remains a stop-the-world upgrade.
+A rolling upgrade or overlap between unfenced and fenced message-center versions
+is prohibited, including rollback. Before each fenced release, independently
+confirm the deployed message-center commit is at or after `c4faee5` on every
+instance; do not infer this from the database export.
 
 Use this order in the maintenance window:
 
@@ -64,7 +123,7 @@ Use this order in the maintenance window:
    remove each exact key with a compare-and-delete operation that deletes it
    only when its value is still `1`. Never bulk-delete this prefix or delete a
    UUID-valued lock.
-3. Manually apply `sql/migration_message_processing_fence.sql`, then run
+3. Apply `sql/migration_message_processing_fence.sql` only if required, then run
    `sql/migration_message_processing_fence_verify.sql`. Its single row must
    report `expected_column_count=2`, `passed_column_count=2`, and
    `verification_status=PASS`. The migration is safe to rerun.
@@ -77,23 +136,12 @@ window, do not roll it back; steps 1, 2, and 4 are still mandatory. A rollback t
 the previous worker likewise requires stopping and draining every fenced worker
 first, so the two implementations never run concurrently.
 
-The latest reviewed export contains six unfinished project promotions that the
-first reconciliation pass is expected to settle. Before starting the fenced
-workers, run this read-only inventory and obtain business approval for the
-current rows:
-
-```sql
-SELECT id, order_id, status, total_sent, started_at, created_at,
-       processing_epoch, processing_token
-FROM email_promotion
-WHERE id IN (28, 31, 35, 69, 71, 76)
-ORDER BY id;
-```
-
-Based on that export, promotions `28`, `31`, `35`, `69`, and `71` are expected
-to become `FAILED`, while promotion `76` is expected to become `COMPLETED`.
-Re-evaluate this expectation if any returned row has changed since the export;
-do not start the worker until the business owner accepts the resulting states.
+Before starting or restarting workers, record: every message-center process or
+container image digest and commit; RabbitMQ consumer counts and unacked counts for
+the email/SMS queues; and exact Redis `idempotent:email:promo:*` key values and
+TTLs. UUID-valued keys must correspond to active fenced attempts. Any value `1`,
+mixed artifact version, unexpected active promotion, or unexplained unacked
+delivery blocks startup until investigated.
 
 For the message center, apply `sql/20260718_project_promotion_public_link.sql` from
 the `kz-message-center` repository only when the project-promotion template still
@@ -140,6 +188,11 @@ docker compose down --remove-orphans
 docker compose up -d --no-build --remove-orphans kuaizu-api kuaizu-console
 docker compose ps
 ```
+
+The admin console authentication storage changes from browser `localStorage`
+Bearer tokens to HttpOnly cookies through its BFF. Existing administrators must
+sign in once after this release; this expected session invalidation is not an
+account or password reset.
 
 ## Health checks
 
