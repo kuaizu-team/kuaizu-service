@@ -12,6 +12,7 @@ get:
   description: Only the talent profile owner can view authenticated viewers from the last 24 hours.
   operationId: getTalentViewers
   parameters:
+    - $ref: ../components/parameters/PageParam.yaml
     - name: limit
       in: query
       description: Max rows to return, capped at 50.

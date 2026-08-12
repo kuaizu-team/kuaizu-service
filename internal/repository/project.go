@@ -206,7 +206,7 @@ func (r *ProjectRepository) List(ctx context.Context, params ListParams) ([]mode
 			// Every 10 heat points (like + 2*favorite) promotes one tier.
 			// The cap prevents promotion above P1; the request seed keeps
 			// pagination stable and changes on an explicit refresh.
-			const heatScoreExpr = "COALESCE(plc.like_count, 0) + COALESCE(pfc.favorite_count, 0) * 2"
+			const heatScoreExpr = "(SELECT COUNT(*) FROM project_like pl WHERE pl.project_id = p.id) + (SELECT COUNT(*) FROM project_favorite pf WHERE pf.project_id = p.id) * 2"
 			finalTierExpr := fmt.Sprintf("GREATEST(1, (%s) - FLOOR((%s) / 10))", tierExpr, heatScoreExpr)
 			orderClause = fmt.Sprintf(`%s ASC,
 				ROW_NUMBER() OVER (PARTITION BY p.creator_id ORDER BY CRC32(CONCAT(?, ':item:', p.id))) ASC,
@@ -224,20 +224,6 @@ func (r *ProjectRepository) List(ctx context.Context, params ListParams) ([]mode
 
 	pendingCountSelect := ""
 	pendingCountJoin := ""
-	heatJoin := ""
-	if params.SortBy != nil && *params.SortBy == "school_priority" && params.UserSchoolID != nil && *params.UserSchoolID != 0 {
-		heatJoin = `
-		LEFT JOIN (
-			SELECT project_id, COUNT(*) AS like_count
-			FROM project_like
-			GROUP BY project_id
-		) plc ON plc.project_id = p.id
-		LEFT JOIN (
-			SELECT project_id, COUNT(*) AS favorite_count
-			FROM project_favorite
-			GROUP BY project_id
-		) pfc ON pfc.project_id = p.id`
-	}
 	if params.IncludePendingCount {
 		pendingCountSelect = `,
 			COALESCE(pa_counts.pending_count, 0) + COALESCE(ob_counts.pending_count, 0) AS pending_count`
@@ -263,7 +249,7 @@ func (r *ProjectRepository) List(ctx context.Context, params ListParams) ([]mode
 		FROM project p
 		LEFT JOIN school s ON p.school_id = s.id
 		LEFT JOIN project_role pr ON p.publisher_role = pr.code
-		LEFT JOIN school ins ON p.initiating_school_id = ins.id%s
+		LEFT JOIN school ins ON p.initiating_school_id = ins.id
 		LEFT JOIN (
 			SELECT project_id, COUNT(*) AS pending_count
 			FROM project_application
@@ -273,7 +259,7 @@ func (r *ProjectRepository) List(ctx context.Context, params ListParams) ([]mode
 		WHERE %s
 		ORDER BY %s
 		LIMIT ? OFFSET ?
-	`, pendingCountSelect, heatJoin, pendingCountJoin, whereClause, orderClause)
+	`, pendingCountSelect, pendingCountJoin, whereClause, orderClause)
 
 	// Combine: WHERE args → ORDER BY args → LIMIT/OFFSET args
 	dataArgs := make([]interface{}, 0, len(whereArgs)+len(orderArgs)+2)
@@ -641,22 +627,48 @@ func (r *ProjectRepository) ListMilestones(ctx context.Context, projectID int) (
 }
 
 func (r *ProjectRepository) ListMembers(ctx context.Context, projectID int) ([]models.ProjectMember, error) {
-	var members []models.ProjectMember
-	if err := r.db.SelectContext(ctx, &members, `SELECT pm.id,pm.project_id,pm.user_id,pm.role,pm.created_at,pr.name AS role_name
+	membersByProject, err := r.ListMembersByProjectIDs(ctx, []int{projectID})
+	if err != nil {
+		return nil, err
+	}
+	return membersByProject[projectID], nil
+}
+
+func (r *ProjectRepository) ListMembersByProjectIDs(ctx context.Context, projectIDs []int) (map[int][]models.ProjectMember, error) {
+	membersByProject := make(map[int][]models.ProjectMember, len(projectIDs))
+	projectIDs = uniquePositiveIDs(projectIDs)
+	if len(projectIDs) == 0 {
+		return membersByProject, nil
+	}
+	for _, projectID := range projectIDs {
+		membersByProject[projectID] = make([]models.ProjectMember, 0)
+	}
+
+	query, args, err := sqlx.In(`SELECT pm.id,pm.project_id,pm.user_id,pm.role,pm.created_at,pr.name AS role_name
 		FROM project_members pm
 		LEFT JOIN project_role pr ON pr.code=pm.role
-		WHERE pm.project_id=?
-		ORDER BY FIELD(pm.role,'TEAM_LEADER','TECH_LEADER','PRODUCT_MANAGER','TEAM_MEMBER','LEARNING_MEMBER'), pm.id ASC`, projectID); err != nil {
+		WHERE pm.project_id IN (?)
+		ORDER BY pm.project_id ASC,
+			FIELD(pm.role,'TEAM_LEADER','TECH_LEADER','PRODUCT_MANAGER','TEAM_MEMBER','LEARNING_MEMBER'), pm.id ASC`, projectIDs)
+	if err != nil {
+		return nil, err
+	}
+	var members []models.ProjectMember
+	if err := r.db.SelectContext(ctx, &members, r.db.Rebind(query), args...); err != nil {
 		return nil, fmt.Errorf("query project members: %w", err)
 	}
 	if len(members) == 0 {
-		return members, nil
+		return membersByProject, nil
 	}
-	userIDs := make([]int, 0, len(members))
+	userIDSet := make(map[int]struct{}, len(members))
 	for i := range members {
-		userIDs = append(userIDs, members[i].UserID)
+		userIDSet[members[i].UserID] = struct{}{}
 	}
-	query, args, err := sqlx.In(`SELECT u.id,u.openid,u.nickname,u.avatar_url,u.auth_status,s.school_name,m.major_name,tp.id talent_profile_id
+	userIDs := make([]int, 0, len(userIDSet))
+	for userID := range userIDSet {
+		userIDs = append(userIDs, userID)
+	}
+	query, args, err = sqlx.In(`SELECT u.id,u.openid,u.nickname,u.avatar_url,u.auth_status,s.school_name,m.major_name,tp.id talent_profile_id
 		FROM `+"`user`"+` u
 		LEFT JOIN school s ON s.id=u.school_id
 		LEFT JOIN major m ON m.id=u.major_id
@@ -676,8 +688,9 @@ func (r *ProjectRepository) ListMembers(ctx context.Context, projectID int) ([]m
 	}
 	for i := range members {
 		members[i].User = userMap[members[i].UserID]
+		membersByProject[members[i].ProjectID] = append(membersByProject[members[i].ProjectID], members[i])
 	}
-	return members, nil
+	return membersByProject, nil
 }
 
 func (r *ProjectRepository) AddMembers(ctx context.Context, projectID int, members []models.ProjectMember) error {

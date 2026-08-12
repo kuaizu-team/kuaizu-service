@@ -11,10 +11,6 @@ properties:
     type: string
     nullable: true
     pattern: '^1\d{10}$'
-  password:
-    type: string
-    nullable: true
-    description: Decrypted credential, returned only by authorized detail or current-account endpoints; never returned by list endpoints.
   role:
     type: integer
     description: 1-super admin, 2-school super admin, 3-school admin, 4-event manager

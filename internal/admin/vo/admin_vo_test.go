@@ -9,13 +9,9 @@ import (
 )
 
 func TestAdminAccountListItemOmitsPasswordByDefault(t *testing.T) {
-	encrypted := "encrypted-password"
 	item := NewAdminUserAccountVO(&models.AdminUser{
-		ID: 1, Username: "event-manager", PasswordEncrypted: &encrypted,
+		ID: 1, Username: "event-manager",
 	})
-	if item.Password != nil {
-		t.Fatal("admin account item exposed a password by default")
-	}
 	data, err := json.Marshal(item)
 	if err != nil {
 		t.Fatal(err)

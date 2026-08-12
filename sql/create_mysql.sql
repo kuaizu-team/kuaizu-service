@@ -43,8 +43,7 @@ CREATE TABLE `admin_user` (
   `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   PRIMARY KEY (`id`),
-  UNIQUE KEY `username` (`username`),
-  KEY `idx_admin_user_username` (`username`)
+  UNIQUE KEY `username` (`username`)
 ) ENGINE=InnoDB AUTO_INCREMENT=5 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='管理员用户表';
 /*!40101 SET character_set_client = @saved_cs_client */;
 
@@ -67,6 +66,8 @@ CREATE TABLE `email_promotion` (
   `max_recipients` int(11) NOT NULL COMMENT '购买的最大发送人数',
   `total_sent` int(11) DEFAULT '0' COMMENT '实际发送数量',
   `status` tinyint(4) DEFAULT '0' COMMENT '0-待发送, 1-发送中, 2-已完成, 3-失败',
+  `processing_epoch` int(11) NOT NULL DEFAULT '0' COMMENT '推广处理尝试版本',
+  `processing_token` varchar(64) DEFAULT NULL COMMENT 'Redis所有权令牌',
   `error_message` text COMMENT '错误信息',
   `started_at` timestamp NULL DEFAULT NULL COMMENT '开始发送时间',
   `completed_at` timestamp NULL DEFAULT NULL COMMENT '完成时间',
@@ -77,6 +78,7 @@ CREATE TABLE `email_promotion` (
   KEY `idx_status` (`status`),
   KEY `idx_ep_business_trace` (`channel`,`business_tag`,`trace_id`),
   KEY `idx_ep_project_order` (`project_id`,`order_id`),
+  KEY `idx_ep_reconcile` (`channel`,`business_tag`,`status`,`id`),
   CONSTRAINT `email_promotion_order_fk` FOREIGN KEY (`order_id`) REFERENCES `order` (`id`) ON DELETE CASCADE ON UPDATE RESTRICT,
   CONSTRAINT `fk_email_promotion_project` FOREIGN KEY (`project_id`) REFERENCES `project` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB AUTO_INCREMENT=5 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='邮件推广记录表';
@@ -133,7 +135,8 @@ CREATE TABLE `email_task` (
   `create_time` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_email_task_task_key` (`task_key`),
-  KEY `idx_promotion_id` (`promotion_id`),
+  KEY `idx_email_task_promotion_channel_status` (`promotion_id`,`channel`,`status`),
+  KEY `idx_email_task_recipient_promotion` (`recipient_email`,`promotion_id`),
   KEY `idx_status` (`status`),
   KEY `idx_create_time` (`create_time`),
   KEY `idx_email_task_identity_latest` (`channel`,`business_tag`,`trace_id`,`id`)
@@ -623,7 +626,6 @@ CREATE TABLE `talent_profile` (
   `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   PRIMARY KEY (`id`),
   UNIQUE KEY `user_id` (`user_id`),
-  KEY `idx_talent_user` (`user_id`),
   KEY `idx_talent_status` (`status`),
   CONSTRAINT `fk_talent_user` FOREIGN KEY (`user_id`) REFERENCES `user` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB AUTO_INCREMENT=46 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='人才档案表';
@@ -664,7 +666,8 @@ CREATE TABLE `user` (
   `collaboration_score` DECIMAL(5,2) NOT NULL DEFAULT 90.00 COMMENT 'collaboration score, 0-100',
   PRIMARY KEY (`id`),
   UNIQUE KEY `openid` (`openid`),
-  KEY `idx_user_openid` (`openid`),
+  UNIQUE KEY `uq_user_phone` (`phone`),
+  UNIQUE KEY `uq_user_email` (`email`),
   KEY `idx_user_school` (`school_id`),
   KEY `idx_user_school_auth` (`school_id`,`auth_status`,`id`),
   KEY `idx_user_major` (`major_id`),

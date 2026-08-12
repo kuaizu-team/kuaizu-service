@@ -76,6 +76,34 @@ func (r *ProjectViewLogRepository) InsertViewLog(ctx context.Context, log *model
 	return nil
 }
 
+// RecordView atomically stores the view event and updates the denormalized counter.
+func (r *ProjectViewLogRepository) RecordView(ctx context.Context, log *models.ProjectViewLog) error {
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin project view transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	query := `
+		INSERT INTO project_view_log (project_id, user_id, source)
+		VALUES (:project_id, :user_id, :source)
+	`
+	if _, err := tx.NamedExecContext(ctx, query, log); err != nil {
+		return fmt.Errorf("insert project view log: %w", err)
+	}
+	result, err := tx.ExecContext(ctx, `UPDATE project SET view_count = view_count + 1 WHERE id = ?`, log.ProjectID)
+	if err != nil {
+		return fmt.Errorf("increment project view count: %w", err)
+	}
+	if rows, _ := result.RowsAffected(); rows == 0 {
+		return fmt.Errorf("increment project view count: project not found")
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit project view transaction: %w", err)
+	}
+	return nil
+}
+
 // InsertDurationLog inserts a standalone dwell-time record.
 // These rows have duration_ms IS NOT NULL and are NOT counted as views.
 func (r *ProjectViewLogRepository) InsertDurationLog(ctx context.Context, projectID int, userID *int, durationMs int) error {
@@ -241,7 +269,7 @@ func (r *ProjectViewLogRepository) GetDashboardStats(ctx context.Context, projec
 // GetViewers returns authenticated users who viewed the project in the last 24 hours
 // (duration-only rows excluded). Results are de-duplicated by user and sorted by
 // last viewed time descending.
-func (r *ProjectViewLogRepository) GetViewers(ctx context.Context, projectID, limit int) ([]ProjectViewer, int, error) {
+func (r *ProjectViewLogRepository) GetViewers(ctx context.Context, projectID, page, limit int) ([]ProjectViewer, int, error) {
 	var total int
 	if err := r.db.QueryRowxContext(ctx,
 		`SELECT COUNT(DISTINCT vl.user_id)
@@ -264,9 +292,9 @@ func (r *ProjectViewLogRepository) GetViewers(ctx context.Context, projectID, li
 		 WHERE vl.project_id = ? AND vl.user_id IS NOT NULL
 		   AND vl.viewed_at >= NOW() - INTERVAL 24 HOUR AND vl.duration_ms IS NULL
 		 GROUP BY vl.user_id, tp.id, u.nickname, u.avatar_url, u.auth_status, u.collaboration_score
-		 ORDER BY last_viewed_at DESC
-		 LIMIT ?`,
-		projectID, limit,
+		 ORDER BY last_viewed_at DESC, vl.user_id DESC
+		 LIMIT ? OFFSET ?`,
+		projectID, limit, (page-1)*limit,
 	); err != nil {
 		return nil, 0, fmt.Errorf("get viewers: %w", err)
 	}

@@ -277,8 +277,12 @@ func (s *Server) GetProjectViewers(ctx echo.Context, id int, params api.GetProje
 			limit = 50
 		}
 	}
+	page := 1
+	if params.Page != nil && *params.Page > 0 {
+		page = int(*params.Page)
+	}
 
-	result, err := s.svc.Project.GetProjectViewers(ctx.Request().Context(), id, userID, limit)
+	result, err := s.svc.Project.GetProjectViewers(ctx.Request().Context(), id, userID, page, limit)
 	if err != nil {
 		return mapServiceError(ctx, err)
 	}

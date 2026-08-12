@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"database/sql"
 	"log"
 	"math"
@@ -28,6 +29,14 @@ type adminProjectRatingItem struct {
 	CreatedAt      time.Time `db:"created_at" json:"createdAt"`
 	IsEffective    bool      `db:"is_effective" json:"isEffective"`
 	ProjectScore   *float64  `db:"project_score" json:"projectScore"`
+}
+
+type adminProjectRatingPage struct {
+	List       []adminProjectRatingItem `json:"list"`
+	Total      int64                    `json:"total"`
+	Page       int                      `json:"page"`
+	Size       int                      `json:"size"`
+	TotalPages int                      `json:"totalPages"`
 }
 
 type updateProjectRatingRequest struct {
@@ -79,14 +88,25 @@ func (s *AdminServer) ListUserProjectRatings(ctx echo.Context) error {
 		size = 20
 	}
 
-	var total int64
-	if err := s.repo.DB().GetContext(ctx.Request().Context(), &total,
+	result, err := s.loadUserProjectRatings(ctx.Request().Context(), userID, page, size)
+	if err != nil {
+		return response.InternalError(ctx, "获取评分记录失败")
+	}
+	return response.Success(ctx, result)
+}
+
+func (s *AdminServer) loadUserProjectRatings(ctx context.Context, userID, page, size int) (adminProjectRatingPage, error) {
+	result := adminProjectRatingPage{
+		List: make([]adminProjectRatingItem, 0),
+		Page: page,
+		Size: size,
+	}
+	if err := s.repo.DB().GetContext(ctx, &result.Total,
 		"SELECT COUNT(*) FROM project_member_rating WHERE target_id=?", userID); err != nil {
-		return response.InternalError(ctx, "获取评分记录总数失败")
+		return result, err
 	}
 
-	list := make([]adminProjectRatingItem, 0)
-	if err := s.repo.DB().SelectContext(ctx.Request().Context(), &list, `
+	if err := s.repo.DB().SelectContext(ctx, &result.List, `
 		SELECT r.id,r.project_id,p.name AS project_name,r.rater_id,u.nickname AS rater_nickname,
 			r.target_id,r.target_member_id,r.rater_role,r.rater_weight,r.score,r.created_at,
 			(latest.latest_id=r.id) AS is_effective,pms.score AS project_score
@@ -103,13 +123,11 @@ func (s *AdminServer) ListUserProjectRatings(ctx echo.Context) error {
 		WHERE r.target_id=?
 		ORDER BY r.created_at DESC,r.id DESC
 		LIMIT ? OFFSET ?`, userID, userID, size, (page-1)*size); err != nil {
-		return response.InternalError(ctx, "获取评分记录失败")
+		return result, err
 	}
 
-	totalPages := int((total + int64(size) - 1) / int64(size))
-	return response.Success(ctx, map[string]interface{}{
-		"list": list, "total": total, "page": page, "size": size, "totalPages": totalPages,
-	})
+	result.TotalPages = int((result.Total + int64(size) - 1) / int64(size))
+	return result, nil
 }
 
 // UpdateProjectRating handles PUT /admin/ratings/:id. It updates one raw rating

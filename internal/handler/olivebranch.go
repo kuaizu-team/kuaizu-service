@@ -192,9 +192,13 @@ func (s *Server) MarkReceiverOliveBranchRead(ctx echo.Context) error {
 	var req struct {
 		Ids []int `json:"ids"`
 	}
-	body, err := io.ReadAll(ctx.Request().Body)
+	const maxMarkReadBodySize = 64 << 10
+	body, err := io.ReadAll(io.LimitReader(ctx.Request().Body, maxMarkReadBodySize+1))
 	if err != nil {
 		return BadRequest(ctx, "请求参数错误")
+	}
+	if len(body) > maxMarkReadBodySize {
+		return BadRequest(ctx, "请求体过大")
 	}
 	if len(bytes.TrimSpace(body)) > 0 {
 		if err := json.Unmarshal(body, &req); err != nil {

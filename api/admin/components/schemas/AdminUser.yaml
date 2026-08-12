@@ -56,6 +56,33 @@ properties:
   classId:
     type: integer
     nullable: true
+  avatarUrl:
+    type: string
+    nullable: true
+  wechat:
+    type: string
+    nullable: true
+  userStatus:
+    type: integer
+    enum: [0, 1, 2]
+    description: 0=normal, 1=banned, 2=graduated
+  banReason:
+    type: string
+    nullable: true
+  competitionGroupStatus:
+    type: string
+    enum: [entered, rejected]
+    nullable: true
+  competitionGroupNote:
+    type: string
+    nullable: true
+  collaborationScore:
+    type: number
+    format: double
+    nullable: true
+  collaborationLevel:
+    type: string
+    nullable: true
   invitationFeedbackStatus:
     type: string
     enum: [pending, in_progress, accepted, rejected]

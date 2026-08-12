@@ -167,7 +167,6 @@ func TestSchoolAdminCannotUpdateExistingEventManager(t *testing.T) {
 }
 
 func TestSchoolAdminCanCreateManagerForOwnSchoolEvent(t *testing.T) {
-	t.Setenv("ADMIN_CREDENTIAL_KEY", "test-only-credential-key")
 	schoolID := 22
 	level := "school"
 	account, password, phone := "school_event_manager", "secret123", "13800138000"

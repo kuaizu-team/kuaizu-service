@@ -27,6 +27,14 @@ type projectMetadataRepo interface {
 	UpdateWithMetadata(ctx context.Context, p *models.Project, tags *[]string, publisherRole *string, initiatingSchoolID *int, milestones *[]models.ProjectMilestone, members *[]models.ProjectMember, eventIDs *[]int) error
 }
 
+type projectMemberBatchRepo interface {
+	ListMembersByProjectIDs(ctx context.Context, projectIDs []int) (map[int][]models.ProjectMember, error)
+}
+
+type projectViewRecorder interface {
+	RecordView(ctx context.Context, log *models.ProjectViewLog) error
+}
+
 // NewProjectService creates a new ProjectService.
 func NewProjectService(repo *repository.Repository, contentAudit *ContentAuditService, message *MessageService) *ProjectService {
 	return &ProjectService{repo: repo, contentAudit: contentAudit, message: message}
@@ -111,6 +119,10 @@ func (s *ProjectService) ListMyProjects(ctx context.Context, userID int, params 
 		log.Printf("[ProjectService.ListMyProjects] event enrichment error: %v", err)
 		return nil, ErrInternal("get project events failed")
 	}
+	if err := s.attachProjectMembers(ctx, projects); err != nil {
+		log.Printf("[ProjectService.ListMyProjects] member enrichment error: %v", err)
+		return nil, ErrInternal("获取我的项目列表失败")
+	}
 	if err := s.attachProjectPermissions(ctx, projects, userID); err != nil {
 		log.Printf("[ProjectService.ListMyProjects] permission enrichment error: %v", err)
 		return nil, ErrInternal("获取我的项目列表失败")
@@ -187,28 +199,32 @@ func (s *ProjectService) GetProjectDetail(ctx context.Context, id, viewerUserID,
 		return project, nil
 	}
 
-	go func(asyncCtx context.Context) {
-		_ = s.repo.Project.IncrementViewCount(asyncCtx, id)
-		uid := viewerUserID
-		var uidPtr *int
-		if uid > 0 {
-			uidPtr = &uid
+	uid := viewerUserID
+	var uidPtr *int
+	if uid > 0 {
+		uidPtr = &uid
+	}
+	entry := &models.ProjectViewLog{ProjectID: id, UserID: uidPtr, Source: source}
+	var recordErr error
+	if recorder, ok := s.repo.ProjectViewLog.(projectViewRecorder); ok {
+		recordErr = recorder.RecordView(ctx, entry)
+	} else {
+		recordErr = s.repo.ProjectViewLog.InsertViewLog(ctx, entry)
+		if recordErr == nil {
+			recordErr = s.repo.Project.IncrementViewCount(ctx, id)
 		}
-		entry := &models.ProjectViewLog{
-			ProjectID: id,
-			UserID:    uidPtr,
-			Source:    source,
-		}
-		if err := s.repo.ProjectViewLog.InsertViewLog(asyncCtx, entry); err != nil {
-			log.Printf("[ProjectService.GetProject] view log error (non-fatal): %v", err)
-			return
-		}
-		if viewerUserID <= 0 || viewerUserID == project.CreatorID {
-			return
-		}
-		if s.message == nil {
-			return
-		}
+	}
+	if recordErr != nil {
+		log.Printf("[ProjectService.GetProjectDetail] record view error (non-fatal): %v", recordErr)
+		return project, nil
+	}
+	if viewerUserID <= 0 || viewerUserID == project.CreatorID || s.message == nil {
+		return project, nil
+	}
+
+	go func(parentCtx context.Context) {
+		asyncCtx, cancel := context.WithTimeout(context.WithoutCancel(parentCtx), 10*time.Second)
+		defer cancel()
 		progress, err := s.repo.ProjectViewLog.NotifyProgress(asyncCtx, id, viewerUserID, project.CreatorID)
 		if err != nil {
 			log.Printf("[ProjectService.GetProjectDetail] get visit notify progress error (non-fatal): %v", err)
@@ -370,7 +386,7 @@ func (s *ProjectService) attachProjectPermission(ctx context.Context, project *m
 		return nil
 	}
 	members := project.Members
-	if len(members) == 0 {
+	if members == nil {
 		var err error
 		members, err = s.repo.Project.ListMembers(ctx, project.ID)
 		if err != nil {
@@ -383,6 +399,42 @@ func (s *ProjectService) attachProjectPermission(ctx context.Context, project *m
 	project.CurrentUserRoleName = currentRoleName
 	project.CanCompleteRecruitment = &canOperate
 	project.CanDeleteMembers = &canOperate
+	return nil
+}
+
+func (s *ProjectService) attachProjectMembers(ctx context.Context, projects []models.Project) error {
+	if len(projects) == 0 {
+		return nil
+	}
+	projectIDs := make([]int, 0, len(projects))
+	for i := range projects {
+		projectIDs = append(projectIDs, projects[i].ID)
+	}
+	batchRepo, ok := s.repo.Project.(projectMemberBatchRepo)
+	if !ok {
+		for i := range projects {
+			members, err := s.repo.Project.ListMembers(ctx, projects[i].ID)
+			if err != nil {
+				return err
+			}
+			if members == nil {
+				members = make([]models.ProjectMember, 0)
+			}
+			projects[i].Members = members
+		}
+		return nil
+	}
+	membersByProject, err := batchRepo.ListMembersByProjectIDs(ctx, projectIDs)
+	if err != nil {
+		return err
+	}
+	for i := range projects {
+		members := membersByProject[projects[i].ID]
+		if members == nil {
+			members = make([]models.ProjectMember, 0)
+		}
+		projects[i].Members = members
+	}
 	return nil
 }
 
@@ -542,7 +594,8 @@ type ViewersResult struct {
 
 // GetProjectViewers returns authenticated viewers of the project in the last 24 h.
 // Project creators and members may call this endpoint.
-func (s *ProjectService) GetProjectViewers(ctx context.Context, projectID, requesterUserID, limit int) (*ViewersResult, error) {
+func (s *ProjectService) GetProjectViewers(ctx context.Context, projectID, requesterUserID, page, limit int) (*ViewersResult, error) {
+	page, limit = normalizeViewerPage(page, limit)
 	isReviewer, err := s.repo.Project.IsOwnerOrMember(ctx, projectID, requesterUserID)
 	if err != nil {
 		log.Printf("[ProjectService.GetProjectViewers] ownership check error: %v", err)
@@ -552,13 +605,25 @@ func (s *ProjectService) GetProjectViewers(ctx context.Context, projectID, reque
 		return nil, ErrForbidden("无权查看访客记录")
 	}
 
-	viewers, total, err := s.repo.ProjectViewLog.GetViewers(ctx, projectID, limit)
+	viewers, total, err := s.repo.ProjectViewLog.GetViewers(ctx, projectID, page, limit)
 	if err != nil {
 		log.Printf("[ProjectService.GetProjectViewers] query error: %v", err)
 		return nil, ErrInternal("获取访客记录失败")
 	}
 
 	return &ViewersResult{Total: total, List: viewers}, nil
+}
+
+func normalizeViewerPage(page, limit int) (int, int) {
+	if page < 1 {
+		page = 1
+	}
+	if limit < 1 {
+		limit = 20
+	} else if limit > 50 {
+		limit = 50
+	}
+	return page, limit
 }
 
 // CreateProjectInput is the DTO for creating a project.

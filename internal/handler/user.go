@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"errors"
 	"strings"
 	"time"
 
@@ -273,11 +274,20 @@ func (s *Server) UpdateCurrentUser(ctx echo.Context) error {
 		user.Nickname = req.Nickname
 	}
 	if req.Phone != nil {
-		user.Phone = req.Phone
+		phone := strings.TrimSpace(string(*req.Phone))
+		if phone == "" {
+			user.Phone = nil
+		} else {
+			user.Phone = &phone
+		}
 	}
 	if req.Email != nil {
-		email := strings.TrimSpace(string(*req.Email))
-		user.Email = &email
+		email := strings.ToLower(strings.TrimSpace(string(*req.Email)))
+		if email == "" {
+			user.Email = nil
+		} else {
+			user.Email = &email
+		}
 	}
 	if req.SchoolId != nil {
 		user.SchoolID = req.SchoolId
@@ -293,6 +303,12 @@ func (s *Server) UpdateCurrentUser(ctx echo.Context) error {
 	}
 
 	if err := repository.UpdateUserTx(requestCtx, tx, user); err != nil {
+		if errors.Is(err, repository.ErrUserPhoneConflict) {
+			return BadRequest(ctx, "该手机号已绑定其他账号")
+		}
+		if errors.Is(err, repository.ErrUserEmailConflict) {
+			return BadRequest(ctx, "该邮箱已绑定其他账号")
+		}
 		return InternalError(ctx, "更新用户信息失败")
 	}
 

@@ -13,3 +13,6 @@ properties:
     nullable: true
   authStatus:
     type: integer
+  collaborationScore:
+    type: number
+    format: double

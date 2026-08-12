@@ -15,6 +15,18 @@ import (
 const defaultTimeout = 3 * time.Second
 const applicationSmsTimeout = 12 * time.Second
 const welcomeEmailTimeout = 15 * time.Second
+const maxResponseBodySize = 1 << 20
+
+func readResponseBody(body io.Reader) ([]byte, error) {
+	data, err := io.ReadAll(io.LimitReader(body, maxResponseBodySize+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(data) > maxResponseBodySize {
+		return nil, fmt.Errorf("response body exceeds %d bytes", maxResponseBodySize)
+	}
+	return data, nil
+}
 
 // Client submits marketing tasks to the independent message center.
 type Client struct {
@@ -240,7 +252,7 @@ func (c *Client) SubmitProjectPromotion(ctx context.Context, req ProjectPromotio
 	}
 	defer resp.Body.Close()
 
-	respBody, err := io.ReadAll(resp.Body)
+	respBody, err := readResponseBody(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("read response: %w", err)
 	}
@@ -309,7 +321,7 @@ func (c *Client) SubmitSmsNotice(ctx context.Context, req SmsNoticeRequest) (*Sm
 	}
 	defer resp.Body.Close()
 
-	respBody, err := io.ReadAll(resp.Body)
+	respBody, err := readResponseBody(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("read response: %w", err)
 	}
@@ -370,7 +382,7 @@ func (c *Client) SendRegisterInviteSms(ctx context.Context, req RegisterInviteSm
 	}
 	defer resp.Body.Close()
 
-	respBody, err := io.ReadAll(resp.Body)
+	respBody, err := readResponseBody(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("read response: %w", err)
 	}
@@ -422,7 +434,7 @@ func (c *Client) SendWelcomeEmail(ctx context.Context, req WelcomeEmailRequest) 
 		return nil, fmt.Errorf("post welcome email: %w", err)
 	}
 	defer resp.Body.Close()
-	respBody, err := io.ReadAll(resp.Body)
+	respBody, err := readResponseBody(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("read welcome email response: %w", err)
 	}
@@ -476,7 +488,7 @@ func (c *Client) SendAdminSms(ctx context.Context, req AdminSmsSendRequest) (*Ad
 	}
 	defer resp.Body.Close()
 
-	respBody, err := io.ReadAll(resp.Body)
+	respBody, err := readResponseBody(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("read response: %w", err)
 	}
@@ -533,7 +545,7 @@ func (c *Client) CountAdminSms(ctx context.Context, userID int, templateKey stri
 	}
 	defer resp.Body.Close()
 
-	respBody, err := io.ReadAll(resp.Body)
+	respBody, err := readResponseBody(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("read response: %w", err)
 	}
@@ -600,7 +612,7 @@ func (c *Client) SubmitApplicationSms(ctx context.Context, req ApplicationSmsReq
 		return fmt.Errorf("post application sms: %w", err)
 	}
 	defer resp.Body.Close()
-	respBody, err := io.ReadAll(resp.Body)
+	respBody, err := readResponseBody(resp.Body)
 	if err != nil {
 		return fmt.Errorf("read application sms response: %w", err)
 	}
