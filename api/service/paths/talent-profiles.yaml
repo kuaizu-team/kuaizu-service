@@ -13,7 +13,7 @@ get:
         type: integer
     - name: keyword
       in: query
-      description: 关键词搜索
+      description: 按展示昵称、学校、专业、个人标签、自我评价和项目经历进行模糊搜索
       schema:
         type: string
     - name: schoolId

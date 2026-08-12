@@ -40,6 +40,15 @@ type TalentProfileListParams struct {
 	RandomSeed         string
 }
 
+func talentKeywordLikePattern(keyword string) string {
+	escaped := strings.NewReplacer(
+		"!", "!!",
+		"%", "!%",
+		"_", "!_",
+	).Replace(keyword)
+	return "%" + escaped + "%"
+}
+
 // enrichSchoolMajor 为单条 TalentProfile 分别查 school/major 并回填名称
 func (r *TalentProfileRepository) enrichSchoolMajor(ctx context.Context, p *models.TalentProfile) error {
 	if p.SchoolID != nil {
@@ -177,10 +186,29 @@ func (r *TalentProfileRepository) List(ctx context.Context, params TalentProfile
 		conditions = append(conditions, "u.major_id = ?")
 		whereArgs = append(whereArgs, *params.MajorID)
 	}
-	if params.Keyword != nil && *params.Keyword != "" {
-		conditions = append(conditions, "(u.nickname LIKE ? OR tp.self_evaluation LIKE ? OR tp.skill_summary LIKE ?)")
-		pattern := "%" + *params.Keyword + "%"
-		whereArgs = append(whereArgs, pattern, pattern, pattern)
+	if params.Keyword != nil && strings.TrimSpace(*params.Keyword) != "" {
+		conditions = append(conditions, `(
+			CASE
+				WHEN u.nickname IS NULL OR TRIM(u.nickname) = '' OR TRIM(u.nickname) = '匿名用户'
+					THEN ?
+				ELSE TRIM(u.nickname)
+			END LIKE ? ESCAPE '!'
+			OR EXISTS (
+				SELECT 1 FROM school search_school
+				WHERE search_school.id = u.school_id
+				  AND search_school.school_name LIKE ? ESCAPE '!'
+			)
+			OR EXISTS (
+				SELECT 1 FROM major search_major
+				WHERE search_major.id = u.major_id
+				  AND search_major.major_name LIKE ? ESCAPE '!'
+			)
+			OR CAST(tp.skill_summary AS CHAR) LIKE ? ESCAPE '!'
+			OR tp.self_evaluation LIKE ? ESCAPE '!'
+			OR tp.project_experience LIKE ? ESCAPE '!'
+		)`)
+		pattern := talentKeywordLikePattern(strings.TrimSpace(*params.Keyword))
+		whereArgs = append(whereArgs, models.DefaultUserNickname, pattern, pattern, pattern, pattern, pattern, pattern)
 	}
 	if params.Status != nil {
 		conditions = append(conditions, "tp.status = ?")
