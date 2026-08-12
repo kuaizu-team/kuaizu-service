@@ -48,8 +48,10 @@ operators must not extract the ciphertext column.
 Use this order:
 
 1. Run `sql/migration_admin_password_hash_only_verify.sql`. The first result must
-   report `invalid_hash_count=0`; otherwise stop. Record the current administrator
-   count and test-account IDs without exporting hashes or ciphertext.
+   report `invalid_hash_count=0` and the second must report
+   `verification_status=PRE_MIGRATION`; otherwise stop. Record the current
+   administrator count and test-account IDs without exporting hashes or
+   ciphertext.
 2. Deploy the hash-only backend and admin console while the column still exists.
    Verify login for one platform administrator and one scoped administrator,
    create and delete a temporary administrator, reset a temporary administrator
@@ -65,11 +67,15 @@ After step 3, normal application rollback to a reversible-password release is
 forbidden. If an unrelated emergency requires the previous binary, first stop
 all hash-only instances, run
 `sql/migration_admin_password_hash_only_compat_rollback.sql` to recreate an empty
-nullable compatibility column, then start the previous binary. Do not restore
-old ciphertext: existing hashes remain authoritative and any account that cannot
-authenticate must use password reset. Return to the hash-only release as soon as
-the unrelated incident is resolved, rerun the migration and postflight, and
-securely delete the encrypted backup by its recorded deadline.
+nullable compatibility column, then start the previous binary only after the
+administrator credential mutation freeze described in [Rollback](#rollback) is
+enforced. Do not restore old ciphertext. Existing hashes remain authoritative;
+an account that cannot authenticate must remain locked out until the hash-only
+release is restored, and its password may be reset only under that hash-only
+release. Return to the hash-only release as soon as the unrelated incident is
+resolved, prove that the compatibility column is still empty, rerun the migration
+and postflight, and securely delete the encrypted backup by its recorded
+deadline.
 
 During the same maintenance window, review and manually apply
 `sql/migration_user_contact_unique.sql` before reopening user writes, followed
@@ -211,12 +217,61 @@ alive. Any `5xx` response should fail the deploy.
 
 ## Rollback
 
+Do not run the generic rollback command until the target release has been
+classified. Record the target tag and one of these two classifications in the
+incident log:
+
+- **Hash-only target:** its production administrator repository neither selects
+  nor writes `admin_user.password_encrypted`. It may be rolled back directly.
+- **Reversible-password target:** any production path selects or writes that
+  column. If the hash-only migration has already removed the column, direct
+  rollback is prohibited because the old repository will fail SQL operations and
+  can recreate reversible ciphertext.
+
+For a hash-only target only, use the normal rollback command:
+
 ```bash
 cd /root/kuaizu-server
-export VERSION=<previous-tag>
+export VERSION=<previous-hash-only-tag>
 docker compose up -d --no-build --remove-orphans kuaizu-api kuaizu-console
 docker compose ps
 ```
+
+An emergency rollback to a reversible-password target requires all of the
+following controls; omitting any step blocks the rollback:
+
+1. Put administrator credential management into maintenance mode. Stop every
+   backend and console instance, then enforce an ingress or application-level
+   block on all administrator-account creation and password mutation operations,
+   including administrator create/reset/edit and event-manager create/password
+   edit. Keep that block in place for the entire old-version interval; an
+   operator instruction alone is not a sufficient control.
+2. Run `sql/migration_admin_password_hash_only_compat_rollback.sql`. It creates
+   only an empty nullable compatibility column. Never restore ciphertext from the
+   backup.
+3. Start the reversible-password target only for the unrelated emergency. Do not
+   create administrators, reset any administrator password, or create/edit event
+   manager credentials. Accounts unable to authenticate remain unavailable.
+4. As soon as the incident is resolved, stop every reversible-password instance
+   before starting a hash-only instance. While the compatibility column exists,
+   the following read-only check must return `0`; any nonzero result is a security
+   incident and blocks the migration until investigated:
+
+   ```sql
+   SELECT COUNT(*) AS reversible_ciphertext_rows
+   FROM admin_user
+   WHERE password_encrypted IS NOT NULL;
+   ```
+
+5. Deploy the hash-only target, run
+   `sql/migration_admin_password_hash_only_verify.sql` and require
+   `invalid_hash_count=0` plus `verification_status=PRE_MIGRATION`, then run
+   `sql/migration_admin_password_hash_only.sql`. Rerun the verifier and require
+   `verification_status=PASS` before removing maintenance mode and the credential
+   mutation block. Only then may an affected account use password reset.
+
+The `<previous-tag>` command must never be used as a shortcut around this
+classification and compatibility gate.
 
 ## Nginx upstream
 

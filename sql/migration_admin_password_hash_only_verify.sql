@@ -1,6 +1,6 @@
 -- Read-only preflight/postflight for the hash-only administrator migration.
--- Before migration: invalid_hash_count=0 is mandatory.
--- After migration: verification_status must be PASS.
+-- Before migration: invalid_hash_count=0 and PRE_MIGRATION are mandatory.
+-- After migration: invalid_hash_count=0 and PASS are mandatory.
 
 SELECT
   COUNT(*) AS total_admins,

@@ -1,6 +1,8 @@
 -- Forward-only security migration. Deploy and verify the hash-only application
 -- before running this file. The removed ciphertext must never be restored.
--- The preflight in migration_admin_password_hash_only_verify.sql must PASS.
+-- The preflight in migration_admin_password_hash_only_verify.sql must report
+-- invalid_hash_count=0 and verification_status=PRE_MIGRATION. PASS is the
+-- expected postflight state only after this migration removes the column.
 -- Dropping the column directly avoids a recoverability gap between UPDATE and DDL.
 
 DROP PROCEDURE IF EXISTS _drop_admin_password_encrypted;
