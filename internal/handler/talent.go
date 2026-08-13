@@ -294,8 +294,16 @@ func (s *Server) GetMyTalentProfile(ctx echo.Context) error {
 // DeleteMyTalentProfile handles DELETE /talent-profiles/my
 func (s *Server) DeleteMyTalentProfile(ctx echo.Context) error {
 	userID := GetUserID(ctx)
+	var req struct {
+		ExpectedStatus *int `json:"expectedStatus"`
+	}
+	if ctx.Request().ContentLength != 0 {
+		if err := ctx.Bind(&req); err != nil {
+			return InvalidParams(ctx, err)
+		}
+	}
 
-	if err := s.svc.TalentProfile.SetTalentProfilePrivate(ctx.Request().Context(), userID); err != nil {
+	if err := s.svc.TalentProfile.SetTalentProfilePrivate(ctx.Request().Context(), userID, req.ExpectedStatus); err != nil {
 		return mapServiceError(ctx, err)
 	}
 

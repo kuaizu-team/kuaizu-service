@@ -163,7 +163,9 @@ func (s *TalentProfileService) UpsertTalentProfile(ctx context.Context, userID i
 }
 
 // SetTalentProfilePrivate hides the current user's talent profile without deleting it.
-func (s *TalentProfileService) SetTalentProfilePrivate(ctx context.Context, userID int) error {
+// When expectedStatus is provided, the transition only succeeds if the status
+// has not changed since the client loaded the profile.
+func (s *TalentProfileService) SetTalentProfilePrivate(ctx context.Context, userID int, expectedStatus *int) error {
 	profile, err := s.repo.TalentProfile.GetByUserID(ctx, userID)
 	if err != nil {
 		log.Printf("[TalentProfileService.SetTalentProfilePrivate] repository error getting profile: %v", err)
@@ -172,12 +174,35 @@ func (s *TalentProfileService) SetTalentProfilePrivate(ctx context.Context, user
 	if profile == nil {
 		return ErrNotFound("人才档案不存在")
 	}
+	if profile.Status == nil {
+		return ErrBadRequest("人才名片状态异常")
+	}
+	currentStatus := *profile.Status
+	if expectedStatus != nil {
+		if *expectedStatus != models.TalentStatusOnline && *expectedStatus != models.TalentStatusReviewing {
+			return ErrBadRequest("无效的人才名片预期状态")
+		}
+		if currentStatus != *expectedStatus {
+			return ErrBadRequest("人才名片状态已变化，请刷新后重试")
+		}
+	}
+	if currentStatus == models.TalentStatusPrivate {
+		return nil
+	}
 
-	status := models.TalentStatusPrivate
-	profile.Status = &status
-	if err := s.repo.TalentProfile.Upsert(ctx, profile); err != nil {
+	updated, err := s.repo.TalentProfile.UpdateStatusIfCurrent(
+		ctx,
+		profile.ID,
+		currentStatus,
+		models.TalentStatusPrivate,
+		nil,
+	)
+	if err != nil {
 		log.Printf("[TalentProfileService.SetTalentProfilePrivate] repository error updating status: %v", err)
 		return ErrInternal("下架人才档案失败")
+	}
+	if !updated {
+		return ErrBadRequest("人才名片状态已变化，请刷新后重试")
 	}
 
 	return nil
@@ -467,9 +492,19 @@ func (s *TalentProfileService) ReviewTalentProfile(ctx context.Context, id, stat
 		return ErrBadRequest("当前人才档案状态不允许审核")
 	}
 
-	if err := s.repo.TalentProfile.UpdateStatus(ctx, id, status, cleanedReason); err != nil {
+	updated, err := s.repo.TalentProfile.UpdateStatusIfCurrent(
+		ctx,
+		id,
+		models.TalentStatusReviewing,
+		status,
+		cleanedReason,
+	)
+	if err != nil {
 		log.Printf("[TalentProfileService.ReviewTalentProfile] repository error updating status: %v", err)
 		return ErrInternal("审核失败")
+	}
+	if !updated {
+		return ErrBadRequest("当前人才档案状态不允许审核")
 	}
 
 	userID := profile.UserID

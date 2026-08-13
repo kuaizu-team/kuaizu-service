@@ -211,6 +211,7 @@ type TalentProfileRepo interface {
 	GetByUserID(ctx context.Context, userID int) (*models.TalentProfile, error)
 	Upsert(ctx context.Context, p *models.TalentProfile) error
 	UpdateStatus(ctx context.Context, id int, status int, rejectReason *string) error
+	UpdateStatusIfCurrent(ctx context.Context, id int, currentStatus int, status int, rejectReason *string) (bool, error)
 	DeleteByUserID(ctx context.Context, userID int) error
 	IsOwner(ctx context.Context, talentID, userID int) (bool, error)
 	IncrementViewCount(ctx context.Context, id int) error

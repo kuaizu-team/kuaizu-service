@@ -548,6 +548,24 @@ func (r *TalentProfileRepository) UpdateStatus(ctx context.Context, id int, stat
 	return nil
 }
 
+// UpdateStatusIfCurrent performs a compare-and-set status transition.
+func (r *TalentProfileRepository) UpdateStatusIfCurrent(ctx context.Context, id int, currentStatus int, status int, rejectReason *string) (bool, error) {
+	query := `
+		UPDATE talent_profile
+		SET status = ?, reject_reason = ?, updated_at = CURRENT_TIMESTAMP
+		WHERE id = ? AND status = ?
+	`
+	result, err := r.db.ExecContext(ctx, query, status, rejectReason, id, currentStatus)
+	if err != nil {
+		return false, fmt.Errorf("conditionally update talent profile status: %w", err)
+	}
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("get conditional talent profile update result: %w", err)
+	}
+	return rowsAffected > 0, nil
+}
+
 // DeleteByUserID deletes a talent profile by user ID
 func (r *TalentProfileRepository) DeleteByUserID(ctx context.Context, userID int) error {
 	query := `
