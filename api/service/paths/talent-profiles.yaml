@@ -61,7 +61,7 @@ post:
   tags:
     - TalentProfiles
   summary: 保存/提交我的人才卡片
-  description: 保存为隐私状态时不会被搜索到，提交公开展示时会先进入审核中
+  description: 未指定状态时新名片默认进入审核中；显式保存为隐私状态时不会被搜索到；请求直接上架时会降级为审核中
   operationId: upsertTalentProfile
   requestBody:
     required: true

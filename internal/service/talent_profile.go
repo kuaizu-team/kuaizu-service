@@ -30,7 +30,9 @@ func NewTalentProfileService(repo *repository.Repository, contentAudit *ContentA
 // resolveUpsertStatus determines the actual status to save based on the requested status and the current status.
 //
 // Rules:
-//   - Brand-new profiles always start as Reviewing (2), regardless of the requested status.
+//   - Brand-new profiles default to Reviewing (2) when no status is requested.
+//     An explicit Private (0) request remains private, while Online (1) is
+//     demoted to Reviewing (2) to prevent self-approval.
 //   - If no status is requested, Online (1) moves to Reviewing (2) after an edit;
 //     otherwise the existing status is preserved.
 //   - An explicit Online (1) request is demoted to Reviewing (2) to prevent self-approval.
@@ -56,8 +58,11 @@ func (s *TalentProfileService) resolveUpsertStatus(requestedStatus *api.TalentSt
 		return nil, err
 	}
 	if currentStatus == nil {
-		resolved := models.TalentStatusReviewing
-		return &resolved, nil
+		if statusInt == models.TalentStatusOnline {
+			resolved := models.TalentStatusReviewing
+			return &resolved, nil
+		}
+		return &statusInt, nil
 	}
 
 	// 用户不能直接将自己的状态设为"已上架"，必须经过管理员审核

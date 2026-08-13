@@ -7,21 +7,28 @@ import (
 	"github.com/kuaizu-team/kuaizu-service/internal/models"
 )
 
-func TestResolveUpsertStatusNewProfileDefaultsToReviewing(t *testing.T) {
+func TestResolveUpsertStatusNewProfile(t *testing.T) {
 	svc := &TalentProfileService{}
 
-	for _, requested := range []*api.TalentStatus{
-		nil,
-		talentStatusPtr(api.TalentStatus(models.TalentStatusPrivate)),
-		talentStatusPtr(api.TalentStatus(models.TalentStatusOnline)),
+	for _, tc := range []struct {
+		name      string
+		requested *api.TalentStatus
+		want      int
+	}{
+		{name: "unspecified defaults to reviewing", want: models.TalentStatusReviewing},
+		{name: "explicit private remains private", requested: talentStatusPtr(api.TalentStatus(models.TalentStatusPrivate)), want: models.TalentStatusPrivate},
+		{name: "explicit online requires review", requested: talentStatusPtr(api.TalentStatus(models.TalentStatusOnline)), want: models.TalentStatusReviewing},
+		{name: "explicit reviewing remains reviewing", requested: talentStatusPtr(api.TalentStatus(models.TalentStatusReviewing)), want: models.TalentStatusReviewing},
 	} {
-		got, err := svc.resolveUpsertStatus(requested, nil)
-		if err != nil {
-			t.Fatalf("resolveUpsertStatus() error = %v", err)
-		}
-		if got == nil || *got != models.TalentStatusReviewing {
-			t.Fatalf("resolveUpsertStatus() = %v, want %d", got, models.TalentStatusReviewing)
-		}
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := svc.resolveUpsertStatus(tc.requested, nil)
+			if err != nil {
+				t.Fatalf("resolveUpsertStatus() error = %v", err)
+			}
+			if got == nil || *got != tc.want {
+				t.Fatalf("resolveUpsertStatus() = %v, want %d", got, tc.want)
+			}
+		})
 	}
 }
 

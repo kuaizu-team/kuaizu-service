@@ -49,18 +49,18 @@ func TestTalentKeywordSearchUsesDisplayedNicknameAndProfileFields(t *testing.T) 
 	}
 
 	const whereArgCount = 7
-	if len(args) != whereArgCount*2+2 {
-		t.Fatalf("arg count = %d, want %d", len(args), whereArgCount*2+2)
+	// The shared capture driver retains arguments from the most recent query.
+	// List executes COUNT first and the paginated data query last.
+	if len(args) != whereArgCount+2 {
+		t.Fatalf("arg count = %d, want %d", len(args), whereArgCount+2)
 	}
 	wantPattern := "%计算机!%!_%"
-	for _, offset := range []int{0, whereArgCount} {
-		if args[offset].Value != models.DefaultUserNickname {
-			t.Fatalf("default nickname arg = %#v, want %q", args[offset].Value, models.DefaultUserNickname)
-		}
-		for i := offset + 1; i < offset+whereArgCount; i++ {
-			if args[i].Value != wantPattern {
-				t.Fatalf("pattern arg %d = %#v, want %q", i, args[i].Value, wantPattern)
-			}
+	if args[0].Value != models.DefaultUserNickname {
+		t.Fatalf("default nickname arg = %#v, want %q", args[0].Value, models.DefaultUserNickname)
+	}
+	for i := 1; i < whereArgCount; i++ {
+		if args[i].Value != wantPattern {
+			t.Fatalf("pattern arg %d = %#v, want %q", i, args[i].Value, wantPattern)
 		}
 	}
 }
