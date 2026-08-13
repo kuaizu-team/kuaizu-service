@@ -29,8 +29,11 @@ delete:
           type: object
           properties:
             expectedStatus:
-              $ref: ../components/schemas/TalentStatus.yaml
-              description: 客户端最后看到的状态；状态已变化时拒绝本次操作。
+              type: integer
+              enum:
+                - 1
+                - 2
+              description: 客户端最后看到的可撤回状态；1 表示已上架，2 表示审核中，状态已变化时拒绝本次操作。
   responses:
     '200':
       description: 设置成功
