@@ -18,8 +18,22 @@ get:
 delete:
   tags:
     - TalentProfiles
-  summary: 将我的人才名片设为隐私下架
+  summary: 将我的人才名片设为未入驻状态
+  description: 可用于离开人才库或撤回审核；expectedStatus 可选，旧客户端不传时保持兼容。
   operationId: deleteMyTalentProfile
+  requestBody:
+    required: false
+    content:
+      application/json:
+        schema:
+          type: object
+          properties:
+            expectedStatus:
+              type: integer
+              enum:
+                - 1
+                - 2
+              description: 客户端最后看到的可撤回状态；1 表示已上架，2 表示审核中，状态已变化时拒绝本次操作。
   responses:
     '200':
       description: 设置成功

@@ -312,6 +312,12 @@ func (s *Server) UpdateCurrentUser(ctx echo.Context) error {
 		return InternalError(ctx, "更新用户信息失败")
 	}
 
+	if user.SchoolID != nil && user.MajorID != nil {
+		if err := repository.EnsureReviewingTalentProfileTx(requestCtx, tx, userID); err != nil {
+			return InternalError(ctx, "创建人才名片失败")
+		}
+	}
+
 	newEmail := normalizedEmail(user.Email)
 	var deliveryID int64
 	if newEmail != "" && newEmail != oldEmail {

@@ -30,11 +30,13 @@ func NewTalentProfileService(repo *repository.Repository, contentAudit *ContentA
 // resolveUpsertStatus determines the actual status to save based on the requested status and the current status.
 //
 // Rules:
-//   - User does not specify a status (nil):
-//     · If the profile is currently Online (1) → move to Reviewing (2) so admin re-approves after edit
-//     · Otherwise keep the existing status; default to Private (0) for brand-new profiles
-//   - User explicitly requests Online (1) → demote to Reviewing (2) to prevent self-approval
-//   - Any other explicit status → use as-is (after validation)
+//   - Brand-new profiles default to Reviewing (2) when no status is requested.
+//     An explicit Private (0) request remains private, while Online (1) is
+//     demoted to Reviewing (2) to prevent self-approval.
+//   - If no status is requested, Online (1) moves to Reviewing (2) after an edit;
+//     otherwise the existing status is preserved.
+//   - An explicit Online (1) request is demoted to Reviewing (2) to prevent self-approval.
+//   - Any other valid explicit status is used as-is for an existing profile.
 func (s *TalentProfileService) resolveUpsertStatus(requestedStatus *api.TalentStatus, currentStatus *int) (*int, error) {
 	if requestedStatus == nil {
 		// Pure content edit — apply automatic status transition.
@@ -43,17 +45,24 @@ func (s *TalentProfileService) resolveUpsertStatus(requestedStatus *api.TalentSt
 			resolved := models.TalentStatusReviewing
 			return &resolved, nil
 		}
-		// 待审核或已下架 → 保持原状态不变；全新档案 → 默认下架
+		// 待审核或已下架 → 保持原状态不变；全新档案 → 默认审核中
 		if currentStatus != nil {
 			return currentStatus, nil
 		}
-		resolved := models.TalentStatusPrivate
+		resolved := models.TalentStatusReviewing
 		return &resolved, nil
 	}
 
 	statusInt := int(*requestedStatus)
 	if err := IsValidStatus("talent_profile.status", statusInt); err != nil {
 		return nil, err
+	}
+	if currentStatus == nil {
+		if statusInt == models.TalentStatusOnline {
+			resolved := models.TalentStatusReviewing
+			return &resolved, nil
+		}
+		return &statusInt, nil
 	}
 
 	// 用户不能直接将自己的状态设为"已上架"，必须经过管理员审核
@@ -91,6 +100,19 @@ func (s *TalentProfileService) UpsertTalentProfile(ctx context.Context, userID i
 	var currentStatus *int
 	if existing != nil {
 		currentStatus = existing.Status
+	}
+	if existing == nil {
+		user, userErr := s.repo.User.GetByID(ctx, userID)
+		if userErr != nil {
+			log.Printf("[TalentProfileService.UpsertTalentProfile] repository error getting user: %v", userErr)
+			return nil, ErrInternal("获取用户信息失败")
+		}
+		if user == nil {
+			return nil, ErrNotFound("用户不存在")
+		}
+		if user.SchoolID == nil || *user.SchoolID <= 0 || user.MajorID == nil || *user.MajorID <= 0 {
+			return nil, ErrBadRequest("请先填写学校和专业")
+		}
 	}
 
 	status, err := s.resolveUpsertStatus(req.Status, currentStatus)
@@ -146,7 +168,9 @@ func (s *TalentProfileService) UpsertTalentProfile(ctx context.Context, userID i
 }
 
 // SetTalentProfilePrivate hides the current user's talent profile without deleting it.
-func (s *TalentProfileService) SetTalentProfilePrivate(ctx context.Context, userID int) error {
+// When expectedStatus is provided, the transition only succeeds if the status
+// has not changed since the client loaded the profile.
+func (s *TalentProfileService) SetTalentProfilePrivate(ctx context.Context, userID int, expectedStatus *int) error {
 	profile, err := s.repo.TalentProfile.GetByUserID(ctx, userID)
 	if err != nil {
 		log.Printf("[TalentProfileService.SetTalentProfilePrivate] repository error getting profile: %v", err)
@@ -155,12 +179,35 @@ func (s *TalentProfileService) SetTalentProfilePrivate(ctx context.Context, user
 	if profile == nil {
 		return ErrNotFound("人才档案不存在")
 	}
+	if profile.Status == nil {
+		return ErrBadRequest("人才名片状态异常")
+	}
+	currentStatus := *profile.Status
+	if expectedStatus != nil {
+		if *expectedStatus != models.TalentStatusOnline && *expectedStatus != models.TalentStatusReviewing {
+			return ErrBadRequest("无效的人才名片预期状态")
+		}
+		if currentStatus != *expectedStatus {
+			return ErrBadRequest("人才名片状态已变化，请刷新后重试")
+		}
+	}
+	if currentStatus == models.TalentStatusPrivate {
+		return nil
+	}
 
-	status := models.TalentStatusPrivate
-	profile.Status = &status
-	if err := s.repo.TalentProfile.Upsert(ctx, profile); err != nil {
+	updated, err := s.repo.TalentProfile.UpdateStatusIfCurrent(
+		ctx,
+		profile.ID,
+		currentStatus,
+		models.TalentStatusPrivate,
+		nil,
+	)
+	if err != nil {
 		log.Printf("[TalentProfileService.SetTalentProfilePrivate] repository error updating status: %v", err)
 		return ErrInternal("下架人才档案失败")
+	}
+	if !updated {
+		return ErrBadRequest("人才名片状态已变化，请刷新后重试")
 	}
 
 	return nil
@@ -450,9 +497,19 @@ func (s *TalentProfileService) ReviewTalentProfile(ctx context.Context, id, stat
 		return ErrBadRequest("当前人才档案状态不允许审核")
 	}
 
-	if err := s.repo.TalentProfile.UpdateStatus(ctx, id, status, cleanedReason); err != nil {
+	updated, err := s.repo.TalentProfile.UpdateStatusIfCurrent(
+		ctx,
+		id,
+		models.TalentStatusReviewing,
+		status,
+		cleanedReason,
+	)
+	if err != nil {
 		log.Printf("[TalentProfileService.ReviewTalentProfile] repository error updating status: %v", err)
 		return ErrInternal("审核失败")
+	}
+	if !updated {
+		return ErrBadRequest("当前人才档案状态不允许审核")
 	}
 
 	userID := profile.UserID
