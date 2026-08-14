@@ -16,6 +16,8 @@ type Dependencies struct {
 	WechatClient           *wechat.Client
 	PayClient              *wechat.PayClient
 	PayInitError           error
+	VirtualPayConfig       *wechat.VirtualPayConfig
+	VirtualPayInitError    error
 	MessageCenter          *messagecenter.Client
 	MessageCenterInitError error
 }
@@ -37,6 +39,7 @@ func NewDependencies(repo *repository.Repository) (*Dependencies, error) {
 	} else {
 		payClient, payErr = wechat.NewPayClient(payConfig)
 	}
+	virtualPayConfig, virtualPayErr := wechat.DefaultVirtualPayConfig()
 
 	messageCenter, messageCenterErr := messagecenter.NewClientFromEnv()
 	if messageCenterErr != nil {
@@ -50,6 +53,8 @@ func NewDependencies(repo *repository.Repository) (*Dependencies, error) {
 		WechatClient:           wxClient,
 		PayClient:              payClient,
 		PayInitError:           payErr,
+		VirtualPayConfig:       virtualPayConfig,
+		VirtualPayInitError:    virtualPayErr,
 		MessageCenter:          messageCenter,
 		MessageCenterInitError: messageCenterErr,
 	}, nil

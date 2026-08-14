@@ -1,0 +1,31 @@
+parameters:
+  - name: id
+    in: path
+    required: true
+    schema:
+      type: integer
+    description: 订单 ID
+post:
+  tags:
+    - Orders
+  summary: 发起小程序虚拟支付
+  description: 仅用于本小程序内的橄榄枝、邮件推广和短信通知虚拟商品。
+  operationId: initiateVirtualPayment
+  requestBody:
+    required: true
+    content:
+      application/json:
+        schema:
+          $ref: ../components/schemas/VirtualPaymentDTO.yaml
+  responses:
+    '200':
+      description: 成功
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/BaseResponse.yaml
+              - type: object
+                properties:
+                  data:
+                    $ref: ../components/schemas/VirtualPaymentParams.yaml

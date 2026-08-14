@@ -40,6 +40,8 @@ func New(repo *repository.Repository, deps *Dependencies) *Services {
 	paidOrderDelivery := NewPaidOrderDeliveryService(repo, emailPromotion, smsNotice)
 	payment := NewPaymentService(repo, deps.PayClient, deps.PayInitError)
 	payment.SetPaidOrderDeliveryService(paidOrderDelivery)
+	order := NewOrderService(repo, deps.PayClient, deps.PayInitError)
+	order.ConfigureVirtualPayment(deps.WechatClient, deps.VirtualPayConfig, deps.VirtualPayInitError)
 	return &Services{
 		Auth:                NewAuthService(repo, deps.WechatClient),
 		AdminSms:            NewAdminSmsService(deps.MessageCenter, deps.MessageCenterInitError),
@@ -48,7 +50,7 @@ func New(repo *repository.Repository, deps *Dependencies) *Services {
 		PushRetry:           NewPushRetryService(repo, emailPromotion, smsNotice),
 		Payment:             payment,
 		EmailUnsubscribe:    NewEmailUnsubscribeService(repo),
-		Order:               NewOrderService(repo, deps.PayClient, deps.PayInitError),
+		Order:               order,
 		OliveBranch:         NewOliveBranchService(repo, message),
 		Commons:             NewCommonsService(deps.OSSClient, repo.User),
 		ContentAudit:        contentAudit,

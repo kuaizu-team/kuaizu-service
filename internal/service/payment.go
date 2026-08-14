@@ -193,6 +193,20 @@ func (s *PaymentService) ProcessPayment(ctx context.Context, order *models.Order
 	}
 	defer tx.Rollback()
 
+	// Lock the order before granting benefits. WeChat may retry callbacks, and
+	// virtual-payment delivery notifications are explicitly retried by the platform.
+	var currentStatus int
+	if err := tx.GetContext(ctx, &currentStatus, "SELECT status FROM `order` WHERE id=? FOR UPDATE", order.ID); err != nil {
+		log.Printf("[PaymentService.ProcessPayment] failed to lock order: %v", err)
+		return ErrInternal("处理支付失败")
+	}
+	if currentStatus == models.OrderStatusPaid {
+		return nil
+	}
+	if currentStatus != models.OrderStatusPending {
+		return ErrBadRequest("订单状态不允许支付")
+	}
+
 	// Update order status
 	if err := s.repo.Order.UpdatePaymentStatusTx(ctx, tx, order.ID, 1, transactionID, payTime); err != nil {
 		log.Printf("[PaymentService.ProcessPayment] failed to update order status: %v", err)

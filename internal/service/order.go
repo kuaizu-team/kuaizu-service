@@ -14,9 +14,19 @@ import (
 
 // OrderService handles order-related business logic.
 type OrderService struct {
-	repo       *repository.Repository
-	payClient  *wechat.PayClient
-	payInitErr error
+	repo              *repository.Repository
+	payClient         *wechat.PayClient
+	payInitErr        error
+	wxClient          *wechat.Client
+	virtualPayConfig  *wechat.VirtualPayConfig
+	virtualPayInitErr error
+}
+
+// ConfigureVirtualPayment enables the isolated official Mini Program virtual-payment flow.
+func (s *OrderService) ConfigureVirtualPayment(wxClient *wechat.Client, config *wechat.VirtualPayConfig, initErr error) {
+	s.wxClient = wxClient
+	s.virtualPayConfig = config
+	s.virtualPayInitErr = initErr
 }
 
 // ApplyRefund submits a refund request for the current user's paid order.
@@ -444,6 +454,76 @@ func (s *OrderService) InitiatePayment(ctx context.Context, userID int, openID s
 	}
 
 	return paymentParams, nil
+}
+
+// InitiateVirtualPayment signs an official wx.requestVirtualPayment request for in-scope virtual products.
+func (s *OrderService) InitiateVirtualPayment(ctx context.Context, userID int, openID, loginCode string, orderID int) (*wechat.VirtualPaymentParams, error) {
+	if openID == "" {
+		return nil, ErrBadRequest("无法获取用户OpenID")
+	}
+	if strings.TrimSpace(loginCode) == "" {
+		return nil, ErrBadRequest("缺少微信登录凭证")
+	}
+	order, err := s.repo.Order.GetByID(ctx, orderID)
+	if err != nil {
+		return nil, ErrInternal("获取订单详情失败")
+	}
+	if order == nil {
+		return nil, ErrNotFound("订单不存在")
+	}
+	if order.UserID != userID {
+		return nil, ErrForbidden("无权操作此订单")
+	}
+	if order.Status != models.OrderStatusPending {
+		return nil, ErrBadRequest("订单状态不允许支付")
+	}
+	product, err := s.repo.Product.GetByID(ctx, order.ProductID)
+	if err != nil || product == nil {
+		return nil, ErrInternal("获取商品信息失败")
+	}
+	switch product.ID {
+	case 1, 2, 7, 9, 12:
+	default:
+		return nil, ErrBadRequest("该商品不属于本次虚拟支付范围")
+	}
+	intent, err := order.ParseDeliveryIntent()
+	if err != nil {
+		return nil, ErrBadRequest("订单交付信息无效")
+	}
+	if intent != nil {
+		if err := s.validateDeliveryIntent(ctx, userID, product, intent); err != nil {
+			return nil, err
+		}
+	}
+	if s.virtualPayInitErr != nil {
+		log.Printf("[OrderService.InitiateVirtualPayment] config error: %v", s.virtualPayInitErr)
+		return nil, ErrInternal("虚拟支付配置错误")
+	}
+	if s.wxClient == nil || s.virtualPayConfig == nil {
+		return nil, ErrInternal("虚拟支付未初始化")
+	}
+	wxSession, err := s.wxClient.Code2Session(strings.TrimSpace(loginCode))
+	if err != nil {
+		log.Printf("[OrderService.InitiateVirtualPayment] code2session error: %v", err)
+		return nil, ErrBadRequest("微信登录凭证已失效，请重试")
+	}
+	if wxSession.OpenID != openID {
+		return nil, ErrForbidden("微信登录身份不一致")
+	}
+	params, err := wechat.CreateVirtualPaymentParams(
+		s.virtualPayConfig,
+		wxSession.SessionKey,
+		order.ID,
+		order.CreatedAt,
+		product.ID,
+		product.Price,
+		order.Quantity,
+	)
+	if err != nil {
+		log.Printf("[OrderService.InitiateVirtualPayment] sign error: %v", err)
+		return nil, ErrInternal("创建虚拟支付订单失败")
+	}
+	return params, nil
 }
 
 // CancelOrder cancels an unpaid order (status must be 0).
