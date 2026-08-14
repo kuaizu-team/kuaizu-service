@@ -24,8 +24,9 @@ get:
     - name: sortBy
       in: query
       description: |
-        排序模式。目前支持 `school_priority`：本校人才优先，同优先级内按
-        最后修改时间倒序。不传则默认按修改时间倒序。
+        排序模式。目前支持 `school_priority`：按学校/地域、同专业/专业大类/其他专业
+        划分匹配层级，每层已认证优先；收藏与点赞热度可逐级提升。同层使用 randomSeed
+        保持分页顺序稳定。不传则默认按最后修改时间倒序。
       schema:
         type: string
     - name: userSchoolId
@@ -35,7 +36,7 @@ get:
         type: integer
     - name: userMajorId
       in: query
-      description: 当前用户专业 ID，`sortBy=school_priority` 时用于判断同专业大类人才。
+      description: 当前用户专业 ID，`sortBy=school_priority` 时用于判断同专业及专业大类人才。
       schema:
         type: integer
     - name: randomSeed
