@@ -53,6 +53,17 @@ type virtualPaymentCallbackResponse struct {
 	ErrMsg  string   `json:"ErrMsg" xml:"ErrMsg"`
 }
 
+// matchesVirtualPaymentPrices keeps the existing unit-price callback behavior
+// compatible while also accepting a line-total callback. Both callback fields
+// must use the same semantic so a mixed or partial amount is never accepted.
+func matchesVirtualPaymentPrices(goods virtualPaymentGoodsInfo, unitPrice, totalPrice int) bool {
+	if unitPrice <= 0 || totalPrice <= 0 {
+		return false
+	}
+	return (goods.OrigPrice == unitPrice && goods.ActualPrice == unitPrice) ||
+		(goods.OrigPrice == totalPrice && goods.ActualPrice == totalPrice)
+}
+
 type iosRefundQueryResponse struct {
 	XMLName    xml.Name `json:"-" xml:"xml"`
 	ResultCode int      `json:"result_code" xml:"result_code"`
@@ -183,15 +194,19 @@ func (s *Server) VirtualPaymentCallback(ctx echo.Context) error {
 	if strings.TrimSpace(os.Getenv("WECHAT_VIRTUAL_PAY_ENV")) == "" {
 		expectedEnv, envErr = 0, nil
 	}
-	expectedPrice := 0
-	if product != nil {
-		expectedPrice = int(math.Round(product.Price * 100))
-	}
+	// Validate callback prices against the immutable order snapshot. Product
+	// catalog prices may change while an already-created order is being paid.
+	expectedUnitPrice := int(math.Round(order.Price * 100))
+	expectedTotalPrice := int(math.Round(order.ActualPaid * 100))
+	pricesMatch := matchesVirtualPaymentPrices(message.GoodsInfo, expectedUnitPrice, expectedTotalPrice)
 	if parseErr != nil || productID != order.ProductID || message.GoodsInfo.Quantity != order.Quantity ||
-		productErr != nil || product == nil || message.GoodsInfo.OrigPrice != expectedPrice || message.GoodsInfo.ActualPrice != expectedPrice ||
+		productErr != nil || product == nil || !pricesMatch ||
 		attachErr != nil || attach.OrderID != order.ID || envErr != nil || message.Env != expectedEnv ||
 		userErr != nil || user == nil || user.OpenID != message.OpenID {
-		log.Printf("[VirtualPaymentCallback] order validation failed, order_id=%d", orderID)
+		log.Printf("[VirtualPaymentCallback] order validation failed, order_id=%d product_id=%q expected_product_id=%d quantity=%d expected_quantity=%d orig_price=%d actual_price=%d expected_unit_price=%d expected_total_price=%d env=%d expected_env=%d",
+			orderID, message.GoodsInfo.ProductID, order.ProductID, message.GoodsInfo.Quantity, order.Quantity,
+			message.GoodsInfo.OrigPrice, message.GoodsInfo.ActualPrice, expectedUnitPrice, expectedTotalPrice,
+			message.Env, expectedEnv)
 		return writeVirtualPaymentCallback(ctx, isXML, 1, "order mismatch")
 	}
 	transactionID := strings.TrimSpace(message.WechatPayInfo.TransactionID)

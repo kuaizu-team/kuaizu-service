@@ -31,6 +31,58 @@ func TestBindVirtualPaymentMessageXML(t *testing.T) {
 	require.Equal(t, `{"orderId":42}`, message.GoodsInfo.Attach)
 }
 
+func TestMatchesVirtualPaymentPrices(t *testing.T) {
+	tests := []struct {
+		name       string
+		goods      virtualPaymentGoodsInfo
+		unitPrice  int
+		totalPrice int
+		wantMatch  bool
+	}{
+		{
+			name:      "unit price callback remains compatible",
+			goods:     virtualPaymentGoodsInfo{OrigPrice: 10, ActualPrice: 10},
+			unitPrice: 10,
+			totalPrice: 100,
+			wantMatch: true,
+		},
+		{
+			name:      "line total callback",
+			goods:     virtualPaymentGoodsInfo{OrigPrice: 100, ActualPrice: 100},
+			unitPrice: 10,
+			totalPrice: 100,
+			wantMatch: true,
+		},
+		{
+			name:      "mixed price semantics",
+			goods:     virtualPaymentGoodsInfo{OrigPrice: 10, ActualPrice: 100},
+			unitPrice: 10,
+			totalPrice: 100,
+			wantMatch: false,
+		},
+		{
+			name:      "unexpected amount",
+			goods:     virtualPaymentGoodsInfo{OrigPrice: 90, ActualPrice: 90},
+			unitPrice: 10,
+			totalPrice: 100,
+			wantMatch: false,
+		},
+		{
+			name:      "invalid total",
+			goods:     virtualPaymentGoodsInfo{OrigPrice: 10, ActualPrice: 10},
+			unitPrice: 10,
+			totalPrice: 0,
+			wantMatch: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.wantMatch, matchesVirtualPaymentPrices(tt.goods, tt.unitPrice, tt.totalPrice))
+		})
+	}
+}
+
 func TestBuildIOSRefundQueryResponse(t *testing.T) {
 	tests := []struct {
 		name          string
