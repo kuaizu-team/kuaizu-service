@@ -217,7 +217,7 @@ func (s *Server) VirtualPaymentCallback(ctx echo.Context) error {
 	if message.WechatPayInfo.PaidTime > 0 {
 		payTime = time.Unix(message.WechatPayInfo.PaidTime, 0)
 	}
-	if err := s.svc.Payment.ProcessPayment(ctx.Request().Context(), order, transactionID, payTime); err != nil {
+	if err := s.svc.Payment.ProcessVirtualPayment(ctx.Request().Context(), order, transactionID, payTime); err != nil {
 		log.Printf("[VirtualPaymentCallback] process order %d: %v", orderID, err)
 		return writeVirtualPaymentCallback(ctx, isXML, 1, "delivery failed")
 	}

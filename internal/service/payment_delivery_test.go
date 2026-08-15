@@ -81,6 +81,13 @@ func deliveryIntentOrder() *models.Order {
 	}
 }
 
+func TestCanProcessPaymentStatus(t *testing.T) {
+	assert.True(t, canProcessPaymentStatus(models.OrderStatusPending, false))
+	assert.False(t, canProcessPaymentStatus(models.OrderStatusCancelled, false), "ordinary payment must remain pending-only")
+	assert.True(t, canProcessPaymentStatus(models.OrderStatusCancelled, true), "signed virtual callback may recover a cancel race")
+	assert.False(t, canProcessPaymentStatus(models.OrderStatusRefunded, true))
+}
+
 func TestEnsurePaidOrderDeliveryClaimsOnlyOnceAcrossConcurrentTriggers(t *testing.T) {
 	state := &atomicDeliveryStateStub{}
 	deliverer := &paidOrderDelivererStub{delivered: make(chan struct{}, 1)}
