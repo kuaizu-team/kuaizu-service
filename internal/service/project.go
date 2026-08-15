@@ -57,19 +57,26 @@ func (s *ProjectService) ListProjects(ctx context.Context, params repository.Lis
 		return nil, err
 	}
 
-	// When school_priority sort is requested and a user school ID is provided,
-	// look up the school's geo info (province/city/district) so the repository
-	// can build the full P1→P5 geo-priority ORDER BY.
-	// If the school lookup fails or returns nothing we simply leave the geo fields
-	// nil — the repository degrades gracefully to fewer tiers.
-	if params.SortBy != nil && *params.SortBy == "school_priority" && params.UserSchoolID != nil {
-		school, err := s.repo.School.GetByID(ctx, *params.UserSchoolID)
+	// Ranking identity comes only from the authenticated viewer. Public callers
+	// without a valid token are deliberately ranked as one fully random pool.
+	if params.SortBy != nil && *params.SortBy == "school_priority" && params.ViewerUserID != nil {
+		user, err := s.repo.User.GetByID(ctx, *params.ViewerUserID)
 		if err != nil {
-			log.Printf("[ProjectService.ListProjects] school lookup error (non-fatal): %v", err)
-		} else if school != nil {
-			params.UserSchoolProvince = school.Province
-			params.UserSchoolCity = school.City
-			params.UserSchoolDistrict = school.District
+			log.Printf("[ProjectService.ListProjects] viewer lookup error (non-fatal): %v", err)
+		} else if user != nil {
+			params.UserSchoolID = user.SchoolID
+			params.UserMajorID = user.MajorID
+			params.UserMajorClassID = user.ClassID
+			if user.SchoolID != nil {
+				school, schoolErr := s.repo.School.GetByID(ctx, *user.SchoolID)
+				if schoolErr != nil {
+					log.Printf("[ProjectService.ListProjects] school lookup error (non-fatal): %v", schoolErr)
+				} else if school != nil {
+					params.UserSchoolProvince = school.Province
+					params.UserSchoolCity = school.City
+					params.UserSchoolDistrict = school.District
+				}
+			}
 		}
 	}
 

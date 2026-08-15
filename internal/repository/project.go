@@ -36,19 +36,22 @@ type ListParams struct {
 	MemberUserID  *int
 	IsCrossSchool *int
 	// SortBy controls the primary sort key.
-	// Public values: "school_priority" (geo-priority), "updated_at"
+	// Public values: "school_priority" (personalized pool ranking), "updated_at"
 	// Admin values:  "pendingCount" (combined admin pending count), "updatedAt"
 	SortBy *string
 	// Order controls asc/desc direction for "pendingCount" and "updatedAt" sortBy.
 	// Values: "asc" | "desc" (case-insensitive). Defaults to DESC.
 	Order        *string
 	UserSchoolID *int // used when SortBy == "school_priority"
+	ViewerUserID *int // authenticated viewer; nil means anonymous ranking
 
 	// Geo info of the user's school — pre-fetched by the service layer.
 	// Used to build P2/P3/P4 tiers in school_priority ordering.
 	UserSchoolProvince *string
 	UserSchoolCity     *string
 	UserSchoolDistrict *string
+	UserMajorID        *int
+	UserMajorClassID   *int
 
 	// IncludePendingCount — admin-only flag.
 	// When true, adds a pending_count column to SELECT (sum of pending applications
@@ -134,10 +137,11 @@ func (r *ProjectRepository) List(ctx context.Context, params ListParams) ([]mode
 	//
 	// Modes:
 	//   "updated_at"      → p.updated_at DESC  (used by ListMyProjects)
-	//   "school_priority" → 5-tier geo priority + cross-school sub-sort + created_at tiebreak
+	//   "school_priority" → geo/major/heat pools with seeded shuffle and owner avoidance
 	//   default           → p.created_at DESC
 	orderClause := "p.created_at DESC"
 	var orderArgs []interface{}
+	rankedPage := false
 
 	if params.SortBy != nil && *params.SortBy == "updated_at" {
 		orderClause = "p.updated_at DESC"
@@ -162,65 +166,39 @@ func (r *ProjectRepository) List(ctx context.Context, params ListParams) ([]mode
 		}
 		orderClause = fmt.Sprintf("p.id %s", dir)
 	} else if params.SortBy != nil && *params.SortBy == "school_priority" {
-		schoolID := 0
-		if params.UserSchoolID != nil {
-			schoolID = *params.UserSchoolID
+		rankedIDs, err := r.listRankedProjectIDs(ctx, whereClause, whereArgs, params)
+		if err != nil {
+			return nil, 0, err
 		}
-		if schoolID != 0 {
-			// --- Build 5-tier priority CASE WHEN ---
-			// P1: same school
-			// P2: same district + city (skipped if user school has no district)
-			// P3: same city
-			// P4: same province
-			// P5: everything else
-			//
-			// Geo comparison is against the PROJECT's school columns (s.*) from the
-			// existing LEFT JOIN school s ON p.school_id = s.id.
-			var tierWHENs []string
-
-			// P1 — same school (no geo join needed)
-			tierWHENs = append(tierWHENs, "WHEN p.school_id = ? THEN 1")
-			orderArgs = append(orderArgs, schoolID)
-
-			// P2 — same district (only when user school has a valid district)
-			if params.UserSchoolDistrict != nil && *params.UserSchoolDistrict != "" &&
-				params.UserSchoolCity != nil && *params.UserSchoolCity != "" {
-				tierWHENs = append(tierWHENs, "WHEN s.district = ? AND s.city = ? THEN 2")
-				orderArgs = append(orderArgs, *params.UserSchoolDistrict, *params.UserSchoolCity)
-			}
-
-			// P3 — same city
-			if params.UserSchoolCity != nil && *params.UserSchoolCity != "" {
-				tierWHENs = append(tierWHENs, "WHEN s.city = ? THEN 3")
-				orderArgs = append(orderArgs, *params.UserSchoolCity)
-			}
-
-			// P4 — same province
-			if params.UserSchoolProvince != nil && *params.UserSchoolProvince != "" {
-				tierWHENs = append(tierWHENs, "WHEN s.province = ? THEN 4")
-				orderArgs = append(orderArgs, *params.UserSchoolProvince)
-			}
-
-			tierExpr := "CASE\n" + strings.Join(tierWHENs, "\n") + "\nELSE 5\nEND"
-
-			// Every 10 heat points (like + 2*favorite) promotes one tier.
-			// The cap prevents promotion above P1; the request seed keeps
-			// pagination stable and changes on an explicit refresh.
-			const heatScoreExpr = "(SELECT COUNT(*) FROM project_like pl WHERE pl.project_id = p.id) + (SELECT COUNT(*) FROM project_favorite pf WHERE pf.project_id = p.id) * 2"
-			finalTierExpr := fmt.Sprintf("GREATEST(1, (%s) - FLOOR((%s) / 10))", tierExpr, heatScoreExpr)
-			orderClause = fmt.Sprintf(`%s ASC,
-				ROW_NUMBER() OVER (PARTITION BY p.creator_id ORDER BY CRC32(CONCAT(?, ':item:', p.id))) ASC,
-				CRC32(CONCAT(?, ':owner:', p.creator_id)) ASC,
-				CRC32(CONCAT(?, ':item:', p.id)) ASC, p.id ASC`, finalTierExpr)
-			orderArgs = append(orderArgs, params.RandomSeed, params.RandomSeed, params.RandomSeed)
+		start := (params.Page - 1) * params.Size
+		if start >= len(rankedIDs) {
+			return []models.Project{}, total, nil
 		}
-		// If schoolID == 0 (no user school context), fall through to default created_at DESC
+		end := start + params.Size
+		if end > len(rankedIDs) {
+			end = len(rankedIDs)
+		}
+		pageIDs := rankedIDs[start:end]
+		placeholders := make([]string, len(pageIDs))
+		whereArgs = make([]interface{}, 0, len(pageIDs)*2)
+		orderArgs = make([]interface{}, 0, len(pageIDs))
+		for i, id := range pageIDs {
+			placeholders[i] = "?"
+			whereArgs = append(whereArgs, id)
+			orderArgs = append(orderArgs, id)
+		}
+		whereClause = fmt.Sprintf("p.id IN (%s)", strings.Join(placeholders, ","))
+		orderClause = fmt.Sprintf("FIELD(p.id, %s)", strings.Join(placeholders, ","))
+		rankedPage = true
 	}
 
 	// Query with pagination — column aliases match Project db tags.
 	// When IncludePendingCount=true, include olive-branch JOIN and compute
 	// the combined pending_count = pending applications + pending olive branches.
 	offset := (params.Page - 1) * params.Size
+	if rankedPage {
+		offset = 0
+	}
 
 	pendingCountSelect := ""
 	pendingCountJoin := ""

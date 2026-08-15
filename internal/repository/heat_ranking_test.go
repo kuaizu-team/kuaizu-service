@@ -9,7 +9,7 @@ import (
 	"github.com/jmoiron/sqlx"
 )
 
-func TestProjectSchoolPriorityUsesHeatUpgradeAndOwnerRoundRobin(t *testing.T) {
+func TestProjectSchoolPriorityLoadsCompositeHeatRankingMetadata(t *testing.T) {
 	db := openCaptureDB(t)
 	defer db.Close()
 	repo := NewProjectRepository(sqlx.NewDb(db, "capture_user_repo"))
@@ -19,10 +19,11 @@ func TestProjectSchoolPriorityUsesHeatUpgradeAndOwnerRoundRobin(t *testing.T) {
 	)
 	sortBy := "school_priority"
 	schoolID := 42
+	viewerID := 7
 	seed := "7:2026-06-27"
 
 	_, _, err := repo.List(context.Background(), ListParams{
-		Page: 1, Size: 10, SortBy: &sortBy, UserSchoolID: &schoolID, RandomSeed: seed,
+		Page: 1, Size: 10, SortBy: &sortBy, ViewerUserID: &viewerID, UserSchoolID: &schoolID, RandomSeed: seed,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -34,18 +35,16 @@ func TestProjectSchoolPriorityUsesHeatUpgradeAndOwnerRoundRobin(t *testing.T) {
 	}
 	query := normalizeSQL(queries[1])
 	for _, want := range []string{
-		"SELECT COUNT(*) FROM project_like pl WHERE pl.project_id = p.id",
-		"SELECT COUNT(*) FROM project_favorite pf WHERE pf.project_id = p.id",
-		"GREATEST(1,",
-		"ROW_NUMBER() OVER (PARTITION BY p.creator_id",
-		"CRC32(CONCAT(?, ':owner:', p.creator_id)) ASC",
-		"CRC32(CONCAT(?, ':item:', p.id)) ASC, p.id ASC",
+		"SELECT project_id, COUNT(*) AS like_count FROM project_like GROUP BY project_id",
+		"SELECT project_id, COUNT(*) AS favorite_count FROM project_favorite GROUP BY project_id",
+		"SELECT project_id, COUNT(*) AS share_count FROM project_share GROUP BY project_id",
+		"LEFT JOIN major m ON m.id = u.major_id",
 	} {
 		if !strings.Contains(query, want) {
 			t.Fatalf("query missing %q: %s", want, query)
 		}
 	}
-	if len(args) != 6 || args[0].Value != int64(schoolID) || args[1].Value != seed || args[2].Value != seed || args[3].Value != seed || args[4].Value != int64(10) || args[5].Value != int64(0) {
+	if len(args) != 0 {
 		t.Fatalf("unexpected list args: %#v", args)
 	}
 }
