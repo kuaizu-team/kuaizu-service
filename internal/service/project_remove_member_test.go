@@ -4,6 +4,8 @@ import (
 	"context"
 	"testing"
 
+	"github.com/DATA-DOG/go-sqlmock"
+	"github.com/jmoiron/sqlx"
 	"github.com/kuaizu-team/kuaizu-service/internal/models"
 	"github.com/kuaizu-team/kuaizu-service/internal/repository"
 	"github.com/stretchr/testify/mock"
@@ -61,5 +63,48 @@ func TestRemoveMemberRejectsNonHighestRole(t *testing.T) {
 	require.ErrorAs(t, err, &serviceErr)
 	require.Equal(t, ErrCodeForbidden, serviceErr.Code)
 	require.Equal(t, "当前角色不能移除项目成员", serviceErr.Message)
+	projectRepo.AssertExpectations(t)
+}
+
+func TestRemoveMemberAllowsDeletedUserMembershipCleanup(t *testing.T) {
+	rawDB, dbMock, err := sqlmock.New()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = rawDB.Close() })
+
+	const projectID = 42
+	const operatorID = 7
+	const memberID = 8
+	const membershipID = 99
+
+	projectRepo := new(MockProjectRepo)
+	projectRepo.On("GetByID", mock.Anything, projectID).Return(&models.Project{
+		ID:        projectID,
+		CreatorID: operatorID,
+		Name:      "测试项目",
+	}, nil).Once()
+	projectRepo.On("ListMembers", mock.Anything, projectID).Return([]models.ProjectMember{
+		{ID: 1, ProjectID: projectID, UserID: operatorID, Role: models.ProjectRoleTeamLeader, User: &models.User{ID: operatorID}},
+		{ID: membershipID, ProjectID: projectID, UserID: memberID, Role: models.ProjectRoleTeamMember, User: nil},
+	}, nil).Once()
+
+	db := sqlx.NewDb(rawDB, "sqlmock")
+	repo := repository.New(db)
+	repo.Project = projectRepo
+	dbMock.ExpectBegin()
+	dbMock.ExpectQuery("SELECT id FROM project_members").
+		WithArgs(projectID, memberID).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(membershipID))
+	dbMock.ExpectExec("DELETE FROM project_members").
+		WithArgs(projectID, memberID).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	dbMock.ExpectCommit()
+
+	svc := NewProjectService(repo, nil, nil)
+	result, err := svc.RemoveMember(context.Background(), projectID, operatorID, memberID, nil)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Zero(t, result.RemovalID)
+	require.Equal(t, memberID, result.MemberID)
+	require.NoError(t, dbMock.ExpectationsWereMet())
 	projectRepo.AssertExpectations(t)
 }

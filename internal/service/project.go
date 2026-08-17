@@ -832,25 +832,31 @@ func (s *ProjectService) RemoveMember(ctx context.Context, projectID int, operat
 		return nil, ErrBadRequest("成员关系已变更，请刷新后重试")
 	}
 
-	var finalScore sql.NullFloat64
-	var ratingCount int
-	err = tx.QueryRowxContext(ctx, `SELECT pms.score,
-		(SELECT COUNT(DISTINCT r.rater_id) FROM project_member_rating r WHERE r.target_member_id=pms.project_member_id)
-		FROM project_member_score pms
-		WHERE pms.project_member_id=? FOR UPDATE`, removedMember.ID).Scan(&finalScore, &ratingCount)
-	if err != nil && err != sql.ErrNoRows {
-		return nil, ErrInternal("获取成员最终评分失败")
-	}
-
 	var frozenScore *float64
-	if finalScore.Valid {
-		score := math.Round(finalScore.Float64*100) / 100
-		frozenScore = &score
-		if _, err := tx.ExecContext(ctx, `INSERT INTO collaboration_score(
-			user_id,project_id,scorer_id,score,rating_count,created_at
-		) VALUES(?,?,?,?,?,NOW())`, memberID, projectID, operatorID, score, ratingCount); err != nil {
-			log.Printf("[ProjectService.RemoveMember] insert frozen score failed: %v", err)
-			return nil, ErrInternal("固化项目最终评分失败")
+	// A hard-deleted user can still have a legacy project_members row because
+	// that table has no user foreign key. Delete the membership, but skip user-
+	// bound score history and notifications whose foreign keys cannot succeed.
+	memberUserExists := removedMember.User != nil
+	if memberUserExists {
+		var finalScore sql.NullFloat64
+		var ratingCount int
+		err = tx.QueryRowxContext(ctx, `SELECT pms.score,
+			(SELECT COUNT(DISTINCT r.rater_id) FROM project_member_rating r WHERE r.target_member_id=pms.project_member_id)
+			FROM project_member_score pms
+			WHERE pms.project_member_id=? FOR UPDATE`, removedMember.ID).Scan(&finalScore, &ratingCount)
+		if err != nil && err != sql.ErrNoRows {
+			return nil, ErrInternal("获取成员最终评分失败")
+		}
+
+		if finalScore.Valid {
+			score := math.Round(finalScore.Float64*100) / 100
+			frozenScore = &score
+			if _, err := tx.ExecContext(ctx, `INSERT INTO collaboration_score(
+				user_id,project_id,scorer_id,score,rating_count,created_at
+			) VALUES(?,?,?,?,?,NOW())`, memberID, projectID, operatorID, score, ratingCount); err != nil {
+				log.Printf("[ProjectService.RemoveMember] insert frozen score failed: %v", err)
+				return nil, ErrInternal("固化项目最终评分失败")
+			}
 		}
 	}
 
@@ -869,18 +875,21 @@ func (s *ProjectService) RemoveMember(ctx context.Context, projectID int, operat
 		joinedAt = time.Now()
 	}
 	removedAt := time.Now()
-	result, err = tx.ExecContext(ctx, `INSERT INTO project_member_removal(
-		user_id,project_id,operator_id,role,joined_at,removed_at,score
-	) VALUES(?,?,?,?,?,?,?)`, memberID, projectID, operatorID, removedMember.Role, joinedAt, removedAt, frozenScore)
-	if err != nil {
-		return nil, ErrInternal("记录成员移除信息失败")
-	}
-	removalID, err := result.LastInsertId()
-	if err != nil {
-		return nil, ErrInternal("获取成员移除记录失败")
-	}
-	if err := repository.CreateMemberRemovalStatusNotificationTx(ctx, tx, memberID, removalID); err != nil {
-		return nil, ErrInternal("创建状态通知失败")
+	var removalID int64
+	if memberUserExists {
+		result, err = tx.ExecContext(ctx, `INSERT INTO project_member_removal(
+			user_id,project_id,operator_id,role,joined_at,removed_at,score
+		) VALUES(?,?,?,?,?,?,?)`, memberID, projectID, operatorID, removedMember.Role, joinedAt, removedAt, frozenScore)
+		if err != nil {
+			return nil, ErrInternal("记录成员移除信息失败")
+		}
+		removalID, err = result.LastInsertId()
+		if err != nil {
+			return nil, ErrInternal("获取成员移除记录失败")
+		}
+		if err := repository.CreateMemberRemovalStatusNotificationTx(ctx, tx, memberID, removalID); err != nil {
+			return nil, ErrInternal("创建状态通知失败")
+		}
 	}
 	if err := tx.Commit(); err != nil {
 		return nil, ErrInternal("提交事务失败")
