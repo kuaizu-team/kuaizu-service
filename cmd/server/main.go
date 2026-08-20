@@ -202,6 +202,9 @@ func main() {
 
 	// WeChat Pay callback (no auth required)
 	e.POST("/api/v2/payment/wechat/notify", server.WechatPayCallback)
+	// Official Mini Program virtual-payment delivery callback (no auth required).
+	e.GET("/api/v2/payment/wechat/virtual/notify", server.VerifyVirtualPaymentCallback)
+	e.POST("/api/v2/payment/wechat/virtual/notify", server.VirtualPaymentCallback)
 
 	// Health check endpoint
 	e.GET("/health", func(c echo.Context) error {

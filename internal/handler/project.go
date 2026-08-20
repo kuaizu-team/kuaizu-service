@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/kuaizu-team/kuaizu-service/api"
+	"github.com/kuaizu-team/kuaizu-service/internal/auth"
 	"github.com/kuaizu-team/kuaizu-service/internal/repository"
 	"github.com/kuaizu-team/kuaizu-service/internal/service"
 	"github.com/labstack/echo/v4"
@@ -53,8 +54,11 @@ func (s *Server) ListProjects(ctx echo.Context, params api.ListProjectsParams) e
 		listParams.IsCrossSchool = &isCrossSchool
 	}
 	listParams.SortBy = params.SortBy
-	listParams.UserSchoolID = params.UserSchoolId
-	listParams.RandomSeed = fmt.Sprintf("%d:%s", GetOptionalUserID(ctx), time.Now().Format("2006-01-02"))
+	viewerUserID := getProjectListViewerUserID(ctx)
+	if viewerUserID > 0 {
+		listParams.ViewerUserID = &viewerUserID
+	}
+	listParams.RandomSeed = fmt.Sprintf("%d:%s", viewerUserID, time.Now().Format("2006-01-02"))
 	if params.RandomSeed != nil && *params.RandomSeed != "" {
 		listParams.RandomSeed = *params.RandomSeed
 	}
@@ -91,6 +95,25 @@ func (s *Server) ListProjects(ctx echo.Context, params api.ListProjectsParams) e
 		List:     &list,
 		PageInfo: &pageInfo,
 	})
+}
+
+// GET /projects remains public, so the global JWT middleware skips it. Parse a
+// valid optional bearer token locally for personalized ranking; missing or
+// invalid credentials intentionally retain anonymous random ordering.
+func getProjectListViewerUserID(ctx echo.Context) int {
+	if userID := GetOptionalUserID(ctx); userID > 0 {
+		return userID
+	}
+	authHeader := strings.TrimSpace(ctx.Request().Header.Get("Authorization"))
+	parts := strings.SplitN(authHeader, " ", 2)
+	if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") || strings.TrimSpace(parts[1]) == "" {
+		return 0
+	}
+	claims, err := auth.ParseToken(auth.DefaultConfig(), strings.TrimSpace(parts[1]))
+	if err != nil {
+		return 0
+	}
+	return claims.UserID
 }
 
 // CreateProject handles POST /projects

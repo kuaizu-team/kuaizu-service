@@ -1,0 +1,8 @@
+type: object
+required:
+  - loginCode
+properties:
+  loginCode:
+    type: string
+    minLength: 1
+    description: 调用 wx.login 获取的一次性 code，仅用于换取本次签名所需 session_key。

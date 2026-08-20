@@ -184,14 +184,44 @@ func (s *PaymentService) MarkPaymentFailed(ctx context.Context, orderID int) {
 	s.repo.Order.UpdatePaymentStatus(ctx, orderID, 2, "", time.Now())
 }
 
-// ProcessPayment updates order status and distributes benefits within a DB transaction.
+func canProcessPaymentStatus(status int, acceptCancelled bool) bool {
+	return status == models.OrderStatusPending || (acceptCancelled && status == models.OrderStatusCancelled)
+}
+
+// ProcessPayment updates an ordinary pending order and distributes benefits within a DB transaction.
 func (s *PaymentService) ProcessPayment(ctx context.Context, order *models.Order, transactionID string, payTime time.Time) error {
+	return s.processPayment(ctx, order, transactionID, payTime, false)
+}
+
+// ProcessVirtualPayment also accepts a locally cancelled order because the
+// signed WeChat delivery notification is authoritative evidence that payment
+// completed before a client-side cancel/timeout race. Ordinary payment flows
+// remain pending-only.
+func (s *PaymentService) ProcessVirtualPayment(ctx context.Context, order *models.Order, transactionID string, payTime time.Time) error {
+	return s.processPayment(ctx, order, transactionID, payTime, true)
+}
+
+func (s *PaymentService) processPayment(ctx context.Context, order *models.Order, transactionID string, payTime time.Time, acceptCancelled bool) error {
 	tx, err := s.repo.DB().BeginTxx(ctx, nil)
 	if err != nil {
 		log.Printf("[PaymentService.ProcessPayment] failed to begin transaction: %v", err)
 		return ErrInternal("处理支付失败")
 	}
 	defer tx.Rollback()
+
+	// Lock the order before granting benefits. WeChat may retry callbacks, and
+	// virtual-payment delivery notifications are explicitly retried by the platform.
+	var currentStatus int
+	if err := tx.GetContext(ctx, &currentStatus, "SELECT status FROM `order` WHERE id=? FOR UPDATE", order.ID); err != nil {
+		log.Printf("[PaymentService.ProcessPayment] failed to lock order: %v", err)
+		return ErrInternal("处理支付失败")
+	}
+	if currentStatus == models.OrderStatusPaid {
+		return nil
+	}
+	if !canProcessPaymentStatus(currentStatus, acceptCancelled) {
+		return ErrBadRequest("订单状态不允许支付")
+	}
 
 	// Update order status
 	if err := s.repo.Order.UpdatePaymentStatusTx(ctx, tx, order.ID, 1, transactionID, payTime); err != nil {

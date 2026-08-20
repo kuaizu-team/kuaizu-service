@@ -57,19 +57,26 @@ func (s *ProjectService) ListProjects(ctx context.Context, params repository.Lis
 		return nil, err
 	}
 
-	// When school_priority sort is requested and a user school ID is provided,
-	// look up the school's geo info (province/city/district) so the repository
-	// can build the full P1→P5 geo-priority ORDER BY.
-	// If the school lookup fails or returns nothing we simply leave the geo fields
-	// nil — the repository degrades gracefully to fewer tiers.
-	if params.SortBy != nil && *params.SortBy == "school_priority" && params.UserSchoolID != nil {
-		school, err := s.repo.School.GetByID(ctx, *params.UserSchoolID)
+	// Ranking identity comes only from the authenticated viewer. Public callers
+	// without a valid token are deliberately ranked as one fully random pool.
+	if params.SortBy != nil && *params.SortBy == "school_priority" && params.ViewerUserID != nil {
+		user, err := s.repo.User.GetByID(ctx, *params.ViewerUserID)
 		if err != nil {
-			log.Printf("[ProjectService.ListProjects] school lookup error (non-fatal): %v", err)
-		} else if school != nil {
-			params.UserSchoolProvince = school.Province
-			params.UserSchoolCity = school.City
-			params.UserSchoolDistrict = school.District
+			log.Printf("[ProjectService.ListProjects] viewer lookup error (non-fatal): %v", err)
+		} else if user != nil {
+			params.UserSchoolID = user.SchoolID
+			params.UserMajorID = user.MajorID
+			params.UserMajorClassID = user.ClassID
+			if user.SchoolID != nil {
+				school, schoolErr := s.repo.School.GetByID(ctx, *user.SchoolID)
+				if schoolErr != nil {
+					log.Printf("[ProjectService.ListProjects] school lookup error (non-fatal): %v", schoolErr)
+				} else if school != nil {
+					params.UserSchoolProvince = school.Province
+					params.UserSchoolCity = school.City
+					params.UserSchoolDistrict = school.District
+				}
+			}
 		}
 	}
 
@@ -825,25 +832,31 @@ func (s *ProjectService) RemoveMember(ctx context.Context, projectID int, operat
 		return nil, ErrBadRequest("成员关系已变更，请刷新后重试")
 	}
 
-	var finalScore sql.NullFloat64
-	var ratingCount int
-	err = tx.QueryRowxContext(ctx, `SELECT pms.score,
-		(SELECT COUNT(DISTINCT r.rater_id) FROM project_member_rating r WHERE r.target_member_id=pms.project_member_id)
-		FROM project_member_score pms
-		WHERE pms.project_member_id=? FOR UPDATE`, removedMember.ID).Scan(&finalScore, &ratingCount)
-	if err != nil && err != sql.ErrNoRows {
-		return nil, ErrInternal("获取成员最终评分失败")
-	}
-
 	var frozenScore *float64
-	if finalScore.Valid {
-		score := math.Round(finalScore.Float64*100) / 100
-		frozenScore = &score
-		if _, err := tx.ExecContext(ctx, `INSERT INTO collaboration_score(
-			user_id,project_id,scorer_id,score,rating_count,created_at
-		) VALUES(?,?,?,?,?,NOW())`, memberID, projectID, operatorID, score, ratingCount); err != nil {
-			log.Printf("[ProjectService.RemoveMember] insert frozen score failed: %v", err)
-			return nil, ErrInternal("固化项目最终评分失败")
+	// A hard-deleted user can still have a legacy project_members row because
+	// that table has no user foreign key. Delete the membership, but skip user-
+	// bound score history and notifications whose foreign keys cannot succeed.
+	memberUserExists := removedMember.User != nil
+	if memberUserExists {
+		var finalScore sql.NullFloat64
+		var ratingCount int
+		err = tx.QueryRowxContext(ctx, `SELECT pms.score,
+			(SELECT COUNT(DISTINCT r.rater_id) FROM project_member_rating r WHERE r.target_member_id=pms.project_member_id)
+			FROM project_member_score pms
+			WHERE pms.project_member_id=? FOR UPDATE`, removedMember.ID).Scan(&finalScore, &ratingCount)
+		if err != nil && err != sql.ErrNoRows {
+			return nil, ErrInternal("获取成员最终评分失败")
+		}
+
+		if finalScore.Valid {
+			score := math.Round(finalScore.Float64*100) / 100
+			frozenScore = &score
+			if _, err := tx.ExecContext(ctx, `INSERT INTO collaboration_score(
+				user_id,project_id,scorer_id,score,rating_count,created_at
+			) VALUES(?,?,?,?,?,NOW())`, memberID, projectID, operatorID, score, ratingCount); err != nil {
+				log.Printf("[ProjectService.RemoveMember] insert frozen score failed: %v", err)
+				return nil, ErrInternal("固化项目最终评分失败")
+			}
 		}
 	}
 
@@ -862,18 +875,21 @@ func (s *ProjectService) RemoveMember(ctx context.Context, projectID int, operat
 		joinedAt = time.Now()
 	}
 	removedAt := time.Now()
-	result, err = tx.ExecContext(ctx, `INSERT INTO project_member_removal(
-		user_id,project_id,operator_id,role,joined_at,removed_at,score
-	) VALUES(?,?,?,?,?,?,?)`, memberID, projectID, operatorID, removedMember.Role, joinedAt, removedAt, frozenScore)
-	if err != nil {
-		return nil, ErrInternal("记录成员移除信息失败")
-	}
-	removalID, err := result.LastInsertId()
-	if err != nil {
-		return nil, ErrInternal("获取成员移除记录失败")
-	}
-	if err := repository.CreateMemberRemovalStatusNotificationTx(ctx, tx, memberID, removalID); err != nil {
-		return nil, ErrInternal("创建状态通知失败")
+	var removalID int64
+	if memberUserExists {
+		result, err = tx.ExecContext(ctx, `INSERT INTO project_member_removal(
+			user_id,project_id,operator_id,role,joined_at,removed_at,score
+		) VALUES(?,?,?,?,?,?,?)`, memberID, projectID, operatorID, removedMember.Role, joinedAt, removedAt, frozenScore)
+		if err != nil {
+			return nil, ErrInternal("记录成员移除信息失败")
+		}
+		removalID, err = result.LastInsertId()
+		if err != nil {
+			return nil, ErrInternal("获取成员移除记录失败")
+		}
+		if err := repository.CreateMemberRemovalStatusNotificationTx(ctx, tx, memberID, removalID); err != nil {
+			return nil, ErrInternal("创建状态通知失败")
+		}
 	}
 	if err := tx.Commit(); err != nil {
 		return nil, ErrInternal("提交事务失败")

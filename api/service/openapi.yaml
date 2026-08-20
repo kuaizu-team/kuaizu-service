@@ -180,6 +180,8 @@ paths:
     $ref: paths/orders_my.yaml
   /orders/{id}/pay:
     $ref: paths/orders_{id}_pay.yaml
+  /orders/{id}/virtual-pay:
+    $ref: paths/orders_{id}_virtual-pay.yaml
   /orders/{id}/push/retry:
     $ref: paths/orders_{id}_push_retry.yaml
   /orders/{id}/refund/apply:

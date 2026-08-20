@@ -150,6 +150,29 @@ func (s *Server) InitiatePayment(ctx echo.Context, id int) error {
 	})
 }
 
+type virtualPaymentRequest struct {
+	LoginCode string `json:"loginCode"`
+}
+
+// InitiateVirtualPayment handles POST /orders/{id}/virtual-pay.
+func (s *Server) InitiateVirtualPayment(ctx echo.Context, id int) error {
+	var req virtualPaymentRequest
+	if err := ctx.Bind(&req); err != nil {
+		return BadRequest(ctx, "请求参数错误")
+	}
+	params, err := s.svc.Order.InitiateVirtualPayment(
+		ctx.Request().Context(),
+		GetUserID(ctx),
+		GetOpenID(ctx),
+		req.LoginCode,
+		id,
+	)
+	if err != nil {
+		return mapServiceError(ctx, err)
+	}
+	return Success(ctx, params)
+}
+
 // CancelOrder handles POST /orders/{id}/cancel
 func (s *Server) CancelOrder(ctx echo.Context, id int) error {
 	userID := GetUserID(ctx)

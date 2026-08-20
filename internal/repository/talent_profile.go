@@ -31,6 +31,7 @@ type TalentProfileListParams struct {
 	Status       *int
 	SortBy       *string // "school_priority" enables multi-tier priority ordering
 	UserSchoolID *int    // raw school ID from caller
+	UserMajorID  *int    // raw major ID from caller
 
 	// Pre-fetched by handler before calling List — used to build ORDER BY tiers.
 	UserSchoolProvince *string
@@ -156,21 +157,15 @@ func (r *TalentProfileRepository) enrichSchoolMajorBatch(ctx context.Context, pr
 
 // List retrieves paginated talent profiles with optional filters and multi-tier smart sorting.
 //
-// Sorting scenarios (activated by SortBy == "school_priority"):
+// school_priority orders by geography, then exact major / major class / other major,
+// with certified and uncertified users alternating inside every match tier. With all
+// caller data available this produces 30 tiers; missing caller data collapses only
+// the tiers that cannot be evaluated. Non-school_priority requests keep updated_at.
 //
-//	Scenario A — UserSchoolID + UserMajorClassID both set:
-//	  10 tiers: [same school + same class] → [same school] → [same district + same class] →
-//	            [same district] → [same city + same class] → [same city] →
-//	            [same province + same class] → [same province] → [same class] → [other]
-//	Scenario B — UserSchoolID only:
-//	  5 tiers: [same school] → [same district] → [same city] → [same province] → [other]
-//	Scenario C — UserMajorClassID only:
-//	  2 tiers: [same class] → [other]
-//	Scenario D — neither set (or SortBy != "school_priority"):
-//	  plain tp.updated_at DESC
-//
-// Within every tier, a refresh-scoped seed provides stable pseudo-random order.
-// Every 10 heat points (like + 2*favorite) promotes a profile by one tier.
+// Every 10 heat points (like + 2*favorite) promotes a profile by one resulting tier,
+// which is equivalent to every 5 points of favorite + like/2. Promoted profiles are
+// placed after native members of the destination tier. A refresh-scoped seed keeps
+// the remaining order stable across pagination.
 // Geo comparisons use the talent's school columns (ts.*) from a conditional LEFT JOIN.
 // Major class comparisons use the talent's major columns (tm.*) from a conditional LEFT JOIN.
 func (r *TalentProfileRepository) List(ctx context.Context, params TalentProfileListParams) ([]models.TalentProfile, int64, error) {
@@ -233,17 +228,22 @@ func (r *TalentProfileRepository) List(ctx context.Context, params TalentProfile
 	orderClause := "tp.updated_at DESC"
 	var orderArgs []interface{}
 
-	// Determine available geo / major data
+	// Determine available geo / major data.
 	schoolID := 0
 	if params.UserSchoolID != nil {
 		schoolID = *params.UserSchoolID
+	}
+	majorID := 0
+	if params.UserMajorID != nil {
+		majorID = *params.UserMajorID
 	}
 	classID := 0
 	if params.UserMajorClassID != nil {
 		classID = *params.UserMajorClassID
 	}
 	hasSchool := schoolID != 0
-	hasMajor := classID != 0
+	hasMajor := majorID != 0
+	hasMajorClass := classID != 0
 
 	district, city, province := "", "", ""
 	if params.UserSchoolDistrict != nil {
@@ -262,95 +262,54 @@ func (r *TalentProfileRepository) List(ctx context.Context, params TalentProfile
 	needsSchoolJoin := false // LEFT JOIN school ts ON u.school_id = ts.id
 	needsMajorJoin := false  // LEFT JOIN major  tm ON u.major_id  = tm.id
 
-	if params.SortBy != nil && *params.SortBy == "school_priority" && (hasSchool || hasMajor) {
-		var whenClauses []string
-
-		switch {
-		// ── Scenario A: school + major (10-tier) ────────────────────────────
-		case hasSchool && hasMajor:
-			needsSchoolJoin = hasDistrict || hasCity || hasProvince // ts.* only referenced when geo tiers exist
-			needsMajorJoin = true
-
-			whenClauses = append(whenClauses, "WHEN u.school_id = ? AND tm.class_id = ? THEN 1")
-			orderArgs = append(orderArgs, schoolID, classID)
-
-			whenClauses = append(whenClauses, "WHEN u.school_id = ? THEN 2")
-			orderArgs = append(orderArgs, schoolID)
-
-			if hasDistrict {
-				whenClauses = append(whenClauses, "WHEN ts.district = ? AND ts.city = ? AND tm.class_id = ? THEN 3")
-				orderArgs = append(orderArgs, district, city, classID)
-
-				whenClauses = append(whenClauses, "WHEN ts.district = ? AND ts.city = ? THEN 4")
-				orderArgs = append(orderArgs, district, city)
-			}
-			if hasCity {
-				whenClauses = append(whenClauses, "WHEN ts.city = ? AND tm.class_id = ? THEN 5")
-				orderArgs = append(orderArgs, city, classID)
-
-				whenClauses = append(whenClauses, "WHEN ts.city = ? THEN 6")
-				orderArgs = append(orderArgs, city)
-			}
-			if hasProvince {
-				whenClauses = append(whenClauses, "WHEN ts.province = ? AND tm.class_id = ? THEN 7")
-				orderArgs = append(orderArgs, province, classID)
-
-				whenClauses = append(whenClauses, "WHEN ts.province = ? THEN 8")
-				orderArgs = append(orderArgs, province)
-			}
-
-			whenClauses = append(whenClauses, "WHEN tm.class_id = ? THEN 9")
-			orderArgs = append(orderArgs, classID)
-
-			tierExpr := "CASE\n" + strings.Join(whenClauses, "\n") + "\nELSE 10\nEND"
-			orderClause = talentHeatOrderClause(tierExpr)
-
-		// ── Scenario B: school only (5-tier) ────────────────────────────────
-		case hasSchool:
-			needsSchoolJoin = hasDistrict || hasCity || hasProvince // ts.* only referenced when geo tiers exist
-
-			whenClauses = append(whenClauses, "WHEN u.school_id = ? THEN 1")
-			orderArgs = append(orderArgs, schoolID)
-
-			if hasDistrict {
-				whenClauses = append(whenClauses, "WHEN ts.district = ? AND ts.city = ? THEN 2")
-				orderArgs = append(orderArgs, district, city)
-			}
-			if hasCity {
-				whenClauses = append(whenClauses, "WHEN ts.city = ? THEN 3")
-				orderArgs = append(orderArgs, city)
-			}
-			if hasProvince {
-				whenClauses = append(whenClauses, "WHEN ts.province = ? THEN 4")
-				orderArgs = append(orderArgs, province)
-			}
-
-			tierExpr := "CASE\n" + strings.Join(whenClauses, "\n") + "\nELSE 5\nEND"
-			orderClause = talentHeatOrderClause(tierExpr)
-
-		// ── Scenario C: major only (2-tier) ─────────────────────────────────
-		case hasMajor:
-			needsMajorJoin = true
-
-			whenClauses = append(whenClauses, "WHEN tm.class_id = ? THEN 1")
-			orderArgs = append(orderArgs, classID)
-
-			tierExpr := "CASE\n" + strings.Join(whenClauses, "\n") + "\nELSE 2\nEND"
-			orderClause = talentHeatOrderClause(tierExpr)
-		}
-		// Scenario D: neither hasSchool nor hasMajor → keep default "tp.updated_at DESC"
-	}
-
-	// ── Prepend auth_status sort key for all school_priority requests ────────────
-	// Certified users (auth_status = 1) surface before uncertified ones;
-	// within each auth group the existing tier / updated_at order is preserved.
-	// This runs after the switch so it wraps all four scenarios uniformly.
 	if params.SortBy != nil && *params.SortBy == "school_priority" {
-		const authExpr = "CASE WHEN u.auth_status = 1 THEN 0 ELSE 1 END"
-		orderClause = authExpr + " ASC, " + orderClause
-		if hasSchool || hasMajor {
-			orderArgs = append(orderArgs, params.RandomSeed)
+		var whenClauses []string
+		nextTier := 1
+		appendTier := func(condition string, args ...interface{}) {
+			whenClauses = append(whenClauses,
+				fmt.Sprintf("WHEN (%s) AND u.auth_status = 1 THEN %d", condition, nextTier),
+				fmt.Sprintf("WHEN (%s) THEN %d", condition, nextTier+1),
+			)
+			orderArgs = append(orderArgs, args...)
+			orderArgs = append(orderArgs, args...)
+			nextTier += 2
 		}
+		appendGeoTiers := func(condition string, args ...interface{}) {
+			if hasMajor {
+				exactMajorArgs := append(append([]interface{}{}, args...), majorID)
+				appendTier(condition+" AND u.major_id = ?", exactMajorArgs...)
+			}
+			if hasMajorClass {
+				majorClassArgs := append(append([]interface{}{}, args...), classID)
+				appendTier(condition+" AND tm.class_id = ?", majorClassArgs...)
+			}
+			appendTier(condition, args...)
+		}
+
+		needsSchoolJoin = hasDistrict || hasCity || hasProvince
+		needsMajorJoin = hasMajorClass
+
+		if hasSchool {
+			appendGeoTiers("u.school_id = ?", schoolID)
+			if hasDistrict {
+				appendGeoTiers("ts.district = ? AND ts.city = ?", district, city)
+			}
+			if hasCity {
+				appendGeoTiers("ts.city = ?", city)
+			}
+			if hasProvince {
+				appendGeoTiers("ts.province = ?", province)
+			}
+			appendGeoTiers("1 = 1")
+		} else {
+			appendGeoTiers("1 = 1")
+		}
+
+		tierExpr := "CASE\n" + strings.Join(whenClauses, "\n") + fmt.Sprintf("\nELSE %d\nEND", nextTier-1)
+		tierArgs := append([]interface{}{}, orderArgs...)
+		orderClause = talentHeatOrderClause(tierExpr)
+		orderArgs = append(orderArgs, tierArgs...)
+		orderArgs = append(orderArgs, params.RandomSeed)
 	}
 
 	// ── Build optional extra JOINs ───────────────────────────────────────────────
@@ -402,7 +361,8 @@ func (r *TalentProfileRepository) List(ctx context.Context, params TalentProfile
 func talentHeatOrderClause(tierExpr string) string {
 	const heatScoreExpr = "(SELECT COUNT(*) FROM talent_like tl WHERE tl.talent_profile_id = tp.id) + (SELECT COUNT(*) FROM talent_favorite tf WHERE tf.talent_profile_id = tp.id) * 2"
 	return fmt.Sprintf(`GREATEST(1, (%s) - FLOOR((%s) / 10)) ASC,
-		CRC32(CONCAT(?, ':item:', tp.id)) ASC, tp.id ASC`, tierExpr, heatScoreExpr)
+		(%s) ASC,
+		CRC32(CONCAT(?, ':item:', tp.id)) ASC, tp.id ASC`, tierExpr, heatScoreExpr, tierExpr)
 }
 
 // GetByID retrieves a talent profile by ID with user info
