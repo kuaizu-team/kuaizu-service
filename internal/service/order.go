@@ -516,7 +516,10 @@ func (s *OrderService) InitiateVirtualPayment(ctx context.Context, userID int, o
 		order.ID,
 		order.CreatedAt,
 		product.ID,
-		product.Price,
+		// Sign with the immutable order snapshot. The catalog price may have
+		// changed since an existing pending order was created, while the
+		// callback deliberately validates against this same snapshot.
+		order.Price,
 		order.Quantity,
 	)
 	if err != nil {
