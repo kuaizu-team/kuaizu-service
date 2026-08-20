@@ -7,6 +7,28 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestDefaultVirtualPayConfigRequiresMessageToken(t *testing.T) {
+	t.Setenv("WECHAT_VIRTUAL_PAY_OFFER_ID", "offer")
+	t.Setenv("WECHAT_VIRTUAL_PAY_APP_KEY", "app-key")
+	t.Setenv("WECHAT_VIRTUAL_PAY_ENV", "0")
+	t.Setenv("WECHAT_VIRTUAL_PAY_MESSAGE_TOKEN", "")
+
+	config, err := DefaultVirtualPayConfig()
+	require.Nil(t, config)
+	require.EqualError(t, err, "WECHAT_VIRTUAL_PAY_MESSAGE_TOKEN not configured")
+}
+
+func TestDefaultVirtualPayConfigAcceptsCompleteConfig(t *testing.T) {
+	t.Setenv("WECHAT_VIRTUAL_PAY_OFFER_ID", "offer")
+	t.Setenv("WECHAT_VIRTUAL_PAY_APP_KEY", "app-key")
+	t.Setenv("WECHAT_VIRTUAL_PAY_ENV", "1")
+	t.Setenv("WECHAT_VIRTUAL_PAY_MESSAGE_TOKEN", "message-token")
+
+	config, err := DefaultVirtualPayConfig()
+	require.NoError(t, err)
+	require.Equal(t, &VirtualPayConfig{OfferID: "offer", AppKey: "app-key", Env: 1}, config)
+}
+
 func TestCreateVirtualPaymentParams(t *testing.T) {
 	params, err := CreateVirtualPaymentParams(
 		&VirtualPayConfig{OfferID: "offer", AppKey: "app-key", Env: 0},

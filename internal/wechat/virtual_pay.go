@@ -26,6 +26,7 @@ type VirtualPayConfig struct {
 func DefaultVirtualPayConfig() (*VirtualPayConfig, error) {
 	offerID := strings.TrimSpace(os.Getenv("WECHAT_VIRTUAL_PAY_OFFER_ID"))
 	appKey := strings.TrimSpace(os.Getenv("WECHAT_VIRTUAL_PAY_APP_KEY"))
+	messageToken := strings.TrimSpace(os.Getenv("WECHAT_VIRTUAL_PAY_MESSAGE_TOKEN"))
 	env := 0
 	if raw := strings.TrimSpace(os.Getenv("WECHAT_VIRTUAL_PAY_ENV")); raw != "" {
 		parsed, err := strconv.Atoi(raw)
@@ -39,6 +40,12 @@ func DefaultVirtualPayConfig() (*VirtualPayConfig, error) {
 	}
 	if appKey == "" {
 		return nil, fmt.Errorf("WECHAT_VIRTUAL_PAY_APP_KEY not configured")
+	}
+	// Do not allow payment signing unless delivery callbacks can also be
+	// authenticated. Otherwise users could pay successfully while every callback
+	// is rejected and the local order remains pending.
+	if messageToken == "" {
+		return nil, fmt.Errorf("WECHAT_VIRTUAL_PAY_MESSAGE_TOKEN not configured")
 	}
 	return &VirtualPayConfig{OfferID: offerID, AppKey: appKey, Env: env}, nil
 }
