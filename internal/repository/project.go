@@ -23,18 +23,19 @@ func NewProjectRepository(db *sqlx.DB) *ProjectRepository {
 
 // ListParams contains parameters for listing projects
 type ListParams struct {
-	Page          int
-	Size          int
-	Keyword       *string
-	SchoolID      *int
-	SchoolIDs     []int
-	Status        *int
-	Statuses      []int
-	Direction     *int
-	EventID       *int
-	CreatorID     *int
-	MemberUserID  *int
-	IsCrossSchool *int
+	Page           int
+	Size           int
+	Keyword        *string
+	SchoolID       *int
+	SchoolIDs      []int
+	Status         *int
+	Statuses       []int
+	Direction      *int
+	EventID        *int
+	ExcludeEventID *int
+	CreatorID      *int
+	MemberUserID   *int
+	IsCrossSchool  *int
 	// SortBy controls the primary sort key.
 	// Public values: "school_priority" (personalized pool ranking), "updated_at"
 	// Admin values:  "pendingCount" (combined admin pending count), "updatedAt"
@@ -106,6 +107,10 @@ func (r *ProjectRepository) List(ctx context.Context, params ListParams) ([]mode
 	if params.EventID != nil {
 		conditions = append(conditions, "EXISTS (SELECT 1 FROM project_event pe WHERE pe.project_id = p.id AND pe.event_id = ?)")
 		whereArgs = append(whereArgs, *params.EventID)
+	}
+	if params.ExcludeEventID != nil {
+		conditions = append(conditions, "NOT EXISTS (SELECT 1 FROM project_event pe WHERE pe.project_id = p.id AND pe.event_id = ?)")
+		whereArgs = append(whereArgs, *params.ExcludeEventID)
 	}
 	if params.CreatorID != nil {
 		conditions = append(conditions, "p.creator_id = ?")

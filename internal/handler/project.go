@@ -28,11 +28,12 @@ type updateProjectRequest struct {
 // ListProjects handles GET /projects
 func (s *Server) ListProjects(ctx echo.Context, params api.ListProjectsParams) error {
 	listParams := repository.ListParams{
-		Page:     1,
-		Size:     10,
-		Keyword:  params.Keyword,
-		SchoolID: params.SchoolId,
-		EventID:  params.EventId,
+		Page:           1,
+		Size:           10,
+		Keyword:        params.Keyword,
+		SchoolID:       params.SchoolId,
+		EventID:        params.EventId,
+		ExcludeEventID: params.ExcludeEventId,
 	}
 
 	if params.Page != nil {
