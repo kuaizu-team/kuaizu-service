@@ -124,6 +124,8 @@ paths:
     $ref: paths/projects_{id}_members_{memberId}.yaml
   /projects/{id}/ratings:
     $ref: paths/projects_{id}_ratings.yaml
+  /projects/{id}/milestones/{milestoneId}/certification:
+    $ref: paths/projects_{id}_milestones_{milestoneId}_certification.yaml
   /projects/my:
     $ref: paths/projects_my.yaml
   /projects/{id}/applications:

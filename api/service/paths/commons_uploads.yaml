@@ -5,7 +5,9 @@ post:
   description: |
     统一上传图片，返回文件信息。
     - 支持格式: JPEG, PNG
-    - 文件大小限制: ≤5MB
+    - 头像/背景: ≤5MB
+    - 项目图片/作品图片: ≤1MB
+    - 时间节点佐证图片: ≤300KB
     - 学生证认证图片请使用 /users/me/certification 专用接口
   operationId: uploadFile
   requestBody:
@@ -27,10 +29,16 @@ post:
               enum:
                 - avatar
                 - background
+                - project_image
+                - talent_work
+                - milestone_evidence
               description: |
                 文件用途类型:
                 - avatar: 用户头像
                 - background: 背景图片
+                - project_image: 项目图片
+                - talent_work: 作品图片
+                - milestone_evidence: 时间节点认证佐证图片
   responses:
     '200':
       description: 上传成功

@@ -1,0 +1,33 @@
+parameters:
+  - in: path
+    name: id
+    required: true
+    schema: { type: integer }
+  - in: path
+    name: milestoneId
+    required: true
+    schema: { type: integer }
+post:
+  tags: [Projects]
+  summary: 提交时间节点认证
+  operationId: submitMilestoneCertification
+  requestBody:
+    required: true
+    content:
+      application/json:
+        schema:
+          type: object
+          required: [evidenceKeys]
+          properties:
+            evidenceKeys:
+              type: array
+              minItems: 1
+              maxItems: 9
+              items: { type: string }
+  responses:
+    '200':
+      description: 已进入待审核
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/BaseResponse.yaml

@@ -139,6 +139,7 @@ func (s *Server) CreateProject(ctx echo.Context) error {
 		PublisherRole:        req.PublisherRole,
 		InitiatingSchoolID:   req.InitiatingSchoolId,
 		Milestones:           req.Milestones,
+		ImageKeys:            req.ImageKeys,
 		Members:              req.Members,
 		EventIDs:             req.EventIDs,
 	}
@@ -400,6 +401,7 @@ func (s *Server) UpdateProject(ctx echo.Context, id int) error {
 		SchoolID:             req.SchoolId,
 		InitiatingSchoolID:   req.InitiatingSchoolId,
 		Milestones:           req.Milestones,
+		ImageKeys:            req.ImageKeys,
 		Members:              req.Members,
 		EventIDs:             req.EventIDs,
 	}
@@ -408,8 +410,44 @@ func (s *Server) UpdateProject(ctx echo.Context, id int) error {
 	if err != nil {
 		return mapServiceError(ctx, err)
 	}
+	for _, key := range project.RemovedImageKeys {
+		if err := s.svc.Commons.DeleteFile(key); err != nil {
+			log.Printf("[UpdateProject] delete removed project image failed: %v", err)
+			continue
+		}
+		_ = s.repo.Media.DeleteUploadRecords(ctx.Request().Context(), userID, []string{key})
+	}
 
 	return Success(ctx, project.ToVO())
+}
+
+// SubmitMilestoneCertification handles the manually registered certification endpoint.
+func (s *Server) SubmitMilestoneCertification(ctx echo.Context, projectID int, milestoneID int) error {
+	if projectID <= 0 {
+		return BadRequest(ctx, "无效的项目 ID")
+	}
+	if milestoneID <= 0 {
+		return BadRequest(ctx, "无效的时间节点 ID")
+	}
+	var req struct {
+		EvidenceKeys []string `json:"evidenceKeys"`
+	}
+	if err := ctx.Bind(&req); err != nil {
+		return BadRequest(ctx, "请求参数错误")
+	}
+	userID := GetUserID(ctx)
+	removed, err := s.repo.Media.SubmitMilestoneEvidence(ctx.Request().Context(), userID, projectID, milestoneID, req.EvidenceKeys)
+	if err != nil {
+		return BadRequest(ctx, "佐证图片无效或无权认证该节点")
+	}
+	for _, key := range removed {
+		if err := s.svc.Commons.DeleteFile(key); err != nil {
+			log.Printf("[SubmitMilestoneCertification] delete replaced evidence failed: %v", err)
+			continue
+		}
+		_ = s.repo.Media.DeleteUploadRecords(ctx.Request().Context(), userID, []string{key})
+	}
+	return Success(ctx, map[string]interface{}{"certificationStatus": 1})
 }
 
 // DeleteProject handles DELETE /projects/{id}

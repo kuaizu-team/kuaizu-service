@@ -36,6 +36,7 @@ type Repository struct {
 	TalentViewLog        TalentViewLogRepo
 	Interaction          *InteractionRepository
 	StatusNotification   StatusNotificationRepo
+	Media                *MediaRepository
 	WelcomeEmailDelivery WelcomeEmailDeliveryRepo
 }
 
@@ -75,6 +76,7 @@ func New(db *sqlx.DB) *Repository {
 		TalentViewLog:        NewTalentViewLogRepository(db),
 		Interaction:          NewInteractionRepository(db),
 		StatusNotification:   NewStatusNotificationRepository(db),
+		Media:                NewMediaRepository(db),
 		WelcomeEmailDelivery: NewWelcomeEmailDeliveryRepository(db),
 	}
 }

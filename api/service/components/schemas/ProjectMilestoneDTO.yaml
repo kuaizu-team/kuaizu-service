@@ -2,12 +2,20 @@ type: object
 properties:
   id:
     type: integer
+  title:
+    type: string
+    maxLength: 10
+    description: 节点标题；未提供时兼容使用旧 description 字段
   milestoneDate:
     type: string
     format: date
   description:
     type: string
     maxLength: 10
+    description: 兼容旧客户端的节点标题
+  detailDescription:
+    type: string
+    maxLength: 40
+    description: 节点详细描述
 required:
   - milestoneDate
-  - description

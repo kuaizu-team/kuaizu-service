@@ -15,6 +15,11 @@ properties:
     type: array
     items:
       $ref: ./ProjectMilestoneDTO.yaml
+  imageKeys:
+    type: array
+    maxItems: 6
+    items: { type: string }
+    description: 已上传的项目图片 OSS 相对 key
   members:
     type: array
     items:

@@ -10,6 +10,7 @@ import (
 	"github.com/jmoiron/sqlx"
 	adminvo "github.com/kuaizu-team/kuaizu-service/internal/admin/vo"
 	"github.com/kuaizu-team/kuaizu-service/internal/models"
+	"github.com/kuaizu-team/kuaizu-service/internal/oss"
 	"github.com/kuaizu-team/kuaizu-service/internal/repository"
 	"github.com/kuaizu-team/kuaizu-service/internal/response"
 	"github.com/labstack/echo/v4"
@@ -317,8 +318,10 @@ type reviewProjectRequest struct {
 }
 
 type createProjectMilestoneRequest struct {
-	MilestoneDate string `json:"milestoneDate"`
-	Description   string `json:"description"`
+	MilestoneDate     string `json:"milestoneDate"`
+	Description       string `json:"description"`
+	Title             string `json:"title"`
+	DetailDescription string `json:"detailDescription"`
 }
 
 type updateProjectMemberRoleRequest struct {
@@ -347,16 +350,104 @@ func (s *AdminServer) CreateProjectMilestone(ctx echo.Context) error {
 		return response.BadRequest(ctx, "invalid request body")
 	}
 	date, err := time.Parse("2006-01-02", strings.TrimSpace(req.MilestoneDate))
-	description := strings.TrimSpace(req.Description)
-	if err != nil || description == "" {
+	title := strings.TrimSpace(req.Title)
+	if title == "" {
+		title = strings.TrimSpace(req.Description)
+	}
+	detail := strings.TrimSpace(req.DetailDescription)
+	if err != nil || title == "" {
 		return response.BadRequest(ctx, "时间和描述不能为空")
 	}
-	result, err := s.repo.DB().ExecContext(ctx.Request().Context(), `INSERT INTO project_milestones(project_id,milestone_date,description,sort_order) SELECT ?,?,?,COALESCE(MAX(sort_order),0)+1 FROM project_milestones WHERE project_id=?`, id, date, description, id)
+	if len([]rune(title)) > 10 || len([]rune(detail)) > 40 {
+		return response.BadRequest(ctx, "节点标题最多10字，描述最多40字")
+	}
+	result, err := s.repo.DB().ExecContext(ctx.Request().Context(), `INSERT INTO project_milestones(project_id,milestone_date,title,description,detail_description,sort_order) SELECT ?,?,?,?,?,COALESCE(MAX(sort_order),0)+1 FROM project_milestones WHERE project_id=?`, id, date, title, title, detail, id)
 	if err != nil {
 		return response.InternalError(ctx, "新增时间节点失败")
 	}
 	milestoneID, _ := result.LastInsertId()
-	return response.Success(ctx, map[string]interface{}{"id": milestoneID, "milestoneDate": req.MilestoneDate, "description": description})
+	return response.Success(ctx, map[string]interface{}{"id": milestoneID, "milestoneDate": req.MilestoneDate, "title": title, "description": title, "detailDescription": detail})
+}
+
+type pendingMilestoneCertification struct {
+	ID             int       `db:"id" json:"id"`
+	ProjectID      int       `db:"project_id" json:"projectId"`
+	ProjectName    string    `db:"project_name" json:"projectName"`
+	UserID         int       `db:"user_id" json:"userId"`
+	Nickname       *string   `db:"nickname" json:"nickname"`
+	MilestoneDate  time.Time `db:"milestone_date" json:"milestoneDate"`
+	Title          string    `db:"title" json:"title"`
+	Description    string    `db:"detail_description" json:"description"`
+	SubmittedAt    time.Time `db:"submitted_at" json:"submittedAt"`
+	EvidenceImages []string  `db:"-" json:"evidenceImages"`
+}
+
+func (s *AdminServer) ListMilestoneCertifications(ctx echo.Context) error {
+	if err := requireSuperAdmin(ctx); err != nil {
+		return err
+	}
+	page, _ := strconv.Atoi(ctx.QueryParam("page"))
+	if page < 1 {
+		page = 1
+	}
+	size, _ := strconv.Atoi(ctx.QueryParam("size"))
+	if size < 1 || size > 50 {
+		size = 20
+	}
+	var total int64
+	if err := s.repo.DB().GetContext(ctx.Request().Context(), &total, `SELECT COUNT(*) FROM project_milestones WHERE certification_status=1`); err != nil {
+		return response.InternalError(ctx, "获取待审核数量失败")
+	}
+	var list []pendingMilestoneCertification
+	err := s.repo.DB().SelectContext(ctx.Request().Context(), &list, `SELECT pm.id,pm.project_id,p.name project_name,p.creator_id user_id,u.nickname,pm.milestone_date,COALESCE(pm.title,pm.description) title,pm.detail_description,pm.updated_at submitted_at FROM project_milestones pm JOIN project p ON p.id=pm.project_id JOIN `+"`user`"+` u ON u.id=p.creator_id WHERE pm.certification_status=1 ORDER BY pm.updated_at ASC,pm.id ASC LIMIT ? OFFSET ?`, size, (page-1)*size)
+	if err != nil {
+		return response.InternalError(ctx, "获取待审核时间节点失败")
+	}
+	for i := range list {
+		keys, err := s.repo.Media.EvidenceKeys(ctx.Request().Context(), list[i].ID)
+		if err != nil {
+			return response.InternalError(ctx, "获取佐证图片失败")
+		}
+		list[i].EvidenceImages = make([]string, len(keys))
+		for j, key := range keys {
+			list[i].EvidenceImages[j] = oss.FullURL(key)
+		}
+	}
+	return response.Success(ctx, map[string]interface{}{"list": list, "total": total, "page": page, "size": size})
+}
+
+func (s *AdminServer) ReviewMilestoneCertification(ctx echo.Context) error {
+	if err := requireSuperAdmin(ctx); err != nil {
+		return err
+	}
+	milestoneID, err := parseIDParam(ctx, "id", "milestone")
+	if err != nil {
+		return err
+	}
+	var req struct {
+		Approved bool `json:"approved"`
+	}
+	if err := ctx.Bind(&req); err != nil {
+		return response.BadRequest(ctx, "invalid request body")
+	}
+	keys, err := s.repo.Media.EvidenceKeys(ctx.Request().Context(), milestoneID)
+	if err != nil || len(keys) == 0 {
+		return response.BadRequest(ctx, "该节点没有可审核的佐证图片")
+	}
+	for _, key := range keys {
+		if err := s.svc.Commons.DeleteFile(key); err != nil {
+			ctx.Logger().Errorf("delete milestone evidence %s: %v", key, err)
+			return response.InternalError(ctx, "删除佐证图片失败，请稍后重试")
+		}
+	}
+	status := 3
+	if req.Approved {
+		status = 2
+	}
+	if err := s.repo.Media.FinalizeMilestoneReview(ctx.Request().Context(), milestoneID, status); err != nil {
+		return response.InternalError(ctx, "完成审核失败")
+	}
+	return response.Success(ctx, map[string]interface{}{"certificationStatus": status})
 }
 
 func (s *AdminServer) UpdateProjectMemberRole(ctx echo.Context) error {

@@ -6,6 +6,14 @@ allOf:
         type: string
       projectExperience:
         type: string
+      workImages:
+        type: array
+        maxItems: 5
+        items: { type: string }
+      workImageKeys:
+        type: array
+        maxItems: 5
+        items: { type: string }
       email:
         type: string
       phone:

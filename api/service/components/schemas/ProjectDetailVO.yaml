@@ -8,6 +8,14 @@ allOf:
         type: array
         items:
           $ref: ./ProjectMilestoneVO.yaml
+      images:
+        type: array
+        maxItems: 6
+        items: { type: string }
+      imageKeys:
+        type: array
+        maxItems: 6
+        items: { type: string }
       members:
         type: array
         items:

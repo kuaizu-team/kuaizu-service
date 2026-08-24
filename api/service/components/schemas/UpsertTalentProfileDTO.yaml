@@ -11,6 +11,11 @@ properties:
   projectExperience:
     type: string
     description: 项目经历
+  workImageKeys:
+    type: array
+    maxItems: 5
+    items: { type: string }
+    description: 已上传的作品图片 OSS 相对 key
   mbti:
     type: string
     maxLength: 10

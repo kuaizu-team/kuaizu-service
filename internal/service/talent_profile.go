@@ -154,6 +154,17 @@ func (s *TalentProfileService) UpsertTalentProfile(ctx context.Context, userID i
 		log.Printf("[TalentProfileService.UpsertTalentProfile] repository error: %v", err)
 		return nil, ErrInternal("保存人才档案失败")
 	}
+	var removedWorkImageKeys []string
+	if req.WorkImageKeys != nil {
+		if s.repo.Media == nil {
+			return nil, ErrInternal("talent media repository unavailable")
+		}
+		removedWorkImageKeys, err = s.repo.Media.ReplaceTalentWorkImages(ctx, userID, profile.ID, *req.WorkImageKeys)
+		if err != nil {
+			log.Printf("[TalentProfileService.UpsertTalentProfile] save work images error: %v", err)
+			return nil, ErrBadRequest("作品图片无效")
+		}
+	}
 
 	updated, err := s.repo.TalentProfile.GetByUserID(ctx, userID)
 	if err != nil {
@@ -163,6 +174,7 @@ func (s *TalentProfileService) UpsertTalentProfile(ctx context.Context, userID i
 	if updated == nil {
 		return nil, ErrNotFound("人才档案不存在")
 	}
+	updated.RemovedWorkImageKeys = removedWorkImageKeys
 
 	return updated, nil
 }

@@ -392,6 +392,11 @@ func (r *TalentProfileRepository) GetByID(ctx context.Context, id int) (*models.
 	if err := r.enrichSchoolMajor(ctx, &p); err != nil {
 		return nil, err
 	}
+	images, err := r.ListWorkImages(ctx, p.ID)
+	if err != nil {
+		return nil, err
+	}
+	p.WorkImages = images
 
 	return &p, nil
 }
@@ -425,6 +430,11 @@ func (r *TalentProfileRepository) GetByUserID(ctx context.Context, userID int) (
 		log.Printf("enrich school major: %v", err)
 		return nil, err
 	}
+	images, err := r.ListWorkImages(ctx, p.ID)
+	if err != nil {
+		return nil, err
+	}
+	p.WorkImages = images
 
 	return &p, nil
 }
@@ -475,6 +485,14 @@ func (r *TalentProfileRepository) Upsert(ctx context.Context, p *models.TalentPr
 	}
 
 	return nil
+}
+
+func (r *TalentProfileRepository) ListWorkImages(ctx context.Context, profileID int) ([]string, error) {
+	var keys []string
+	if err := r.db.SelectContext(ctx, &keys, `SELECT object_key FROM talent_work_image WHERE talent_profile_id=? ORDER BY sort_order,id`, profileID); err != nil {
+		return nil, fmt.Errorf("query talent work images: %w", err)
+	}
+	return keys, nil
 }
 
 // EnsureReviewingTalentProfileTx creates the user's first talent profile once

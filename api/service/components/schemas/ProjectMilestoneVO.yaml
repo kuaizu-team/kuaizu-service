@@ -9,5 +9,13 @@ properties:
     format: date
   description:
     type: string
+    description: 兼容旧客户端的节点标题
+  title:
+    type: string
+  detailDescription:
+    type: string
+  certificationStatus:
+    type: integer
+    description: 0未认证 1待审核 2已认证 3已驳回
   sortOrder:
     type: integer

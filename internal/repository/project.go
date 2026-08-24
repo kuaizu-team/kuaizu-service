@@ -441,7 +441,7 @@ func (r *ProjectRepository) Create(ctx context.Context, p *models.Project) error
 	return nil
 }
 
-func (r *ProjectRepository) CreateWithMetadata(ctx context.Context, p *models.Project, tags *[]string, publisherRole *string, initiatingSchoolID *int, milestones *[]models.ProjectMilestone, members *[]models.ProjectMember, eventIDs *[]int) error {
+func (r *ProjectRepository) CreateWithMetadata(ctx context.Context, p *models.Project, tags *[]string, publisherRole *string, initiatingSchoolID *int, milestones *[]models.ProjectMilestone, members *[]models.ProjectMember, eventIDs *[]int, imageOwnerUserID int, imageKeys *[]string) error {
 	tx, err := r.db.BeginTxx(ctx, nil)
 	if err != nil {
 		return err
@@ -469,6 +469,23 @@ func (r *ProjectRepository) CreateWithMetadata(ctx context.Context, p *models.Pr
 	p.ID = int(id)
 	if err := saveProjectMetadataTx(ctx, tx, p.ID, tags, publisherRole, initiatingSchoolID, milestones, members, eventIDs); err != nil {
 		return err
+	}
+	if imageKeys != nil {
+		keys, err := normalizeOwnedKeys(*imageKeys, "project-images/", 6)
+		if err != nil {
+			return err
+		}
+		if err := validateOwnedUploads(ctx, tx, imageOwnerUserID, MediaTypeProjectImage, "project", p.ID, keys); err != nil {
+			return err
+		}
+		for i, key := range keys {
+			if _, err := tx.ExecContext(ctx, `INSERT INTO project_image(project_id,object_key,sort_order) VALUES(?,?,?)`, p.ID, key, i+1); err != nil {
+				return err
+			}
+			if _, err := tx.ExecContext(ctx, `UPDATE media_upload SET attached_type='project',attached_id=?,attached_at=CURRENT_TIMESTAMP WHERE object_key=?`, p.ID, key); err != nil {
+				return err
+			}
+		}
 	}
 	return tx.Commit()
 }
@@ -565,14 +582,64 @@ func saveProjectMetadataTx(ctx context.Context, tx *sqlx.Tx, projectID int, tags
 		}
 	}
 	if milestones != nil {
-		if _, err := tx.ExecContext(ctx, "DELETE FROM project_milestones WHERE project_id=?", projectID); err != nil {
+		keepIDs := make([]int, 0, len(*milestones))
+		for _, m := range *milestones {
+			if m.ID > 0 {
+				keepIDs = append(keepIDs, m.ID)
+			}
+		}
+		pendingQuery := "SELECT COUNT(*) FROM project_milestones WHERE project_id=? AND certification_status=1"
+		pendingArgs := []interface{}{projectID}
+		if len(keepIDs) > 0 {
+			q, args, err := sqlx.In(pendingQuery+" AND id NOT IN (?)", projectID, keepIDs)
+			if err != nil {
+				return err
+			}
+			pendingQuery, pendingArgs = tx.Rebind(q), args
+		}
+		var pendingRemoved int
+		if err := tx.GetContext(ctx, &pendingRemoved, pendingQuery, pendingArgs...); err != nil {
 			return err
+		}
+		if pendingRemoved > 0 {
+			return fmt.Errorf("pending milestone certification cannot be deleted")
+		}
+		if len(keepIDs) == 0 {
+			if _, err := tx.ExecContext(ctx, "DELETE FROM project_milestones WHERE project_id=?", projectID); err != nil {
+				return err
+			}
+		} else {
+			q, args, err := sqlx.In("DELETE FROM project_milestones WHERE project_id=? AND id NOT IN (?)", projectID, keepIDs)
+			if err != nil {
+				return err
+			}
+			if _, err := tx.ExecContext(ctx, tx.Rebind(q), args...); err != nil {
+				return err
+			}
 		}
 		for i := range *milestones {
 			m := (*milestones)[i]
 			sortOrder := i + 1
-			if _, err := tx.ExecContext(ctx, `INSERT INTO project_milestones(project_id,milestone_date,description,sort_order)
-				VALUES(?,?,?,?)`, projectID, m.MilestoneDate, m.Description, sortOrder); err != nil {
+			if m.ID > 0 {
+				var existing struct {
+					MilestoneDate       time.Time `db:"milestone_date"`
+					Title               string    `db:"title"`
+					Description         string    `db:"detail_description"`
+					CertificationStatus int       `db:"certification_status"`
+				}
+				if err := tx.GetContext(ctx, &existing, `SELECT milestone_date,COALESCE(title,description) title,detail_description,certification_status FROM project_milestones WHERE id=? AND project_id=?`, m.ID, projectID); err != nil {
+					return fmt.Errorf("project milestone does not belong to project")
+				}
+				contentChanged := !existing.MilestoneDate.Equal(m.MilestoneDate) || existing.Title != m.Title || existing.Description != m.Description
+				if existing.CertificationStatus == 1 && contentChanged {
+					return fmt.Errorf("pending milestone certification cannot be edited")
+				}
+				_, err := tx.ExecContext(ctx, `UPDATE project_milestones SET milestone_date=?,title=?,description=?,detail_description=?,sort_order=?,certification_status=IF(?=1,0,certification_status) WHERE id=? AND project_id=?`, m.MilestoneDate, m.Title, m.Title, m.Description, sortOrder, contentChanged, m.ID, projectID)
+				if err != nil {
+					return err
+				}
+			} else if _, err := tx.ExecContext(ctx, `INSERT INTO project_milestones(project_id,milestone_date,title,description,detail_description,sort_order)
+				VALUES(?,?,?,?,?,?)`, projectID, m.MilestoneDate, m.Title, m.Title, m.Description, sortOrder); err != nil {
 				return err
 			}
 		}
@@ -597,7 +664,7 @@ func saveProjectMetadataTx(ctx context.Context, tx *sqlx.Tx, projectID int, tags
 
 func (r *ProjectRepository) ListMilestones(ctx context.Context, projectID int) ([]models.ProjectMilestone, error) {
 	var milestones []models.ProjectMilestone
-	if err := r.db.SelectContext(ctx, &milestones, `SELECT id,project_id,milestone_date,description,sort_order
+	if err := r.db.SelectContext(ctx, &milestones, `SELECT id,project_id,milestone_date,title,detail_description,certification_status,sort_order
 		FROM project_milestones WHERE project_id=? ORDER BY milestone_date ASC, id ASC`, projectID); err != nil {
 		return nil, fmt.Errorf("query project milestones: %w", err)
 	}

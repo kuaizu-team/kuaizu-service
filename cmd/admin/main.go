@@ -93,6 +93,8 @@ func main() {
 	adminGroup.PATCH("/projects/:id/takedown", server.TakedownProject)
 	adminGroup.PATCH("/projects/:id/restore", server.RestoreProject)
 	adminGroup.POST("/projects/:id/milestones", server.CreateProjectMilestone)
+	adminGroup.GET("/milestone-certifications", server.ListMilestoneCertifications)
+	adminGroup.PATCH("/milestone-certifications/:id", server.ReviewMilestoneCertification)
 	adminGroup.PATCH("/projects/:id/members/:memberId/role", server.UpdateProjectMemberRole)
 	adminGroup.PUT("/projects/:id/events", server.ReplaceProjectEvents)
 	adminGroup.PATCH("/projects/:id/admin-note", server.UpdateProjectAdminNote)

@@ -62,6 +62,10 @@ paths:
     $ref: paths/projects_{id}_permanent.yaml
   /projects/{id}/milestones:
     $ref: paths/projects_{id}_milestones.yaml
+  /milestone-certifications:
+    $ref: paths/milestone-certifications.yaml
+  /milestone-certifications/{id}:
+    $ref: paths/milestone-certifications_{id}.yaml
   /projects/{id}/members/{memberId}/role:
     $ref: paths/projects_{id}_members_{memberId}_role.yaml
   /projects/{id}/events:

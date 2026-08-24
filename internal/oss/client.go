@@ -51,19 +51,34 @@ type UploadResult struct {
 
 // Upload streams a reader to OSS under a date-based path.
 func (c *Client) Upload(r io.Reader, filename string) (*UploadResult, error) {
+	return c.UploadTo(r, "", filename)
+}
+
+// UploadTo streams a reader to an isolated business directory under basePath.
+func (c *Client) UploadTo(r io.Reader, directory, filename string) (*UploadResult, error) {
 	datePath := time.Now().Format("2006/01/02")
-	objectKey := fmt.Sprintf("%s/%s/%s", c.basePath, datePath, filename)
+	relativeKey := fmt.Sprintf("%s/%s", datePath, filename)
+	if directory = strings.Trim(strings.TrimSpace(directory), "/"); directory != "" {
+		relativeKey = fmt.Sprintf("%s/%s", directory, relativeKey)
+	}
+	objectKey := relativeKey
+	if basePath := strings.Trim(strings.TrimSpace(c.basePath), "/"); basePath != "" {
+		objectKey = fmt.Sprintf("%s/%s", basePath, relativeKey)
+	}
 
 	if err := c.bucket.PutObject(objectKey, r); err != nil {
 		return nil, fmt.Errorf("oss put object: %w", err)
 	}
 
-	return &UploadResult{URL: fmt.Sprintf("%s/%s", c.domain, objectKey), Key: fmt.Sprintf("%s/%s", datePath, filename)}, nil
+	return &UploadResult{URL: fmt.Sprintf("%s/%s", strings.TrimRight(c.domain, "/"), objectKey), Key: relativeKey}, nil
 }
 
 // Delete removes an object from OSS by its key (the path under basePath).
 func (c *Client) Delete(key string) error {
-	objectKey := fmt.Sprintf("%s/%s", c.basePath, key)
+	objectKey := strings.TrimLeft(key, "/")
+	if basePath := strings.Trim(strings.TrimSpace(c.basePath), "/"); basePath != "" {
+		objectKey = fmt.Sprintf("%s/%s", basePath, objectKey)
+	}
 	if err := c.bucket.DeleteObject(objectKey); err != nil {
 		return fmt.Errorf("oss delete object: %w", err)
 	}
