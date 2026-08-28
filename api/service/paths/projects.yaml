@@ -48,7 +48,8 @@ get:
       in: query
       description: |
         排序模式。目前支持 `school_priority`：按本校 > 跨校 > 其他优先级排序，
-        同优先级内按发布时间倒序。不传则默认按发布时间倒序。
+        同优先级内按发布时间倒序；`today_views`：按数据库当前自然日阅读量倒序，
+        阅读量相同时按发布时间倒序。不传则默认按发布时间倒序。
       schema:
         type: string
     - name: userSchoolId

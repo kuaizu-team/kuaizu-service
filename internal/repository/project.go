@@ -37,7 +37,7 @@ type ListParams struct {
 	MemberUserID   *int
 	IsCrossSchool  *int
 	// SortBy controls the primary sort key.
-	// Public values: "school_priority" (personalized pool ranking), "updated_at"
+	// Public values: "school_priority" (personalized pool ranking), "today_views", "updated_at"
 	// Admin values:  "pendingCount" (combined admin pending count), "updatedAt"
 	SortBy *string
 	// Order controls asc/desc direction for "pendingCount" and "updatedAt" sortBy.
@@ -143,6 +143,7 @@ func (r *ProjectRepository) List(ctx context.Context, params ListParams) ([]mode
 	// Modes:
 	//   "updated_at"      → p.updated_at DESC  (used by ListMyProjects)
 	//   "school_priority" → geo/major/heat pools with seeded shuffle and owner avoidance
+	//   "today_views"     → today's view count, then creation time
 	//   default           → p.created_at DESC
 	orderClause := "p.created_at DESC"
 	var orderArgs []interface{}
@@ -150,6 +151,12 @@ func (r *ProjectRepository) List(ctx context.Context, params ListParams) ([]mode
 
 	if params.SortBy != nil && *params.SortBy == "updated_at" {
 		orderClause = "p.updated_at DESC"
+	} else if params.SortBy != nil && *params.SortBy == "today_views" {
+		orderClause = `(SELECT COUNT(*) FROM project_view_log pvl
+			WHERE pvl.project_id = p.id
+				AND pvl.viewed_at >= CURDATE() AND pvl.viewed_at < CURDATE() + INTERVAL 1 DAY
+				AND pvl.duration_ms IS NULL
+		) DESC, p.created_at DESC, p.id DESC`
 	} else if params.SortBy != nil && *params.SortBy == "pendingCount" {
 		// Admin sort by combined pending count.
 		// IncludePendingCount must be true for pending_count to exist in SELECT.
