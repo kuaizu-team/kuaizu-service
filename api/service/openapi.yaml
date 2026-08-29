@@ -164,6 +164,8 @@ paths:
     $ref: paths/talent-profiles_{id}_top-viewers.yaml
   /talent-profiles/my:
     $ref: paths/talent-profiles_my.yaml
+  /role-tags:
+    $ref: paths/role-tags.yaml
   /olive-branches:
     $ref: paths/olive-branches.yaml
   /olive-branches/{id}:
