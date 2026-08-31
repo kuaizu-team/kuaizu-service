@@ -94,12 +94,21 @@ func (r *Repository) PurgeDeletedProjectBefore(ctx context.Context, id int, cuto
 var projectRelationTables = []string{
 	"email_promotion_recipient", "project_view_log", "project_like",
 	"project_favorite", "project_share", "project_tag_relation",
-	"project_milestones", "project_member_rating", "project_member_score",
+	"project_milestones", "project_image",
+	"project_member_rating", "project_member_score",
 	"project_members", "project_event",
 	"project_recommendation", "collaboration_score", "olive_branch_sms_notice",
 }
 
 func deleteProjectRelations(ctx context.Context, tx *sqlx.Tx, ids []int) error {
+	if err := markProjectMediaForCleanup(ctx, tx, ids); err != nil {
+		return err
+	}
+	if _, err := execInTx(ctx, tx, `DELETE pme FROM project_milestone_evidence pme
+		INNER JOIN project_milestones pm ON pm.id=pme.milestone_id
+		WHERE pm.project_id IN (?)`, ids); err != nil {
+		return fmt.Errorf("delete milestone evidence for project: %w", err)
+	}
 	for _, table := range projectRelationTables {
 		if err := execDeleteInTx(ctx, tx, "DELETE FROM "+table+" WHERE project_id IN (?)", ids); err != nil {
 			return fmt.Errorf("delete %s for project: %w", table, err)
@@ -110,6 +119,23 @@ func deleteProjectRelations(ctx context.Context, tx *sqlx.Tx, ids []int) error {
 	}
 	if err := execDeleteInTx(ctx, tx, "DELETE FROM olive_branch_record WHERE related_project_id IN (?)", ids); err != nil {
 		return fmt.Errorf("delete olive_branch_record for project: %w", err)
+	}
+	return nil
+}
+
+func markProjectMediaForCleanup(ctx context.Context, tx *sqlx.Tx, ids []int) error {
+	if _, err := execInTx(ctx, tx, `UPDATE media_upload mu
+		INNER JOIN project_image pi ON pi.object_key=mu.object_key
+		SET mu.attached_type=?,mu.attached_id=NULL,mu.attached_at=CURRENT_TIMESTAMP
+		WHERE pi.project_id IN (?)`, mediaAttachmentCleanup, ids); err != nil {
+		return fmt.Errorf("mark project images for cleanup: %w", err)
+	}
+	if _, err := execInTx(ctx, tx, `UPDATE media_upload mu
+		INNER JOIN project_milestone_evidence pme ON pme.object_key=mu.object_key
+		INNER JOIN project_milestones pm ON pm.id=pme.milestone_id
+		SET mu.attached_type=?,mu.attached_id=NULL,mu.attached_at=CURRENT_TIMESTAMP
+		WHERE pm.project_id IN (?)`, mediaAttachmentCleanup, ids); err != nil {
+		return fmt.Errorf("mark milestone evidence for cleanup: %w", err)
 	}
 	return nil
 }

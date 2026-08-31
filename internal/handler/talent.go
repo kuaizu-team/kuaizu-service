@@ -119,7 +119,7 @@ func (s *Server) UpsertTalentProfile(ctx echo.Context) error {
 			ctx.Logger().Errorf("delete removed work image: %v", err)
 			continue
 		}
-		_ = s.repo.Media.DeleteUploadRecords(ctx.Request().Context(), userID, []string{key})
+		_ = s.repo.Media.CompleteCleanup(ctx.Request().Context(), key)
 	}
 
 	return Success(ctx, updated.ToDetailVO())

@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"log"
 	"math"
 	"sort"
@@ -24,7 +25,7 @@ type ProjectService struct {
 
 type projectMetadataRepo interface {
 	CreateWithMetadata(ctx context.Context, p *models.Project, tags *[]string, publisherRole *string, initiatingSchoolID *int, milestones *[]models.ProjectMilestone, members *[]models.ProjectMember, eventIDs *[]int, imageOwnerUserID int, imageKeys *[]string) error
-	UpdateWithMetadata(ctx context.Context, p *models.Project, tags *[]string, publisherRole *string, initiatingSchoolID *int, milestones *[]models.ProjectMilestone, members *[]models.ProjectMember, eventIDs *[]int) error
+	UpdateWithMetadata(ctx context.Context, p *models.Project, tags *[]string, publisherRole *string, initiatingSchoolID *int, milestones *[]models.ProjectMilestone, members *[]models.ProjectMember, eventIDs *[]int, imageOwnerUserID int, imageKeys *[]string, resetReview bool) ([]string, error)
 }
 
 type projectMemberBatchRepo interface {
@@ -1257,29 +1258,14 @@ func (s *ProjectService) UpdateProject(ctx context.Context, id, userID int, inpu
 	if !ok {
 		return nil, ErrInternal("project repository does not support metadata transaction")
 	}
-	if err := projectRepo.UpdateWithMetadata(ctx, project, input.Tags, input.PublisherRole, input.InitiatingSchoolID, milestones, members, input.EventIDs); err != nil {
+	resetReview := input.NeedReview != nil && *input.NeedReview
+	removedImageKeys, err := projectRepo.UpdateWithMetadata(ctx, project, input.Tags, input.PublisherRole, input.InitiatingSchoolID, milestones, members, input.EventIDs, userID, input.ImageKeys, resetReview)
+	if err != nil {
 		log.Printf("[ProjectService.UpdateProject] repository error updating: %v", err)
-		return nil, ErrInternal("更新项目失败")
-	}
-	var removedImageKeys []string
-	if input.ImageKeys != nil {
-		if s.repo.Media == nil {
-			return nil, ErrInternal("project media repository unavailable")
-		}
-		removedImageKeys, err = s.repo.Media.ReplaceProjectImages(ctx, userID, id, *input.ImageKeys)
-		if err != nil {
-			log.Printf("[ProjectService.UpdateProject] save images error: %v", err)
+		if errors.Is(err, repository.ErrInvalidMedia) {
 			return nil, ErrBadRequest("项目图片无效")
 		}
-	}
-
-	// If the caller signals that content changed, reset status to pending so the
-	// project re-enters the admin review queue.
-	if input.NeedReview != nil && *input.NeedReview {
-		if err := s.repo.Project.UpdateStatus(ctx, id, models.ProjectStatusPending); err != nil {
-			log.Printf("[ProjectService.UpdateProject] repository error resetting status: %v", err)
-			return nil, ErrInternal("重置审核状态失败")
-		}
+		return nil, ErrInternal("更新项目失败")
 	}
 
 	// Reload to return fresh data

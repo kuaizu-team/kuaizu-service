@@ -483,20 +483,8 @@ func (r *ProjectRepository) CreateWithMetadata(ctx context.Context, p *models.Pr
 		return err
 	}
 	if imageKeys != nil {
-		keys, err := normalizeOwnedKeys(*imageKeys, "project-images/", 6)
-		if err != nil {
+		if _, err := replaceImagesTx(ctx, tx, imageOwnerUserID, MediaTypeProjectImage, "project", p.ID, "project_image", "project_id", "project-images/", 6, *imageKeys); err != nil {
 			return err
-		}
-		if err := validateOwnedUploads(ctx, tx, imageOwnerUserID, MediaTypeProjectImage, "project", p.ID, keys); err != nil {
-			return err
-		}
-		for i, key := range keys {
-			if _, err := tx.ExecContext(ctx, `INSERT INTO project_image(project_id,object_key,sort_order) VALUES(?,?,?)`, p.ID, key, i+1); err != nil {
-				return err
-			}
-			if _, err := tx.ExecContext(ctx, `UPDATE media_upload SET attached_type='project',attached_id=?,attached_at=CURRENT_TIMESTAMP WHERE object_key=?`, p.ID, key); err != nil {
-				return err
-			}
 		}
 	}
 	return tx.Commit()
@@ -530,10 +518,10 @@ func (r *ProjectRepository) Update(ctx context.Context, p *models.Project) error
 	return nil
 }
 
-func (r *ProjectRepository) UpdateWithMetadata(ctx context.Context, p *models.Project, tags *[]string, publisherRole *string, initiatingSchoolID *int, milestones *[]models.ProjectMilestone, members *[]models.ProjectMember, eventIDs *[]int) error {
+func (r *ProjectRepository) UpdateWithMetadata(ctx context.Context, p *models.Project, tags *[]string, publisherRole *string, initiatingSchoolID *int, milestones *[]models.ProjectMilestone, members *[]models.ProjectMember, eventIDs *[]int, imageOwnerUserID int, imageKeys *[]string, resetReview bool) ([]string, error) {
 	tx, err := r.db.BeginTxx(ctx, nil)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer tx.Rollback()
 	query := `
@@ -551,16 +539,31 @@ func (r *ProjectRepository) UpdateWithMetadata(ctx context.Context, p *models.Pr
 	`
 	result, err := tx.NamedExecContext(ctx, query, p)
 	if err != nil {
-		return fmt.Errorf("update project: %w", err)
+		return nil, fmt.Errorf("update project: %w", err)
 	}
 	rowsAffected, _ := result.RowsAffected()
 	if rowsAffected == 0 {
-		return fmt.Errorf("project not found")
+		return nil, fmt.Errorf("project not found")
 	}
 	if err := saveProjectMetadataTx(ctx, tx, p.ID, tags, publisherRole, initiatingSchoolID, milestones, members, eventIDs); err != nil {
-		return err
+		return nil, err
 	}
-	return tx.Commit()
+	var removed []string
+	if imageKeys != nil {
+		removed, err = replaceImagesTx(ctx, tx, imageOwnerUserID, MediaTypeProjectImage, "project", p.ID, "project_image", "project_id", "project-images/", 6, *imageKeys)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if resetReview {
+		if _, err := tx.ExecContext(ctx, `UPDATE project SET status=? WHERE id=?`, models.ProjectStatusPending, p.ID); err != nil {
+			return nil, err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return removed, nil
 }
 
 func saveProjectMetadataTx(ctx context.Context, tx *sqlx.Tx, projectID int, tags *[]string, publisherRole *string, initiatingSchoolID *int, milestones *[]models.ProjectMilestone, members *[]models.ProjectMember, eventIDs *[]int) error {

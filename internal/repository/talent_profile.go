@@ -441,14 +441,44 @@ func (r *TalentProfileRepository) GetByUserID(ctx context.Context, userID int) (
 
 // Upsert creates or updates a talent profile for a user
 func (r *TalentProfileRepository) Upsert(ctx context.Context, p *models.TalentProfile) error {
-	// Check if profile exists
-	existing, err := r.GetByUserID(ctx, p.UserID)
+	tx, err := r.db.BeginTxx(ctx, nil)
 	if err != nil {
 		return err
 	}
+	defer tx.Rollback()
+	if err := upsertTalentProfileTx(ctx, tx, p); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
 
-	if existing == nil {
-		// Insert
+func (r *TalentProfileRepository) UpsertWithWorkImages(ctx context.Context, p *models.TalentProfile, ownerUserID int, imageKeys []string) ([]string, error) {
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+	if err := upsertTalentProfileTx(ctx, tx, p); err != nil {
+		return nil, err
+	}
+	removed, err := replaceImagesTx(ctx, tx, ownerUserID, MediaTypeTalentWork, "talent_profile", p.ID, "talent_work_image", "talent_profile_id", "talent-work-images/", 5, imageKeys)
+	if err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return removed, nil
+}
+
+func upsertTalentProfileTx(ctx context.Context, tx *sqlx.Tx, p *models.TalentProfile) error {
+	var existingID int
+	err := tx.GetContext(ctx, &existingID, `SELECT id FROM talent_profile WHERE user_id=? FOR UPDATE`, p.UserID)
+	if err != nil && err != sql.ErrNoRows {
+		return fmt.Errorf("query talent profile for update: %w", err)
+	}
+
+	if err == sql.ErrNoRows {
 		query := `
 			INSERT INTO talent_profile (
 				user_id, self_evaluation, skill_summary, project_experience,
@@ -458,14 +488,13 @@ func (r *TalentProfileRepository) Upsert(ctx context.Context, p *models.TalentPr
 				:mbti, :status
 			)
 		`
-		result, err := r.db.NamedExecContext(ctx, query, p)
+		result, err := tx.NamedExecContext(ctx, query, p)
 		if err != nil {
 			return fmt.Errorf("insert talent profile: %w", err)
 		}
 		id, _ := result.LastInsertId()
 		p.ID = int(id)
 	} else {
-		// Update
 		query := `
 			UPDATE talent_profile SET
 				self_evaluation = :self_evaluation,
@@ -477,11 +506,11 @@ func (r *TalentProfileRepository) Upsert(ctx context.Context, p *models.TalentPr
 				updated_at = CURRENT_TIMESTAMP
 			WHERE user_id = :user_id
 		`
-		_, err := r.db.NamedExecContext(ctx, query, p)
+		_, err := tx.NamedExecContext(ctx, query, p)
 		if err != nil {
 			return fmt.Errorf("update talent profile: %w", err)
 		}
-		p.ID = existing.ID
+		p.ID = existingID
 	}
 
 	return nil

@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"log"
 	"strings"
 	"time"
@@ -150,20 +151,19 @@ func (s *TalentProfileService) UpsertTalentProfile(ctx context.Context, userID i
 		Status:            status,
 	}
 
-	if err := s.repo.TalentProfile.Upsert(ctx, profile); err != nil {
-		log.Printf("[TalentProfileService.UpsertTalentProfile] repository error: %v", err)
-		return nil, ErrInternal("保存人才档案失败")
-	}
 	var removedWorkImageKeys []string
 	if req.WorkImageKeys != nil {
-		if s.repo.Media == nil {
-			return nil, ErrInternal("talent media repository unavailable")
-		}
-		removedWorkImageKeys, err = s.repo.Media.ReplaceTalentWorkImages(ctx, userID, profile.ID, *req.WorkImageKeys)
+		removedWorkImageKeys, err = s.repo.TalentProfile.UpsertWithWorkImages(ctx, profile, userID, *req.WorkImageKeys)
 		if err != nil {
-			log.Printf("[TalentProfileService.UpsertTalentProfile] save work images error: %v", err)
-			return nil, ErrBadRequest("作品图片无效")
+			log.Printf("[TalentProfileService.UpsertTalentProfile] repository error saving profile and work images: %v", err)
+			if errors.Is(err, repository.ErrInvalidMedia) {
+				return nil, ErrBadRequest("作品图片无效")
+			}
+			return nil, ErrInternal("保存人才档案失败")
 		}
+	} else if err := s.repo.TalentProfile.Upsert(ctx, profile); err != nil {
+		log.Printf("[TalentProfileService.UpsertTalentProfile] repository error: %v", err)
+		return nil, ErrInternal("保存人才档案失败")
 	}
 
 	updated, err := s.repo.TalentProfile.GetByUserID(ctx, userID)

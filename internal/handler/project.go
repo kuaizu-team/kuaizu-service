@@ -416,7 +416,7 @@ func (s *Server) UpdateProject(ctx echo.Context, id int) error {
 			log.Printf("[UpdateProject] delete removed project image failed: %v", err)
 			continue
 		}
-		_ = s.repo.Media.DeleteUploadRecords(ctx.Request().Context(), userID, []string{key})
+		_ = s.repo.Media.CompleteCleanup(ctx.Request().Context(), key)
 	}
 
 	return Success(ctx, project.ToVO())
@@ -446,7 +446,7 @@ func (s *Server) SubmitMilestoneCertification(ctx echo.Context, projectID int, m
 			log.Printf("[SubmitMilestoneCertification] delete replaced evidence failed: %v", err)
 			continue
 		}
-		_ = s.repo.Media.DeleteUploadRecords(ctx.Request().Context(), userID, []string{key})
+		_ = s.repo.Media.CompleteCleanup(ctx.Request().Context(), key)
 	}
 	return Success(ctx, map[string]interface{}{"certificationStatus": 1})
 }

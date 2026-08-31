@@ -84,17 +84,24 @@ func TestPurgeDeletedProjectsBeforeHardDeletesOnlyExpiredDeletingProjects(t *tes
 }
 
 func TestProjectCleanupUsesActualSMSNoticeTable(t *testing.T) {
-	found := false
+	foundSMSNotice := false
+	foundProjectImage := false
 	for _, table := range projectRelationTables {
 		if table == "sms_notice" {
 			t.Fatal("project cleanup references obsolete table sms_notice")
 		}
 		if table == "olive_branch_sms_notice" {
-			found = true
+			foundSMSNotice = true
+		}
+		if table == "project_image" {
+			foundProjectImage = true
 		}
 	}
-	if !found {
+	if !foundSMSNotice {
 		t.Fatal("project cleanup must clear olive_branch_sms_notice")
+	}
+	if !foundProjectImage {
+		t.Fatal("project cleanup must clear project_image")
 	}
 }
 

@@ -430,22 +430,22 @@ func (s *AdminServer) ReviewMilestoneCertification(ctx echo.Context) error {
 	if err := ctx.Bind(&req); err != nil {
 		return response.BadRequest(ctx, "invalid request body")
 	}
-	keys, err := s.repo.Media.EvidenceKeys(ctx.Request().Context(), milestoneID)
-	if err != nil || len(keys) == 0 {
-		return response.BadRequest(ctx, "该节点没有可审核的佐证图片")
-	}
-	for _, key := range keys {
-		if err := s.svc.Commons.DeleteFile(key); err != nil {
-			ctx.Logger().Errorf("delete milestone evidence %s: %v", key, err)
-			return response.InternalError(ctx, "删除佐证图片失败，请稍后重试")
-		}
-	}
 	status := 3
 	if req.Approved {
 		status = 2
 	}
-	if err := s.repo.Media.FinalizeMilestoneReview(ctx.Request().Context(), milestoneID, status); err != nil {
+	keys, err := s.repo.Media.FinalizeMilestoneReview(ctx.Request().Context(), milestoneID, status)
+	if err != nil {
 		return response.InternalError(ctx, "完成审核失败")
+	}
+	for _, key := range keys {
+		if err := s.svc.Commons.DeleteFile(key); err != nil {
+			ctx.Logger().Errorf("delete finalized milestone evidence %s: %v", key, err)
+			continue
+		}
+		if err := s.repo.Media.CompleteCleanup(ctx.Request().Context(), key); err != nil {
+			ctx.Logger().Errorf("complete milestone evidence cleanup %s: %v", key, err)
+		}
 	}
 	return response.Success(ctx, map[string]interface{}{"certificationStatus": status})
 }
