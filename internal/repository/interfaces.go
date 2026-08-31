@@ -210,6 +210,7 @@ type TalentProfileRepo interface {
 	GetByID(ctx context.Context, id int) (*models.TalentProfile, error)
 	GetByUserID(ctx context.Context, userID int) (*models.TalentProfile, error)
 	Upsert(ctx context.Context, p *models.TalentProfile) error
+	UpsertWithWorkImages(ctx context.Context, p *models.TalentProfile, ownerUserID int, imageKeys []string) ([]string, error)
 	UpdateStatus(ctx context.Context, id int, status int, rejectReason *string) error
 	UpdateStatusIfCurrent(ctx context.Context, id int, currentStatus int, status int, rejectReason *string) (bool, error)
 	DeleteByUserID(ctx context.Context, userID int) error

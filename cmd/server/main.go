@@ -83,6 +83,8 @@ func main() {
 	}
 
 	svc := service.New(repo, deps)
+	service.StartProjectCleanupScheduler(ctx, repo)
+	service.StartMediaCleanupScheduler(ctx, repo.Media, svc.Commons)
 	if err := svc.Message.CheckSubscribeDeliverySchema(ctx); err != nil {
 		log.Fatalf("Failed to initialize WeChat subscribe delivery: %v", err)
 	}

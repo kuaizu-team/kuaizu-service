@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/kuaizu-team/kuaizu-service/api"
+	"github.com/kuaizu-team/kuaizu-service/internal/oss"
 )
 
 type JSONStringArray struct {
@@ -81,9 +82,11 @@ type TalentProfile struct {
 	SchoolID *int `db:"school_id"`
 	MajorID  *int `db:"major_id"`
 	// Populated after follow-up queries
-	SchoolName  *string     `db:"-"`
-	MajorName   *string     `db:"-"`
-	Interaction Interaction `db:"-"`
+	SchoolName           *string     `db:"-"`
+	MajorName            *string     `db:"-"`
+	Interaction          Interaction `db:"-"`
+	WorkImages           []string    `db:"-"`
+	RemovedWorkImageKeys []string    `db:"-"`
 }
 
 func (t *TalentProfile) skills() *[]string {
@@ -146,6 +149,15 @@ func (t *TalentProfile) ToDetailVO() *api.TalentProfileDetailVO {
 		vo.CollaborationScore = t.CollaborationScore
 		level := CollaborationLevel(*t.CollaborationScore)
 		vo.CollaborationLevel = &level
+	}
+	if len(t.WorkImages) > 0 {
+		images := make([]string, len(t.WorkImages))
+		for i := range t.WorkImages {
+			images[i] = oss.FullURL(t.WorkImages[i])
+		}
+		vo.WorkImages = &images
+		keys := append([]string(nil), t.WorkImages...)
+		vo.WorkImageKeys = &keys
 	}
 
 	return vo

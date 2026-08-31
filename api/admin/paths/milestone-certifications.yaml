@@ -1,0 +1,6 @@
+get:
+  tags: [Projects]
+  summary: 待审核时间节点认证列表（平台超级管理员）
+  responses:
+    '200':
+      description: 待审核列表

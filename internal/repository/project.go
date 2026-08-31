@@ -23,20 +23,21 @@ func NewProjectRepository(db *sqlx.DB) *ProjectRepository {
 
 // ListParams contains parameters for listing projects
 type ListParams struct {
-	Page          int
-	Size          int
-	Keyword       *string
-	SchoolID      *int
-	SchoolIDs     []int
-	Status        *int
-	Statuses      []int
-	Direction     *int
-	EventID       *int
-	CreatorID     *int
-	MemberUserID  *int
-	IsCrossSchool *int
+	Page           int
+	Size           int
+	Keyword        *string
+	SchoolID       *int
+	SchoolIDs      []int
+	Status         *int
+	Statuses       []int
+	Direction      *int
+	EventID        *int
+	ExcludeEventID *int
+	CreatorID      *int
+	MemberUserID   *int
+	IsCrossSchool  *int
 	// SortBy controls the primary sort key.
-	// Public values: "school_priority" (personalized pool ranking), "updated_at"
+	// Public values: "school_priority" (personalized pool ranking), "today_views", "updated_at"
 	// Admin values:  "pendingCount" (combined admin pending count), "updatedAt"
 	SortBy *string
 	// Order controls asc/desc direction for "pendingCount" and "updatedAt" sortBy.
@@ -107,6 +108,10 @@ func (r *ProjectRepository) List(ctx context.Context, params ListParams) ([]mode
 		conditions = append(conditions, "EXISTS (SELECT 1 FROM project_event pe WHERE pe.project_id = p.id AND pe.event_id = ?)")
 		whereArgs = append(whereArgs, *params.EventID)
 	}
+	if params.ExcludeEventID != nil {
+		conditions = append(conditions, "NOT EXISTS (SELECT 1 FROM project_event pe WHERE pe.project_id = p.id AND pe.event_id = ?)")
+		whereArgs = append(whereArgs, *params.ExcludeEventID)
+	}
 	if params.CreatorID != nil {
 		conditions = append(conditions, "p.creator_id = ?")
 		whereArgs = append(whereArgs, *params.CreatorID)
@@ -138,6 +143,7 @@ func (r *ProjectRepository) List(ctx context.Context, params ListParams) ([]mode
 	// Modes:
 	//   "updated_at"      → p.updated_at DESC  (used by ListMyProjects)
 	//   "school_priority" → geo/major/heat pools with seeded shuffle and owner avoidance
+	//   "today_views"     → today's view count, then creation time
 	//   default           → p.created_at DESC
 	orderClause := "p.created_at DESC"
 	var orderArgs []interface{}
@@ -145,6 +151,12 @@ func (r *ProjectRepository) List(ctx context.Context, params ListParams) ([]mode
 
 	if params.SortBy != nil && *params.SortBy == "updated_at" {
 		orderClause = "p.updated_at DESC"
+	} else if params.SortBy != nil && *params.SortBy == "today_views" {
+		orderClause = `(SELECT COUNT(*) FROM project_view_log pvl
+			WHERE pvl.project_id = p.id
+				AND pvl.viewed_at >= CURDATE() AND pvl.viewed_at < CURDATE() + INTERVAL 1 DAY
+				AND pvl.duration_ms IS NULL
+		) DESC, p.created_at DESC, p.id DESC`
 	} else if params.SortBy != nil && *params.SortBy == "pendingCount" {
 		// Admin sort by combined pending count.
 		// IncludePendingCount must be true for pending_count to exist in SELECT.
@@ -441,7 +453,7 @@ func (r *ProjectRepository) Create(ctx context.Context, p *models.Project) error
 	return nil
 }
 
-func (r *ProjectRepository) CreateWithMetadata(ctx context.Context, p *models.Project, tags *[]string, publisherRole *string, initiatingSchoolID *int, milestones *[]models.ProjectMilestone, members *[]models.ProjectMember, eventIDs *[]int) error {
+func (r *ProjectRepository) CreateWithMetadata(ctx context.Context, p *models.Project, tags *[]string, publisherRole *string, initiatingSchoolID *int, milestones *[]models.ProjectMilestone, members *[]models.ProjectMember, eventIDs *[]int, imageOwnerUserID int, imageKeys *[]string) error {
 	tx, err := r.db.BeginTxx(ctx, nil)
 	if err != nil {
 		return err
@@ -469,6 +481,11 @@ func (r *ProjectRepository) CreateWithMetadata(ctx context.Context, p *models.Pr
 	p.ID = int(id)
 	if err := saveProjectMetadataTx(ctx, tx, p.ID, tags, publisherRole, initiatingSchoolID, milestones, members, eventIDs); err != nil {
 		return err
+	}
+	if imageKeys != nil {
+		if _, err := replaceImagesTx(ctx, tx, imageOwnerUserID, MediaTypeProjectImage, "project", p.ID, "project_image", "project_id", "project-images/", 6, *imageKeys); err != nil {
+			return err
+		}
 	}
 	return tx.Commit()
 }
@@ -501,10 +518,10 @@ func (r *ProjectRepository) Update(ctx context.Context, p *models.Project) error
 	return nil
 }
 
-func (r *ProjectRepository) UpdateWithMetadata(ctx context.Context, p *models.Project, tags *[]string, publisherRole *string, initiatingSchoolID *int, milestones *[]models.ProjectMilestone, members *[]models.ProjectMember, eventIDs *[]int) error {
+func (r *ProjectRepository) UpdateWithMetadata(ctx context.Context, p *models.Project, tags *[]string, publisherRole *string, initiatingSchoolID *int, milestones *[]models.ProjectMilestone, members *[]models.ProjectMember, eventIDs *[]int, imageOwnerUserID int, imageKeys *[]string, resetReview bool) ([]string, error) {
 	tx, err := r.db.BeginTxx(ctx, nil)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer tx.Rollback()
 	query := `
@@ -522,16 +539,31 @@ func (r *ProjectRepository) UpdateWithMetadata(ctx context.Context, p *models.Pr
 	`
 	result, err := tx.NamedExecContext(ctx, query, p)
 	if err != nil {
-		return fmt.Errorf("update project: %w", err)
+		return nil, fmt.Errorf("update project: %w", err)
 	}
 	rowsAffected, _ := result.RowsAffected()
 	if rowsAffected == 0 {
-		return fmt.Errorf("project not found")
+		return nil, fmt.Errorf("project not found")
 	}
 	if err := saveProjectMetadataTx(ctx, tx, p.ID, tags, publisherRole, initiatingSchoolID, milestones, members, eventIDs); err != nil {
-		return err
+		return nil, err
 	}
-	return tx.Commit()
+	var removed []string
+	if imageKeys != nil {
+		removed, err = replaceImagesTx(ctx, tx, imageOwnerUserID, MediaTypeProjectImage, "project", p.ID, "project_image", "project_id", "project-images/", 6, *imageKeys)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if resetReview {
+		if _, err := tx.ExecContext(ctx, `UPDATE project SET status=? WHERE id=?`, models.ProjectStatusPending, p.ID); err != nil {
+			return nil, err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return removed, nil
 }
 
 func saveProjectMetadataTx(ctx context.Context, tx *sqlx.Tx, projectID int, tags *[]string, publisherRole *string, initiatingSchoolID *int, milestones *[]models.ProjectMilestone, members *[]models.ProjectMember, eventIDs *[]int) error {
@@ -565,14 +597,64 @@ func saveProjectMetadataTx(ctx context.Context, tx *sqlx.Tx, projectID int, tags
 		}
 	}
 	if milestones != nil {
-		if _, err := tx.ExecContext(ctx, "DELETE FROM project_milestones WHERE project_id=?", projectID); err != nil {
+		keepIDs := make([]int, 0, len(*milestones))
+		for _, m := range *milestones {
+			if m.ID > 0 {
+				keepIDs = append(keepIDs, m.ID)
+			}
+		}
+		pendingQuery := "SELECT COUNT(*) FROM project_milestones WHERE project_id=? AND certification_status=1"
+		pendingArgs := []interface{}{projectID}
+		if len(keepIDs) > 0 {
+			q, args, err := sqlx.In(pendingQuery+" AND id NOT IN (?)", projectID, keepIDs)
+			if err != nil {
+				return err
+			}
+			pendingQuery, pendingArgs = tx.Rebind(q), args
+		}
+		var pendingRemoved int
+		if err := tx.GetContext(ctx, &pendingRemoved, pendingQuery, pendingArgs...); err != nil {
 			return err
+		}
+		if pendingRemoved > 0 {
+			return fmt.Errorf("pending milestone certification cannot be deleted")
+		}
+		if len(keepIDs) == 0 {
+			if _, err := tx.ExecContext(ctx, "DELETE FROM project_milestones WHERE project_id=?", projectID); err != nil {
+				return err
+			}
+		} else {
+			q, args, err := sqlx.In("DELETE FROM project_milestones WHERE project_id=? AND id NOT IN (?)", projectID, keepIDs)
+			if err != nil {
+				return err
+			}
+			if _, err := tx.ExecContext(ctx, tx.Rebind(q), args...); err != nil {
+				return err
+			}
 		}
 		for i := range *milestones {
 			m := (*milestones)[i]
 			sortOrder := i + 1
-			if _, err := tx.ExecContext(ctx, `INSERT INTO project_milestones(project_id,milestone_date,description,sort_order)
-				VALUES(?,?,?,?)`, projectID, m.MilestoneDate, m.Description, sortOrder); err != nil {
+			if m.ID > 0 {
+				var existing struct {
+					MilestoneDate       time.Time `db:"milestone_date"`
+					Title               string    `db:"title"`
+					Description         string    `db:"detail_description"`
+					CertificationStatus int       `db:"certification_status"`
+				}
+				if err := tx.GetContext(ctx, &existing, `SELECT milestone_date,COALESCE(title,description) title,detail_description,certification_status FROM project_milestones WHERE id=? AND project_id=?`, m.ID, projectID); err != nil {
+					return fmt.Errorf("project milestone does not belong to project")
+				}
+				contentChanged := !existing.MilestoneDate.Equal(m.MilestoneDate) || existing.Title != m.Title || existing.Description != m.Description
+				if existing.CertificationStatus == 1 && contentChanged {
+					return fmt.Errorf("pending milestone certification cannot be edited")
+				}
+				_, err := tx.ExecContext(ctx, `UPDATE project_milestones SET milestone_date=?,title=?,description=?,detail_description=?,sort_order=?,certification_status=IF(?=1,0,certification_status) WHERE id=? AND project_id=?`, m.MilestoneDate, m.Title, m.Title, m.Description, sortOrder, contentChanged, m.ID, projectID)
+				if err != nil {
+					return err
+				}
+			} else if _, err := tx.ExecContext(ctx, `INSERT INTO project_milestones(project_id,milestone_date,title,description,detail_description,sort_order)
+				VALUES(?,?,?,?,?,?)`, projectID, m.MilestoneDate, m.Title, m.Title, m.Description, sortOrder); err != nil {
 				return err
 			}
 		}
@@ -597,7 +679,7 @@ func saveProjectMetadataTx(ctx context.Context, tx *sqlx.Tx, projectID int, tags
 
 func (r *ProjectRepository) ListMilestones(ctx context.Context, projectID int) ([]models.ProjectMilestone, error) {
 	var milestones []models.ProjectMilestone
-	if err := r.db.SelectContext(ctx, &milestones, `SELECT id,project_id,milestone_date,description,sort_order
+	if err := r.db.SelectContext(ctx, &milestones, `SELECT id,project_id,milestone_date,title,detail_description,certification_status,sort_order
 		FROM project_milestones WHERE project_id=? ORDER BY milestone_date ASC, id ASC`, projectID); err != nil {
 		return nil, fmt.Errorf("query project milestones: %w", err)
 	}

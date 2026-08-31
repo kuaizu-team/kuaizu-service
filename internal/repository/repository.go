@@ -21,6 +21,7 @@ type Repository struct {
 	School               SchoolRepo
 	Major                MajorRepo
 	TalentProfile        TalentProfileRepo
+	RoleTag              *RoleTagRepository
 	Order                OrderRepo
 	EmailPromotion       EmailPromotionRepo
 	SmsNotice            SmsNoticeRepo
@@ -36,6 +37,7 @@ type Repository struct {
 	TalentViewLog        TalentViewLogRepo
 	Interaction          *InteractionRepository
 	StatusNotification   StatusNotificationRepo
+	Media                *MediaRepository
 	WelcomeEmailDelivery WelcomeEmailDeliveryRepo
 }
 
@@ -60,6 +62,7 @@ func New(db *sqlx.DB) *Repository {
 		School:               NewSchoolRepository(db),
 		Major:                NewMajorRepository(db),
 		TalentProfile:        NewTalentProfileRepository(db),
+		RoleTag:              NewRoleTagRepository(db),
 		Order:                NewOrderRepository(db),
 		EmailPromotion:       NewEmailPromotionRepository(db),
 		SmsNotice:            NewSmsNoticeRepository(db),
@@ -75,6 +78,7 @@ func New(db *sqlx.DB) *Repository {
 		TalentViewLog:        NewTalentViewLogRepository(db),
 		Interaction:          NewInteractionRepository(db),
 		StatusNotification:   NewStatusNotificationRepository(db),
+		Media:                NewMediaRepository(db),
 		WelcomeEmailDelivery: NewWelcomeEmailDeliveryRepository(db),
 	}
 }

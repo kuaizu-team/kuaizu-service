@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"log"
 	"strings"
 	"time"
@@ -150,7 +151,17 @@ func (s *TalentProfileService) UpsertTalentProfile(ctx context.Context, userID i
 		Status:            status,
 	}
 
-	if err := s.repo.TalentProfile.Upsert(ctx, profile); err != nil {
+	var removedWorkImageKeys []string
+	if req.WorkImageKeys != nil {
+		removedWorkImageKeys, err = s.repo.TalentProfile.UpsertWithWorkImages(ctx, profile, userID, *req.WorkImageKeys)
+		if err != nil {
+			log.Printf("[TalentProfileService.UpsertTalentProfile] repository error saving profile and work images: %v", err)
+			if errors.Is(err, repository.ErrInvalidMedia) {
+				return nil, ErrBadRequest("作品图片无效")
+			}
+			return nil, ErrInternal("保存人才档案失败")
+		}
+	} else if err := s.repo.TalentProfile.Upsert(ctx, profile); err != nil {
 		log.Printf("[TalentProfileService.UpsertTalentProfile] repository error: %v", err)
 		return nil, ErrInternal("保存人才档案失败")
 	}
@@ -163,6 +174,7 @@ func (s *TalentProfileService) UpsertTalentProfile(ctx context.Context, userID i
 	if updated == nil {
 		return nil, ErrNotFound("人才档案不存在")
 	}
+	updated.RemovedWorkImageKeys = removedWorkImageKeys
 
 	return updated, nil
 }

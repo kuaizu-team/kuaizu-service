@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/kuaizu-team/kuaizu-service/api"
+	"github.com/kuaizu-team/kuaizu-service/internal/oss"
 	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
@@ -41,6 +42,8 @@ type Project struct {
 	Tags                       []ProjectTag       `db:"-"`
 	Events                     []Event            `db:"-"`
 	Milestones                 []ProjectMilestone `db:"-"`
+	Images                     []string           `db:"-"`
+	RemovedImageKeys           []string           `db:"-"`
 	Members                    []ProjectMember    `db:"-"`
 	Interaction                Interaction        `db:"-"`
 	InteractionUnreadCount     *int               `db:"-"`
@@ -60,21 +63,26 @@ type ProjectTag struct {
 }
 
 type ProjectMilestone struct {
-	ID            int       `db:"id"`
-	ProjectID     int       `db:"project_id"`
-	MilestoneDate time.Time `db:"milestone_date"`
-	Description   string    `db:"description"`
-	SortOrder     int       `db:"sort_order"`
+	ID                  int       `db:"id"`
+	ProjectID           int       `db:"project_id"`
+	MilestoneDate       time.Time `db:"milestone_date"`
+	Title               string    `db:"title"`
+	Description         string    `db:"detail_description"`
+	CertificationStatus int       `db:"certification_status"`
+	SortOrder           int       `db:"sort_order"`
 }
 
 func (m ProjectMilestone) ToVO() api.ProjectMilestoneVO {
 	date := openapi_types.Date{Time: m.MilestoneDate}
 	return api.ProjectMilestoneVO{
-		Id:            &m.ID,
-		ProjectId:     &m.ProjectID,
-		MilestoneDate: &date,
-		Description:   &m.Description,
-		SortOrder:     &m.SortOrder,
+		Id:                  &m.ID,
+		ProjectId:           &m.ProjectID,
+		MilestoneDate:       &date,
+		Title:               &m.Title,
+		Description:         &m.Title,
+		DetailDescription:   &m.Description,
+		CertificationStatus: &m.CertificationStatus,
+		SortOrder:           &m.SortOrder,
 	}
 }
 
@@ -214,6 +222,15 @@ func (p *Project) ToDetailVO() *api.ProjectDetailVO {
 			milestones[i] = p.Milestones[i].ToVO()
 		}
 		vo.Milestones = &milestones
+	}
+	if len(p.Images) > 0 {
+		images := make([]string, len(p.Images))
+		for i := range p.Images {
+			images[i] = oss.FullURL(p.Images[i])
+		}
+		vo.Images = &images
+		keys := append([]string(nil), p.Images...)
+		vo.ImageKeys = &keys
 	}
 	if len(p.Members) > 0 {
 		members := make([]api.ProjectMemberVO, len(p.Members))

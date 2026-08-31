@@ -51,3 +51,32 @@ func TestProjectKeywordSearchUsesSchoolAndTagExistsForCountAndList(t *testing.T)
 		}
 	}
 }
+
+func TestProjectTodayViewsSortUsesCalendarDayViewsWithStableFallback(t *testing.T) {
+	db := openCaptureDB(t)
+	defer db.Close()
+	repo := NewProjectRepository(sqlx.NewDb(db, "capture_user_repo"))
+	setCapturedQueryQueue(
+		captureQueryResult{columns: []string{"count"}, rows: [][]driver.Value{{int64(0)}}},
+		captureQueryResult{columns: []string{"id"}},
+	)
+	sortBy := "today_views"
+
+	projects, total, err := repo.List(context.Background(), ListParams{Page: 1, Size: 10, SortBy: &sortBy})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if total != 0 || len(projects) != 0 {
+		t.Fatalf("unexpected result: total=%d projects=%#v", total, projects)
+	}
+
+	queries, _ := capturedQueriesAndArgs()
+	if len(queries) != 2 {
+		t.Fatalf("query count = %d, want 2", len(queries))
+	}
+	query := normalizeSQL(queries[1])
+	want := "ORDER BY (SELECT COUNT(*) FROM project_view_log pvl WHERE pvl.project_id = p.id AND pvl.viewed_at >= CURDATE() AND pvl.viewed_at < CURDATE() + INTERVAL 1 DAY AND pvl.duration_ms IS NULL ) DESC, p.created_at DESC, p.id DESC"
+	if !strings.Contains(query, want) {
+		t.Fatalf("today views ordering missing or unstable: %s", query)
+	}
+}

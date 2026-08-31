@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"log"
 	"math"
 	"sort"
@@ -23,8 +24,8 @@ type ProjectService struct {
 }
 
 type projectMetadataRepo interface {
-	CreateWithMetadata(ctx context.Context, p *models.Project, tags *[]string, publisherRole *string, initiatingSchoolID *int, milestones *[]models.ProjectMilestone, members *[]models.ProjectMember, eventIDs *[]int) error
-	UpdateWithMetadata(ctx context.Context, p *models.Project, tags *[]string, publisherRole *string, initiatingSchoolID *int, milestones *[]models.ProjectMilestone, members *[]models.ProjectMember, eventIDs *[]int) error
+	CreateWithMetadata(ctx context.Context, p *models.Project, tags *[]string, publisherRole *string, initiatingSchoolID *int, milestones *[]models.ProjectMilestone, members *[]models.ProjectMember, eventIDs *[]int, imageOwnerUserID int, imageKeys *[]string) error
+	UpdateWithMetadata(ctx context.Context, p *models.Project, tags *[]string, publisherRole *string, initiatingSchoolID *int, milestones *[]models.ProjectMilestone, members *[]models.ProjectMember, eventIDs *[]int, imageOwnerUserID int, imageKeys *[]string, resetReview bool) ([]string, error)
 }
 
 type projectMemberBatchRepo interface {
@@ -182,6 +183,13 @@ func (s *ProjectService) GetProject(ctx context.Context, id int) (*models.Projec
 	}
 	project.Milestones = milestones
 	project.Members = members
+	if s.repo.Media != nil {
+		images, imageErr := s.repo.Media.ListProjectImages(ctx, id)
+		if imageErr != nil {
+			return nil, ErrInternal("获取项目图片失败")
+		}
+		project.Images = images
+	}
 	projects := []models.Project{*project}
 	if err := s.attachProjectEvents(ctx, projects); err != nil {
 		log.Printf("[ProjectService.GetProject] event enrichment error: %v", err)
@@ -648,6 +656,7 @@ type CreateProjectInput struct {
 	PublisherRole        *string
 	InitiatingSchoolID   *int
 	Milestones           *[]api.ProjectMilestoneDTO
+	ImageKeys            *[]string
 	Members              *[]api.ProjectMemberDTO
 	EventIDs             *[]int
 }
@@ -679,16 +688,39 @@ func (s *ProjectService) buildProjectMilestones(input *[]api.ProjectMilestoneDTO
 	}
 	milestones := make([]models.ProjectMilestone, len(*input))
 	for i, item := range *input {
-		description := strings.TrimSpace(item.Description)
-		if description == "" {
-			return nil, ErrBadRequest("milestone description is required")
+		title := ""
+		if item.Title != nil {
+			title = strings.TrimSpace(*item.Title)
 		}
-		if utf8.RuneCountInString(description) > 10 {
-			return nil, ErrBadRequest("milestone description must be at most 10 characters")
+		legacyTitle := ""
+		if item.Description != nil {
+			legacyTitle = strings.TrimSpace(*item.Description)
+		}
+		if title == "" {
+			title = legacyTitle
+		}
+		if title == "" {
+			return nil, ErrBadRequest("milestone title is required")
+		}
+		if utf8.RuneCountInString(title) > 10 {
+			return nil, ErrBadRequest("milestone title must be at most 10 characters")
+		}
+		detail := ""
+		if item.DetailDescription != nil {
+			detail = strings.TrimSpace(*item.DetailDescription)
+		}
+		if utf8.RuneCountInString(detail) > 40 {
+			return nil, ErrBadRequest("milestone detail description must be at most 40 characters")
+		}
+		id := 0
+		if item.Id != nil {
+			id = *item.Id
 		}
 		milestones[i] = models.ProjectMilestone{
+			ID:            id,
 			MilestoneDate: item.MilestoneDate.Time,
-			Description:   description,
+			Title:         title,
+			Description:   detail,
 		}
 	}
 	sort.SliceStable(milestones, func(i, j int) bool {
@@ -1008,7 +1040,7 @@ func (s *ProjectService) CreateProject(ctx context.Context, input CreateProjectI
 	if !ok {
 		return nil, ErrInternal("project repository does not support metadata transaction")
 	}
-	if err := projectRepo.CreateWithMetadata(ctx, project, input.Tags, input.PublisherRole, input.InitiatingSchoolID, milestones, members, input.EventIDs); err != nil {
+	if err := projectRepo.CreateWithMetadata(ctx, project, input.Tags, input.PublisherRole, input.InitiatingSchoolID, milestones, members, input.EventIDs, input.CreatorID, input.ImageKeys); err != nil {
 		log.Printf("[ProjectService.CreateProject] repository error: %v", err)
 		return nil, ErrInternal("创建项目失败")
 	}
@@ -1037,6 +1069,7 @@ type UpdateProjectInput struct {
 	SchoolID           *int
 	InitiatingSchoolID *int
 	Milestones         *[]api.ProjectMilestoneDTO
+	ImageKeys          *[]string
 	Members            *[]api.ProjectMemberDTO
 	EventIDs           *[]int
 }
@@ -1158,7 +1191,7 @@ func (s *ProjectService) UpdateProject(ctx context.Context, id, userID int, inpu
 	contentUpdate := input.Name != nil || input.Description != nil || input.Direction != nil ||
 		input.MemberCount != nil || input.IsCrossSchool != nil || input.EducationRequirement != nil ||
 		input.SkillRequirement != nil || input.Tags != nil || input.PublisherRole != nil ||
-		input.SchoolID != nil || input.InitiatingSchoolID != nil || input.NeedReview != nil
+		input.SchoolID != nil || input.InitiatingSchoolID != nil || input.NeedReview != nil || input.ImageKeys != nil
 	if contentUpdate && !isOwner {
 		return nil, ErrForbidden("只有项目创建者可以修改项目内容")
 	}
@@ -1225,18 +1258,14 @@ func (s *ProjectService) UpdateProject(ctx context.Context, id, userID int, inpu
 	if !ok {
 		return nil, ErrInternal("project repository does not support metadata transaction")
 	}
-	if err := projectRepo.UpdateWithMetadata(ctx, project, input.Tags, input.PublisherRole, input.InitiatingSchoolID, milestones, members, input.EventIDs); err != nil {
+	resetReview := input.NeedReview != nil && *input.NeedReview
+	removedImageKeys, err := projectRepo.UpdateWithMetadata(ctx, project, input.Tags, input.PublisherRole, input.InitiatingSchoolID, milestones, members, input.EventIDs, userID, input.ImageKeys, resetReview)
+	if err != nil {
 		log.Printf("[ProjectService.UpdateProject] repository error updating: %v", err)
-		return nil, ErrInternal("更新项目失败")
-	}
-
-	// If the caller signals that content changed, reset status to pending so the
-	// project re-enters the admin review queue.
-	if input.NeedReview != nil && *input.NeedReview {
-		if err := s.repo.Project.UpdateStatus(ctx, id, models.ProjectStatusPending); err != nil {
-			log.Printf("[ProjectService.UpdateProject] repository error resetting status: %v", err)
-			return nil, ErrInternal("重置审核状态失败")
+		if errors.Is(err, repository.ErrInvalidMedia) {
+			return nil, ErrBadRequest("项目图片无效")
 		}
+		return nil, ErrInternal("更新项目失败")
 	}
 
 	// Reload to return fresh data
@@ -1245,6 +1274,7 @@ func (s *ProjectService) UpdateProject(ctx context.Context, id, userID int, inpu
 		log.Printf("[ProjectService.UpdateProject] repository error reloading: %v", err)
 		return nil, ErrInternal("获取项目信息失败")
 	}
+	updated.RemovedImageKeys = removedImageKeys
 
 	return updated, nil
 }

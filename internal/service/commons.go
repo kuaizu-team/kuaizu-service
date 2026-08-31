@@ -17,6 +17,15 @@ import (
 
 const maxFileSize = 5 * 1024 * 1024 // 5MB
 
+var uploadTypeConfig = map[string]struct {
+	directory string
+	maxBytes  int64
+}{
+	"project_image":      {directory: "project-images", maxBytes: 1 * 1024 * 1024},
+	"talent_work":        {directory: "talent-work-images", maxBytes: 1 * 1024 * 1024},
+	"milestone_evidence": {directory: "milestone-evidence", maxBytes: 300 * 1024},
+}
+
 var allowedExts = map[string]bool{".jpg": true, ".jpeg": true, ".png": true}
 
 // CommonsService handles common utilities like file upload.
@@ -32,8 +41,21 @@ func NewCommonsService(ossClient *oss.Client, userRepo repository.UserRepo) *Com
 
 // UploadFile validates and uploads a multipart file to OSS.
 func (s *CommonsService) UploadFile(file multipart.File, header *multipart.FileHeader) (*oss.UploadResult, error) {
-	if header.Size > maxFileSize {
-		return nil, ErrBadRequest(fmt.Sprintf("文件大小超过限制 (最大 %dMB)", maxFileSize/1024/1024))
+	return s.uploadFileTo(file, header, "", maxFileSize)
+}
+
+// UploadBusinessImage validates stricter per-purpose limits and isolates OSS keys.
+func (s *CommonsService) UploadBusinessImage(file multipart.File, header *multipart.FileHeader, uploadType string) (*oss.UploadResult, error) {
+	config, ok := uploadTypeConfig[uploadType]
+	if !ok {
+		return nil, ErrBadRequest("无效的文件类型")
+	}
+	return s.uploadFileTo(file, header, config.directory, config.maxBytes)
+}
+
+func (s *CommonsService) uploadFileTo(file multipart.File, header *multipart.FileHeader, directory string, sizeLimit int64) (*oss.UploadResult, error) {
+	if header.Size > sizeLimit {
+		return nil, ErrBadRequest(fmt.Sprintf("文件大小超过限制 (最大 %dKB)", sizeLimit/1024))
 	}
 
 	ext := strings.ToLower(filepath.Ext(header.Filename))
@@ -45,7 +67,7 @@ func (s *CommonsService) UploadFile(file multipart.File, header *multipart.FileH
 	}
 
 	filename := uuid.New().String() + ext
-	result, err := s.ossClient.Upload(file, filename)
+	result, err := s.ossClient.UploadTo(file, directory, filename)
 	if err != nil {
 		log.Printf("[CommonsService.UploadFile] OSS upload error: %v", err)
 		return nil, ErrInternal("文件上传失败")

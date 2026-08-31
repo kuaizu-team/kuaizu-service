@@ -8,7 +8,7 @@ import (
 // 根据 form 字段 `type` 区分上传用途：
 //   - avatar:     上传用户头像，同时更新 user.avatar_url
 //   - background: 上传用户封面图，同时更新 user.cover_image
-//   - (其他/空):  仅上传，返回 URL，不更新数据库
+//   - project_image/talent_work/milestone_evidence: 上传到独立业务目录
 func (s *Server) UploadFile(ctx echo.Context) error {
 	file, header, err := ctx.Request().FormFile("file")
 	if err != nil {
@@ -34,6 +34,18 @@ func (s *Server) UploadFile(ctx echo.Context) error {
 			return mapServiceError(ctx, err)
 		}
 		return Success(ctx, map[string]string{"url": result.URL})
+
+	case "project_image", "talent_work", "milestone_evidence":
+		result, err := s.svc.Commons.UploadBusinessImage(file, header, uploadType)
+		if err != nil {
+			return mapServiceError(ctx, err)
+		}
+		userID := GetUserID(ctx)
+		if err := s.repo.Media.RegisterUpload(ctx.Request().Context(), result.Key, userID, uploadType); err != nil {
+			_ = s.svc.Commons.DeleteFile(result.Key)
+			return InternalError(ctx, "记录上传图片失败")
+		}
+		return Success(ctx, map[string]string{"url": result.URL, "key": result.Key})
 
 	default:
 		return BadRequest(ctx, "无效的文件类型")

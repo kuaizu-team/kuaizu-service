@@ -1,0 +1,18 @@
+type: object
+required:
+  - id
+  - text
+  - emoji
+  - displayText
+properties:
+  id:
+    type: integer
+  text:
+    type: string
+    example: 领导力
+  emoji:
+    type: string
+    example: 🧭
+  displayText:
+    type: string
+    example: 🧭 领导力

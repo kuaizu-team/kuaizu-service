@@ -53,15 +53,16 @@ type virtualPaymentCallbackResponse struct {
 	ErrMsg  string   `json:"ErrMsg" xml:"ErrMsg"`
 }
 
-// matchesVirtualPaymentPrices keeps the existing unit-price callback behavior
-// compatible while also accepting a line-total callback. Both callback fields
-// must use the same semantic so a mixed or partial amount is never accepted.
+// matchesVirtualPaymentPrices accepts WeChat callbacks that report both values
+// as unit prices, both as line totals, or original unit price plus paid total.
+// Every accepted value still comes from the immutable order snapshot.
 func matchesVirtualPaymentPrices(goods virtualPaymentGoodsInfo, unitPrice, totalPrice int) bool {
 	if unitPrice <= 0 || totalPrice <= 0 {
 		return false
 	}
 	return (goods.OrigPrice == unitPrice && goods.ActualPrice == unitPrice) ||
-		(goods.OrigPrice == totalPrice && goods.ActualPrice == totalPrice)
+		(goods.OrigPrice == totalPrice && goods.ActualPrice == totalPrice) ||
+		(goods.OrigPrice == unitPrice && goods.ActualPrice == totalPrice)
 }
 
 type iosRefundQueryResponse struct {

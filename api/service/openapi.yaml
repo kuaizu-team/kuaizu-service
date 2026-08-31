@@ -124,6 +124,8 @@ paths:
     $ref: paths/projects_{id}_members_{memberId}.yaml
   /projects/{id}/ratings:
     $ref: paths/projects_{id}_ratings.yaml
+  /projects/{id}/milestones/{milestoneId}/certification:
+    $ref: paths/projects_{id}_milestones_{milestoneId}_certification.yaml
   /projects/my:
     $ref: paths/projects_my.yaml
   /projects/{id}/applications:
@@ -162,6 +164,8 @@ paths:
     $ref: paths/talent-profiles_{id}_top-viewers.yaml
   /talent-profiles/my:
     $ref: paths/talent-profiles_my.yaml
+  /role-tags:
+    $ref: paths/role-tags.yaml
   /olive-branches:
     $ref: paths/olive-branches.yaml
   /olive-branches/{id}:

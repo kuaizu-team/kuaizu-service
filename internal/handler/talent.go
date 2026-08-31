@@ -114,6 +114,13 @@ func (s *Server) UpsertTalentProfile(ctx echo.Context) error {
 	if err != nil {
 		return mapServiceError(ctx, err)
 	}
+	for _, key := range updated.RemovedWorkImageKeys {
+		if err := s.svc.Commons.DeleteFile(key); err != nil {
+			ctx.Logger().Errorf("delete removed work image: %v", err)
+			continue
+		}
+		_ = s.repo.Media.CompleteCleanup(ctx.Request().Context(), key)
+	}
 
 	return Success(ctx, updated.ToDetailVO())
 }
