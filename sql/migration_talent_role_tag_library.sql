@@ -444,4 +444,3 @@ LEFT JOIN `talent_role_tag_relation` tr ON tr.`role_code` = r.`code`
 WHERE r.`status` = 1
 GROUP BY r.`code`, r.`name`
 ORDER BY r.`sort_order`;
-

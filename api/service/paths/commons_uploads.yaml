@@ -45,4 +45,21 @@ post:
       content:
         application/json:
           schema:
-            $ref: ../components/schemas/BaseResponse.yaml
+            allOf:
+              - $ref: ../components/schemas/BaseResponse.yaml
+              - type: object
+                required:
+                  - data
+                properties:
+                  data:
+                    type: object
+                    required:
+                      - url
+                    properties:
+                      url:
+                        type: string
+                        format: uri
+                        description: 上传后的可访问地址
+                      key:
+                        type: string
+                        description: 业务图片的 OSS 相对 key；头像和背景上传不返回
