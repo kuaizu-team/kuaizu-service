@@ -7,10 +7,9 @@ import (
 	"testing"
 
 	"github.com/jmoiron/sqlx"
-	"github.com/kuaizu-team/kuaizu-service/internal/models"
 )
 
-func TestTalentKeywordSearchUsesDisplayedNicknameAndProfileFields(t *testing.T) {
+func TestTalentKeywordSearchUsesDegradedMatchingAcrossDisplayedFields(t *testing.T) {
 	db := openCaptureDB(t)
 	defer db.Close()
 	repo := NewTalentProfileRepository(sqlx.NewDb(db, "capture_user_repo"))
@@ -35,12 +34,13 @@ func TestTalentKeywordSearchUsesDisplayedNicknameAndProfileFields(t *testing.T) 
 		normalized := normalizeSQL(query)
 		for _, want := range []string{
 			"WHEN u.nickname IS NULL OR TRIM(u.nickname) = '' OR TRIM(u.nickname) = '匿名用户'",
-			"THEN ? ELSE TRIM(u.nickname) END LIKE ? ESCAPE '!'",
-			"search_school.school_name LIKE ? ESCAPE '!'",
-			"search_major.major_name LIKE ? ESCAPE '!'",
-			"CAST(tp.skill_summary AS CHAR) LIKE ? ESCAPE '!'",
-			"tp.self_evaluation LIKE ? ESCAPE '!'",
-			"tp.project_experience LIKE ? ESCAPE '!'",
+			"THEN '快组儿' ELSE TRIM(u.nickname) END",
+			"SELECT search_school.school_name FROM school search_school",
+			"SELECT search_major.major_name FROM major search_major",
+			"CONCAT(CAST(u.grade AS CHAR), '级')",
+			"CAST(tp.skill_summary AS CHAR)",
+			"tp.self_evaluation",
+			"tp.project_experience",
 		} {
 			if !strings.Contains(normalized, want) {
 				t.Fatalf("query missing %q: %s", want, normalized)
@@ -48,19 +48,19 @@ func TestTalentKeywordSearchUsesDisplayedNicknameAndProfileFields(t *testing.T) 
 		}
 	}
 
-	const whereArgCount = 7
-	// The shared capture driver retains arguments from the most recent query.
-	// List executes COUNT first and the paginated data query last.
-	if len(args) != whereArgCount+2 {
-		t.Fatalf("arg count = %d, want %d", len(args), whereArgCount+2)
+	listQuery := normalizeSQL(queries[1])
+	for _, want := range []string{"CASE WHEN", "THEN 4", "THEN 3", "THEN 2", "THEN 1", "END DESC, tp.updated_at DESC"} {
+		if !strings.Contains(listQuery, want) {
+			t.Fatalf("ranking query missing %q: %s", want, listQuery)
+		}
 	}
-	wantPattern := "%计算机!%!_%"
-	if args[0].Value != models.DefaultUserNickname {
-		t.Fatalf("default nickname arg = %#v, want %q", args[0].Value, models.DefaultUserNickname)
+	patterns := map[interface{}]bool{}
+	for _, arg := range args {
+		patterns[arg.Value] = true
 	}
-	for i := 1; i < whereArgCount; i++ {
-		if args[i].Value != wantPattern {
-			t.Fatalf("pattern arg %d = %#v, want %q", i, args[i].Value, wantPattern)
+	for _, want := range []string{"%计算机!%!_%", "%计算%", "%算机%", "%计%", "%!%%", "%!_%"} {
+		if !patterns[want] {
+			t.Fatalf("missing search pattern %q in args", want)
 		}
 	}
 }

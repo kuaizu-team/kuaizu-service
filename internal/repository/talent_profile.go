@@ -172,6 +172,7 @@ func (r *TalentProfileRepository) List(ctx context.Context, params TalentProfile
 	// ── WHERE clause ────────────────────────────────────────────────────────────
 	conditions := []string{"tp.status = 1"}
 	whereArgs := []interface{}{}
+	var searchSQL *degradedSearchSQL
 
 	if params.SchoolID != nil {
 		conditions = append(conditions, "u.school_id = ?")
@@ -182,28 +183,17 @@ func (r *TalentProfileRepository) List(ctx context.Context, params TalentProfile
 		whereArgs = append(whereArgs, *params.MajorID)
 	}
 	if params.Keyword != nil && strings.TrimSpace(*params.Keyword) != "" {
-		conditions = append(conditions, `(
-			CASE
-				WHEN u.nickname IS NULL OR TRIM(u.nickname) = '' OR TRIM(u.nickname) = '匿名用户'
-					THEN ?
-				ELSE TRIM(u.nickname)
-			END LIKE ? ESCAPE '!'
-			OR EXISTS (
-				SELECT 1 FROM school search_school
-				WHERE search_school.id = u.school_id
-				  AND search_school.school_name LIKE ? ESCAPE '!'
-			)
-			OR EXISTS (
-				SELECT 1 FROM major search_major
-				WHERE search_major.id = u.major_id
-				  AND search_major.major_name LIKE ? ESCAPE '!'
-			)
-			OR CAST(tp.skill_summary AS CHAR) LIKE ? ESCAPE '!'
-			OR tp.self_evaluation LIKE ? ESCAPE '!'
-			OR tp.project_experience LIKE ? ESCAPE '!'
-		)`)
-		pattern := talentKeywordLikePattern(strings.TrimSpace(*params.Keyword))
-		whereArgs = append(whereArgs, models.DefaultUserNickname, pattern, pattern, pattern, pattern, pattern, pattern)
+		const talentSearchDocument = `CONCAT_WS(CHAR(10),
+			CASE WHEN u.nickname IS NULL OR TRIM(u.nickname) = '' OR TRIM(u.nickname) = '匿名用户'
+				THEN '快组儿' ELSE TRIM(u.nickname) END,
+			(SELECT search_school.school_name FROM school search_school WHERE search_school.id = u.school_id),
+			(SELECT search_major.major_name FROM major search_major WHERE search_major.id = u.major_id),
+			CONCAT(CAST(u.grade AS CHAR), '级'), CAST(tp.skill_summary AS CHAR),
+			tp.self_evaluation, tp.project_experience)`
+		search := buildDegradedSearchSQL(talentSearchDocument, strings.TrimSpace(*params.Keyword))
+		searchSQL = &search
+		conditions = append(conditions, search.Predicate)
+		whereArgs = append(whereArgs, search.PredicateArgs...)
 	}
 	if params.Status != nil {
 		conditions = append(conditions, "tp.status = ?")
@@ -310,6 +300,10 @@ func (r *TalentProfileRepository) List(ctx context.Context, params TalentProfile
 		orderClause = talentHeatOrderClause(tierExpr)
 		orderArgs = append(orderArgs, tierArgs...)
 		orderArgs = append(orderArgs, params.RandomSeed)
+	}
+	if searchSQL != nil {
+		orderClause = searchSQL.Score + " DESC, " + orderClause
+		orderArgs = append(append([]interface{}{}, searchSQL.ScoreArgs...), orderArgs...)
 	}
 
 	// ── Build optional extra JOINs ───────────────────────────────────────────────

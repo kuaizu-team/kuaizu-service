@@ -26,6 +26,7 @@ type projectRankCandidate struct {
 	LikeCount     int     `db:"like_count"`
 	FavoriteCount int     `db:"favorite_count"`
 	ShareCount    int     `db:"share_count"`
+	SearchScore   int     `db:"search_score"`
 
 	Tier       int    `db:"-"`
 	MajorMatch int    `db:"-"`
@@ -33,14 +34,22 @@ type projectRankCandidate struct {
 	RandomRank uint64 `db:"-"`
 }
 
-func (r *ProjectRepository) listRankedProjectIDs(ctx context.Context, whereClause string, whereArgs []interface{}, params ListParams) ([]int, error) {
+func (r *ProjectRepository) listRankedProjectIDs(ctx context.Context, whereClause string, whereArgs []interface{}, params ListParams, searchSQL *degradedSearchSQL) ([]int, error) {
+	searchScoreSelect := "0 AS search_score"
+	queryArgs := make([]interface{}, 0, len(whereArgs))
+	if searchSQL != nil {
+		searchScoreSelect = searchSQL.Score + " AS search_score"
+		queryArgs = append(queryArgs, searchSQL.ScoreArgs...)
+	}
+	queryArgs = append(queryArgs, whereArgs...)
 	query := fmt.Sprintf(`
 		SELECT p.id, p.creator_id, p.school_id,
 			s.province, s.city, s.district,
 			u.major_id, m.class_id AS major_class_id,
 			COALESCE(pl.like_count, 0) AS like_count,
 			COALESCE(pf.favorite_count, 0) AS favorite_count,
-			COALESCE(ps.share_count, 0) AS share_count
+			COALESCE(ps.share_count, 0) AS share_count,
+			%s
 		FROM project p
 		LEFT JOIN school s ON s.id = p.school_id
 		LEFT JOIN `+"`user`"+` u ON u.id = p.creator_id
@@ -48,10 +57,10 @@ func (r *ProjectRepository) listRankedProjectIDs(ctx context.Context, whereClaus
 		LEFT JOIN (SELECT project_id, COUNT(*) AS like_count FROM project_like GROUP BY project_id) pl ON pl.project_id = p.id
 		LEFT JOIN (SELECT project_id, COUNT(*) AS favorite_count FROM project_favorite GROUP BY project_id) pf ON pf.project_id = p.id
 		LEFT JOIN (SELECT project_id, COUNT(*) AS share_count FROM project_share GROUP BY project_id) ps ON ps.project_id = p.id
-		WHERE %s`, whereClause)
+		WHERE %s`, searchScoreSelect, whereClause)
 
 	var candidates []projectRankCandidate
-	if err := r.db.SelectContext(ctx, &candidates, query, whereArgs...); err != nil {
+	if err := r.db.SelectContext(ctx, &candidates, query, queryArgs...); err != nil {
 		return nil, fmt.Errorf("query project ranking candidates: %w", err)
 	}
 	ranked := rankProjectCandidates(candidates, params)
@@ -108,7 +117,13 @@ func rankProjectCandidates(candidates []projectRankCandidate, params ListParams)
 
 	ordered := flattenProjectPools(pools)
 	ordered = demoteAdjacentProjectOwners(ordered)
-	return avoidAdjacentProjectOwners(ordered)
+	ordered = avoidAdjacentProjectOwners(ordered)
+	if params.Keyword != nil && strings.TrimSpace(*params.Keyword) != "" {
+		sort.SliceStable(ordered, func(i, j int) bool {
+			return ordered[i].SearchScore > ordered[j].SearchScore
+		})
+	}
+	return ordered
 }
 
 func shuffleSingletonProjectPools(pools [][]projectRankCandidate, seed string) {
