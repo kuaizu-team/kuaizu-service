@@ -29,10 +29,23 @@ get:
         $ref: ../components/schemas/Direction.yaml
     - name: eventId
       in: query
-      description: Related event ID
+      description: 关联赛事 ID。保留旧版精确关联筛选语义。
       schema:
         type: integer
         minimum: 1
+    - name: eventIds
+      in: query
+      description: 多个赛事 ID（逗号分隔）；按赛事名称对项目内容执行降级匹配并优先显式关联项目。
+      style: form
+      explode: false
+      schema:
+        type: array
+        minItems: 1
+        maxItems: 10
+        uniqueItems: true
+        items:
+          type: integer
+          minimum: 1
     - name: excludeEventId
       in: query
       description: 排除与指定赛事关联的项目，供赛事详情页“更多项目”使用。

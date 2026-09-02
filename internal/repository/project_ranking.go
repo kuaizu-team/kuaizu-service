@@ -15,18 +15,22 @@ const (
 )
 
 type projectRankCandidate struct {
-	ID            int     `db:"id"`
-	CreatorID     int     `db:"creator_id"`
-	SchoolID      int     `db:"school_id"`
-	Province      *string `db:"province"`
-	City          *string `db:"city"`
-	District      *string `db:"district"`
-	MajorID       *int    `db:"major_id"`
-	MajorClassID  *int    `db:"major_class_id"`
-	LikeCount     int     `db:"like_count"`
-	FavoriteCount int     `db:"favorite_count"`
-	ShareCount    int     `db:"share_count"`
-	SearchScore   int     `db:"search_score"`
+	ID              int     `db:"id"`
+	CreatorID       int     `db:"creator_id"`
+	SchoolID        int     `db:"school_id"`
+	Province        *string `db:"province"`
+	City            *string `db:"city"`
+	District        *string `db:"district"`
+	MajorID         *int    `db:"major_id"`
+	MajorClassID    *int    `db:"major_class_id"`
+	LikeCount       int     `db:"like_count"`
+	FavoriteCount   int     `db:"favorite_count"`
+	ShareCount      int     `db:"share_count"`
+	SearchScore     int     `db:"search_score"`
+	EventCategory   int     `db:"event_category"`
+	EventRelations  int     `db:"event_relations"`
+	EventMatches    int     `db:"event_matches"`
+	EventCharacters int     `db:"event_characters"`
 
 	Tier       int    `db:"-"`
 	MajorMatch int    `db:"-"`
@@ -34,12 +38,17 @@ type projectRankCandidate struct {
 	RandomRank uint64 `db:"-"`
 }
 
-func (r *ProjectRepository) listRankedProjectIDs(ctx context.Context, whereClause string, whereArgs []interface{}, params ListParams, searchSQL *degradedSearchSQL) ([]int, error) {
+func (r *ProjectRepository) listRankedProjectIDs(ctx context.Context, whereClause string, whereArgs []interface{}, params ListParams, searchSQL *degradedSearchSQL, eventFilterSQL *projectEventFilterSQL) ([]int, error) {
 	searchScoreSelect := "0 AS search_score"
 	queryArgs := make([]interface{}, 0, len(whereArgs))
 	if searchSQL != nil {
 		searchScoreSelect = searchSQL.Score + " AS search_score"
 		queryArgs = append(queryArgs, searchSQL.ScoreArgs...)
+	}
+	eventScoreSelect := "0 AS event_category, 0 AS event_relations, 0 AS event_matches, 0 AS event_characters"
+	if eventFilterSQL != nil {
+		eventScoreSelect = eventFilterSQL.SelectScores()
+		queryArgs = append(queryArgs, eventFilterSQL.SelectArgs()...)
 	}
 	queryArgs = append(queryArgs, whereArgs...)
 	query := fmt.Sprintf(`
@@ -49,6 +58,7 @@ func (r *ProjectRepository) listRankedProjectIDs(ctx context.Context, whereClaus
 			COALESCE(pl.like_count, 0) AS like_count,
 			COALESCE(pf.favorite_count, 0) AS favorite_count,
 			COALESCE(ps.share_count, 0) AS share_count,
+			%s,
 			%s
 		FROM project p
 		LEFT JOIN school s ON s.id = p.school_id
@@ -57,7 +67,7 @@ func (r *ProjectRepository) listRankedProjectIDs(ctx context.Context, whereClaus
 		LEFT JOIN (SELECT project_id, COUNT(*) AS like_count FROM project_like GROUP BY project_id) pl ON pl.project_id = p.id
 		LEFT JOIN (SELECT project_id, COUNT(*) AS favorite_count FROM project_favorite GROUP BY project_id) pf ON pf.project_id = p.id
 		LEFT JOIN (SELECT project_id, COUNT(*) AS share_count FROM project_share GROUP BY project_id) ps ON ps.project_id = p.id
-		WHERE %s`, searchScoreSelect, whereClause)
+		WHERE %s`, searchScoreSelect, eventScoreSelect, whereClause)
 
 	var candidates []projectRankCandidate
 	if err := r.db.SelectContext(ctx, &candidates, query, queryArgs...); err != nil {
@@ -121,6 +131,21 @@ func rankProjectCandidates(candidates []projectRankCandidate, params ListParams)
 	if params.Keyword != nil && strings.TrimSpace(*params.Keyword) != "" {
 		sort.SliceStable(ordered, func(i, j int) bool {
 			return ordered[i].SearchScore > ordered[j].SearchScore
+		})
+	}
+	if len(params.EventIDs) > 0 {
+		sort.SliceStable(ordered, func(i, j int) bool {
+			left, right := ordered[i], ordered[j]
+			if left.EventCategory != right.EventCategory {
+				return left.EventCategory > right.EventCategory
+			}
+			if left.EventRelations != right.EventRelations {
+				return left.EventRelations > right.EventRelations
+			}
+			if left.EventMatches != right.EventMatches {
+				return left.EventMatches > right.EventMatches
+			}
+			return left.EventCharacters > right.EventCharacters
 		})
 	}
 	return ordered

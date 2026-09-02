@@ -32,6 +32,7 @@ type ListParams struct {
 	Statuses       []int
 	Direction      *int
 	EventID        *int
+	EventIDs       []int
 	ExcludeEventID *int
 	CreatorID      *int
 	MemberUserID   *int
@@ -67,6 +68,7 @@ func (r *ProjectRepository) List(ctx context.Context, params ListParams) ([]mode
 	conditions := []string{"1=1"}
 	whereArgs := []interface{}{}
 	var searchSQL *degradedSearchSQL
+	var eventFilterSQL *projectEventFilterSQL
 
 	if params.Keyword != nil && strings.TrimSpace(*params.Keyword) != "" {
 		search := buildDegradedSearchSQLWithMatcher(strings.TrimSpace(*params.Keyword), projectSearchMatcher)
@@ -106,6 +108,20 @@ func (r *ProjectRepository) List(ctx context.Context, params ListParams) ([]mode
 	if params.EventID != nil {
 		conditions = append(conditions, "EXISTS (SELECT 1 FROM project_event pe WHERE pe.project_id = p.id AND pe.event_id = ?)")
 		whereArgs = append(whereArgs, *params.EventID)
+	}
+	if len(params.EventIDs) > 0 {
+		selectedEvents, err := r.listSelectedEvents(ctx, params.EventIDs)
+		if err != nil {
+			return nil, 0, err
+		}
+		if len(selectedEvents) == 0 {
+			conditions = append(conditions, "1=0")
+		} else {
+			filter := buildProjectEventFilterSQL(selectedEvents)
+			eventFilterSQL = &filter
+			conditions = append(conditions, filter.Predicate)
+			whereArgs = append(whereArgs, filter.PredicateArgs...)
+		}
 	}
 	if params.ExcludeEventID != nil {
 		conditions = append(conditions, "NOT EXISTS (SELECT 1 FROM project_event pe WHERE pe.project_id = p.id AND pe.event_id = ?)")
@@ -177,7 +193,7 @@ func (r *ProjectRepository) List(ctx context.Context, params ListParams) ([]mode
 		}
 		orderClause = fmt.Sprintf("p.id %s", dir)
 	} else if params.SortBy != nil && *params.SortBy == "school_priority" {
-		rankedIDs, err := r.listRankedProjectIDs(ctx, whereClause, whereArgs, params, searchSQL)
+		rankedIDs, err := r.listRankedProjectIDs(ctx, whereClause, whereArgs, params, searchSQL, eventFilterSQL)
 		if err != nil {
 			return nil, 0, err
 		}
@@ -205,6 +221,10 @@ func (r *ProjectRepository) List(ctx context.Context, params ListParams) ([]mode
 	if searchSQL != nil && !rankedPage {
 		orderClause = searchSQL.Score + " DESC, " + orderClause
 		orderArgs = append(append([]interface{}{}, searchSQL.ScoreArgs...), orderArgs...)
+	}
+	if eventFilterSQL != nil && !rankedPage {
+		orderClause = eventFilterSQL.OrderBy() + ", " + orderClause
+		orderArgs = append(append([]interface{}{}, eventFilterSQL.OrderArgs()...), orderArgs...)
 	}
 
 	// Query with pagination — column aliases match Project db tags.

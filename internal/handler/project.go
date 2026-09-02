@@ -35,6 +35,17 @@ func (s *Server) ListProjects(ctx echo.Context, params api.ListProjectsParams) e
 		EventID:        params.EventId,
 		ExcludeEventID: params.ExcludeEventId,
 	}
+	if params.EventIds != nil {
+		if len(*params.EventIds) > 10 {
+			return BadRequest(ctx, "最多同时筛选10个赛事")
+		}
+		for _, eventID := range *params.EventIds {
+			if eventID <= 0 {
+				return BadRequest(ctx, "赛事ID必须为正整数")
+			}
+		}
+		listParams.EventIDs = append([]int(nil), (*params.EventIds)...)
+	}
 
 	if params.Page != nil {
 		listParams.Page = *params.Page
