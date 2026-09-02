@@ -48,7 +48,7 @@ func eventSelectColumns(alias string) string {
 	if alias != "" {
 		prefix = alias + "."
 	}
-	return prefix + `id, ` + prefix + `name, ` + prefix + `is_ranking, ` + prefix + `registration_deadline, ` + prefix + `article_url, ` + prefix + `level, ` + prefix + `summary, ` + prefix + `organizer_name, ` + prefix + `description, ` + prefix + `resource_url, ` + prefix + `qq_group, ` + prefix + `allow_cross_school, ` + prefix + `allow_cross_major, ` + prefix + `view_count, ` + prefix + `school_id, (SELECT school_name FROM school WHERE id = ` + prefix + `school_id) AS school_name, ` + prefix + `admin_id, ` + prefix + `creator_id, (SELECT username FROM admin_user WHERE id = ` + prefix + `admin_id) AS manager_username, (SELECT nickname FROM admin_user WHERE id = ` + prefix + `admin_id) AS manager_nickname, ` + prefix + `display_order, ` + prefix + `created_at, ` + prefix + `updated_at`
+	return prefix + `id, ` + prefix + `name, ` + prefix + `is_ranking, ` + prefix + `registration_deadline, ` + prefix + `article_url, ` + prefix + `level, ` + prefix + `summary, ` + prefix + `organizer_name, ` + prefix + `description, ` + prefix + `resource_url, ` + prefix + `qq_group, ` + prefix + `allow_cross_school, ` + prefix + `allow_cross_major, ` + prefix + `cross_school_major_rule, ` + prefix + `participation_mode, ` + prefix + `team_min_members, ` + prefix + `team_max_members, ` + prefix + `view_count, ` + prefix + `school_id, (SELECT school_name FROM school WHERE id = ` + prefix + `school_id) AS school_name, ` + prefix + `admin_id, ` + prefix + `creator_id, (SELECT username FROM admin_user WHERE id = ` + prefix + `admin_id) AS manager_username, (SELECT nickname FROM admin_user WHERE id = ` + prefix + `admin_id) AS manager_nickname, ` + prefix + `display_order, ` + prefix + `created_at, ` + prefix + `updated_at`
 }
 
 func (r *EventRepository) List(ctx context.Context, params EventListParams) ([]models.Event, int64, error) {
@@ -213,13 +213,13 @@ func CreateEventTx(ctx context.Context, tx *sqlx.Tx, event *models.Event) error 
 
 func createEvent(ctx context.Context, exec sqlx.ExtContext, event *models.Event) error {
 	query := `
-		INSERT INTO event (name, is_ranking, registration_deadline, article_url, level, summary, organizer_name, description, resource_url, qq_group, allow_cross_school, allow_cross_major, school_id, admin_id, creator_id, display_order)
-		VALUES (:name, :is_ranking, :registration_deadline, :article_url, :level, :summary, :organizer_name, :description, :resource_url, :qq_group, :allow_cross_school, :allow_cross_major, :school_id, :admin_id, :creator_id, :display_order)
+		INSERT INTO event (name, is_ranking, registration_deadline, article_url, level, summary, organizer_name, description, resource_url, qq_group, allow_cross_school, allow_cross_major, cross_school_major_rule, participation_mode, team_min_members, team_max_members, school_id, admin_id, creator_id, display_order)
+		VALUES (:name, :is_ranking, :registration_deadline, :article_url, :level, :summary, :organizer_name, :description, :resource_url, :qq_group, :allow_cross_school, :allow_cross_major, :cross_school_major_rule, :participation_mode, :team_min_members, :team_max_members, :school_id, :admin_id, :creator_id, :display_order)
 	`
 	if !event.CreatedAt.IsZero() {
 		query = `
-			INSERT INTO event (name, is_ranking, registration_deadline, article_url, level, summary, organizer_name, description, resource_url, qq_group, allow_cross_school, allow_cross_major, school_id, admin_id, creator_id, display_order, created_at)
-			VALUES (:name, :is_ranking, :registration_deadline, :article_url, :level, :summary, :organizer_name, :description, :resource_url, :qq_group, :allow_cross_school, :allow_cross_major, :school_id, :admin_id, :creator_id, :display_order, :created_at)
+			INSERT INTO event (name, is_ranking, registration_deadline, article_url, level, summary, organizer_name, description, resource_url, qq_group, allow_cross_school, allow_cross_major, cross_school_major_rule, participation_mode, team_min_members, team_max_members, school_id, admin_id, creator_id, display_order, created_at)
+			VALUES (:name, :is_ranking, :registration_deadline, :article_url, :level, :summary, :organizer_name, :description, :resource_url, :qq_group, :allow_cross_school, :allow_cross_major, :cross_school_major_rule, :participation_mode, :team_min_members, :team_max_members, :school_id, :admin_id, :creator_id, :display_order, :created_at)
 		`
 	}
 	result, err := sqlx.NamedExecContext(ctx, exec, query, event)
@@ -258,6 +258,10 @@ func updateEvent(ctx context.Context, exec sqlx.ExtContext, event *models.Event)
 		    qq_group = :qq_group,
 		    allow_cross_school = :allow_cross_school,
 		    allow_cross_major = :allow_cross_major,
+		    cross_school_major_rule = :cross_school_major_rule,
+		    participation_mode = :participation_mode,
+		    team_min_members = :team_min_members,
+		    team_max_members = :team_max_members,
 		    school_id = :school_id,
 		    display_order = :display_order,
 		    updated_at = CURRENT_TIMESTAMP
@@ -278,6 +282,10 @@ func updateEvent(ctx context.Context, exec sqlx.ExtContext, event *models.Event)
 			    qq_group = :qq_group,
 			    allow_cross_school = :allow_cross_school,
 			    allow_cross_major = :allow_cross_major,
+			    cross_school_major_rule = :cross_school_major_rule,
+			    participation_mode = :participation_mode,
+			    team_min_members = :team_min_members,
+			    team_max_members = :team_max_members,
 			    school_id = :school_id,
 			    display_order = :display_order,
 			    created_at = :created_at,
@@ -404,7 +412,7 @@ func (r *EventRepository) ListByProjectIDs(ctx context.Context, projectIDs []int
 	if len(projectIDs) == 0 {
 		return result, nil
 	}
-	query, args, err := sqlx.In(`SELECT pe.project_id, e.id, e.name, e.is_ranking, e.registration_deadline, e.article_url, e.organizer_name, e.description, e.resource_url, e.qq_group, e.allow_cross_school, e.allow_cross_major, e.view_count, e.display_order, e.created_at, e.updated_at
+	query, args, err := sqlx.In(`SELECT pe.project_id, e.id, e.name, e.is_ranking, e.registration_deadline, e.article_url, e.organizer_name, e.description, e.resource_url, e.qq_group, e.allow_cross_school, e.allow_cross_major, e.cross_school_major_rule, e.participation_mode, e.team_min_members, e.team_max_members, e.view_count, e.display_order, e.created_at, e.updated_at
 		FROM project_event pe
 		JOIN event e ON e.id = pe.event_id
 		WHERE pe.project_id IN (?)

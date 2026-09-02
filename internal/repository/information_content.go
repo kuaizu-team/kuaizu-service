@@ -192,7 +192,7 @@ func (r *InformationContentRepository) enrichEventsBatch(ctx context.Context, it
 		ids = append(ids, items[i].ID)
 		index[items[i].ID] = i
 	}
-	query, args, err := sqlx.In(`SELECT ie.information_id, e.id, e.name, e.is_ranking, e.registration_deadline, e.article_url, e.organizer_name, e.description, e.resource_url, e.qq_group, e.allow_cross_school, e.allow_cross_major, e.view_count, e.display_order, e.created_at, e.updated_at
+	query, args, err := sqlx.In(`SELECT ie.information_id, e.id, e.name, e.is_ranking, e.registration_deadline, e.article_url, e.organizer_name, e.description, e.resource_url, e.qq_group, e.allow_cross_school, e.allow_cross_major, e.cross_school_major_rule, e.participation_mode, e.team_min_members, e.team_max_members, e.view_count, e.display_order, e.created_at, e.updated_at
 		FROM information_event ie
 		JOIN event e ON e.id = ie.event_id
 		WHERE ie.information_id IN (?)

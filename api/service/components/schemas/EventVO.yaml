@@ -42,6 +42,22 @@ properties:
     type: boolean
   allowCrossMajor:
     type: boolean
+  crossSchoolMajorRule:
+    type: string
+    enum: [allow_cross_school_and_major, allow_cross_major, reject_cross_major]
+    nullable: true
+  participationMode:
+    type: string
+    enum: [individual, team]
+    nullable: true
+  teamMinMembers:
+    type: integer
+    minimum: 1
+    nullable: true
+  teamMaxMembers:
+    type: integer
+    minimum: 1
+    nullable: true
   viewCount:
     type: integer
     format: int64

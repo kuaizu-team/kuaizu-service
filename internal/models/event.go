@@ -29,6 +29,10 @@ type Event struct {
 	QQGroup              *string    `db:"qq_group"`
 	AllowCrossSchool     int        `db:"allow_cross_school"`
 	AllowCrossMajor      int        `db:"allow_cross_major"`
+	CrossSchoolMajorRule *string    `db:"cross_school_major_rule"`
+	ParticipationMode    *string    `db:"participation_mode"`
+	TeamMinMembers       *int       `db:"team_min_members"`
+	TeamMaxMembers       *int       `db:"team_max_members"`
 	ViewCount            int64      `db:"view_count"`
 	SchoolID             *int       `db:"school_id"`
 	SchoolName           *string    `db:"school_name"`
@@ -60,6 +64,8 @@ func (e *Event) ToVO() api.EventVO {
 		QqGroup:          e.QQGroup,
 		AllowCrossSchool: boolPtr(e.AllowCrossSchool == 1),
 		AllowCrossMajor:  boolPtr(e.AllowCrossMajor == 1),
+		TeamMinMembers:   e.TeamMinMembers,
+		TeamMaxMembers:   e.TeamMaxMembers,
 		ViewCount:        &e.ViewCount,
 		SchoolName:       e.SchoolName,
 		DisplayOrder:     &e.DisplayOrder,
@@ -69,6 +75,14 @@ func (e *Event) ToVO() api.EventVO {
 	if e.Level != nil {
 		level := api.EventVOLevel(*e.Level)
 		vo.Level = &level
+	}
+	if e.CrossSchoolMajorRule != nil {
+		rule := api.EventVOCrossSchoolMajorRule(*e.CrossSchoolMajorRule)
+		vo.CrossSchoolMajorRule = &rule
+	}
+	if e.ParticipationMode != nil {
+		mode := api.EventVOParticipationMode(*e.ParticipationMode)
+		vo.ParticipationMode = &mode
 	}
 	if e.RegistrationDeadline != nil {
 		date := openapi_types.Date{Time: *e.RegistrationDeadline}

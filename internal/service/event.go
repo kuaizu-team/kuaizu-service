@@ -22,6 +22,14 @@ type EventListResult struct {
 	Size       int
 }
 
+const (
+	EventCrossRuleAllowSchoolAndMajor = "allow_cross_school_and_major"
+	EventCrossRuleAllowMajor          = "allow_cross_major"
+	EventCrossRuleRejectMajor         = "reject_cross_major"
+	EventParticipationIndividual      = "individual"
+	EventParticipationTeam            = "team"
+)
+
 func NewEventService(repo *repository.Repository) *EventService {
 	return &EventService{repo: repo}
 }
@@ -130,6 +138,39 @@ func validateEvent(event *models.Event) error {
 			return ErrBadRequest(field.name + " is too long")
 		}
 		*field.value = &trimmed
+	}
+	if event.CrossSchoolMajorRule == nil {
+		rule := EventCrossRuleAllowSchoolAndMajor
+		if event.AllowCrossMajor == 0 {
+			rule = EventCrossRuleRejectMajor
+		} else if event.AllowCrossSchool == 0 {
+			rule = EventCrossRuleAllowMajor
+		}
+		event.CrossSchoolMajorRule = &rule
+	}
+	switch *event.CrossSchoolMajorRule {
+	case EventCrossRuleAllowSchoolAndMajor:
+		event.AllowCrossSchool, event.AllowCrossMajor = 1, 1
+	case EventCrossRuleAllowMajor:
+		event.AllowCrossSchool, event.AllowCrossMajor = 0, 1
+	case EventCrossRuleRejectMajor:
+		event.AllowCrossSchool, event.AllowCrossMajor = 0, 0
+	default:
+		return ErrBadRequest("invalid crossSchoolMajorRule")
+	}
+	if event.ParticipationMode == nil {
+		event.TeamMinMembers, event.TeamMaxMembers = nil, nil
+		return nil
+	}
+	switch *event.ParticipationMode {
+	case EventParticipationIndividual:
+		event.TeamMinMembers, event.TeamMaxMembers = nil, nil
+	case EventParticipationTeam:
+		if event.TeamMinMembers == nil || event.TeamMaxMembers == nil || *event.TeamMinMembers < 2 || *event.TeamMaxMembers < *event.TeamMinMembers {
+			return ErrBadRequest("team member range is invalid")
+		}
+	default:
+		return ErrBadRequest("invalid participationMode")
 	}
 	return nil
 }

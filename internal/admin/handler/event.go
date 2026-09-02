@@ -32,6 +32,10 @@ type adminEventRequest struct {
 	QQGroup              *string `json:"qqGroup"`
 	AllowCrossSchool     *bool   `json:"allowCrossSchool"`
 	AllowCrossMajor      *bool   `json:"allowCrossMajor"`
+	CrossSchoolMajorRule *string `json:"crossSchoolMajorRule"`
+	ParticipationMode    *string `json:"participationMode"`
+	TeamMinMembers       *int    `json:"teamMinMembers"`
+	TeamMaxMembers       *int    `json:"teamMaxMembers"`
 	SchoolID             *int    `json:"schoolId"`
 	ManagerAccount       *string `json:"managerAccount"`
 	ManagerPassword      *string `json:"managerPassword"`
@@ -311,6 +315,11 @@ func (s *AdminServer) UpdateEvent(ctx echo.Context) error {
 	}
 	event.ID = id
 	event.AdminID = existing.AdminID
+	if req.ParticipationMode == nil {
+		event.ParticipationMode = existing.ParticipationMode
+		event.TeamMinMembers = existing.TeamMinMembers
+		event.TeamMaxMembers = existing.TeamMaxMembers
+	}
 
 	tx, err := s.repo.DB().BeginTxx(requestCtx, nil)
 	if err != nil {
@@ -696,6 +705,16 @@ func buildAdminEventModel(req adminEventRequest, role int, adminSchoolID *int) (
 	if req.AllowCrossMajor != nil && !*req.AllowCrossMajor {
 		event.AllowCrossMajor = 0
 	}
+	if req.CrossSchoolMajorRule != nil {
+		value := strings.TrimSpace(*req.CrossSchoolMajorRule)
+		event.CrossSchoolMajorRule = &value
+	}
+	if req.ParticipationMode != nil {
+		value := strings.TrimSpace(*req.ParticipationMode)
+		event.ParticipationMode = &value
+	}
+	event.TeamMinMembers = req.TeamMinMembers
+	event.TeamMaxMembers = req.TeamMaxMembers
 	if req.IsRanking != nil && *req.IsRanking {
 		event.IsRanking = 1
 	}
