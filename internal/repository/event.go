@@ -48,7 +48,7 @@ func eventSelectColumns(alias string) string {
 	if alias != "" {
 		prefix = alias + "."
 	}
-	return prefix + `id, ` + prefix + `name, ` + prefix + `is_ranking, ` + prefix + `registration_deadline, ` + prefix + `article_url, ` + prefix + `level, ` + prefix + `summary, ` + prefix + `school_id, (SELECT school_name FROM school WHERE id = ` + prefix + `school_id) AS school_name, ` + prefix + `admin_id, ` + prefix + `creator_id, (SELECT username FROM admin_user WHERE id = ` + prefix + `admin_id) AS manager_username, (SELECT nickname FROM admin_user WHERE id = ` + prefix + `admin_id) AS manager_nickname, ` + prefix + `display_order, ` + prefix + `created_at, ` + prefix + `updated_at`
+	return prefix + `id, ` + prefix + `name, ` + prefix + `is_ranking, ` + prefix + `registration_deadline, ` + prefix + `article_url, ` + prefix + `level, ` + prefix + `summary, ` + prefix + `organizer_name, ` + prefix + `description, ` + prefix + `resource_url, ` + prefix + `qq_group, ` + prefix + `allow_cross_school, ` + prefix + `allow_cross_major, ` + prefix + `view_count, ` + prefix + `school_id, (SELECT school_name FROM school WHERE id = ` + prefix + `school_id) AS school_name, ` + prefix + `admin_id, ` + prefix + `creator_id, (SELECT username FROM admin_user WHERE id = ` + prefix + `admin_id) AS manager_username, (SELECT nickname FROM admin_user WHERE id = ` + prefix + `admin_id) AS manager_nickname, ` + prefix + `display_order, ` + prefix + `created_at, ` + prefix + `updated_at`
 }
 
 func (r *EventRepository) List(ctx context.Context, params EventListParams) ([]models.Event, int64, error) {
@@ -213,13 +213,13 @@ func CreateEventTx(ctx context.Context, tx *sqlx.Tx, event *models.Event) error 
 
 func createEvent(ctx context.Context, exec sqlx.ExtContext, event *models.Event) error {
 	query := `
-		INSERT INTO event (name, is_ranking, registration_deadline, article_url, level, summary, school_id, admin_id, creator_id, display_order)
-		VALUES (:name, :is_ranking, :registration_deadline, :article_url, :level, :summary, :school_id, :admin_id, :creator_id, :display_order)
+		INSERT INTO event (name, is_ranking, registration_deadline, article_url, level, summary, organizer_name, description, resource_url, qq_group, allow_cross_school, allow_cross_major, school_id, admin_id, creator_id, display_order)
+		VALUES (:name, :is_ranking, :registration_deadline, :article_url, :level, :summary, :organizer_name, :description, :resource_url, :qq_group, :allow_cross_school, :allow_cross_major, :school_id, :admin_id, :creator_id, :display_order)
 	`
 	if !event.CreatedAt.IsZero() {
 		query = `
-			INSERT INTO event (name, is_ranking, registration_deadline, article_url, level, summary, school_id, admin_id, creator_id, display_order, created_at)
-			VALUES (:name, :is_ranking, :registration_deadline, :article_url, :level, :summary, :school_id, :admin_id, :creator_id, :display_order, :created_at)
+			INSERT INTO event (name, is_ranking, registration_deadline, article_url, level, summary, organizer_name, description, resource_url, qq_group, allow_cross_school, allow_cross_major, school_id, admin_id, creator_id, display_order, created_at)
+			VALUES (:name, :is_ranking, :registration_deadline, :article_url, :level, :summary, :organizer_name, :description, :resource_url, :qq_group, :allow_cross_school, :allow_cross_major, :school_id, :admin_id, :creator_id, :display_order, :created_at)
 		`
 	}
 	result, err := sqlx.NamedExecContext(ctx, exec, query, event)
@@ -252,6 +252,12 @@ func updateEvent(ctx context.Context, exec sqlx.ExtContext, event *models.Event)
 		    article_url = :article_url,
 		    level = :level,
 		    summary = :summary,
+		    organizer_name = :organizer_name,
+		    description = :description,
+		    resource_url = :resource_url,
+		    qq_group = :qq_group,
+		    allow_cross_school = :allow_cross_school,
+		    allow_cross_major = :allow_cross_major,
 		    school_id = :school_id,
 		    display_order = :display_order,
 		    updated_at = CURRENT_TIMESTAMP
@@ -266,6 +272,12 @@ func updateEvent(ctx context.Context, exec sqlx.ExtContext, event *models.Event)
 			    article_url = :article_url,
 			    level = :level,
 			    summary = :summary,
+			    organizer_name = :organizer_name,
+			    description = :description,
+			    resource_url = :resource_url,
+			    qq_group = :qq_group,
+			    allow_cross_school = :allow_cross_school,
+			    allow_cross_major = :allow_cross_major,
 			    school_id = :school_id,
 			    display_order = :display_order,
 			    created_at = :created_at,
@@ -304,6 +316,9 @@ func (r *EventRepository) Merge(ctx context.Context, sourceID, targetID int) err
 	if _, err := tx.ExecContext(ctx, `DELETE FROM information_event WHERE event_id = ?`, sourceID); err != nil {
 		return fmt.Errorf("delete source information event relations: %w", err)
 	}
+	if _, err := tx.ExecContext(ctx, `UPDATE event_timeline_node SET event_id = ? WHERE event_id = ?`, targetID, sourceID); err != nil {
+		return fmt.Errorf("merge event timeline nodes: %w", err)
+	}
 	result, err := tx.ExecContext(ctx, "DELETE FROM event WHERE id = ?", sourceID)
 	if err != nil {
 		return fmt.Errorf("delete source event: %w", err)
@@ -315,6 +330,45 @@ func (r *EventRepository) Merge(ctx context.Context, sourceID, targetID int) err
 	if sourceAdminID.Valid {
 		if _, err := tx.ExecContext(ctx, `DELETE FROM admin_user WHERE id=? AND role=?`, sourceAdminID.Int64, models.AdminRoleEventManager); err != nil {
 			return fmt.Errorf("delete source event manager: %w", err)
+		}
+	}
+	return tx.Commit()
+}
+
+// IncrementViewCount records one successful event-detail PV atomically.
+func (r *EventRepository) IncrementViewCount(ctx context.Context, id int) error {
+	result, err := r.db.ExecContext(ctx, `UPDATE event SET view_count = view_count + 1 WHERE id = ?`, id)
+	if err != nil {
+		return fmt.Errorf("increment event view count: %w", err)
+	}
+	rows, _ := result.RowsAffected()
+	if rows == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
+func (r *EventRepository) ListTimelineNodes(ctx context.Context, eventID int) ([]models.EventTimelineNode, error) {
+	items := make([]models.EventTimelineNode, 0)
+	if err := r.db.SelectContext(ctx, &items, `SELECT id,event_id,title,node_time,description,sort_order,created_at,updated_at FROM event_timeline_node WHERE event_id=? ORDER BY node_time ASC,sort_order ASC,id ASC`, eventID); err != nil {
+		return nil, fmt.Errorf("list event timeline nodes: %w", err)
+	}
+	return items, nil
+}
+
+func (r *EventRepository) ReplaceTimelineNodes(ctx context.Context, eventID int, items []models.EventTimelineNode) error {
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `DELETE FROM event_timeline_node WHERE event_id=?`, eventID); err != nil {
+		return fmt.Errorf("clear event timeline nodes: %w", err)
+	}
+	for index := range items {
+		item := &items[index]
+		if _, err := tx.ExecContext(ctx, `INSERT INTO event_timeline_node(event_id,title,node_time,description,sort_order) VALUES(?,?,?,?,?)`, eventID, item.Title, item.NodeTime, item.Description, item.SortOrder); err != nil {
+			return fmt.Errorf("insert event timeline node: %w", err)
 		}
 	}
 	return tx.Commit()
@@ -350,7 +404,7 @@ func (r *EventRepository) ListByProjectIDs(ctx context.Context, projectIDs []int
 	if len(projectIDs) == 0 {
 		return result, nil
 	}
-	query, args, err := sqlx.In(`SELECT pe.project_id, e.id, e.name, e.is_ranking, e.registration_deadline, e.article_url, e.display_order, e.created_at, e.updated_at
+	query, args, err := sqlx.In(`SELECT pe.project_id, e.id, e.name, e.is_ranking, e.registration_deadline, e.article_url, e.organizer_name, e.description, e.resource_url, e.qq_group, e.allow_cross_school, e.allow_cross_major, e.view_count, e.display_order, e.created_at, e.updated_at
 		FROM project_event pe
 		JOIN event e ON e.id = pe.event_id
 		WHERE pe.project_id IN (?)
@@ -366,7 +420,7 @@ func (r *EventRepository) ListByProjectIDs(ctx context.Context, projectIDs []int
 	for rows.Next() {
 		var projectID int
 		var event models.Event
-		if err := rows.Scan(&projectID, &event.ID, &event.Name, &event.IsRanking, &event.RegistrationDeadline, &event.ArticleURL, &event.DisplayOrder, &event.CreatedAt, &event.UpdatedAt); err != nil {
+		if err := rows.Scan(&projectID, &event.ID, &event.Name, &event.IsRanking, &event.RegistrationDeadline, &event.ArticleURL, &event.OrganizerName, &event.Description, &event.ResourceURL, &event.QQGroup, &event.AllowCrossSchool, &event.AllowCrossMajor, &event.ViewCount, &event.DisplayOrder, &event.CreatedAt, &event.UpdatedAt); err != nil {
 			return nil, err
 		}
 		result[projectID] = append(result[projectID], event)

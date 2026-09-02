@@ -46,30 +46,57 @@ func (s *EventService) ListTimeline(ctx context.Context, limit int) ([]models.Ev
 	return events, nil
 }
 
-func (s *EventService) GetEvent(ctx context.Context, id int) (*models.Event, []models.Project, error) {
+func (s *EventService) GetEvent(ctx context.Context, id int) (*models.Event, []models.Project, []models.EventTimelineNode, error) {
 	event, err := s.repo.Event.GetByID(ctx, id)
 	if err != nil {
 		log.Printf("[EventService.GetEvent] repository error: %v", err)
-		return nil, nil, ErrInternal("get event failed")
+		return nil, nil, nil, ErrInternal("get event failed")
 	}
 	if event == nil {
-		return nil, nil, ErrNotFound("event not found")
+		return nil, nil, nil, ErrNotFound("event not found")
+	}
+	timeline, err := s.repo.Event.ListTimelineNodes(ctx, id)
+	if err != nil {
+		return nil, nil, nil, ErrInternal("get event timeline failed")
 	}
 	projectIDs, err := s.repo.Event.ListProjectIDs(ctx, id)
 	if err != nil {
-		return nil, nil, ErrInternal("get event projects failed")
+		return nil, nil, nil, ErrInternal("get event projects failed")
 	}
 	projects := make([]models.Project, 0, len(projectIDs))
 	for _, projectID := range projectIDs {
 		project, err := s.repo.Project.GetByID(ctx, projectID)
 		if err != nil {
-			return nil, nil, ErrInternal("get event projects failed")
+			return nil, nil, nil, ErrInternal("get event projects failed")
 		}
 		if project != nil && project.Status == models.ProjectStatusApproved {
 			projects = append(projects, *project)
 		}
 	}
-	return event, projects, nil
+	if err := s.repo.Event.IncrementViewCount(ctx, id); err != nil {
+		log.Printf("[EventService.GetEvent] increment view count error: %v", err)
+		return nil, nil, nil, ErrInternal("record event view failed")
+	}
+	event, err = s.repo.Event.GetByID(ctx, id)
+	if err != nil || event == nil {
+		return nil, nil, nil, ErrInternal("reload event failed")
+	}
+	return event, projects, timeline, nil
+}
+
+func (s *EventService) ListEventTimeline(ctx context.Context, id int) ([]models.EventTimelineNode, error) {
+	event, err := s.repo.Event.GetByID(ctx, id)
+	if err != nil {
+		return nil, ErrInternal("get event failed")
+	}
+	if event == nil {
+		return nil, ErrNotFound("event not found")
+	}
+	items, err := s.repo.Event.ListTimelineNodes(ctx, id)
+	if err != nil {
+		return nil, ErrInternal("get event timeline failed")
+	}
+	return items, nil
 }
 
 func validateEvent(event *models.Event) error {
@@ -79,6 +106,30 @@ func validateEvent(event *models.Event) error {
 	}
 	if len([]rune(event.Name)) > 200 {
 		return ErrBadRequest("event name is too long")
+	}
+	optionalFields := []struct {
+		value **string
+		max   int
+		name  string
+	}{
+		{&event.OrganizerName, 200, "organizerName"},
+		{&event.Description, 10000, "description"},
+		{&event.ResourceURL, 2048, "resourceUrl"},
+		{&event.QQGroup, 32, "qqGroup"},
+	}
+	for _, field := range optionalFields {
+		if *field.value == nil {
+			continue
+		}
+		trimmed := strings.TrimSpace(**field.value)
+		if trimmed == "" {
+			*field.value = nil
+			continue
+		}
+		if len([]rune(trimmed)) > field.max {
+			return ErrBadRequest(field.name + " is too long")
+		}
+		*field.value = &trimmed
 	}
 	return nil
 }

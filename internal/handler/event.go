@@ -88,7 +88,7 @@ func (s *Server) GetEvent(ctx echo.Context) error {
 	if err != nil || id <= 0 {
 		return BadRequest(ctx, "invalid event id")
 	}
-	event, projects, err := s.svc.Event.GetEvent(ctx.Request().Context(), id)
+	event, projects, timeline, err := s.svc.Event.GetEvent(ctx.Request().Context(), id)
 	if err != nil {
 		return mapServiceError(ctx, err)
 	}
@@ -99,7 +99,21 @@ func (s *Server) GetEvent(ctx echo.Context) error {
 	return Success(ctx, map[string]interface{}{
 		"event":    event.ToVO(),
 		"projects": projectVOs,
+		"timeline": timeline,
 	})
+}
+
+// ListEventTimeline handles GET /events/:id/timeline without recording another PV.
+func (s *Server) ListEventTimeline(ctx echo.Context) error {
+	id, err := strconv.Atoi(ctx.Param("id"))
+	if err != nil || id <= 0 {
+		return BadRequest(ctx, "invalid event id")
+	}
+	items, err := s.svc.Event.ListEventTimeline(ctx.Request().Context(), id)
+	if err != nil {
+		return mapServiceError(ctx, err)
+	}
+	return Success(ctx, items)
 }
 
 type infoCenterEventView string
@@ -194,8 +208,10 @@ func writeInfoCenterEvents(ctx echo.Context, events []models.Event) error {
 
 func buildEventModel(req eventRequest) (*models.Event, error) {
 	event := &models.Event{
-		Name:         strings.TrimSpace(req.Name),
-		DisplayOrder: 0,
+		Name:             strings.TrimSpace(req.Name),
+		DisplayOrder:     0,
+		AllowCrossSchool: 1,
+		AllowCrossMajor:  1,
 	}
 	if req.IsRanking != nil && *req.IsRanking {
 		event.IsRanking = 1

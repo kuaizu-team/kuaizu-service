@@ -28,6 +28,25 @@ properties:
   summary:
     type: string
     nullable: true
+  organizerName:
+    type: string
+    nullable: true
+  description:
+    type: string
+    nullable: true
+  resourceUrl:
+    type: string
+    nullable: true
+  qqGroup:
+    type: string
+    nullable: true
+  allowCrossSchool:
+    type: boolean
+  allowCrossMajor:
+    type: boolean
+  viewCount:
+    type: integer
+    format: int64
   schoolId:
     type: integer
     nullable: true

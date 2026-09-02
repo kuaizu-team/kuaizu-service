@@ -26,6 +26,12 @@ type adminEventRequest struct {
 	CreatedAt            *string `json:"createdAt"`
 	Level                *string `json:"level"`
 	Summary              *string `json:"summary"`
+	OrganizerName        *string `json:"organizerName"`
+	Description          *string `json:"description"`
+	ResourceURL          *string `json:"resourceUrl"`
+	QQGroup              *string `json:"qqGroup"`
+	AllowCrossSchool     *bool   `json:"allowCrossSchool"`
+	AllowCrossMajor      *bool   `json:"allowCrossMajor"`
 	SchoolID             *int    `json:"schoolId"`
 	ManagerAccount       *string `json:"managerAccount"`
 	ManagerPassword      *string `json:"managerPassword"`
@@ -54,8 +60,20 @@ type adminEventPermissionsVO struct {
 
 type adminEventDetailVO struct {
 	*adminvo.AdminEventVO
-	Manager     *adminEventManagerVO    `json:"manager"`
-	Permissions adminEventPermissionsVO `json:"permissions"`
+	Manager     *adminEventManagerVO       `json:"manager"`
+	Permissions adminEventPermissionsVO    `json:"permissions"`
+	Timeline    []models.EventTimelineNode `json:"timeline"`
+}
+
+type adminEventTimelineItemRequest struct {
+	Title       string  `json:"title"`
+	NodeTime    string  `json:"nodeTime"`
+	Description *string `json:"description"`
+	SortOrder   int     `json:"sortOrder"`
+}
+
+type adminEventTimelineRequest struct {
+	Items []adminEventTimelineItemRequest `json:"items"`
 }
 
 type eventManagerExecer interface {
@@ -167,6 +185,58 @@ func (s *AdminServer) GetEvent(ctx echo.Context) error {
 		return response.Forbidden(ctx, "无权查看该赛事")
 	}
 	return response.Success(ctx, s.buildAdminEventDetailVO(ctx, event))
+}
+
+func (s *AdminServer) ReplaceEventTimeline(ctx echo.Context) error {
+	if err := requireSuperAdmin(ctx); err != nil {
+		return err
+	}
+	id, err := parseIDParam(ctx, "id", "event")
+	if err != nil {
+		return err
+	}
+	event, err := s.repo.Event.GetByID(ctx.Request().Context(), id)
+	if err != nil || event == nil {
+		return response.NotFound(ctx, "event not found")
+	}
+	var req adminEventTimelineRequest
+	if err := ctx.Bind(&req); err != nil {
+		return response.BadRequest(ctx, "invalid request body")
+	}
+	items := make([]models.EventTimelineNode, 0, len(req.Items))
+	for index, raw := range req.Items {
+		title := strings.TrimSpace(raw.Title)
+		if title == "" || len([]rune(title)) > 120 {
+			return response.BadRequest(ctx, "时间节点标题不能为空且不能超过 120 字")
+		}
+		nodeTime, err := time.Parse(time.RFC3339, strings.TrimSpace(raw.NodeTime))
+		if err != nil {
+			return response.BadRequest(ctx, "时间节点时间格式无效")
+		}
+		var description *string
+		if raw.Description != nil {
+			value := strings.TrimSpace(*raw.Description)
+			if len([]rune(value)) > 500 {
+				return response.BadRequest(ctx, "时间节点描述不能超过 500 字")
+			}
+			if value != "" {
+				description = &value
+			}
+		}
+		sortOrder := raw.SortOrder
+		if sortOrder == 0 {
+			sortOrder = index
+		}
+		items = append(items, models.EventTimelineNode{EventID: id, Title: title, NodeTime: nodeTime, Description: description, SortOrder: sortOrder})
+	}
+	if err := s.repo.Event.ReplaceTimelineNodes(ctx.Request().Context(), id, items); err != nil {
+		return response.InternalError(ctx, "保存赛事时间线失败")
+	}
+	saved, err := s.repo.Event.ListTimelineNodes(ctx.Request().Context(), id)
+	if err != nil {
+		return response.InternalError(ctx, "读取赛事时间线失败")
+	}
+	return response.Success(ctx, saved)
 }
 
 func (s *AdminServer) CreateEvent(ctx echo.Context) error {
@@ -394,6 +464,7 @@ func (s *AdminServer) buildAdminEventDetailVO(ctx echo.Context, event *models.Ev
 			CanEditEventManager:   event.AdminID != nil && s.canEditEventManager(ctx, event),
 		},
 	}
+	detail.Timeline, _ = s.repo.Event.ListTimelineNodes(ctx.Request().Context(), event.ID)
 	detail.ManagerUsername = nil
 	detail.ManagerNickname = nil
 	if event.AdminID == nil {
@@ -574,7 +645,7 @@ func (s *AdminServer) MergeEvent(ctx echo.Context) error {
 }
 
 func buildAdminEventModel(req adminEventRequest, role int, adminSchoolID *int) (*models.Event, error) {
-	event := &models.Event{Name: strings.TrimSpace(req.Name)}
+	event := &models.Event{Name: strings.TrimSpace(req.Name), AllowCrossSchool: 1, AllowCrossMajor: 1}
 	if req.Level != nil && strings.TrimSpace(*req.Level) != "" {
 		level := strings.TrimSpace(*req.Level)
 		if level != "national" && level != "regional" && level != "school" {
@@ -600,6 +671,30 @@ func buildAdminEventModel(req adminEventRequest, role int, adminSchoolID *int) (
 		if value != "" {
 			event.Summary = &value
 		}
+	}
+	optionalFields := []struct {
+		input  *string
+		target **string
+	}{
+		{req.OrganizerName, &event.OrganizerName},
+		{req.Description, &event.Description},
+		{req.ResourceURL, &event.ResourceURL},
+		{req.QQGroup, &event.QQGroup},
+	}
+	for _, field := range optionalFields {
+		if field.input == nil {
+			continue
+		}
+		value := strings.TrimSpace(*field.input)
+		if value != "" {
+			*field.target = &value
+		}
+	}
+	if req.AllowCrossSchool != nil && !*req.AllowCrossSchool {
+		event.AllowCrossSchool = 0
+	}
+	if req.AllowCrossMajor != nil && !*req.AllowCrossMajor {
+		event.AllowCrossMajor = 0
 	}
 	if req.IsRanking != nil && *req.IsRanking {
 		event.IsRanking = 1

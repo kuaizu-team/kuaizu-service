@@ -27,6 +27,28 @@ properties:
   summary:
     type: string
     nullable: true
+  organizerName:
+    type: string
+    nullable: true
+    maxLength: 200
+  description:
+    type: string
+    nullable: true
+    maxLength: 10000
+  resourceUrl:
+    type: string
+    nullable: true
+    maxLength: 2048
+  qqGroup:
+    type: string
+    nullable: true
+    maxLength: 32
+  allowCrossSchool:
+    type: boolean
+    default: true
+  allowCrossMajor:
+    type: boolean
+    default: true
   schoolId:
     type: integer
     nullable: true

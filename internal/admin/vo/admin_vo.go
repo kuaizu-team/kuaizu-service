@@ -156,6 +156,13 @@ type AdminEventVO struct {
 	ArticleURL           *string    `json:"articleUrl"`
 	Level                *string    `json:"level"`
 	Summary              *string    `json:"summary"`
+	OrganizerName        *string    `json:"organizerName"`
+	Description          *string    `json:"description"`
+	ResourceURL          *string    `json:"resourceUrl"`
+	QQGroup              *string    `json:"qqGroup"`
+	AllowCrossSchool     bool       `json:"allowCrossSchool"`
+	AllowCrossMajor      bool       `json:"allowCrossMajor"`
+	ViewCount            int64      `json:"viewCount"`
 	SchoolID             *int       `json:"schoolId"`
 	SchoolName           *string    `json:"schoolName"`
 	AdminID              *int       `json:"adminId"`
@@ -180,6 +187,13 @@ func NewAdminEventVO(e *models.Event) *AdminEventVO {
 		ArticleURL:           e.ArticleURL,
 		Level:                e.Level,
 		Summary:              e.Summary,
+		OrganizerName:        e.OrganizerName,
+		Description:          e.Description,
+		ResourceURL:          e.ResourceURL,
+		QQGroup:              e.QQGroup,
+		AllowCrossSchool:     e.AllowCrossSchool == 1,
+		AllowCrossMajor:      e.AllowCrossMajor == 1,
+		ViewCount:            e.ViewCount,
 		SchoolID:             e.SchoolID,
 		SchoolName:           e.SchoolName,
 		AdminID:              e.AdminID,

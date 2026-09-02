@@ -1,0 +1,11 @@
+type: object
+required: [id, eventId, title, nodeTime, sortOrder]
+properties:
+  id: { type: integer, format: int64 }
+  eventId: { type: integer }
+  title: { type: string }
+  nodeTime: { type: string, format: date-time }
+  description: { type: string, nullable: true }
+  sortOrder: { type: integer }
+  createdAt: { type: string, format: date-time }
+  updatedAt: { type: string, format: date-time }

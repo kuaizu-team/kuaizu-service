@@ -192,7 +192,7 @@ func (r *InformationContentRepository) enrichEventsBatch(ctx context.Context, it
 		ids = append(ids, items[i].ID)
 		index[items[i].ID] = i
 	}
-	query, args, err := sqlx.In(`SELECT ie.information_id, e.id, e.name, e.is_ranking, e.registration_deadline, e.article_url, e.display_order, e.created_at, e.updated_at
+	query, args, err := sqlx.In(`SELECT ie.information_id, e.id, e.name, e.is_ranking, e.registration_deadline, e.article_url, e.organizer_name, e.description, e.resource_url, e.qq_group, e.allow_cross_school, e.allow_cross_major, e.view_count, e.display_order, e.created_at, e.updated_at
 		FROM information_event ie
 		JOIN event e ON e.id = ie.event_id
 		WHERE ie.information_id IN (?)
@@ -208,7 +208,7 @@ func (r *InformationContentRepository) enrichEventsBatch(ctx context.Context, it
 	for rows.Next() {
 		var informationID int
 		var event models.Event
-		if err := rows.Scan(&informationID, &event.ID, &event.Name, &event.IsRanking, &event.RegistrationDeadline, &event.ArticleURL, &event.DisplayOrder, &event.CreatedAt, &event.UpdatedAt); err != nil {
+		if err := rows.Scan(&informationID, &event.ID, &event.Name, &event.IsRanking, &event.RegistrationDeadline, &event.ArticleURL, &event.OrganizerName, &event.Description, &event.ResourceURL, &event.QQGroup, &event.AllowCrossSchool, &event.AllowCrossMajor, &event.ViewCount, &event.DisplayOrder, &event.CreatedAt, &event.UpdatedAt); err != nil {
 			return err
 		}
 		if i, ok := index[informationID]; ok {

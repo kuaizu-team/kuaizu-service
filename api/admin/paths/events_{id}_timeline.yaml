@@ -1,0 +1,46 @@
+put:
+  tags: [Events]
+  summary: 替换赛事时间线
+  operationId: replaceAdminEventTimeline
+  parameters:
+    - in: path
+      name: id
+      required: true
+      schema: { type: integer }
+  requestBody:
+    required: true
+    content:
+      application/json:
+        schema:
+          type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              items:
+                type: object
+                required: [title, nodeTime]
+                properties:
+                  title: { type: string, maxLength: 120 }
+                  nodeTime: { type: string, format: date-time }
+                  description: { type: string, nullable: true, maxLength: 500 }
+                  sortOrder: { type: integer }
+  responses:
+    '200':
+      description: 保存成功
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/BaseResponse.yaml
+              - type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: ../components/schemas/AdminEventTimelineNode.yaml
+    '400': { $ref: ../components/responses/BadRequest.yaml }
+    '401': { $ref: ../components/responses/Unauthorized.yaml }
+    '403': { $ref: ../components/responses/Forbidden.yaml }
+    '404': { $ref: ../components/responses/NotFound.yaml }
+    '500': { $ref: ../components/responses/InternalError.yaml }
