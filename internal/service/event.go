@@ -28,6 +28,7 @@ const (
 	EventCrossRuleRejectMajor         = "reject_cross_major"
 	EventParticipationIndividual      = "individual"
 	EventParticipationTeam            = "team"
+	EventParticipationBoth            = "both"
 )
 
 func NewEventService(repo *repository.Repository) *EventService {
@@ -165,8 +166,10 @@ func validateEvent(event *models.Event) error {
 	switch *event.ParticipationMode {
 	case EventParticipationIndividual:
 		event.TeamMinMembers, event.TeamMaxMembers = nil, nil
-	case EventParticipationTeam:
-		if event.TeamMinMembers == nil || event.TeamMaxMembers == nil || *event.TeamMinMembers < 2 || *event.TeamMaxMembers < *event.TeamMinMembers {
+	case EventParticipationTeam, EventParticipationBoth:
+		if (event.TeamMinMembers != nil && *event.TeamMinMembers < 1) ||
+			(event.TeamMaxMembers != nil && *event.TeamMaxMembers < 1) ||
+			(event.TeamMinMembers != nil && event.TeamMaxMembers != nil && *event.TeamMaxMembers < *event.TeamMinMembers) {
 			return ErrBadRequest("team member range is invalid")
 		}
 	default:

@@ -72,6 +72,7 @@ type adminEventDetailVO struct {
 type adminEventTimelineItemRequest struct {
 	Title       string  `json:"title"`
 	NodeTime    string  `json:"nodeTime"`
+	TimeText    *string `json:"timeText"`
 	Description *string `json:"description"`
 	SortOrder   int     `json:"sortOrder"`
 }
@@ -213,9 +214,24 @@ func (s *AdminServer) ReplaceEventTimeline(ctx echo.Context) error {
 		if title == "" || len([]rune(title)) > 120 {
 			return response.BadRequest(ctx, "时间节点标题不能为空且不能超过 120 字")
 		}
-		nodeTime, err := time.Parse(time.RFC3339, strings.TrimSpace(raw.NodeTime))
-		if err != nil {
-			return response.BadRequest(ctx, "时间节点时间格式无效")
+		var nodeTime *time.Time
+		if strings.TrimSpace(raw.NodeTime) != "" {
+			parsed, err := time.Parse(time.RFC3339, strings.TrimSpace(raw.NodeTime))
+			if err != nil {
+				return response.BadRequest(ctx, "时间节点时间格式无效")
+			}
+			nodeTime = &parsed
+		}
+		var timeText *string
+		if raw.TimeText != nil && strings.TrimSpace(*raw.TimeText) != "" {
+			value := strings.TrimSpace(*raw.TimeText)
+			if len([]rune(value)) > 500 {
+				return response.BadRequest(ctx, "时间说明不能超过 500 字")
+			}
+			timeText = &value
+		}
+		if nodeTime == nil && timeText == nil {
+			return response.BadRequest(ctx, "请填写具体时间或时间说明")
 		}
 		var description *string
 		if raw.Description != nil {
@@ -231,7 +247,7 @@ func (s *AdminServer) ReplaceEventTimeline(ctx echo.Context) error {
 		if sortOrder == 0 {
 			sortOrder = index
 		}
-		items = append(items, models.EventTimelineNode{EventID: id, Title: title, NodeTime: nodeTime, Description: description, SortOrder: sortOrder})
+		items = append(items, models.EventTimelineNode{EventID: id, Title: title, NodeTime: nodeTime, TimeText: timeText, Description: description, SortOrder: sortOrder})
 	}
 	if err := s.repo.Event.ReplaceTimelineNodes(ctx.Request().Context(), id, items); err != nil {
 		return response.InternalError(ctx, "保存赛事时间线失败")

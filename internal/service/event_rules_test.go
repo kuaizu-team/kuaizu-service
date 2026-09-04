@@ -46,3 +46,20 @@ func TestValidateEventRejectsInvalidTeamRange(t *testing.T) {
 		t.Fatal("validateEvent() error = nil, want invalid range error")
 	}
 }
+
+func TestValidateEventBothAndPartialTeamRange(t *testing.T) {
+	for _, mode := range []string{EventParticipationTeam, EventParticipationBoth} {
+		for _, bounds := range [][2]*int{{nil, nil}, {nil, intPointer(5)}, {intPointer(1), intPointer(3)}} {
+			event := &models.Event{Name: "rules", ParticipationMode: &mode, TeamMinMembers: bounds[0], TeamMaxMembers: bounds[1]}
+			if err := validateEvent(event); err != nil {
+				t.Fatalf("%s: %v", mode, err)
+			}
+		}
+		event := &models.Event{Name: "invalid", ParticipationMode: &mode, TeamMinMembers: intPointer(0)}
+		if err := validateEvent(event); err == nil {
+			t.Fatal("zero members must be rejected")
+		}
+	}
+}
+
+func intPointer(value int) *int { return &value }

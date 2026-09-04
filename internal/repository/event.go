@@ -48,7 +48,7 @@ func eventSelectColumns(alias string) string {
 	if alias != "" {
 		prefix = alias + "."
 	}
-	return prefix + `id, ` + prefix + `name, ` + prefix + `is_ranking, ` + prefix + `registration_deadline, ` + prefix + `article_url, ` + prefix + `level, ` + prefix + `summary, ` + prefix + `organizer_name, ` + prefix + `description, ` + prefix + `resource_url, ` + prefix + `qq_group, ` + prefix + `allow_cross_school, ` + prefix + `allow_cross_major, ` + prefix + `cross_school_major_rule, ` + prefix + `participation_mode, ` + prefix + `team_min_members, ` + prefix + `team_max_members, ` + prefix + `view_count, ` + prefix + `school_id, (SELECT school_name FROM school WHERE id = ` + prefix + `school_id) AS school_name, ` + prefix + `admin_id, ` + prefix + `creator_id, (SELECT username FROM admin_user WHERE id = ` + prefix + `admin_id) AS manager_username, (SELECT nickname FROM admin_user WHERE id = ` + prefix + `admin_id) AS manager_nickname, ` + prefix + `display_order, ` + prefix + `created_at, ` + prefix + `updated_at`
+	return prefix + `id, ` + prefix + `name, ` + prefix + `is_ranking, ` + prefix + `registration_deadline, ` + prefix + `article_url, ` + prefix + `level, ` + prefix + `summary, ` + prefix + `organizer_name, ` + prefix + `description, ` + prefix + `resource_url, ` + prefix + `qq_group, ` + prefix + `allow_cross_school, ` + prefix + `allow_cross_major, ` + prefix + `cross_school_major_rule, ` + prefix + `participation_note, ` + prefix + `participation_mode, ` + prefix + `team_min_members, ` + prefix + `team_max_members, ` + prefix + `view_count, ` + prefix + `school_id, (SELECT school_name FROM school WHERE id = ` + prefix + `school_id) AS school_name, ` + prefix + `admin_id, ` + prefix + `creator_id, (SELECT username FROM admin_user WHERE id = ` + prefix + `admin_id) AS manager_username, (SELECT nickname FROM admin_user WHERE id = ` + prefix + `admin_id) AS manager_nickname, ` + prefix + `display_order, ` + prefix + `created_at, ` + prefix + `updated_at`
 }
 
 func (r *EventRepository) List(ctx context.Context, params EventListParams) ([]models.Event, int64, error) {
@@ -259,6 +259,7 @@ func updateEvent(ctx context.Context, exec sqlx.ExtContext, event *models.Event)
 		    allow_cross_school = :allow_cross_school,
 		    allow_cross_major = :allow_cross_major,
 		    cross_school_major_rule = :cross_school_major_rule,
+		    participation_note = CASE WHEN participation_mode <=> :participation_mode AND team_min_members <=> :team_min_members AND team_max_members <=> :team_max_members THEN participation_note ELSE NULL END,
 		    participation_mode = :participation_mode,
 		    team_min_members = :team_min_members,
 		    team_max_members = :team_max_members,
@@ -283,7 +284,8 @@ func updateEvent(ctx context.Context, exec sqlx.ExtContext, event *models.Event)
 			    allow_cross_school = :allow_cross_school,
 			    allow_cross_major = :allow_cross_major,
 			    cross_school_major_rule = :cross_school_major_rule,
-			    participation_mode = :participation_mode,
+			    participation_note = CASE WHEN participation_mode <=> :participation_mode AND team_min_members <=> :team_min_members AND team_max_members <=> :team_max_members THEN participation_note ELSE NULL END,
+		    participation_mode = :participation_mode,
 			    team_min_members = :team_min_members,
 			    team_max_members = :team_max_members,
 			    school_id = :school_id,
@@ -358,7 +360,7 @@ func (r *EventRepository) IncrementViewCount(ctx context.Context, id int) error 
 
 func (r *EventRepository) ListTimelineNodes(ctx context.Context, eventID int) ([]models.EventTimelineNode, error) {
 	items := make([]models.EventTimelineNode, 0)
-	if err := r.db.SelectContext(ctx, &items, `SELECT id,event_id,title,node_time,description,sort_order,created_at,updated_at FROM event_timeline_node WHERE event_id=? ORDER BY node_time ASC,sort_order ASC,id ASC`, eventID); err != nil {
+	if err := r.db.SelectContext(ctx, &items, `SELECT id,event_id,title,node_time,time_text,description,sort_order,created_at,updated_at FROM event_timeline_node WHERE event_id=? ORDER BY node_time ASC,sort_order ASC,id ASC`, eventID); err != nil {
 		return nil, fmt.Errorf("list event timeline nodes: %w", err)
 	}
 	return items, nil
@@ -375,7 +377,7 @@ func (r *EventRepository) ReplaceTimelineNodes(ctx context.Context, eventID int,
 	}
 	for index := range items {
 		item := &items[index]
-		if _, err := tx.ExecContext(ctx, `INSERT INTO event_timeline_node(event_id,title,node_time,description,sort_order) VALUES(?,?,?,?,?)`, eventID, item.Title, item.NodeTime, item.Description, item.SortOrder); err != nil {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO event_timeline_node(event_id,title,node_time,time_text,description,sort_order) VALUES(?,?,?,?,?,?)`, eventID, item.Title, item.NodeTime, item.TimeText, item.Description, item.SortOrder); err != nil {
 			return fmt.Errorf("insert event timeline node: %w", err)
 		}
 	}

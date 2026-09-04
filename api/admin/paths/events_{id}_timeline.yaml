@@ -19,10 +19,12 @@ put:
               type: array
               items:
                 type: object
-                required: [title, nodeTime]
+                required: [title]
+                description: nodeTime 与非空 timeText 至少填写一项
                 properties:
                   title: { type: string, maxLength: 120 }
-                  nodeTime: { type: string, format: date-time }
+                  nodeTime: { type: string, format: date-time, nullable: true }
+                  timeText: { type: string, nullable: true, maxLength: 500 }
                   description: { type: string, nullable: true, maxLength: 500 }
                   sortOrder: { type: integer }
   responses:

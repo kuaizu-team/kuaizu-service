@@ -48,8 +48,12 @@ properties:
     nullable: true
   participationMode:
     type: string
-    enum: [individual, team]
+    enum: [individual, team, both]
     nullable: true
+  participationNote:
+    type: string
+    nullable: true
+    description: Source participation and student-team-size rules; may vary by track.
   teamMinMembers:
     type: integer
     minimum: 1
