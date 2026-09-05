@@ -29,6 +29,8 @@ type adminEventRequest struct {
 	OrganizerName        *string `json:"organizerName"`
 	Description          *string `json:"description"`
 	ResourceURL          *string `json:"resourceUrl"`
+	OfficialWebsite      *string `json:"officialWebsite"`
+	ParticipationNote    *string `json:"participationNote"`
 	QQGroup              *string `json:"qqGroup"`
 	AllowCrossSchool     *bool   `json:"allowCrossSchool"`
 	AllowCrossMajor      *bool   `json:"allowCrossMajor"`
@@ -214,6 +216,9 @@ func (s *AdminServer) ReplaceEventTimeline(ctx echo.Context) error {
 		if title == "" || len([]rune(title)) > 120 {
 			return response.BadRequest(ctx, "时间节点标题不能为空且不能超过 120 字")
 		}
+		if models.IsEventRegistrationDeadlineTitle(title) {
+			return response.BadRequest(ctx, "总报名截止请在赛事基本信息中单独填写；阶段报名截止可保留")
+		}
 		var nodeTime *time.Time
 		if strings.TrimSpace(raw.NodeTime) != "" {
 			parsed, err := time.Parse(time.RFC3339, strings.TrimSpace(raw.NodeTime))
@@ -256,7 +261,7 @@ func (s *AdminServer) ReplaceEventTimeline(ctx echo.Context) error {
 	if err != nil {
 		return response.InternalError(ctx, "读取赛事时间线失败")
 	}
-	return response.Success(ctx, saved)
+	return response.Success(ctx, models.CustomEventTimeline(saved))
 }
 
 func (s *AdminServer) CreateEvent(ctx echo.Context) error {
@@ -331,11 +336,7 @@ func (s *AdminServer) UpdateEvent(ctx echo.Context) error {
 	}
 	event.ID = id
 	event.AdminID = existing.AdminID
-	if req.ParticipationMode == nil {
-		event.ParticipationMode = existing.ParticipationMode
-		event.TeamMinMembers = existing.TeamMinMembers
-		event.TeamMaxMembers = existing.TeamMaxMembers
-	}
+	preserveOmittedEventDetails(event, existing, raw)
 
 	tx, err := s.repo.DB().BeginTxx(requestCtx, nil)
 	if err != nil {
@@ -490,6 +491,7 @@ func (s *AdminServer) buildAdminEventDetailVO(ctx echo.Context, event *models.Ev
 		},
 	}
 	detail.Timeline, _ = s.repo.Event.ListTimelineNodes(ctx.Request().Context(), event.ID)
+	detail.Timeline = models.CustomEventTimeline(detail.Timeline)
 	detail.ManagerUsername = nil
 	detail.ManagerNickname = nil
 	if event.AdminID == nil {
@@ -704,6 +706,8 @@ func buildAdminEventModel(req adminEventRequest, role int, adminSchoolID *int) (
 		{req.OrganizerName, &event.OrganizerName},
 		{req.Description, &event.Description},
 		{req.ResourceURL, &event.ResourceURL},
+		{req.OfficialWebsite, &event.OfficialWebsite},
+		{req.ParticipationNote, &event.ParticipationNote},
 		{req.QQGroup, &event.QQGroup},
 	}
 	for _, field := range optionalFields {
@@ -758,4 +762,19 @@ func buildAdminEventModel(req adminEventRequest, role int, adminSchoolID *int) (
 		event.CreatedAt = t
 	}
 	return event, nil
+}
+
+// Missing fields from older clients preserve stored data; explicit null clears it.
+func preserveOmittedEventDetails(event, existing *models.Event, raw map[string]json.RawMessage) {
+	if _, provided := raw["officialWebsite"]; !provided {
+		event.OfficialWebsite = existing.OfficialWebsite
+	}
+	if _, provided := raw["participationNote"]; !provided {
+		event.ParticipationNote = existing.ParticipationNote
+	}
+	if _, provided := raw["participationMode"]; !provided {
+		event.ParticipationMode = existing.ParticipationMode
+		event.TeamMinMembers = existing.TeamMinMembers
+		event.TeamMaxMembers = existing.TeamMaxMembers
+	}
 }

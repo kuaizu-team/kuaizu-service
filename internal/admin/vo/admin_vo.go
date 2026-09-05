@@ -159,6 +159,8 @@ type AdminEventVO struct {
 	OrganizerName        *string    `json:"organizerName"`
 	Description          *string    `json:"description"`
 	ResourceURL          *string    `json:"resourceUrl"`
+	OfficialWebsite      *string    `json:"officialWebsite"`
+	ParticipationNote    *string    `json:"participationNote"`
 	QQGroup              *string    `json:"qqGroup"`
 	AllowCrossSchool     bool       `json:"allowCrossSchool"`
 	AllowCrossMajor      bool       `json:"allowCrossMajor"`
@@ -194,6 +196,8 @@ func NewAdminEventVO(e *models.Event) *AdminEventVO {
 		OrganizerName:        e.OrganizerName,
 		Description:          e.Description,
 		ResourceURL:          e.ResourceURL,
+		OfficialWebsite:      e.OfficialWebsite,
+		ParticipationNote:    e.ParticipationNote,
 		QQGroup:              e.QQGroup,
 		AllowCrossSchool:     e.AllowCrossSchool == 1,
 		AllowCrossMajor:      e.AllowCrossMajor == 1,

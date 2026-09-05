@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"log"
+	"net/url"
 	"strings"
 
 	"github.com/jmoiron/sqlx"
@@ -90,7 +91,7 @@ func (s *EventService) GetEvent(ctx context.Context, id int) (*models.Event, []m
 	if err != nil || event == nil {
 		return nil, nil, nil, ErrInternal("reload event failed")
 	}
-	return event, projects, timeline, nil
+	return event, projects, models.PublicEventTimeline(event, timeline), nil
 }
 
 func (s *EventService) ListEventTimeline(ctx context.Context, id int) ([]models.EventTimelineNode, error) {
@@ -105,7 +106,7 @@ func (s *EventService) ListEventTimeline(ctx context.Context, id int) ([]models.
 	if err != nil {
 		return nil, ErrInternal("get event timeline failed")
 	}
-	return items, nil
+	return models.PublicEventTimeline(event, items), nil
 }
 
 func validateEvent(event *models.Event) error {
@@ -124,6 +125,8 @@ func validateEvent(event *models.Event) error {
 		{&event.OrganizerName, 200, "organizerName"},
 		{&event.Description, 10000, "description"},
 		{&event.ResourceURL, 2048, "resourceUrl"},
+		{&event.OfficialWebsite, 2048, "officialWebsite"},
+		{&event.ParticipationNote, 10000, "participationNote"},
 		{&event.QQGroup, 32, "qqGroup"},
 	}
 	for _, field := range optionalFields {
@@ -139,6 +142,12 @@ func validateEvent(event *models.Event) error {
 			return ErrBadRequest(field.name + " is too long")
 		}
 		*field.value = &trimmed
+	}
+	if event.OfficialWebsite != nil {
+		u, err := url.Parse(*event.OfficialWebsite)
+		if err != nil || u.Hostname() == "" || (u.Scheme != "http" && u.Scheme != "https") || u.User != nil {
+			return ErrBadRequest("officialWebsite must be an http or https URL without credentials")
+		}
 	}
 	if event.CrossSchoolMajorRule == nil {
 		rule := EventCrossRuleAllowSchoolAndMajor

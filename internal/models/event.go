@@ -26,6 +26,7 @@ type Event struct {
 	OrganizerName        *string    `db:"organizer_name"`
 	Description          *string    `db:"description"`
 	ResourceURL          *string    `db:"resource_url"`
+	OfficialWebsite      *string    `db:"official_website"`
 	QQGroup              *string    `db:"qq_group"`
 	AllowCrossSchool     int        `db:"allow_cross_school"`
 	AllowCrossMajor      int        `db:"allow_cross_major"`
@@ -62,6 +63,7 @@ func (e *Event) ToVO() api.EventVO {
 		OrganizerName:     e.OrganizerName,
 		Description:       e.Description,
 		ResourceUrl:       e.ResourceURL,
+		OfficialWebsite:   e.OfficialWebsite,
 		QqGroup:           e.QQGroup,
 		AllowCrossSchool:  boolPtr(e.AllowCrossSchool == 1),
 		AllowCrossMajor:   boolPtr(e.AllowCrossMajor == 1),

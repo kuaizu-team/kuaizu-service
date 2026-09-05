@@ -32,6 +32,11 @@ properties:
   description:
     type: string
     nullable: true
+  officialWebsite:
+    type: string
+    nullable: true
+    maxLength: 2048
+    description: HTTP or HTTPS official event website.
   resourceUrl:
     type: string
     nullable: true

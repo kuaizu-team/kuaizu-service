@@ -35,6 +35,11 @@ properties:
     type: string
     nullable: true
     maxLength: 10000
+  officialWebsite:
+    type: string
+    nullable: true
+    maxLength: 2048
+    description: HTTP or HTTPS official event website.
   resourceUrl:
     type: string
     nullable: true
@@ -64,3 +69,24 @@ properties:
     type: string
     pattern: '^1\d{10}$'
     nullable: true
+
+  crossSchoolMajorRule:
+    type: string
+    nullable: true
+    enum: [allow_cross_school_and_major, allow_cross_major, reject_cross_major]
+  participationMode:
+    type: string
+    nullable: true
+    enum: [individual, team, both]
+  participationNote:
+    type: string
+    nullable: true
+    maxLength: 10000
+  teamMinMembers:
+    type: integer
+    nullable: true
+    minimum: 1
+  teamMaxMembers:
+    type: integer
+    nullable: true
+    minimum: 1
