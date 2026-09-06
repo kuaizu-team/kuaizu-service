@@ -201,7 +201,7 @@ func (s *Server) ListMyProjects(ctx echo.Context, params api.ListMyProjectsParam
 	for i := range result.List {
 		ids[i] = result.List[i].ID
 	}
-	unread, err := s.repo.Interaction.BatchProjectUnread(ctx.Request().Context(), userID, ids)
+	unread, err := s.repo.Interaction.BatchProjectUnread(ctx.Request().Context(), userID, ids, ctx.QueryParam("dashboardScope") == "entry")
 	if err != nil {
 		return InternalError(ctx, "get project dashboard unread failed")
 	}

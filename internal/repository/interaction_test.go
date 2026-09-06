@@ -400,3 +400,58 @@ func TestMarkDashboardViewedSingleType(t *testing.T) {
 func containsNormalized(query, want string) bool {
 	return strings.Contains(normalizeSQL(query), normalizeSQL(want))
 }
+
+func TestDashboardEntryScopeAndLegacyIsolation(t *testing.T) {
+	db := openCaptureDB(t)
+	defer db.Close()
+	repo := NewInteractionRepository(sqlx.NewDb(db, "capture_user_repo"))
+	for _, entry := range []bool{false, true} {
+		setCapturedQuery([]string{"project_count", "talent_count"}, [][]driver.Value{{int64(2), int64(3)}})
+		if _, err := repo.UnreadDashboardTotals(context.Background(), 7, entry); err != nil {
+			t.Fatal(err)
+		}
+		capturedQuery.Lock()
+		query := capturedQuery.query
+		capturedQuery.Unlock()
+		if strings.Contains(query, "s.interaction_type='entry'") != entry {
+			t.Fatal("wrong totals cursor")
+		}
+		if entry && strings.Contains(query, "s.interaction_type='like'") {
+			t.Fatal("entry depends on detail cursor")
+		}
+		setCapturedQuery([]string{"project_id", "unread_count"}, [][]driver.Value{{int64(10), int64(2)}})
+		if _, err := repo.BatchProjectUnread(context.Background(), 7, []int{10}, entry); err != nil {
+			t.Fatal(err)
+		}
+		capturedQuery.Lock()
+		query = capturedQuery.query
+		capturedQuery.Unlock()
+		if strings.Contains(query, "s.interaction_type='entry'") != entry {
+			t.Fatal("wrong project cursor")
+		}
+	}
+	for _, kind := range []string{"entry", "like", "favorite", "share", "visit", ""} {
+		var selected *string
+		if kind != "" {
+			selected = &kind
+		}
+		if err := repo.MarkDashboardViewed(context.Background(), 7, InteractionTalent, 42, selected); err != nil {
+			t.Fatal(err)
+		}
+		capturedExec.Lock()
+		args := append([]driver.NamedValue(nil), capturedExec.args...)
+		capturedExec.Unlock()
+		if kind == "" {
+			if len(args) != 16 {
+				t.Fatal("legacy mark-all changed")
+			}
+			for _, arg := range args {
+				if arg.Value == "entry" {
+					t.Fatal("legacy read clears entry")
+				}
+			}
+		} else if len(args) != 4 || args[3].Value != kind {
+			t.Fatalf("read leaked across cursors: %v", args)
+		}
+	}
+}
