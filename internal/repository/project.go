@@ -32,6 +32,7 @@ type ListParams struct {
 	Statuses       []int
 	Direction      *int
 	EventID        *int
+	EventIDs       []int
 	ExcludeEventID *int
 	CreatorID      *int
 	MemberUserID   *int
@@ -66,14 +67,14 @@ type ListParams struct {
 func (r *ProjectRepository) List(ctx context.Context, params ListParams) ([]models.Project, int64, error) {
 	conditions := []string{"1=1"}
 	whereArgs := []interface{}{}
+	var searchSQL *degradedSearchSQL
+	var eventFilterSQL *projectEventFilterSQL
 
-	if params.Keyword != nil && *params.Keyword != "" {
-		conditions = append(conditions, `(p.name LIKE ? OR p.description LIKE ?
-			OR EXISTS (SELECT 1 FROM school ks WHERE ks.id=p.school_id AND ks.school_name LIKE ?)
-			OR EXISTS (SELECT 1 FROM project_tag_relation ptr JOIN project_tag pt ON pt.id=ptr.tag_id
-				WHERE ptr.project_id=p.id AND pt.status=1 AND pt.name LIKE ?))`)
-		pattern := "%" + *params.Keyword + "%"
-		whereArgs = append(whereArgs, pattern, pattern, pattern, pattern)
+	if params.Keyword != nil && strings.TrimSpace(*params.Keyword) != "" {
+		search := buildDegradedSearchSQLWithMatcher(strings.TrimSpace(*params.Keyword), projectSearchMatcher)
+		searchSQL = &search
+		conditions = append(conditions, search.Predicate)
+		whereArgs = append(whereArgs, search.PredicateArgs...)
 	}
 	if params.SchoolID != nil {
 		conditions = append(conditions, "p.school_id = ?")
@@ -107,6 +108,20 @@ func (r *ProjectRepository) List(ctx context.Context, params ListParams) ([]mode
 	if params.EventID != nil {
 		conditions = append(conditions, "EXISTS (SELECT 1 FROM project_event pe WHERE pe.project_id = p.id AND pe.event_id = ?)")
 		whereArgs = append(whereArgs, *params.EventID)
+	}
+	if len(params.EventIDs) > 0 {
+		selectedEvents, err := r.listSelectedEvents(ctx, params.EventIDs)
+		if err != nil {
+			return nil, 0, err
+		}
+		if len(selectedEvents) == 0 {
+			conditions = append(conditions, "1=0")
+		} else {
+			filter := buildProjectEventFilterSQL(selectedEvents)
+			eventFilterSQL = &filter
+			conditions = append(conditions, filter.Predicate)
+			whereArgs = append(whereArgs, filter.PredicateArgs...)
+		}
 	}
 	if params.ExcludeEventID != nil {
 		conditions = append(conditions, "NOT EXISTS (SELECT 1 FROM project_event pe WHERE pe.project_id = p.id AND pe.event_id = ?)")
@@ -178,7 +193,7 @@ func (r *ProjectRepository) List(ctx context.Context, params ListParams) ([]mode
 		}
 		orderClause = fmt.Sprintf("p.id %s", dir)
 	} else if params.SortBy != nil && *params.SortBy == "school_priority" {
-		rankedIDs, err := r.listRankedProjectIDs(ctx, whereClause, whereArgs, params)
+		rankedIDs, err := r.listRankedProjectIDs(ctx, whereClause, whereArgs, params, searchSQL, eventFilterSQL)
 		if err != nil {
 			return nil, 0, err
 		}
@@ -202,6 +217,14 @@ func (r *ProjectRepository) List(ctx context.Context, params ListParams) ([]mode
 		whereClause = fmt.Sprintf("p.id IN (%s)", strings.Join(placeholders, ","))
 		orderClause = fmt.Sprintf("FIELD(p.id, %s)", strings.Join(placeholders, ","))
 		rankedPage = true
+	}
+	if searchSQL != nil && !rankedPage {
+		orderClause = searchSQL.Score + " DESC, " + orderClause
+		orderArgs = append(append([]interface{}{}, searchSQL.ScoreArgs...), orderArgs...)
+	}
+	if eventFilterSQL != nil && !rankedPage {
+		orderClause = eventFilterSQL.OrderBy() + ", " + orderClause
+		orderArgs = append(append([]interface{}{}, eventFilterSQL.OrderArgs()...), orderArgs...)
 	}
 
 	// Query with pagination — column aliases match Project db tags.
@@ -269,6 +292,43 @@ func (r *ProjectRepository) List(ctx context.Context, params ListParams) ([]mode
 	}
 
 	return projects, total, nil
+}
+
+func projectSearchMatcher(pattern string) (string, []interface{}) {
+	const clause = `(p.name LIKE ? ESCAPE '!'
+		OR p.description LIKE ? ESCAPE '!'
+		OR p.skill_requirement LIKE ? ESCAPE '!'
+		OR EXISTS (SELECT 1 FROM school search_school
+			WHERE search_school.id = p.school_id AND search_school.school_name LIKE ? ESCAPE '!')
+		OR EXISTS (SELECT 1 FROM project_tag_relation search_ptr
+			JOIN project_tag search_pt ON search_pt.id = search_ptr.tag_id
+			WHERE search_ptr.project_id = p.id AND search_pt.status = 1
+				AND search_pt.name LIKE ? ESCAPE '!')
+		OR EXISTS (SELECT 1 FROM project_milestones search_milestone
+			WHERE search_milestone.project_id = p.id AND (
+				search_milestone.title LIKE ? ESCAPE '!'
+				OR search_milestone.description LIKE ? ESCAPE '!'
+				OR search_milestone.detail_description LIKE ? ESCAPE '!'))
+		OR EXISTS (SELECT 1 FROM project_members search_member
+			JOIN ` + "`user`" + ` search_user ON search_user.id = search_member.user_id
+			LEFT JOIN school search_member_school ON search_member_school.id = search_user.school_id
+			LEFT JOIN major search_member_major ON search_member_major.id = search_user.major_id
+			LEFT JOIN talent_profile search_member_profile ON search_member_profile.user_id = search_user.id
+			WHERE search_member.project_id = p.id AND (
+				(CASE WHEN search_user.nickname IS NULL OR TRIM(search_user.nickname) = '' OR TRIM(search_user.nickname) = '匿名用户'
+					THEN ? ELSE TRIM(search_user.nickname) END) LIKE ? ESCAPE '!'
+				OR search_member_school.school_name LIKE ? ESCAPE '!'
+				OR search_member_major.major_name LIKE ? ESCAPE '!'
+				OR CONCAT(CAST(search_user.grade AS CHAR), '级') LIKE ? ESCAPE '!'
+				OR search_member_profile.self_evaluation LIKE ? ESCAPE '!'
+				OR search_member_profile.project_experience LIKE ? ESCAPE '!'
+				OR CAST(search_member_profile.skill_summary AS CHAR) LIKE ? ESCAPE '!')))`
+	return clause, []interface{}{
+		pattern, pattern, pattern, pattern, pattern,
+		pattern, pattern, pattern,
+		models.DefaultUserNickname, pattern, pattern, pattern, pattern,
+		pattern, pattern, pattern,
+	}
 }
 
 func (r *ProjectRepository) enrichCreatorsBatch(ctx context.Context, projects []models.Project) error {

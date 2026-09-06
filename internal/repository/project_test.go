@@ -9,7 +9,7 @@ import (
 	"github.com/jmoiron/sqlx"
 )
 
-func TestProjectKeywordSearchUsesSchoolAndTagExistsForCountAndList(t *testing.T) {
+func TestProjectKeywordSearchUsesDegradedMatchingAcrossRequestedFields(t *testing.T) {
 	db := openCaptureDB(t)
 	defer db.Close()
 	repo := NewProjectRepository(sqlx.NewDb(db, "capture_user_repo"))
@@ -36,18 +36,48 @@ func TestProjectKeywordSearchUsesSchoolAndTagExistsForCountAndList(t *testing.T)
 	}
 	for _, query := range queries {
 		normalized := normalizeSQL(query)
-		for _, want := range []string{"EXISTS (SELECT 1 FROM school ks", "EXISTS (SELECT 1 FROM project_tag_relation ptr", "pt.status=1"} {
+		for _, want := range []string{
+			"p.name LIKE ? ESCAPE '!'",
+			"p.description LIKE ? ESCAPE '!'",
+			"EXISTS (SELECT 1 FROM school search_school",
+			"EXISTS (SELECT 1 FROM project_tag_relation search_ptr",
+			"search_pt.status = 1",
+			"EXISTS (SELECT 1 FROM project_milestones search_milestone",
+			"search_milestone.title LIKE ? ESCAPE '!'",
+			"search_milestone.detail_description LIKE ? ESCAPE '!'",
+			"EXISTS (SELECT 1 FROM project_members search_member",
+			"search_member_school.school_name LIKE ? ESCAPE '!'",
+			"search_member_major.major_name LIKE ? ESCAPE '!'",
+			"CONCAT(CAST(search_user.grade AS CHAR), '级') LIKE ? ESCAPE '!'",
+			"search_member_profile.self_evaluation LIKE ? ESCAPE '!'",
+			"search_member_profile.project_experience LIKE ? ESCAPE '!'",
+			"CAST(search_member_profile.skill_summary AS CHAR) LIKE ? ESCAPE '!'",
+		} {
 			if !strings.Contains(normalized, want) {
 				t.Fatalf("query missing %q: %s", want, normalized)
 			}
 		}
 	}
-	if len(args) != 6 {
-		t.Fatalf("list args = %#v", args)
+	listQuery := normalizeSQL(queries[1])
+	for _, want := range []string{
+		"CASE WHEN",
+		"THEN 4",
+		"THEN 3",
+		"THEN 2",
+		"THEN 1",
+		"END DESC, p.created_at DESC",
+	} {
+		if !strings.Contains(listQuery, want) {
+			t.Fatalf("ranking query missing %q: %s", want, listQuery)
+		}
 	}
-	for i := 0; i < 4; i++ {
-		if args[i].Value != "%比赛%" {
-			t.Fatalf("keyword arg %d = %#v", i, args[i].Value)
+	patterns := map[interface{}]bool{}
+	for _, arg := range args {
+		patterns[arg.Value] = true
+	}
+	for _, want := range []string{"%比赛%", "%比赛%", "%比%", "%赛%"} {
+		if !patterns[want] {
+			t.Fatalf("missing search pattern %q in args", want)
 		}
 	}
 }

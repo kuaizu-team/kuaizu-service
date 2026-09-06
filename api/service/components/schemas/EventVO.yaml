@@ -26,6 +26,50 @@ properties:
   summary:
     type: string
     nullable: true
+  organizerName:
+    type: string
+    nullable: true
+  description:
+    type: string
+    nullable: true
+  officialWebsite:
+    type: string
+    nullable: true
+    maxLength: 2048
+    description: HTTP or HTTPS official event website.
+  resourceUrl:
+    type: string
+    nullable: true
+  qqGroup:
+    type: string
+    nullable: true
+  allowCrossSchool:
+    type: boolean
+  allowCrossMajor:
+    type: boolean
+  crossSchoolMajorRule:
+    type: string
+    enum: [allow_cross_school_and_major, allow_cross_major, reject_cross_major]
+    nullable: true
+  participationMode:
+    type: string
+    enum: [individual, team, both]
+    nullable: true
+  participationNote:
+    type: string
+    nullable: true
+    description: Source participation and student-team-size rules; may vary by track.
+  teamMinMembers:
+    type: integer
+    minimum: 1
+    nullable: true
+  teamMaxMembers:
+    type: integer
+    minimum: 1
+    nullable: true
+  viewCount:
+    type: integer
+    format: int64
   schoolName:
     type: string
     nullable: true

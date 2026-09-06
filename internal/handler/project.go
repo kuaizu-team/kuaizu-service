@@ -35,6 +35,17 @@ func (s *Server) ListProjects(ctx echo.Context, params api.ListProjectsParams) e
 		EventID:        params.EventId,
 		ExcludeEventID: params.ExcludeEventId,
 	}
+	if params.EventIds != nil {
+		if len(*params.EventIds) > 10 {
+			return BadRequest(ctx, "最多同时筛选10个赛事")
+		}
+		for _, eventID := range *params.EventIds {
+			if eventID <= 0 {
+				return BadRequest(ctx, "赛事ID必须为正整数")
+			}
+		}
+		listParams.EventIDs = append([]int(nil), (*params.EventIds)...)
+	}
 
 	if params.Page != nil {
 		listParams.Page = *params.Page
@@ -190,7 +201,7 @@ func (s *Server) ListMyProjects(ctx echo.Context, params api.ListMyProjectsParam
 	for i := range result.List {
 		ids[i] = result.List[i].ID
 	}
-	unread, err := s.repo.Interaction.BatchProjectUnread(ctx.Request().Context(), userID, ids)
+	unread, err := s.repo.Interaction.BatchProjectUnread(ctx.Request().Context(), userID, ids, ctx.QueryParam("dashboardScope") == "entry")
 	if err != nil {
 		return InternalError(ctx, "get project dashboard unread failed")
 	}

@@ -35,3 +35,7 @@ allOf:
             type: boolean
           canEditEventManager:
             type: boolean
+      timeline:
+        type: array
+        items:
+          $ref: ./AdminEventTimelineNode.yaml

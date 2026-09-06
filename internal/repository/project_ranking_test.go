@@ -9,6 +9,44 @@ import (
 	"github.com/jmoiron/sqlx"
 )
 
+func TestProjectSearchScorePrecedesExistingPoolOrder(t *testing.T) {
+	keyword := "46级"
+	params := ListParams{Keyword: &keyword, RandomSeed: "search-ranking"}
+	candidates := []projectRankCandidate{
+		{ID: 1, CreatorID: 1, SchoolID: 1, SearchScore: 1},
+		{ID: 2, CreatorID: 2, SchoolID: 1, SearchScore: 4},
+		{ID: 3, CreatorID: 3, SchoolID: 1, SearchScore: 2},
+		{ID: 4, CreatorID: 4, SchoolID: 1, SearchScore: 4},
+	}
+
+	ranked := rankProjectCandidates(candidates, params)
+	for i := 1; i < len(ranked); i++ {
+		if ranked[i-1].SearchScore < ranked[i].SearchScore {
+			t.Fatalf("search scores not descending: %#v", ranked)
+		}
+	}
+}
+
+func TestProjectEventScorePrecedesKeywordAndExistingPoolOrder(t *testing.T) {
+	eventIDs := []int{1, 2}
+	keyword := "创新"
+	params := ListParams{EventIDs: eventIDs, Keyword: &keyword, RandomSeed: "event-ranking"}
+	candidates := []projectRankCandidate{
+		{ID: 1, CreatorID: 1, SearchScore: 4, EventCategory: 2, EventMatches: 2},
+		{ID: 2, CreatorID: 2, SearchScore: 1, EventCategory: 4, EventRelations: 1},
+		{ID: 3, CreatorID: 3, SearchScore: 4, EventCategory: 3, EventMatches: 1},
+		{ID: 4, CreatorID: 4, SearchScore: 4, EventCategory: 3, EventMatches: 2},
+	}
+
+	ranked := rankProjectCandidates(candidates, params)
+	want := []int{2, 4, 3, 1}
+	for i := range want {
+		if ranked[i].ID != want[i] {
+			t.Fatalf("ranked[%d] = %d, want %d: %#v", i, ranked[i].ID, want[i], ranked)
+		}
+	}
+}
+
 func TestProjectCompositeFavorites(t *testing.T) {
 	candidate := projectRankCandidate{FavoriteCount: 9, LikeCount: 14, ShareCount: 29}
 	if got := projectCompositeFavorites(candidate); got != 13 {

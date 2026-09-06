@@ -1,4 +1,8 @@
 parameters:
+  - name: dashboardScope
+    in: query
+    schema: { type: string, enum: [entry] }
+    description: Use the independent entry cursor for interactionUnreadCount. Omit for legacy counts.
   - $ref: ../components/parameters/PageParam.yaml
   - $ref: ../components/parameters/SizeParam.yaml
   - name: status

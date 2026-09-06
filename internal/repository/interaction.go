@@ -387,7 +387,7 @@ func (r *InteractionRepository) UnreadForTarget(ctx context.Context, target stri
 	return unread, nil
 }
 
-func (r *InteractionRepository) UnreadDashboardTotals(ctx context.Context, ownerUserID int) (DashboardUnreadTotals, error) {
+func (r *InteractionRepository) UnreadDashboardTotals(ctx context.Context, ownerUserID int, entryOnly ...bool) (DashboardUnreadTotals, error) {
 	query := `SELECT
 		(
 			(SELECT COUNT(DISTINCT i.project_id, i.user_id) FROM project_like i JOIN project p ON p.id=i.project_id WHERE (p.creator_id=? OR EXISTS (
@@ -437,6 +437,7 @@ func (r *InteractionRepository) UnreadDashboardTotals(ctx context.Context, owner
 					  AND prev.viewed_at>=DATE_SUB(i.viewed_at, INTERVAL 30 DAY)
 				))
 		) talent_count`
+	query = dashboardUnreadScope(query, entryOnly)
 	args := make([]interface{}, 0, 28)
 	for i := 0; i < 28; i++ {
 		args = append(args, ownerUserID)
@@ -478,7 +479,7 @@ func (r *InteractionRepository) ProfileProjectBadgeState(ctx context.Context, us
 	return state, nil
 }
 
-func (r *InteractionRepository) BatchProjectUnread(ctx context.Context, ownerUserID int, projectIDs []int) (map[int]int, error) {
+func (r *InteractionRepository) BatchProjectUnread(ctx context.Context, ownerUserID int, projectIDs []int, entryOnly ...bool) (map[int]int, error) {
 	result := make(map[int]int, len(projectIDs))
 	if len(projectIDs) == 0 {
 		return result, nil
@@ -521,6 +522,7 @@ func (r *InteractionRepository) BatchProjectUnread(ctx context.Context, ownerUse
 	if err != nil {
 		return nil, err
 	}
+	query = dashboardUnreadScope(query, entryOnly)
 	type row struct {
 		ProjectID   int `db:"project_id"`
 		UnreadCount int `db:"unread_count"`
@@ -738,4 +740,15 @@ func (r *InteractionRepository) SaveProjectMetadata(ctx context.Context, project
 		}
 	}
 	return tx.Commit()
+}
+
+// Entry reads use their own cursor; legacy callers retain the four detail cursors.
+func dashboardUnreadScope(query string, entryOnly []bool) string {
+	if len(entryOnly) == 0 || !entryOnly[0] {
+		return query
+	}
+	for _, kind := range []string{"like", "favorite", "share", "visit"} {
+		query = strings.ReplaceAll(query, "s.interaction_type='"+kind+"'", "s.interaction_type='entry'")
+	}
+	return query
 }
