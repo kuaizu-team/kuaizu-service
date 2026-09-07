@@ -450,13 +450,18 @@ func (r *InteractionRepository) UnreadDashboardTotals(ctx context.Context, owner
 	return totals, nil
 }
 
-func (r *InteractionRepository) ProfileProjectBadgeState(ctx context.Context, userID int) (ProfileProjectBadgeState, error) {
+func (r *InteractionRepository) ProfileProjectBadgeState(ctx context.Context, userID int, entryOnly ...bool) (ProfileProjectBadgeState, error) {
 	var state ProfileProjectBadgeState
+	// Closed/ended projects hide the application badge in My Projects.
+	visibleApplications := ""
+	if len(entryOnly) > 0 && entryOnly[0] {
+		visibleApplications = fmt.Sprintf(" AND p.status NOT IN (%d, %d)", models.ProjectStatusClosed, models.ProjectStatusEnded)
+	}
 	err := r.db.QueryRowxContext(ctx, `SELECT
 		(SELECT COUNT(*)
 		 FROM project_application pa
 		 JOIN project p ON p.id = pa.project_id
-		 WHERE pa.status = 0 AND p.status <> ? AND (
+		 WHERE pa.status = 0 AND p.status <> ?`+visibleApplications+` AND (
 			p.creator_id = ? OR EXISTS (
 				SELECT 1 FROM project_members pm WHERE pm.project_id = p.id AND pm.user_id = ?
 			)

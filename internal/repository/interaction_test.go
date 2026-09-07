@@ -455,3 +455,21 @@ func TestDashboardEntryScopeAndLegacyIsolation(t *testing.T) {
 		}
 	}
 }
+
+func TestProfileEntryBadgesExcludeHiddenApplicationBadges(t *testing.T) {
+	db := openCaptureDB(t)
+	defer db.Close()
+	repo := NewInteractionRepository(sqlx.NewDb(db, "capture_user_repo"))
+	for _, entry := range []bool{false, true} {
+		setCapturedQuery([]string{"pending_application_count", "has_status_unread"}, [][]driver.Value{{int64(3), false}})
+		if _, err := repo.ProfileProjectBadgeState(context.Background(), 7, entry); err != nil {
+			t.Fatal(err)
+		}
+		capturedQuery.Lock()
+		query := normalizeSQL(capturedQuery.query)
+		capturedQuery.Unlock()
+		if strings.Contains(query, "p.status NOT IN (3, 5)") != entry {
+			t.Fatalf("application visibility differs from child page: %s", query)
+		}
+	}
+}
