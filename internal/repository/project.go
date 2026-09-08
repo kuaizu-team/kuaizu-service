@@ -65,6 +65,9 @@ type ListParams struct {
 
 // List retrieves paginated projects with optional filters
 func (r *ProjectRepository) List(ctx context.Context, params ListParams) ([]models.Project, int64, error) {
+	if err := ValidateSearchKeyword(params.Keyword); err != nil {
+		return nil, 0, err
+	}
 	conditions := []string{"1=1"}
 	whereArgs := []interface{}{}
 	var searchSQL *degradedSearchSQL

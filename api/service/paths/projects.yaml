@@ -12,6 +12,7 @@ get:
       description: 关键词搜索
       schema:
         type: string
+        maxLength: 32
     - name: schoolId
       in: query
       description: 学校ID筛选

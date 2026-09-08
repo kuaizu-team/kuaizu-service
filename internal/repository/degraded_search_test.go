@@ -17,7 +17,7 @@ func TestUniqueSearchFragmentsUsesUnicodeCharactersAndSkipsWhitespace(t *testing
 
 func TestBuildDegradedSearchSQLContainsAllFourLevels(t *testing.T) {
 	search := buildDegradedSearchSQL("search_document", "46级")
-	for _, want := range []string{"THEN 4", "THEN 3", "THEN 2", "THEN 1"} {
+	for _, want := range []string{"THEN 4", "THEN 3", "ELSE LEAST(2,"} {
 		if !strings.Contains(search.Score, want) {
 			t.Fatalf("score missing %q: %s", want, search.Score)
 		}

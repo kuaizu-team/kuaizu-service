@@ -40,9 +40,11 @@ properties:
   resourceUrl:
     type: string
     nullable: true
+    description: 仅赛事详情向当前已通过学生认证且未封禁的用户返回；列表及嵌套赛事不返回。
   qqGroup:
     type: string
     nullable: true
+    description: 仅赛事详情向当前已通过学生认证且未封禁的用户返回；列表及嵌套赛事不返回。
   allowCrossSchool:
     type: boolean
   allowCrossMajor:

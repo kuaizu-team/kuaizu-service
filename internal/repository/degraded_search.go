@@ -4,7 +4,19 @@ import (
 	"fmt"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 )
+
+const MaxSearchKeywordRunes = 32
+
+// Bound SQL expansion before either list query is built. Count Unicode code
+// points, not bytes, so Chinese and Latin keywords have the same limit.
+func ValidateSearchKeyword(keyword *string) error {
+	if keyword != nil && utf8.RuneCountInString(*keyword) > MaxSearchKeywordRunes {
+		return fmt.Errorf("搜索关键词不能超过 %d 个字符", MaxSearchKeywordRunes)
+	}
+	return nil
+}
 
 type degradedSearchSQL struct {
 	Predicate     string
@@ -48,13 +60,10 @@ func buildDegradedSearchSQLWithMatcher(keyword string, matcher func(string) (str
 	score := fmt.Sprintf(`CASE
 		WHEN %s THEN 4
 		WHEN %s THEN 3
-		WHEN (%s) >= 2 THEN 2
-		WHEN (%s) >= 1 THEN 1
-		ELSE 0
-	END`, fullCheck, pairCheck, matchCount, matchCount)
+		ELSE LEAST(2, (%s))
+	END`, fullCheck, pairCheck, matchCount)
 	scoreArgs := append([]interface{}{}, fullArgs...)
 	scoreArgs = append(scoreArgs, pairArgs...)
-	scoreArgs = append(scoreArgs, characterArgs...)
 	scoreArgs = append(scoreArgs, characterArgs...)
 
 	return degradedSearchSQL{

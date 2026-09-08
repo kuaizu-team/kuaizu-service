@@ -49,7 +49,7 @@ func TestTalentKeywordSearchUsesDegradedMatchingAcrossDisplayedFields(t *testing
 	}
 
 	listQuery := normalizeSQL(queries[1])
-	for _, want := range []string{"CASE WHEN", "THEN 4", "THEN 3", "THEN 2", "THEN 1", "END DESC, tp.updated_at DESC"} {
+	for _, want := range []string{"CASE WHEN", "THEN 4", "THEN 3", "ELSE LEAST(2,", "END DESC, tp.updated_at DESC"} {
 		if !strings.Contains(listQuery, want) {
 			t.Fatalf("ranking query missing %q: %s", want, listQuery)
 		}

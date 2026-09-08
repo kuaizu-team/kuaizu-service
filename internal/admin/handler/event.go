@@ -191,7 +191,13 @@ func (s *AdminServer) GetEvent(ctx echo.Context) error {
 	if !s.canViewEventInScope(ctx, event) {
 		return response.Forbidden(ctx, "无权查看该赛事")
 	}
-	return response.Success(ctx, s.buildAdminEventDetailVO(ctx, event))
+	timeline, err := s.repo.Event.ListTimelineNodes(ctx.Request().Context(), event.ID)
+	if err != nil {
+		return response.InternalError(ctx, "读取赛事时间线失败")
+	}
+	detail := s.buildAdminEventDetailVO(ctx, event)
+	detail.Timeline = models.CustomEventTimeline(timeline)
+	return response.Success(ctx, detail)
 }
 
 func (s *AdminServer) ReplaceEventTimeline(ctx echo.Context) error {
@@ -490,8 +496,6 @@ func (s *AdminServer) buildAdminEventDetailVO(ctx echo.Context, event *models.Ev
 			CanEditEventManager:   event.AdminID != nil && s.canEditEventManager(ctx, event),
 		},
 	}
-	detail.Timeline, _ = s.repo.Event.ListTimelineNodes(ctx.Request().Context(), event.ID)
-	detail.Timeline = models.CustomEventTimeline(detail.Timeline)
 	detail.ManagerUsername = nil
 	detail.ManagerNickname = nil
 	if event.AdminID == nil {
@@ -766,15 +770,41 @@ func buildAdminEventModel(req adminEventRequest, role int, adminSchoolID *int) (
 
 // Missing fields from older clients preserve stored data; explicit null clears it.
 func preserveOmittedEventDetails(event, existing *models.Event, raw map[string]json.RawMessage) {
-	if _, provided := raw["officialWebsite"]; !provided {
-		event.OfficialWebsite = existing.OfficialWebsite
+	for _, field := range []struct {
+		name   string
+		target **string
+		stored *string
+	}{
+		{"organizerName", &event.OrganizerName, existing.OrganizerName},
+		{"description", &event.Description, existing.Description},
+		{"resourceUrl", &event.ResourceURL, existing.ResourceURL},
+		{"qqGroup", &event.QQGroup, existing.QQGroup},
+		{"officialWebsite", &event.OfficialWebsite, existing.OfficialWebsite},
+		{"participationNote", &event.ParticipationNote, existing.ParticipationNote},
+		{"participationMode", &event.ParticipationMode, existing.ParticipationMode},
+	} {
+		if _, provided := raw[field.name]; !provided {
+			*field.target = field.stored
+		}
 	}
-	if _, provided := raw["participationNote"]; !provided {
-		event.ParticipationNote = existing.ParticipationNote
-	}
-	if _, provided := raw["participationMode"]; !provided {
-		event.ParticipationMode = existing.ParticipationMode
+	if _, provided := raw["teamMinMembers"]; !provided {
 		event.TeamMinMembers = existing.TeamMinMembers
+	}
+	if _, provided := raw["teamMaxMembers"]; !provided {
 		event.TeamMaxMembers = existing.TeamMaxMembers
+	}
+	if _, provided := raw["allowCrossSchool"]; !provided {
+		event.AllowCrossSchool = existing.AllowCrossSchool
+	}
+	if _, provided := raw["allowCrossMajor"]; !provided {
+		event.AllowCrossMajor = existing.AllowCrossMajor
+	}
+	_, ruleProvided := raw["crossSchoolMajorRule"]
+	_, schoolProvided := raw["allowCrossSchool"]
+	_, majorProvided := raw["allowCrossMajor"]
+	// Legacy boolean edits are normalized by validation; only an omitted rule
+	// and omitted booleans preserve the stored composite rule.
+	if !ruleProvided && !schoolProvided && !majorProvided {
+		event.CrossSchoolMajorRule = existing.CrossSchoolMajorRule
 	}
 }

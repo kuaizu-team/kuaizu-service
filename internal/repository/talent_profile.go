@@ -169,6 +169,9 @@ func (r *TalentProfileRepository) enrichSchoolMajorBatch(ctx context.Context, pr
 // Geo comparisons use the talent's school columns (ts.*) from a conditional LEFT JOIN.
 // Major class comparisons use the talent's major columns (tm.*) from a conditional LEFT JOIN.
 func (r *TalentProfileRepository) List(ctx context.Context, params TalentProfileListParams) ([]models.TalentProfile, int64, error) {
+	if err := ValidateSearchKeyword(params.Keyword); err != nil {
+		return nil, 0, err
+	}
 	// ── WHERE clause ────────────────────────────────────────────────────────────
 	conditions := []string{"tp.status = 1"}
 	whereArgs := []interface{}{}

@@ -48,6 +48,8 @@ type Event struct {
 	UpdatedAt            time.Time  `db:"updated_at"`
 }
 
+// ToVO is safe for public lists and nested project/recommendation responses.
+// Protected resource fields are filled only by the authorized detail handler.
 func (e *Event) ToVO() api.EventVO {
 	isRanking := e.IsRanking == 1
 	isOpen := IsEventRegistrationOpen(e.RegistrationDeadline, time.Now())
@@ -62,9 +64,7 @@ func (e *Event) ToVO() api.EventVO {
 		Summary:           e.Summary,
 		OrganizerName:     e.OrganizerName,
 		Description:       e.Description,
-		ResourceUrl:       e.ResourceURL,
 		OfficialWebsite:   e.OfficialWebsite,
-		QqGroup:           e.QQGroup,
 		AllowCrossSchool:  boolPtr(e.AllowCrossSchool == 1),
 		AllowCrossMajor:   boolPtr(e.AllowCrossMajor == 1),
 		TeamMinMembers:    e.TeamMinMembers,
