@@ -27,6 +27,9 @@ type updateProjectRequest struct {
 
 // ListProjects handles GET /projects
 func (s *Server) ListProjects(ctx echo.Context, params api.ListProjectsParams) error {
+	if err := repository.ValidateSearchKeyword(params.Keyword); err != nil {
+		return BadRequest(ctx, err.Error())
+	}
 	listParams := repository.ListParams{
 		Page:           1,
 		Size:           10,
@@ -34,6 +37,17 @@ func (s *Server) ListProjects(ctx echo.Context, params api.ListProjectsParams) e
 		SchoolID:       params.SchoolId,
 		EventID:        params.EventId,
 		ExcludeEventID: params.ExcludeEventId,
+	}
+	if params.EventIds != nil {
+		if len(*params.EventIds) > 10 {
+			return BadRequest(ctx, "最多同时筛选10个赛事")
+		}
+		for _, eventID := range *params.EventIds {
+			if eventID <= 0 {
+				return BadRequest(ctx, "赛事ID必须为正整数")
+			}
+		}
+		listParams.EventIDs = append([]int(nil), (*params.EventIds)...)
 	}
 
 	if params.Page != nil {
@@ -55,7 +69,7 @@ func (s *Server) ListProjects(ctx echo.Context, params api.ListProjectsParams) e
 		listParams.IsCrossSchool = &isCrossSchool
 	}
 	listParams.SortBy = params.SortBy
-	viewerUserID := getProjectListViewerUserID(ctx)
+	viewerUserID := getOptionalViewerUserID(ctx)
 	if viewerUserID > 0 {
 		listParams.ViewerUserID = &viewerUserID
 	}
@@ -98,10 +112,9 @@ func (s *Server) ListProjects(ctx echo.Context, params api.ListProjectsParams) e
 	})
 }
 
-// GET /projects remains public, so the global JWT middleware skips it. Parse a
-// valid optional bearer token locally for personalized ranking; missing or
-// invalid credentials intentionally retain anonymous random ordering.
-func getProjectListViewerUserID(ctx echo.Context) int {
+// Public project/event routes skip JWT middleware. Reuse a verified optional
+// bearer identity; missing or invalid credentials remain anonymous.
+func getOptionalViewerUserID(ctx echo.Context) int {
 	if userID := GetOptionalUserID(ctx); userID > 0 {
 		return userID
 	}
@@ -190,7 +203,7 @@ func (s *Server) ListMyProjects(ctx echo.Context, params api.ListMyProjectsParam
 	for i := range result.List {
 		ids[i] = result.List[i].ID
 	}
-	unread, err := s.repo.Interaction.BatchProjectUnread(ctx.Request().Context(), userID, ids)
+	unread, err := s.repo.Interaction.BatchProjectUnread(ctx.Request().Context(), userID, ids, ctx.QueryParam("dashboardScope") == "entry")
 	if err != nil {
 		return InternalError(ctx, "get project dashboard unread failed")
 	}

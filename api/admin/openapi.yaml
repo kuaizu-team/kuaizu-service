@@ -76,6 +76,8 @@ paths:
     $ref: paths/events_{id}.yaml
   /events/{id}/merge:
     $ref: paths/events_{id}_merge.yaml
+  /events/{id}/timeline:
+    $ref: paths/events_{id}_timeline.yaml
   /projects/{id}/admin-note:
     $ref: paths/projects_{id}_admin-note.yaml
   /projects/{id}/status:

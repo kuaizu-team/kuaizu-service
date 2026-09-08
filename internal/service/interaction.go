@@ -143,8 +143,8 @@ func (s *InteractionService) ListUsers(ctx context.Context, target, kind string,
 	return map[string]interface{}{"list": list, "page": page, "size": size, "total": total}, nil
 }
 
-func (s *InteractionService) DashboardUnreadTotals(ctx context.Context, ownerUserID int) (repository.DashboardUnreadTotals, error) {
-	totals, err := s.repo.Interaction.UnreadDashboardTotals(ctx, ownerUserID)
+func (s *InteractionService) DashboardUnreadTotals(ctx context.Context, ownerUserID int, entryOnly ...bool) (repository.DashboardUnreadTotals, error) {
+	totals, err := s.repo.Interaction.UnreadDashboardTotals(ctx, ownerUserID, entryOnly...)
 	if err != nil {
 		log.Printf("[Interaction.DashboardUnreadTotals] %v", err)
 		return repository.DashboardUnreadTotals{}, ErrInternal("get dashboard unread totals failed")
@@ -165,7 +165,7 @@ func (s *InteractionService) TargetUnread(ctx context.Context, target string, id
 }
 
 func (s *InteractionService) MarkDashboardViewed(ctx context.Context, target string, id, ownerUserID int, kind *string) error {
-	if kind != nil && !validInteractionType(*kind) {
+	if kind != nil && *kind != "entry" && !validInteractionType(*kind) {
 		return ErrBadRequest("invalid interaction type")
 	}
 	if err := s.ensureTargetOwner(ctx, target, id, ownerUserID); err != nil {

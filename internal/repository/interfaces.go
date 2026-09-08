@@ -66,6 +66,9 @@ type EventRepo interface {
 	ListByProjectIDs(ctx context.Context, projectIDs []int) (map[int][]models.Event, error)
 	ListProjectIDs(ctx context.Context, eventID int) ([]int, error)
 	ReplaceProjectEventsTx(ctx context.Context, tx *sqlx.Tx, projectID int, eventIDs []int) error
+	IncrementViewCount(ctx context.Context, id int) error
+	ListTimelineNodes(ctx context.Context, eventID int) ([]models.EventTimelineNode, error)
+	ReplaceTimelineNodes(ctx context.Context, eventID int, items []models.EventTimelineNode) error
 }
 
 // ProductRepo defines the interface for product repository operations used by services.

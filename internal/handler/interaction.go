@@ -118,7 +118,7 @@ func (s *Server) MarkFavoritesViewed(ctx echo.Context) error {
 }
 
 func (s *Server) GetDashboardUnreadCount(ctx echo.Context) error {
-	totals, err := s.svc.Interaction.DashboardUnreadTotals(ctx.Request().Context(), GetUserID(ctx))
+	totals, err := s.svc.Interaction.DashboardUnreadTotals(ctx.Request().Context(), GetUserID(ctx), ctx.QueryParam("scope") == "entry")
 	if err != nil {
 		return mapServiceError(ctx, err)
 	}
@@ -188,7 +188,7 @@ func (s *Server) ListFavorites(ctx echo.Context, target string) error {
 func (s *Server) GetInteractionsFavoritesUnreadCount(ctx echo.Context) error {
 	return s.GetFavoriteUnreadCount(ctx)
 }
-func (s *Server) GetInteractionsDashboardUnreadCount(ctx echo.Context) error {
+func (s *Server) GetInteractionsDashboardUnreadCount(ctx echo.Context, _ api.GetInteractionsDashboardUnreadCountParams) error {
 	return s.GetDashboardUnreadCount(ctx)
 }
 func (s *Server) PostInteractionsFavoritesMarkViewed(ctx echo.Context) error {

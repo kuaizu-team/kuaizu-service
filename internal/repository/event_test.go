@@ -104,6 +104,22 @@ func TestEventGetByIDIncludesProjectCount(t *testing.T) {
 	}
 }
 
+func TestEventTimelineScansReferenceWithoutDate(t *testing.T) {
+	db := openCaptureDB(t)
+	defer db.Close()
+	repo := NewEventRepository(sqlx.NewDb(db, "capture_user_repo"))
+	setCapturedQuery([]string{"id", "event_id", "title", "node_time", "time_text", "sort_order"}, [][]driver.Value{
+		{int64(1), int64(42), "省赛", nil, "参考：每年9—11月", int64(2)},
+	})
+	nodes, err := repo.ListTimelineNodes(context.Background(), 42)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(nodes) != 1 || nodes[0].NodeTime != nil || nodes[0].TimeText == nil || *nodes[0].TimeText != "参考：每年9—11月" {
+		t.Fatalf("reference node lost: %#v", nodes)
+	}
+}
+
 func TestEventGetByIDProjectCountUsesAdminSchoolScope(t *testing.T) {
 	db := openCaptureDB(t)
 	defer db.Close()

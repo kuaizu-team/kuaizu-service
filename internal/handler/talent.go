@@ -15,6 +15,9 @@ import (
 
 // ListTalentProfiles handles GET /talent-profiles
 func (s *Server) ListTalentProfiles(ctx echo.Context, params api.ListTalentProfilesParams) error {
+	if err := repository.ValidateSearchKeyword(params.Keyword); err != nil {
+		return BadRequest(ctx, err.Error())
+	}
 	page := 1
 	size := 10
 	if params.Page != nil {

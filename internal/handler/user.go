@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"encoding/json"
 	"errors"
 	"strings"
 	"time"
@@ -10,6 +11,7 @@ import (
 	"github.com/kuaizu-team/kuaizu-service/internal/repository"
 	"github.com/kuaizu-team/kuaizu-service/internal/service"
 	"github.com/labstack/echo/v4"
+	openapi_types "github.com/oapi-codegen/runtime/types"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -37,7 +39,8 @@ func (s *Server) GetCurrentUser(ctx echo.Context) error {
 }
 
 // GetMyBadges returns the complete badge snapshot used by the mini-program tab bar.
-func (s *Server) GetMyBadges(ctx echo.Context) error {
+func (s *Server) GetMyBadges(ctx echo.Context, _ api.GetMyBadgesParams) error {
+	entryOnly := ctx.QueryParam("scope") == "entry"
 	userID := GetUserID(ctx)
 	requestContext := ctx.Request().Context()
 	group, groupContext := errgroup.WithContext(requestContext)
@@ -65,12 +68,12 @@ func (s *Server) GetMyBadges(ctx echo.Context) error {
 	})
 	group.Go(func() error {
 		var err error
-		dashboard, err = s.repo.Interaction.UnreadDashboardTotals(groupContext, userID)
+		dashboard, err = s.repo.Interaction.UnreadDashboardTotals(groupContext, userID, entryOnly)
 		return err
 	})
 	group.Go(func() error {
 		var err error
-		projectState, err = s.repo.Interaction.ProfileProjectBadgeState(groupContext, userID)
+		projectState, err = s.repo.Interaction.ProfileProjectBadgeState(groupContext, userID, entryOnly)
 		return err
 	})
 
@@ -78,19 +81,30 @@ func (s *Server) GetMyBadges(ctx echo.Context) error {
 		return InternalError(ctx, "get profile badge counts failed")
 	}
 
+	return Success(ctx, aggregateProfileBadges(applicationUnread, olive, favorites, dashboard, projectState, entryOnly))
+}
+
+// aggregateProfileBadges sums immediate child entries; legacy callers keep their existing snapshot.
+func aggregateProfileBadges(applicationUnread int, olive repository.OliveBranchBadgeCounts,
+	favorites models.FavoriteViewState, dashboard repository.DashboardUnreadTotals,
+	projectState repository.ProfileProjectBadgeState, entryOnly bool) api.ProfileBadgeCounts {
+	cardBadge := applicationUnread
+	if entryOnly {
+		cardBadge += dashboard.TalentCount
+	}
 	projectBadge := projectState.PendingApplicationCount + dashboard.ProjectCount
 	oliveBadge := olive.ReceivedPendingCount + olive.SentUnreadCount
-	return Success(ctx, api.ProfileBadgeCounts{
-		CardBadge:              applicationUnread,
+	return api.ProfileBadgeCounts{
+		CardBadge:              cardBadge,
 		OliveBadge:             oliveBadge,
 		ProjectBadge:           projectBadge,
-		TotalBadge:             applicationUnread + oliveBadge + projectBadge,
+		TotalBadge:             cardBadge + oliveBadge + projectBadge,
 		ProjectFavoriteBadge:   favorites.ProjectCount,
 		TalentFavoriteBadge:    favorites.TalentCount,
 		HomeBadge:              favorites.ProjectCount + favorites.TalentCount,
 		DashboardBadge:         dashboard.ProjectCount,
 		HasProjectStatusUnread: projectState.HasStatusUnread,
-	})
+	}
 }
 
 // GetMyCollaborationHistory handles GET /users/me/collaboration-history.
@@ -242,8 +256,11 @@ func (s *Server) UpdateCurrentUser(ctx echo.Context) error {
 	userID := GetUserID(ctx)
 	requestCtx := ctx.Request().Context()
 
-	var req api.UpdateUserDTO
-	if err := ctx.Bind(&req); err != nil {
+	req, err := bindOptionalEmailUserUpdate(ctx)
+	if err != nil {
+		if errors.Is(err, openapi_types.ErrValidationEmail) {
+			return BadRequest(ctx, "邮箱格式不正确")
+		}
 		return BadRequest(ctx, "请求参数错误")
 	}
 	if req.Nickname != nil {
@@ -385,4 +402,25 @@ func (s *Server) GetCertificationStatus(ctx echo.Context) error {
 		Status:     (*api.AuthStatus)(&certInfo.Status),
 		AuthImgUrl: certInfo.AuthImgUrl,
 	})
+}
+
+// Empty email explicitly clears the optional field; nonempty values retain email validation.
+func bindOptionalEmailUserUpdate(ctx echo.Context) (api.UpdateUserDTO, error) {
+	var req api.UpdateUserDTO
+	if err := ctx.Bind(&req); err != nil {
+		return api.UpdateUserDTO{}, err
+	}
+	if req.Email != nil {
+		value := strings.TrimSpace(*req.Email)
+		email := openapi_types.Email(value)
+		if value != "" {
+			encoded, _ := json.Marshal(value)
+			if err := json.Unmarshal(encoded, &email); err != nil {
+				return req, err
+			}
+		}
+		normalized := string(email)
+		req.Email = &normalized
+	}
+	return req, nil
 }

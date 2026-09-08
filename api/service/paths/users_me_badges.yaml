@@ -1,4 +1,9 @@
 get:
+  parameters:
+    - name: scope
+      in: query
+      schema: { type: string, enum: [entry] }
+      description: Aggregate direct child entry badges, including independent dashboard entry cursors. Omit for legacy counts.
   tags:
     - Users
   summary: Get all profile and tab bar badge counts

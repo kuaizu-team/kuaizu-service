@@ -140,7 +140,7 @@ func main() {
 				path == "/api/v2/website/projects" {
 				return true
 			}
-			if path == "/api/v2/events" || path == "/api/v2/events/:id" {
+			if path == "/api/v2/events" || path == "/api/v2/events/:id" || path == "/api/v2/events/:id/timeline" {
 				return true
 			}
 			// /api/v2/projects - list (public)
@@ -194,6 +194,7 @@ func main() {
 	apiGroup.GET("/website/projects", server.ListWebsiteProjects)
 	apiGroup.POST("/events", server.CreateEvent)
 	apiGroup.GET("/events/:id", server.GetEvent)
+	apiGroup.GET("/events/:id/timeline", server.ListEventTimeline)
 	apiGroup.GET("/info-center/events", server.ListInfoCenterEvents)
 	apiGroup.GET("/recommendations/projects", server.ListRecommendationProjects)
 	apiGroup.GET("/recommendations/projects/featured", server.GetFeaturedRecommendationProject)

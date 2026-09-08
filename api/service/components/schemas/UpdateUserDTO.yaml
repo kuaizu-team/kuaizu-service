@@ -10,7 +10,8 @@ properties:
     pattern: ^1[3-9]\d{9}$
   email:
     type: string
-    format: email
+    pattern: '^$|^[^\s@]+@[^\s@]+\.[^\s@]+$'
+    description: Optional email; empty string clears it. Nonempty values are validated as email.
   schoolId:
     type: integer
   majorId:

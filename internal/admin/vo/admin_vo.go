@@ -156,6 +156,19 @@ type AdminEventVO struct {
 	ArticleURL           *string    `json:"articleUrl"`
 	Level                *string    `json:"level"`
 	Summary              *string    `json:"summary"`
+	OrganizerName        *string    `json:"organizerName"`
+	Description          *string    `json:"description"`
+	ResourceURL          *string    `json:"resourceUrl"`
+	OfficialWebsite      *string    `json:"officialWebsite"`
+	ParticipationNote    *string    `json:"participationNote"`
+	QQGroup              *string    `json:"qqGroup"`
+	AllowCrossSchool     bool       `json:"allowCrossSchool"`
+	AllowCrossMajor      bool       `json:"allowCrossMajor"`
+	CrossSchoolMajorRule *string    `json:"crossSchoolMajorRule"`
+	ParticipationMode    *string    `json:"participationMode"`
+	TeamMinMembers       *int       `json:"teamMinMembers"`
+	TeamMaxMembers       *int       `json:"teamMaxMembers"`
+	ViewCount            int64      `json:"viewCount"`
 	SchoolID             *int       `json:"schoolId"`
 	SchoolName           *string    `json:"schoolName"`
 	AdminID              *int       `json:"adminId"`
@@ -180,6 +193,19 @@ func NewAdminEventVO(e *models.Event) *AdminEventVO {
 		ArticleURL:           e.ArticleURL,
 		Level:                e.Level,
 		Summary:              e.Summary,
+		OrganizerName:        e.OrganizerName,
+		Description:          e.Description,
+		ResourceURL:          e.ResourceURL,
+		OfficialWebsite:      e.OfficialWebsite,
+		ParticipationNote:    e.ParticipationNote,
+		QQGroup:              e.QQGroup,
+		AllowCrossSchool:     e.AllowCrossSchool == 1,
+		AllowCrossMajor:      e.AllowCrossMajor == 1,
+		CrossSchoolMajorRule: e.CrossSchoolMajorRule,
+		ParticipationMode:    e.ParticipationMode,
+		TeamMinMembers:       e.TeamMinMembers,
+		TeamMaxMembers:       e.TeamMaxMembers,
+		ViewCount:            e.ViewCount,
 		SchoolID:             e.SchoolID,
 		SchoolName:           e.SchoolName,
 		AdminID:              e.AdminID,

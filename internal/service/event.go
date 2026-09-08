@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"log"
+	"net/url"
 	"strings"
 
 	"github.com/jmoiron/sqlx"
@@ -21,6 +22,15 @@ type EventListResult struct {
 	Page       int
 	Size       int
 }
+
+const (
+	EventCrossRuleAllowSchoolAndMajor = "allow_cross_school_and_major"
+	EventCrossRuleAllowMajor          = "allow_cross_major"
+	EventCrossRuleRejectMajor         = "reject_cross_major"
+	EventParticipationIndividual      = "individual"
+	EventParticipationTeam            = "team"
+	EventParticipationBoth            = "both"
+)
 
 func NewEventService(repo *repository.Repository) *EventService {
 	return &EventService{repo: repo}
@@ -46,30 +56,57 @@ func (s *EventService) ListTimeline(ctx context.Context, limit int) ([]models.Ev
 	return events, nil
 }
 
-func (s *EventService) GetEvent(ctx context.Context, id int) (*models.Event, []models.Project, error) {
+func (s *EventService) GetEvent(ctx context.Context, id int) (*models.Event, []models.Project, []models.EventTimelineNode, error) {
 	event, err := s.repo.Event.GetByID(ctx, id)
 	if err != nil {
 		log.Printf("[EventService.GetEvent] repository error: %v", err)
-		return nil, nil, ErrInternal("get event failed")
+		return nil, nil, nil, ErrInternal("get event failed")
 	}
 	if event == nil {
-		return nil, nil, ErrNotFound("event not found")
+		return nil, nil, nil, ErrNotFound("event not found")
+	}
+	timeline, err := s.repo.Event.ListTimelineNodes(ctx, id)
+	if err != nil {
+		return nil, nil, nil, ErrInternal("get event timeline failed")
 	}
 	projectIDs, err := s.repo.Event.ListProjectIDs(ctx, id)
 	if err != nil {
-		return nil, nil, ErrInternal("get event projects failed")
+		return nil, nil, nil, ErrInternal("get event projects failed")
 	}
 	projects := make([]models.Project, 0, len(projectIDs))
 	for _, projectID := range projectIDs {
 		project, err := s.repo.Project.GetByID(ctx, projectID)
 		if err != nil {
-			return nil, nil, ErrInternal("get event projects failed")
+			return nil, nil, nil, ErrInternal("get event projects failed")
 		}
 		if project != nil && project.Status == models.ProjectStatusApproved {
 			projects = append(projects, *project)
 		}
 	}
-	return event, projects, nil
+	if err := s.repo.Event.IncrementViewCount(ctx, id); err != nil {
+		log.Printf("[EventService.GetEvent] increment view count error: %v", err)
+		return nil, nil, nil, ErrInternal("record event view failed")
+	}
+	event, err = s.repo.Event.GetByID(ctx, id)
+	if err != nil || event == nil {
+		return nil, nil, nil, ErrInternal("reload event failed")
+	}
+	return event, projects, models.PublicEventTimeline(event, timeline), nil
+}
+
+func (s *EventService) ListEventTimeline(ctx context.Context, id int) ([]models.EventTimelineNode, error) {
+	event, err := s.repo.Event.GetByID(ctx, id)
+	if err != nil {
+		return nil, ErrInternal("get event failed")
+	}
+	if event == nil {
+		return nil, ErrNotFound("event not found")
+	}
+	items, err := s.repo.Event.ListTimelineNodes(ctx, id)
+	if err != nil {
+		return nil, ErrInternal("get event timeline failed")
+	}
+	return models.PublicEventTimeline(event, items), nil
 }
 
 func validateEvent(event *models.Event) error {
@@ -79,6 +116,73 @@ func validateEvent(event *models.Event) error {
 	}
 	if len([]rune(event.Name)) > 200 {
 		return ErrBadRequest("event name is too long")
+	}
+	optionalFields := []struct {
+		value **string
+		max   int
+		name  string
+	}{
+		{&event.OrganizerName, 200, "organizerName"},
+		{&event.Description, 10000, "description"},
+		{&event.ResourceURL, 2048, "resourceUrl"},
+		{&event.OfficialWebsite, 2048, "officialWebsite"},
+		{&event.ParticipationNote, 10000, "participationNote"},
+		{&event.QQGroup, 32, "qqGroup"},
+	}
+	for _, field := range optionalFields {
+		if *field.value == nil {
+			continue
+		}
+		trimmed := strings.TrimSpace(**field.value)
+		if trimmed == "" {
+			*field.value = nil
+			continue
+		}
+		if len([]rune(trimmed)) > field.max {
+			return ErrBadRequest(field.name + " is too long")
+		}
+		*field.value = &trimmed
+	}
+	if event.OfficialWebsite != nil {
+		u, err := url.Parse(*event.OfficialWebsite)
+		if err != nil || u.Hostname() == "" || (u.Scheme != "http" && u.Scheme != "https") || u.User != nil {
+			return ErrBadRequest("officialWebsite must be an http or https URL without credentials")
+		}
+	}
+	if event.CrossSchoolMajorRule == nil {
+		rule := EventCrossRuleAllowSchoolAndMajor
+		if event.AllowCrossMajor == 0 {
+			rule = EventCrossRuleRejectMajor
+		} else if event.AllowCrossSchool == 0 {
+			rule = EventCrossRuleAllowMajor
+		}
+		event.CrossSchoolMajorRule = &rule
+	}
+	switch *event.CrossSchoolMajorRule {
+	case EventCrossRuleAllowSchoolAndMajor:
+		event.AllowCrossSchool, event.AllowCrossMajor = 1, 1
+	case EventCrossRuleAllowMajor:
+		event.AllowCrossSchool, event.AllowCrossMajor = 0, 1
+	case EventCrossRuleRejectMajor:
+		event.AllowCrossSchool, event.AllowCrossMajor = 0, 0
+	default:
+		return ErrBadRequest("invalid crossSchoolMajorRule")
+	}
+	if event.ParticipationMode == nil {
+		event.TeamMinMembers, event.TeamMaxMembers = nil, nil
+		return nil
+	}
+	switch *event.ParticipationMode {
+	case EventParticipationIndividual:
+		event.TeamMinMembers, event.TeamMaxMembers = nil, nil
+	case EventParticipationTeam, EventParticipationBoth:
+		if (event.TeamMinMembers != nil && *event.TeamMinMembers < 1) ||
+			(event.TeamMaxMembers != nil && *event.TeamMaxMembers < 1) ||
+			(event.TeamMinMembers != nil && event.TeamMaxMembers != nil && *event.TeamMaxMembers < *event.TeamMinMembers) {
+			return ErrBadRequest("team member range is invalid")
+		}
+	default:
+		return ErrBadRequest("invalid participationMode")
 	}
 	return nil
 }

@@ -16,6 +16,7 @@ get:
       description: 按展示昵称、学校、专业、个人标签、自我评价和项目经历进行模糊搜索
       schema:
         type: string
+        maxLength: 32
     - name: schoolId
       in: query
       description: 学校ID筛选

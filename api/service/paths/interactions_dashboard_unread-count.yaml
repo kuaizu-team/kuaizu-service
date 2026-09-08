@@ -1,4 +1,9 @@
 get:
+  parameters:
+    - name: scope
+      in: query
+      schema: { type: string, enum: [entry] }
+      description: Use the independent entry cursor. Omit to retain legacy detail unread totals.
   summary: Get all owned dashboard interaction unread counts
   responses:
     '200':

@@ -84,11 +84,17 @@ func (s *Server) CreateEvent(ctx echo.Context) error {
 }
 
 func (s *Server) GetEvent(ctx echo.Context) error {
+	// This public URL now has a user-specific representation.
+	ctx.Response().Header().Set("Cache-Control", "private, no-store")
 	id, err := strconv.Atoi(ctx.Param("id"))
 	if err != nil || id <= 0 {
 		return BadRequest(ctx, "invalid event id")
 	}
-	event, projects, err := s.svc.Event.GetEvent(ctx.Request().Context(), id)
+	canViewResources, err := s.canViewEventResources(ctx)
+	if err != nil {
+		return InternalError(ctx, "check event resource access failed")
+	}
+	event, projects, timeline, err := s.svc.Event.GetEvent(ctx.Request().Context(), id)
 	if err != nil {
 		return mapServiceError(ctx, err)
 	}
@@ -96,10 +102,43 @@ func (s *Server) GetEvent(ctx echo.Context) error {
 	for i := range projects {
 		projectVOs[i] = *projects[i].ToVO()
 	}
+	vo := event.ToVO()
+	if canViewResources {
+		vo.ResourceUrl, vo.QqGroup = event.ResourceURL, event.QQGroup
+	}
 	return Success(ctx, map[string]interface{}{
-		"event":    event.ToVO(),
+		"event":    vo,
 		"projects": projectVOs,
+		"timeline": timeline,
 	})
+}
+
+// Public endpoints skip JWT middleware. Resolve an optional signed identity and
+// check current database state rather than trusting a client's cached approval.
+func (s *Server) canViewEventResources(ctx echo.Context) (bool, error) {
+	userID := getOptionalViewerUserID(ctx)
+	if userID <= 0 {
+		return false, nil
+	}
+	user, err := s.repo.User.GetByID(ctx.Request().Context(), userID)
+	if err != nil {
+		return false, err
+	}
+	return user != nil && user.UserStatus != models.UserStatusBanned &&
+		user.AuthStatus != nil && *user.AuthStatus == models.UserAuthStatusPassed, nil
+}
+
+// ListEventTimeline handles GET /events/:id/timeline without recording another PV.
+func (s *Server) ListEventTimeline(ctx echo.Context) error {
+	id, err := strconv.Atoi(ctx.Param("id"))
+	if err != nil || id <= 0 {
+		return BadRequest(ctx, "invalid event id")
+	}
+	items, err := s.svc.Event.ListEventTimeline(ctx.Request().Context(), id)
+	if err != nil {
+		return mapServiceError(ctx, err)
+	}
+	return Success(ctx, items)
 }
 
 type infoCenterEventView string
@@ -194,8 +233,10 @@ func writeInfoCenterEvents(ctx echo.Context, events []models.Event) error {
 
 func buildEventModel(req eventRequest) (*models.Event, error) {
 	event := &models.Event{
-		Name:         strings.TrimSpace(req.Name),
-		DisplayOrder: 0,
+		Name:             strings.TrimSpace(req.Name),
+		DisplayOrder:     0,
+		AllowCrossSchool: 1,
+		AllowCrossMajor:  1,
 	}
 	if req.IsRanking != nil && *req.IsRanking {
 		event.IsRanking = 1

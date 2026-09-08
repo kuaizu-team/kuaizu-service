@@ -33,7 +33,7 @@ func TestGetProjectListViewerUserID(t *testing.T) {
 				req.Header.Set("Authorization", tt.header)
 			}
 			ctx := e.NewContext(req, httptest.NewRecorder())
-			if got := getProjectListViewerUserID(ctx); got != tt.want {
+			if got := getOptionalViewerUserID(ctx); got != tt.want {
 				t.Fatalf("viewer user ID = %d, want %d", got, tt.want)
 			}
 		})
