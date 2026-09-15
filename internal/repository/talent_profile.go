@@ -186,14 +186,17 @@ func (r *TalentProfileRepository) List(ctx context.Context, params TalentProfile
 		whereArgs = append(whereArgs, *params.MajorID)
 	}
 	if params.Keyword != nil && strings.TrimSpace(*params.Keyword) != "" {
-		const talentSearchDocument = `CONCAT_WS(CHAR(10),
+		// Keep the mixed-field document and prepared parameters textual for MySQL LIKE.
+		const talentSearchDocument = `CONVERT(CONCAT_WS(CHAR(10),
 			CASE WHEN u.nickname IS NULL OR TRIM(u.nickname) = '' OR TRIM(u.nickname) = '匿名用户'
 				THEN '快组儿' ELSE TRIM(u.nickname) END,
 			(SELECT search_school.school_name FROM school search_school WHERE search_school.id = u.school_id),
 			(SELECT search_major.major_name FROM major search_major WHERE search_major.id = u.major_id),
 			CONCAT(CAST(u.grade AS CHAR), '级'), CAST(tp.skill_summary AS CHAR),
-			tp.self_evaluation, tp.project_experience)`
-		search := buildDegradedSearchSQL(talentSearchDocument, strings.TrimSpace(*params.Keyword))
+			tp.self_evaluation, tp.project_experience) USING utf8mb4) COLLATE utf8mb4_bin`
+		search := buildDegradedSearchSQLWithMatcher(strings.TrimSpace(*params.Keyword), func(pattern string) (string, []interface{}) {
+			return talentSearchDocument + " LIKE CONVERT(? USING utf8mb4) ESCAPE '!'", []interface{}{pattern}
+		})
 		searchSQL = &search
 		conditions = append(conditions, search.Predicate)
 		whereArgs = append(whereArgs, search.PredicateArgs...)
