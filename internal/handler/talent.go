@@ -71,6 +71,7 @@ func (s *Server) ListTalentProfiles(ctx echo.Context, params api.ListTalentProfi
 
 	profiles, total, err := s.repo.TalentProfile.List(ctx.Request().Context(), listParams)
 	if err != nil {
+		log.Printf("[ListTalentProfiles] list query failed: %v", err)
 		return InternalError(ctx, "获取人才列表失败")
 	}
 	ids := make([]int, len(profiles))
