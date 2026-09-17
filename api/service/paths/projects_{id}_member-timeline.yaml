@@ -1,0 +1,67 @@
+parameters:
+  - name: id
+    in: path
+    required: true
+    schema:
+      type: integer
+      minimum: 1
+get:
+  tags: [Projects]
+  operationId: listMemberTimeline
+  summary: 查询当前团队成员的个人时间线
+  description: 仅当前团队成员可查询。省略memberId批量返回全员节点，按创建时间倒序。成员重新加入后恢复历史。
+  parameters:
+    - name: memberId
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+  responses:
+    '200':
+      description: 时间线列表
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/BaseResponse.yaml
+              - type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: ../components/schemas/MemberTimelineNode.yaml
+    '403':
+      description: 非当前团队成员
+post:
+  tags: [Projects]
+  operationId: createMemberTimeline
+  summary: 新增本人的个人时间节点
+  description: 所有角色均仅可为本人新增，关联成员必须是当前团队其他成员。
+  requestBody:
+    required: true
+    content:
+      application/json:
+        schema:
+          $ref: ../components/schemas/MemberTimelineInput.yaml
+  responses:
+    '200':
+      description: 已创建
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/BaseResponse.yaml
+              - type: object
+                required: [data]
+                properties:
+                  data:
+                    type: object
+                    required: [id]
+                    properties:
+                      id:
+                        type: integer
+    '400':
+      description: 参数或关联成员无效
+    '403':
+      description: 非当前团队成员

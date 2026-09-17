@@ -1,0 +1,33 @@
+type: object
+required: [id, projectId, userId, title, detail, relatedMembers, createdAt, updatedAt]
+properties:
+  id:
+    type: integer
+  projectId:
+    type: integer
+  userId:
+    type: integer
+  title:
+    type: string
+  detail:
+    type: string
+  relatedMembers:
+    type: array
+    nullable: true
+    items:
+      type: object
+      required: [userId, nickname, hasLeft]
+      properties:
+        userId:
+          type: integer
+        hasLeft:
+          type: boolean
+          description: Whether the linked user has left the current team
+        nickname:
+          type: string
+  createdAt:
+    type: string
+    format: date-time
+  updatedAt:
+    type: string
+    format: date-time

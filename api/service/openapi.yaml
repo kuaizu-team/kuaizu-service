@@ -52,6 +52,10 @@ tags:
   - name: Roadmap
     description: Platform roadmap APIs
 paths:
+  /projects/{id}/member-timeline:
+    $ref: './paths/projects_{id}_member-timeline.yaml'
+  /projects/{id}/member-timeline/{nodeId}:
+    $ref: './paths/projects_{id}_member-timeline_{nodeId}.yaml'
   /auth/precheck/wechat:
     $ref: paths/auth_precheck_wechat.yaml
   /auth/login/wechat:
