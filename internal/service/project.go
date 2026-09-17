@@ -1053,13 +1053,14 @@ func (s *ProjectService) CreateProject(ctx context.Context, input CreateProjectI
 
 // UpdateProjectInput is the DTO for updating a project.
 type UpdateProjectInput struct {
-	Name                 *string
-	Description          *string
-	Direction            *api.Direction
-	MemberCount          *int
-	IsCrossSchool        *int
-	EducationRequirement *int
-	SkillRequirement     *string
+	DefaultTimelineHidden *bool
+	Name                  *string
+	Description           *string
+	Direction             *api.Direction
+	MemberCount           *int
+	IsCrossSchool         *int
+	EducationRequirement  *int
+	SkillRequirement      *string
 	// NeedReview when true resets the project status to pending (0) so it goes
 	// back into the admin review queue. Set by the frontend whenever the user
 	// actually modifies content.
@@ -1123,7 +1124,7 @@ func (s *ProjectService) UpdateProject(ctx context.Context, id, userID int, inpu
 	}
 
 	if !isOwner {
-		if input.Milestones != nil {
+		if input.Milestones != nil || input.DefaultTimelineHidden != nil {
 			return nil, ErrForbidden("只有项目创建者可以修改项目时间线")
 		}
 		if input.Members == nil {
@@ -1258,6 +1259,7 @@ func (s *ProjectService) UpdateProject(ctx context.Context, id, userID int, inpu
 	if !ok {
 		return nil, ErrInternal("project repository does not support metadata transaction")
 	}
+	project.DefaultTimelineHiddenUpdate = input.DefaultTimelineHidden
 	resetReview := input.NeedReview != nil && *input.NeedReview
 	removedImageKeys, err := projectRepo.UpdateWithMetadata(ctx, project, input.Tags, input.PublisherRole, input.InitiatingSchoolID, milestones, members, input.EventIDs, userID, input.ImageKeys, resetReview)
 	if err != nil {

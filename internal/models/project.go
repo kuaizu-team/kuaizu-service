@@ -10,6 +10,9 @@ import (
 
 // Project represents a project in the database
 type Project struct {
+	DefaultTimelineHidden       bool  `db:"default_timeline_hidden"`
+	DefaultTimelineHiddenUpdate *bool `db:"-"`
+
 	ID                   int        `db:"id"`
 	CreatorID            int        `db:"creator_id"`
 	Name                 string     `db:"name"`
@@ -169,6 +172,7 @@ func (p *Project) ToDetailVO() *api.ProjectDetailVO {
 	status := api.ProjectStatus(p.Status)
 
 	vo := &api.ProjectDetailVO{
+		DefaultTimelineHidden:  &p.DefaultTimelineHidden,
 		Id:                     &p.ID,
 		Name:                   &p.Name,
 		Description:            p.Description,
