@@ -54,13 +54,15 @@ func validateMemberTimelineInput(input *MemberTimelineInput, userID int) error {
 	return nil
 }
 
-// Lock the active membership, preventing a concurrent removal from authorizing a write.
+// Keep membership stable until commit without excluding other timeline operations.
+// Shared locks also let members concurrently link each other; node writes below
+// take their own exclusive locks without upgrading the membership lock.
 func lockTimelineMember(ctx context.Context, tx *sqlx.Tx, projectID, userID int) error {
 	if projectID <= 0 || userID <= 0 {
 		return ErrForbidden("仅当前团队成员可访问时间线")
 	}
 	var id int
-	err := tx.GetContext(ctx, &id, `SELECT id FROM project_members WHERE project_id=? AND user_id=? FOR UPDATE`, projectID, userID)
+	err := tx.GetContext(ctx, &id, `SELECT id FROM project_members WHERE project_id=? AND user_id=? LOCK IN SHARE MODE`, projectID, userID)
 	if err == sql.ErrNoRows {
 		return ErrForbidden("仅当前团队成员可访问时间线")
 	}

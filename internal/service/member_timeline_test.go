@@ -21,6 +21,19 @@ func timelineTestService(t *testing.T) (*ProjectService, sqlmock.Sqlmock) {
 	return &ProjectService{repo: repository.New(sqlx.NewDb(db, "sqlmock"))}, mock
 }
 
+func TestTimelineMembershipLockDoesNotExcludeOtherReaders(t *testing.T) {
+	s, mock := timelineTestService(t)
+	mock.ExpectBegin()
+	mock.ExpectQuery("^SELECT id FROM project_members WHERE project_id=\\? AND user_id=\\? LOCK IN SHARE MODE$").
+		WithArgs(42, 7).WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(1))
+	mock.ExpectCommit()
+	tx, err := s.repo.DB().BeginTxx(context.Background(), nil)
+	require.NoError(t, err)
+	defer tx.Rollback()
+	require.NoError(t, lockTimelineMember(context.Background(), tx, 42, 7))
+	require.NoError(t, tx.Commit())
+}
+
 func TestMemberTimelineRejectsNonMembers(t *testing.T) {
 	for _, action := range []string{"list", "create", "update", "delete"} {
 		t.Run(action, func(t *testing.T) {
