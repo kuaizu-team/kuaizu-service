@@ -3,12 +3,16 @@ package repository
 import (
 	"context"
 	"database/sql/driver"
+	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/jmoiron/sqlx"
 	"github.com/kuaizu-team/kuaizu-service/internal/models"
+	"github.com/stretchr/testify/require"
 )
 
 func TestPurgeDeletedProjectsBeforeSkipsWhenNoExpiredProjects(t *testing.T) {
@@ -121,6 +125,78 @@ func TestProjectCleanupClearsPeriodicRatingsBeforeMembers(t *testing.T) {
 		}
 		if index >= memberIndex {
 			t.Fatalf("project cleanup must clear %s before project_members", table)
+		}
+	}
+}
+
+func TestProjectCleanupClearsTimelineAfterMemberships(t *testing.T) {
+	memberIndex, timelineIndex := -1, -1
+	for i, table := range projectRelationTables {
+		switch table {
+		case "project_members":
+			memberIndex = i
+		case "project_member_timeline":
+			timelineIndex = i
+		}
+	}
+	require.GreaterOrEqual(t, memberIndex, 0)
+	require.Greater(t, timelineIndex, memberIndex,
+		"remove memberships before cleaning timeline rows to exclude concurrent writes")
+}
+
+func TestProjectPurgeTimelineCleanupIsAtomic(t *testing.T) {
+	for _, single := range []bool{false, true} {
+		for _, fail := range []bool{false, true} {
+			t.Run(fmt.Sprintf("single=%t/fail=%t", single, fail), func(t *testing.T) {
+				raw, mock, err := sqlmock.New()
+				require.NoError(t, err)
+				defer raw.Close()
+				repo := New(sqlx.NewDb(raw, "sqlmock"))
+				cutoff := time.Now().Add(-7 * 24 * time.Hour)
+				if single {
+					mock.ExpectBegin()
+					mock.ExpectQuery("SELECT id FROM project").WithArgs(42, models.ProjectStatusDeleting, cutoff).
+						WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(42))
+				} else {
+					mock.ExpectQuery("SELECT id FROM project").WithArgs(models.ProjectStatusDeleting, cutoff).
+						WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(42))
+					mock.ExpectBegin()
+				}
+				mock.ExpectExec("UPDATE media_upload").WillReturnResult(sqlmock.NewResult(0, 0))
+				mock.ExpectExec("UPDATE media_upload").WillReturnResult(sqlmock.NewResult(0, 0))
+				mock.ExpectExec("DELETE pme FROM project_milestone_evidence").WithArgs(42).WillReturnResult(sqlmock.NewResult(0, 0))
+				cleanupErr := errors.New("timeline cleanup failed")
+				for _, table := range projectRelationTables {
+					expected := mock.ExpectExec("DELETE FROM " + table + " WHERE project_id IN").WithArgs(42)
+					if table == "project_member_timeline" && fail {
+						expected.WillReturnError(cleanupErr)
+						break
+					}
+					expected.WillReturnResult(sqlmock.NewResult(0, 1))
+				}
+				if fail {
+					mock.ExpectRollback()
+				} else {
+					mock.ExpectExec("DELETE FROM interaction_dashboard_view_state").WithArgs(42).WillReturnResult(sqlmock.NewResult(0, 0))
+					mock.ExpectExec("DELETE FROM olive_branch_record").WithArgs(42).WillReturnResult(sqlmock.NewResult(0, 0))
+					mock.ExpectExec("DELETE FROM project").WithArgs(42, models.ProjectStatusDeleting, cutoff).WillReturnResult(sqlmock.NewResult(0, 1))
+					mock.ExpectCommit()
+				}
+				var count int64
+				if single {
+					count, err = repo.PurgeDeletedProjectBefore(context.Background(), 42, cutoff)
+				} else {
+					count, err = repo.PurgeDeletedProjectsBefore(context.Background(), cutoff)
+				}
+				if fail {
+					require.ErrorIs(t, err, cleanupErr)
+					require.Zero(t, count)
+				} else {
+					require.NoError(t, err)
+					require.EqualValues(t, 1, count)
+				}
+				require.NoError(t, mock.ExpectationsWereMet())
+			})
 		}
 	}
 }

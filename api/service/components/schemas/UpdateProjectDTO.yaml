@@ -1,5 +1,8 @@
 type: object
 properties:
+  defaultTimelineHidden:
+    type: boolean
+    description: Hide the derived project-created timeline node without modifying createdAt or milestones. Omit to preserve the existing setting.
   tags:
     type: array
     maxItems: 5

@@ -2,6 +2,9 @@ allOf:
   - $ref: ./ProjectVO.yaml
   - type: object
     properties:
+      defaultTimelineHidden:
+        type: boolean
+        description: Whether the derived project-created timeline node is hidden; createdAt is preserved.
       creator:
         $ref: ./UserVO.yaml
       milestones:

@@ -1,0 +1,18 @@
+type: object
+required: [title, detail]
+properties:
+  title:
+    type: string
+    minLength: 1
+    maxLength: 60
+  detail:
+    type: string
+    maxLength: 5000
+  relatedUserIds:
+    type: array
+    nullable: true
+    maxItems: 100
+    uniqueItems: true
+    items:
+      type: integer
+      minimum: 1

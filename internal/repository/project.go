@@ -395,7 +395,7 @@ func (r *ProjectRepository) GetByID(ctx context.Context, id int) (*models.Projec
 			p.id, p.creator_id, p.name, p.description, p.school_id,
 			p.direction, p.member_count, p.status,
 			p.promotion_status, p.promotion_expire_time, p.view_count,
-			p.created_at, p.updated_at, p.recruit_completed_at, p.ended_at, p.reject_reason, p.deleted_at, p.is_cross_school,
+			p.default_timeline_hidden, p.created_at, p.updated_at, p.recruit_completed_at, p.ended_at, p.reject_reason, p.deleted_at, p.is_cross_school,
 			p.education_requirement, p.skill_requirement,
 			p.publisher_role, p.initiating_school_id, p.admin_note, p.admin_note_updated_at,
 			s.school_name, pr.name AS publisher_role_name, ins.school_name AS initiating_school_name,
@@ -615,6 +615,11 @@ func (r *ProjectRepository) UpdateWithMetadata(ctx context.Context, p *models.Pr
 	if imageKeys != nil {
 		removed, err = replaceImagesTx(ctx, tx, imageOwnerUserID, MediaTypeProjectImage, "project", p.ID, "project_image", "project_id", "project-images/", 6, *imageKeys)
 		if err != nil {
+			return nil, err
+		}
+	}
+	if p.DefaultTimelineHiddenUpdate != nil {
+		if _, err := tx.ExecContext(ctx, `UPDATE project SET default_timeline_hidden=? WHERE id=?`, *p.DefaultTimelineHiddenUpdate, p.ID); err != nil {
 			return nil, err
 		}
 	}

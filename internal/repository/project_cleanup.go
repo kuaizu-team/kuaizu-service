@@ -96,7 +96,8 @@ var projectRelationTables = []string{
 	"project_favorite", "project_share", "project_tag_relation",
 	"project_milestones", "project_image",
 	"project_member_rating", "project_member_score",
-	"project_members", "project_event",
+	// Remove memberships first so in-flight timeline writes finish before cleanup.
+	"project_members", "project_member_timeline", "project_event",
 	"project_recommendation", "collaboration_score", "olive_branch_sms_notice",
 }
 

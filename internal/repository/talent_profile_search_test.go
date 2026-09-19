@@ -41,6 +41,7 @@ func TestTalentKeywordSearchUsesDegradedMatchingAcrossDisplayedFields(t *testing
 			"CAST(tp.skill_summary AS CHAR)",
 			"tp.self_evaluation",
 			"tp.project_experience",
+			"USING utf8mb4) COLLATE utf8mb4_bin LIKE CONVERT(? USING utf8mb4)",
 		} {
 			if !strings.Contains(normalized, want) {
 				t.Fatalf("query missing %q: %s", want, normalized)

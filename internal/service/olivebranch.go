@@ -2,8 +2,11 @@ package service
 
 import (
 	"context"
+	"database/sql"
 	"log"
 	"strings"
+
+	"github.com/jmoiron/sqlx"
 
 	"github.com/kuaizu-team/kuaizu-service/internal/models"
 	"github.com/kuaizu-team/kuaizu-service/internal/repository"
@@ -64,22 +67,21 @@ func (s *OliveBranchService) SendOliveBranch(ctx context.Context, userID int, re
 	}
 	projectName = &project.Name
 
-	// Check for duplicate pending olive branch
-	exists, err := s.repo.OliveBranch.ExistsPending(ctx, userID, req.ReceiverID, req.RelatedProjectID)
-	if err != nil {
-		log.Printf("[OliveBranchService.SendOliveBranch] repository error checking duplicate: %v", err)
-		return nil, ErrInternal("查询橄榄枝状态失败")
-	}
-	if exists {
-		return nil, ErrBadRequest("已有待处理的橄榄枝，请等待对方处理后再发送")
-	}
-
 	tx, err := s.repo.DB().BeginTxx(ctx, nil)
 	if err != nil {
 		log.Printf("[OliveBranchService.SendOliveBranch] failed to begin transaction: %v", err)
 		return nil, ErrInternal("发送橄榄枝失败")
 	}
 	defer tx.Rollback()
+
+	// Serialize invitations for this project and check current state before touching quota.
+	existing, err := s.lockOliveBranchSendState(ctx, tx, req.RelatedProjectID, req.ReceiverID, 0)
+	if err != nil {
+		return nil, err
+	}
+	if existing != nil {
+		return existing, nil
+	}
 
 	if err := s.repo.User.ResetDailyFreeBranchQuotaIfNeededTx(ctx, tx, userID); err != nil {
 		log.Printf("[OliveBranchService.SendOliveBranch] repository error resetting daily quota: %v", err)
@@ -166,6 +168,39 @@ func (s *OliveBranchService) SendOliveBranch(ctx context.Context, userID int, re
 	return ob, nil
 }
 
+// lockOliveBranchSendState guards both send entry points with the same project lock.
+// Locking reads see committed changes even under MySQL REPEATABLE READ.
+func (s *OliveBranchService) lockOliveBranchSendState(ctx context.Context, tx *sqlx.Tx, projectID, receiverID, resendID int) (*models.OliveBranch, error) {
+	var creatorID int
+	if err := tx.GetContext(ctx, &creatorID, `SELECT creator_id FROM project WHERE id=? FOR UPDATE`, projectID); err != nil {
+		return nil, ErrInternal("查询项目失败")
+	}
+	if creatorID == receiverID {
+		return nil, ErrBadRequest("该用户仍在团队中，无需再次发送")
+	}
+	var memberID int
+	err := tx.GetContext(ctx, &memberID, `SELECT id FROM project_members WHERE project_id=? AND user_id=? LIMIT 1 FOR UPDATE`, projectID, receiverID)
+	if err == nil {
+		return nil, ErrBadRequest("该用户仍在团队中，无需再次发送")
+	}
+	if err != sql.ErrNoRows {
+		return nil, ErrInternal("检查项目成员失败")
+	}
+	var existing models.OliveBranch
+	err = tx.GetContext(ctx, &existing, `SELECT id, sender_id, receiver_id, related_project_id, status, cost_type
+		FROM olive_branch_record WHERE related_project_id=? AND receiver_id=? AND status IN (?, ?, ?)
+		AND (id<>? OR status<>?) ORDER BY id DESC LIMIT 1 FOR UPDATE`,
+		projectID, receiverID, models.OliveBranchStatusPending, models.OliveBranchStatusDiscussing,
+		models.OliveBranchStatusAccepted, resendID, models.OliveBranchStatusAccepted)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, ErrInternal("查询橄榄枝状态失败")
+	}
+	return &existing, nil
+}
+
 // ResendOliveBranch reactivates an existing olive branch record instead of creating a duplicate.
 func (s *OliveBranchService) ResendOliveBranch(ctx context.Context, userID, branchID int) (*models.OliveBranch, error) {
 	ob, err := s.repo.OliveBranch.GetByID(ctx, branchID)
@@ -208,6 +243,15 @@ func (s *OliveBranchService) ResendOliveBranch(ctx context.Context, userID, bran
 		return nil, ErrInternal("再次发送橄榄枝失败")
 	}
 	defer tx.Rollback()
+	// The explicit resend action may reactivate an accepted record after leaving the team.
+	// A concurrent resend must see the new pending state and leave quota untouched.
+	existing, err := s.lockOliveBranchSendState(ctx, tx, ob.RelatedProjectID, ob.ReceiverID, branchID)
+	if err != nil {
+		return nil, err
+	}
+	if existing != nil {
+		return nil, ErrBadRequest("当前状态不需要再次发送")
+	}
 	if err := s.repo.User.ResetDailyFreeBranchQuotaIfNeededTx(ctx, tx, userID); err != nil {
 		return nil, ErrInternal("更新额度失败")
 	}

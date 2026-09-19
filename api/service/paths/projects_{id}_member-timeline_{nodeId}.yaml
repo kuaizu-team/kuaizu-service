@@ -1,0 +1,57 @@
+parameters:
+  - name: id
+    in: path
+    required: true
+    schema:
+      type: integer
+      minimum: 1
+  - name: nodeId
+    in: path
+    required: true
+    schema:
+      type: integer
+      minimum: 1
+put:
+  tags: [Projects]
+  operationId: updateMemberTimeline
+  summary: 编辑本人的个人时间节点
+  requestBody:
+    required: true
+    content:
+      application/json:
+        schema:
+          $ref: ../components/schemas/MemberTimelineInput.yaml
+  responses:
+    '200':
+      description: 已更新
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/BaseResponse.yaml
+              - type: object
+                required: [data]
+                properties:
+                  data:
+                    type: object
+                    required: [id]
+                    properties:
+                      id:
+                        type: integer
+    '400':
+      description: 参数或关联成员无效
+    '403':
+      description: 非当前成员或节点不属于本人
+delete:
+  tags: [Projects]
+  operationId: deleteMemberTimeline
+  summary: 删除本人的个人时间节点
+  responses:
+    '200':
+      description: 已删除
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/BaseResponse.yaml
+    '403':
+      description: 非当前成员或节点不属于本人
