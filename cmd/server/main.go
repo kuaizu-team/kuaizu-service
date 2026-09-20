@@ -74,6 +74,10 @@ func main() {
 	defer pool.Close()
 	log.Println("Connected to database")
 
+	if err := db.CheckProjectTimelineSchema(ctx, pool); err != nil {
+		log.Fatalf("Failed to initialize project timelines: %v", err)
+	}
+
 	// Initialize repository and shared service dependencies
 	repo := repository.New(pool)
 	startPendingInvitationCleanup(ctx, repo.PendingInvitation)
