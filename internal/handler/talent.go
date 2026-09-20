@@ -38,6 +38,7 @@ func (s *Server) ListTalentProfiles(ctx echo.Context, params api.ListTalentProfi
 		SortBy:       params.SortBy,
 		UserSchoolID: params.UserSchoolId,
 		UserMajorID:  params.UserMajorId,
+		ViewerUserID: GetOptionalUserID(ctx),
 		RandomSeed:   fmt.Sprintf("%d:%s", GetOptionalUserID(ctx), time.Now().Format("2006-01-02")),
 	}
 	if params.RandomSeed != nil && *params.RandomSeed != "" {
