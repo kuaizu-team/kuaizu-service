@@ -3,6 +3,49 @@
 The backend must be managed by one Docker Compose project. Do not mix
 `docker run` containers with Compose-managed containers that use the same names.
 
+## Mini Program 3.8.3: paired backend deployment
+
+The Mini Program branch `feat--talent-detail--olive-status-modal` requires the
+backend changes in `fix--olive--idempotent-quota-deduction` through `e6e46ea`,
+plus the schema startup check. A new submission branch must include those
+changes; submitting only the startup-check patch on the old main is insufficient.
+Merge the complete backend implementation into main before releasing this client.
+
+Deploy in this order:
+
+1. Apply `sql/migration_project_member_timeline.sql` and
+   `sql/migration_project_default_timeline_hidden.sql` to the target database.
+   The visibility-column ALTER is not rerunnable: if the column already exists,
+   verify its definition instead of applying it again.
+2. Regenerate the backend API using `make generate`, or run its two commands
+   individually in PowerShell. Build and deploy the backend containing the
+   member-timeline routes, visibility-field persistence, and olive-branch quota
+   guards. All API instances must finish upgrading before releasing the client.
+3. The server checks the required project timeline columns before starting
+   workers or accepting requests. Missing migrations stop startup with the
+   relevant SQL filename; the check never changes database data. A healthy old
+   backend does not prove compatibility: verify the deployed build commit too.
+4. Copy the newly bundled OpenAPI to the Mini Program's local `service.yaml`,
+   run `npm run generate`, `npm test`, and `npx tsc -p .. --noEmit`.
+   Generated contracts remain local under the repositories' existing ignore rules.
+5. Before client publication, verify in WeChat DevTools: member progress CRUD and
+   ownership restrictions; hide/save/reload the default node without changing
+   project review status or real milestones; duplicate pending/discussing/member
+   invitations without quota deduction; normal new invitations and quota purchase.
+
+For backend regression run:
+
+```powershell
+go test ./internal/db ./internal/service ./internal/repository ./internal/handler ./cmd/server
+```
+
+The opt-in MySQL concurrency tests require `KUAIZU_TIMELINE_TEST_DSN` pointing
+to a disposable localhost database server, not the application's database.
+
+If rollback is necessary, roll back the client first. Keep the new table and
+column so personal progress and visibility choices are preserved. Do not run a
+new client against the pre-feature backend.
+
 ## Database migration gate for this release
 
 Database migrations are deliberately run as a separate pre-deploy gate; the
