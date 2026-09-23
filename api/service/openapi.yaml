@@ -68,6 +68,8 @@ paths:
     $ref: paths/users_me_badges.yaml
   /users/me/collaboration-history:
     $ref: paths/users_me_collaboration-history.yaml
+  /users/{id}/collaboration-detail:
+    $ref: paths/users_{id}_collaboration-detail.yaml
   /users/me/certification:
     $ref: paths/users_me_certification.yaml
   /users/me/olive-branches:

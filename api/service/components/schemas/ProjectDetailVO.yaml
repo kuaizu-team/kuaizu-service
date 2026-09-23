@@ -28,7 +28,8 @@ allOf:
         description: 浏览量
       applicationCount:
         type: integer
-        description: 申请数量
+        nullable: true
+        description: 当前保存的项目投递记录总量，包含全部处理状态，不包含橄榄枝
       educationRequirement:
         type: integer
         description: 学历要求1-大专2-本科
