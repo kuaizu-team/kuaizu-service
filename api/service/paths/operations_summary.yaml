@@ -1,0 +1,24 @@
+get:
+  tags:
+    - Operations
+  summary: Get the number of operated schools
+  operationId: getOperationsSummary
+  security: []
+  responses:
+    '200':
+      description: Success
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/BaseResponse.yaml
+              - type: object
+                properties:
+                  data:
+                    type: object
+                    required:
+                      - operatedSchoolCount
+                    properties:
+                      operatedSchoolCount:
+                        type: integer
+                        minimum: 0

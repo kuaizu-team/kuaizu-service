@@ -123,6 +123,7 @@ func main() {
 			"/api/v2/recommendations/podcasts",          // Info-center podcast recommendations
 			"/api/v2/recommendations/news",              // Info-center news recommendations
 			"/api/v2/roadmap",                           // Platform roadmap
+			"/api/v2/operations/summary",                // Public operated-school count
 		}
 
 		// Keep the legacy timeline public. Personalized school-event views use

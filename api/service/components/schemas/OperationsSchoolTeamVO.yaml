@@ -1,0 +1,17 @@
+type: object
+required:
+  - schoolId
+  - schoolName
+  - leader
+  - members
+properties:
+  schoolId:
+    type: integer
+  schoolName:
+    type: string
+  leader:
+    $ref: ./OperationsPersonVO.yaml
+  members:
+    type: array
+    items:
+      $ref: ./OperationsPersonVO.yaml

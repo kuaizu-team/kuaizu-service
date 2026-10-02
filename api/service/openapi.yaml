@@ -51,6 +51,8 @@ tags:
     description: 用户反馈接口
   - name: Roadmap
     description: Platform roadmap APIs
+  - name: Operations
+    description: Campus operations directory APIs
 paths:
   /projects/{id}/member-timeline:
     $ref: './paths/projects_{id}_member-timeline.yaml'
@@ -224,6 +226,10 @@ paths:
     $ref: paths/roadmap_has-new.yaml
   /roadmap/mark-read:
     $ref: paths/roadmap_mark-read.yaml
+  /operations/summary:
+    $ref: paths/operations_summary.yaml
+  /operations/team:
+    $ref: paths/operations_team.yaml
   /interactions/favorites/unread-count:
     $ref: paths/interactions_favorites_unread-count.yaml
   /interactions/favorites/mark-viewed:
