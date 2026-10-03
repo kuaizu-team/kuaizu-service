@@ -10,11 +10,12 @@ import (
 // OperationsPerson is the deliberately limited public directory projection.
 // Contact details and internal administrator/user identifiers are never selected.
 type OperationsPerson struct {
-	TalentProfileID *int   `db:"talent_profile_id" json:"talentProfileId,omitempty"`
-	Name            string `db:"name" json:"name"`
-	SchoolID        int    `db:"school_id" json:"schoolId"`
-	SchoolName      string `db:"school_name" json:"schoolName"`
-	Position        string `db:"-" json:"position"`
+	TalentProfileID *int    `db:"talent_profile_id" json:"talentProfileId,omitempty"`
+	AvatarURL       *string `db:"avatar_url" json:"avatarUrl,omitempty"`
+	Name            string  `db:"name" json:"name"`
+	SchoolID        int     `db:"school_id" json:"schoolId"`
+	SchoolName      string  `db:"school_name" json:"schoolName"`
+	Position        string  `db:"-" json:"position"`
 }
 
 type OperationsSchoolTeam struct {
@@ -53,6 +54,7 @@ func (r *OperationsRepository) ListSchoolTeams(ctx context.Context) ([]Operation
 	err := r.db.SelectContext(ctx, &leaders, `
 		SELECT
 			tp.id AS talent_profile_id,
+			CASE WHEN tp.id IS NOT NULL THEN NULLIF(TRIM(u.avatar_url), '') END AS avatar_url,
 			COALESCE(NULLIF(TRIM(au.nickname), ''), NULLIF(TRIM(u.nickname), ''), '快组运营负责人') AS name,
 			rel.school_id,
 			s.school_name
@@ -99,6 +101,7 @@ func (r *OperationsRepository) ListSchoolTeams(ctx context.Context) ([]Operation
 	query, args, err := sqlx.In(`
 		SELECT
 			tp.id AS talent_profile_id,
+			CASE WHEN tp.id IS NOT NULL THEN NULLIF(TRIM(u.avatar_url), '') END AS avatar_url,
 			COALESCE(NULLIF(TRIM(au.nickname), ''), NULLIF(TRIM(u.nickname), ''), '快组运营成员') AS name,
 			au.school_id,
 			s.school_name

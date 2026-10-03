@@ -9,6 +9,10 @@ properties:
     type: integer
     nullable: true
     description: Present only when the person has an enabled public talent profile.
+  avatarUrl:
+    type: string
+    nullable: true
+    description: User avatar URL, present only when the person has an enabled public talent profile.
   name:
     type: string
   schoolId:
