@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/jmoiron/sqlx"
+	"github.com/kuaizu-team/kuaizu-service/internal/oss"
 )
 
 // OperationsPerson is the deliberately limited public directory projection.
@@ -81,6 +82,10 @@ func (r *OperationsRepository) ListSchoolTeams(ctx context.Context) ([]Operation
 	teams := make([]OperationsSchoolTeam, 0, len(leaders))
 	teamIndex := make(map[int]int, len(leaders))
 	for _, leader := range leaders {
+		if leader.AvatarURL != nil && *leader.AvatarURL != "" {
+			fullURL := oss.FullURL(*leader.AvatarURL)
+			leader.AvatarURL = &fullURL
+		}
 		leader.Position = "运营负责人"
 		teamIndex[leader.SchoolID] = len(teams)
 		teams = append(teams, OperationsSchoolTeam{
@@ -127,6 +132,10 @@ func (r *OperationsRepository) ListSchoolTeams(ctx context.Context) ([]Operation
 		return nil, fmt.Errorf("list operations members: %w", err)
 	}
 	for _, member := range members {
+		if member.AvatarURL != nil && *member.AvatarURL != "" {
+			fullURL := oss.FullURL(*member.AvatarURL)
+			member.AvatarURL = &fullURL
+		}
 		member.Position = "运营成员"
 		if index, ok := teamIndex[member.SchoolID]; ok {
 			teams[index].Members = append(teams[index].Members, member)
