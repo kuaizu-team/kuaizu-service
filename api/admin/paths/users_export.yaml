@@ -1,0 +1,67 @@
+post:
+  tags: [Users]
+  summary: 导出当前筛选全部或已勾选用户 CSV
+  description: |
+    仅平台超级管理员和校区超级管理员可用。校区范围从数据库授权学校关系读取，覆盖 schoolId 参数。
+    UTF-8 BOM CSV 包含 15 列；按 ID 升序，每批读取 200 人。
+    上限 10000 人、32 MiB、生成超时 30 秒；每个服务进程最多同时生成 2 份文件。
+    部分导出时先校验所有 ID 的归属，包含越权用户则整份拒绝。
+  parameters:
+    - in: query
+      name: authStatus
+      schema: {type: integer, enum: [0, 1, 2, 3]}
+    - in: query
+      name: talentProfileStatus
+      schema: {type: integer, enum: [-1, 0, 1, 2]}
+    - in: query
+      name: userStatus
+      schema: {type: integer, enum: [0, 1, 2]}
+    - in: query
+      name: schoolId
+      schema: {type: integer}
+    - in: query
+      name: userId
+      schema: {type: integer}
+    - in: query
+      name: keyword
+      schema: {type: string}
+    - in: query
+      name: invitationFeedbackStatus
+      schema:
+        type: string
+        enum: [in_progress, interested, not_interested, accepted, rejected]
+  requestBody:
+    required: true
+    content:
+      application/json:
+        schema:
+          type: object
+          properties:
+            selected:
+              type: boolean
+              default: false
+              description: true 表示部分导出，必须提供非空 userIds
+            userIds:
+              type: array
+              maxItems: 10000
+              uniqueItems: true
+              items: {type: integer, minimum: 1}
+  responses:
+    '200':
+      description: CSV 下载，文件名包含上海时区日期和导出范围
+      headers:
+        Content-Disposition:
+          schema: {type: string}
+      content:
+        text/csv:
+          schema: {type: string, format: binary}
+    '400':
+      $ref: ../components/responses/BadRequest.yaml
+    '401':
+      $ref: ../components/responses/Unauthorized.yaml
+    '403':
+      $ref: ../components/responses/Forbidden.yaml
+    '429':
+      description: 导出并发达到上限，请稍后重试
+    '500':
+      $ref: ../components/responses/InternalError.yaml

@@ -55,106 +55,9 @@ type adminUserDetailResponse struct {
 
 // ListUsers handles GET /admin/users
 func (s *AdminServer) ListUsers(ctx echo.Context) error {
-	page, _ := strconv.Atoi(ctx.QueryParam("page"))
-
-	// Accept both "size" and "pageSize" — frontend sends pageSize
-	size, _ := strconv.Atoi(ctx.QueryParam("size"))
-	if size == 0 {
-		size, _ = strconv.Atoi(ctx.QueryParam("pageSize"))
-	}
-
-	params := repository.UserListParams{
-		Page:                page,
-		Size:                size,
-		IncludePendingCount: true, // admin list always needs pending count column
-	}
-
-	// sortBy / order — unknown values are silently ignored (degraded to default)
-	if v := ctx.QueryParam("sortBy"); v != "" {
-		params.SortBy = &v
-	}
-	if v := ctx.QueryParam("order"); v != "" {
-		params.Order = &v
-	}
-
-	if v := ctx.QueryParam("authStatus"); v != "" {
-		status, err := strconv.Atoi(v)
-		if err != nil {
-			return response.BadRequest(ctx, "invalid authStatus")
-		}
-		params.AuthStatus = &status
-		if params.AuthStatus != nil && *params.AuthStatus == 3 { // 重新映射
-			*params.AuthStatus = models.UserAuthStatusNone
-			uploaded := true
-			params.AuthImgUploaded = &uploaded
-		}
-	}
-
-	// 仅超级管理员（无学校绑定）可自由指定 schoolId；
-	// 校区管理员的 schoolId 参数在下方被强制覆盖，此处仍解析以便做格式校验。
-	if v := ctx.QueryParam("schoolId"); v != "" {
-		schoolID, err := strconv.Atoi(v)
-		if err != nil {
-			return response.BadRequest(ctx, "invalid schoolId")
-		}
-		params.SchoolID = &schoolID
-	}
-
-	// 校区管理员强制按本校过滤，放在所有 query param 解析之后，确保不被覆盖。
-	if adminRole(ctx) == models.AdminRoleSchoolSuperAdmin {
-		schoolIDs, err := s.adminSchoolIDs(ctx)
-		if err != nil {
-			return response.InternalError(ctx, "查询学校权限失败")
-		}
-		params.SchoolID = nil
-		params.SchoolIDs = schoolIDs
-	} else if sid := adminSchoolID(ctx); sid != nil {
-		params.SchoolID = sid
-	}
-
-	if v := ctx.QueryParam("keyword"); v != "" {
-		params.Keyword = &v
-	}
-
-	if v := ctx.QueryParam("talentProfileStatus"); v != "" {
-		status, err := strconv.Atoi(v)
-		// -1 表示"从未提交名片"（无名片记录），0/1/2 为正常状态枚举
-		if err != nil || (status != -1 && (status < 0 || status > 2)) {
-			return response.BadRequest(ctx, "invalid talentProfileStatus, must be -1, 0, 1 or 2")
-		}
-		params.TalentProfileStatus = &status
-	}
-
-	if v := ctx.QueryParam("userId"); v != "" {
-		uid, err := strconv.Atoi(v)
-		if err != nil {
-			return response.BadRequest(ctx, "invalid userId")
-		}
-		params.UserID = &uid
-	}
-
-	if v := ctx.QueryParam("userStatus"); v != "" {
-		us, err := strconv.Atoi(v)
-		if err != nil || us < 0 || us > 2 {
-			return response.BadRequest(ctx, "invalid userStatus, must be 0, 1 or 2")
-		}
-		params.UserStatus = &us
-	}
-
-	if v := ctx.QueryParam("invitationFeedbackStatus"); v != "" {
-		if !canViewInvitationFeedback(adminRole(ctx)) {
-			return response.Forbidden(ctx, "permission denied")
-		}
-		switch v {
-		case models.InvitationConversationStatusInProgress,
-			models.InvitationFeedbackStatusInterested,
-			models.InvitationFeedbackStatusNotInterested,
-			models.InvitationConversationStatusAccepted,
-			models.InvitationConversationStatusRejected:
-			params.InvitationFeedbackStatus = &v
-		default:
-			return response.BadRequest(ctx, "invalid invitationFeedbackStatus")
-		}
+	params, valid, err := s.parseUserListParams(ctx)
+	if !valid {
+		return err
 	}
 
 	result, err := s.svc.User.ListUsers(ctx.Request().Context(), params)
@@ -769,4 +672,111 @@ func (s *AdminServer) ReviewUserAuth(ctx echo.Context) error {
 	}
 
 	return response.SuccessMessage(ctx, "操作成功")
+}
+
+// Shared list/export filter parsing keeps school scope authoritative.
+func (s *AdminServer) parseUserListParams(ctx echo.Context) (repository.UserListParams, bool, error) {
+	page, _ := strconv.Atoi(ctx.QueryParam("page"))
+
+	// Accept both "size" and "pageSize" — frontend sends pageSize
+	size, _ := strconv.Atoi(ctx.QueryParam("size"))
+	if size == 0 {
+		size, _ = strconv.Atoi(ctx.QueryParam("pageSize"))
+	}
+
+	params := repository.UserListParams{
+		Page:                page,
+		Size:                size,
+		IncludePendingCount: true, // admin list always needs pending count column
+	}
+
+	// sortBy / order — unknown values are silently ignored (degraded to default)
+	if v := ctx.QueryParam("sortBy"); v != "" {
+		params.SortBy = &v
+	}
+	if v := ctx.QueryParam("order"); v != "" {
+		params.Order = &v
+	}
+
+	if v := ctx.QueryParam("authStatus"); v != "" {
+		status, err := strconv.Atoi(v)
+		if err != nil {
+			return params, false, response.BadRequest(ctx, "invalid authStatus")
+		}
+		params.AuthStatus = &status
+		if params.AuthStatus != nil && *params.AuthStatus == 3 { // 重新映射
+			*params.AuthStatus = models.UserAuthStatusNone
+			uploaded := true
+			params.AuthImgUploaded = &uploaded
+		}
+	}
+
+	// 仅超级管理员（无学校绑定）可自由指定 schoolId；
+	// 校区管理员的 schoolId 参数在下方被强制覆盖，此处仍解析以便做格式校验。
+	if v := ctx.QueryParam("schoolId"); v != "" {
+		schoolID, err := strconv.Atoi(v)
+		if err != nil {
+			return params, false, response.BadRequest(ctx, "invalid schoolId")
+		}
+		params.SchoolID = &schoolID
+	}
+
+	// 校区管理员强制按本校过滤，放在所有 query param 解析之后，确保不被覆盖。
+	if adminRole(ctx) == models.AdminRoleSchoolSuperAdmin {
+		schoolIDs, err := s.adminSchoolIDs(ctx)
+		if err != nil {
+			return params, false, response.InternalError(ctx, "查询学校权限失败")
+		}
+		params.SchoolID = nil
+		params.SchoolIDs = schoolIDs
+	} else if sid := adminSchoolID(ctx); sid != nil {
+		params.SchoolID = sid
+	}
+
+	if v := ctx.QueryParam("keyword"); v != "" {
+		params.Keyword = &v
+	}
+
+	if v := ctx.QueryParam("talentProfileStatus"); v != "" {
+		status, err := strconv.Atoi(v)
+		// -1 表示"从未提交名片"（无名片记录），0/1/2 为正常状态枚举
+		if err != nil || (status != -1 && (status < 0 || status > 2)) {
+			return params, false, response.BadRequest(ctx, "invalid talentProfileStatus, must be -1, 0, 1 or 2")
+		}
+		params.TalentProfileStatus = &status
+	}
+
+	if v := ctx.QueryParam("userId"); v != "" {
+		uid, err := strconv.Atoi(v)
+		if err != nil {
+			return params, false, response.BadRequest(ctx, "invalid userId")
+		}
+		params.UserID = &uid
+	}
+
+	if v := ctx.QueryParam("userStatus"); v != "" {
+		us, err := strconv.Atoi(v)
+		if err != nil || us < 0 || us > 2 {
+			return params, false, response.BadRequest(ctx, "invalid userStatus, must be 0, 1 or 2")
+		}
+		params.UserStatus = &us
+	}
+
+	if v := ctx.QueryParam("invitationFeedbackStatus"); v != "" {
+		if !canViewInvitationFeedback(adminRole(ctx)) {
+			return params, false, response.Forbidden(ctx, "permission denied")
+		}
+		switch v {
+		case models.InvitationConversationStatusInProgress,
+			models.InvitationFeedbackStatusInterested,
+			models.InvitationFeedbackStatusNotInterested,
+			models.InvitationConversationStatusAccepted,
+			models.InvitationConversationStatusRejected:
+			params.InvitationFeedbackStatus = &v
+		default:
+			return params, false, response.BadRequest(ctx, "invalid invitationFeedbackStatus")
+		}
+	}
+
+	return params, true, nil
 }

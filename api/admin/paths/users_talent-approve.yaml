@@ -1,0 +1,49 @@
+post:
+  tags: [Users]
+  summary: 批量通过用户的待审核人才库名片
+  description: |
+    平台超级管理员、校区超级管理员、校区管理员可用，沿用现有名片审核权限。
+    校区范围由数据库授权学校或绑定学校决定。整批归属校验、锁定用户和名片后再更新。
+    越权或不存在用户导致整批拒绝；非待审核名片逐项跳过；数据库更新失败整批回滚。
+    成功提交后按原有订阅通知路径发送审核结果，通知失败不会撤销已提交审核。
+  requestBody:
+    required: true
+    content:
+      application/json:
+        schema:
+          type: object
+          required: [userIds]
+          properties:
+            userIds:
+              type: array
+              minItems: 1
+              maxItems: 100
+              uniqueItems: true
+              items: {type: integer, minimum: 1}
+  responses:
+    '200':
+      description: 逐项审核结果
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/BaseResponse.yaml
+              - type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      required: [userId, approved, message]
+                      properties:
+                        userId: {type: integer}
+                        approved: {type: boolean}
+                        message: {type: string}
+    '400':
+      $ref: ../components/responses/BadRequest.yaml
+    '401':
+      $ref: ../components/responses/Unauthorized.yaml
+    '403':
+      $ref: ../components/responses/Forbidden.yaml
+    '500':
+      $ref: ../components/responses/InternalError.yaml

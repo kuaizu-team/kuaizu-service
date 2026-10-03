@@ -88,6 +88,10 @@ paths:
     $ref: paths/talent-profiles_{id}.yaml
   /users:
     $ref: paths/users.yaml
+  /users/export:
+    $ref: paths/users_export.yaml
+  /users/talent-approve:
+    $ref: paths/users_talent-approve.yaml
   /users/{id}:
     $ref: paths/users_{id}.yaml
   /users/{id}/activity-summary:

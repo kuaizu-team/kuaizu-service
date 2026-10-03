@@ -428,77 +428,10 @@ type UserListParams struct {
 
 // ListUsers retrieves paginated users with optional filters
 func (r *UserRepository) ListUsers(ctx context.Context, params UserListParams) ([]models.User, int64, error) {
-	conditions := []string{"1=1"}
-	args := []interface{}{}
-
-	if params.AuthStatus != nil {
-		conditions = append(conditions, "u.auth_status = ?")
-		args = append(args, *params.AuthStatus)
+	whereClause, args, err := UserFilterSQL(params)
+	if err != nil {
+		return nil, 0, err
 	}
-
-	if params.SchoolID != nil {
-		conditions = append(conditions, "u.school_id = ?")
-		args = append(args, *params.SchoolID)
-	}
-	if len(params.SchoolIDs) > 0 {
-		condition, inArgs, err := sqlx.In("u.school_id IN (?)", params.SchoolIDs)
-		if err != nil {
-			return nil, 0, fmt.Errorf("build user school filter: %w", err)
-		}
-		conditions = append(conditions, condition)
-		args = append(args, inArgs...)
-	} else if params.SchoolIDs != nil {
-		conditions = append(conditions, "1=0")
-	}
-
-	if params.Keyword != nil && *params.Keyword != "" {
-		conditions = append(conditions, "(u.nickname LIKE ? OR u.phone LIKE ?)")
-		args = append(args, "%"+*params.Keyword+"%", "%"+*params.Keyword+"%")
-	}
-
-	if params.AuthImgUploaded != nil {
-		if *params.AuthImgUploaded == false {
-			conditions = append(conditions, "u.auth_img_url IS NULL")
-		} else {
-			conditions = append(conditions, "u.auth_img_url IS NOT NULL")
-		}
-	}
-
-	if params.TalentProfileStatus != nil {
-		if *params.TalentProfileStatus == -1 {
-			// -1 = 从未提交名片（无任何名片记录）
-			conditions = append(conditions, "u.id NOT IN (SELECT user_id FROM talent_profile)")
-		} else {
-			conditions = append(conditions, "u.id IN (SELECT user_id FROM talent_profile WHERE status = ?)")
-			args = append(args, *params.TalentProfileStatus)
-		}
-	}
-
-	if params.UserID != nil {
-		conditions = append(conditions, "u.id = ?")
-		args = append(args, *params.UserID)
-	}
-
-	if params.UserStatus != nil {
-		conditions = append(conditions, "u.user_status = ?")
-		args = append(args, *params.UserStatus)
-	}
-
-	if params.InvitationFeedbackStatus != nil {
-		conditions = append(conditions, `EXISTS (
-			SELECT 1
-			FROM invitation_feedback f
-			LEFT JOIN pending_invitation p
-				ON p.user_id = f.user_id
-				AND p.invite_type = 'SUPER_ADMIN'
-				AND p.expire_at > CURRENT_TIMESTAMP
-			WHERE f.user_id = u.id
-				AND `+InvitationFeedbackEffectiveStatusSQL+` = ?
-		)`)
-		args = append(args, *params.InvitationFeedbackStatus)
-	}
-
-	whereClause := strings.Join(conditions, " AND ")
 
 	// Count total — WHERE args only, no ORDER BY subqueries involved
 	countQuery := fmt.Sprintf("SELECT COUNT(*) FROM `user` u WHERE %s", whereClause)
@@ -716,4 +649,81 @@ func (r *UserRepository) GetEduCertInfoByID(ctx context.Context, userID int) (Ce
 	}
 
 	return info, nil
+}
+
+// UserFilterSQL is shared by list and bounded export queries.
+func UserFilterSQL(params UserListParams) (string, []interface{}, error) {
+	conditions := []string{"1=1"}
+	args := []interface{}{}
+
+	if params.AuthStatus != nil {
+		conditions = append(conditions, "u.auth_status = ?")
+		args = append(args, *params.AuthStatus)
+	}
+
+	if params.SchoolID != nil {
+		conditions = append(conditions, "u.school_id = ?")
+		args = append(args, *params.SchoolID)
+	}
+	if len(params.SchoolIDs) > 0 {
+		condition, inArgs, err := sqlx.In("u.school_id IN (?)", params.SchoolIDs)
+		if err != nil {
+			return "", nil, fmt.Errorf("build user school filter: %w", err)
+		}
+		conditions = append(conditions, condition)
+		args = append(args, inArgs...)
+	} else if params.SchoolIDs != nil {
+		conditions = append(conditions, "1=0")
+	}
+
+	if params.Keyword != nil && *params.Keyword != "" {
+		conditions = append(conditions, "(u.nickname LIKE ? OR u.phone LIKE ?)")
+		args = append(args, "%"+*params.Keyword+"%", "%"+*params.Keyword+"%")
+	}
+
+	if params.AuthImgUploaded != nil {
+		if *params.AuthImgUploaded == false {
+			conditions = append(conditions, "u.auth_img_url IS NULL")
+		} else {
+			conditions = append(conditions, "u.auth_img_url IS NOT NULL")
+		}
+	}
+
+	if params.TalentProfileStatus != nil {
+		if *params.TalentProfileStatus == -1 {
+			// -1 = 从未提交名片（无任何名片记录）
+			conditions = append(conditions, "u.id NOT IN (SELECT user_id FROM talent_profile)")
+		} else {
+			conditions = append(conditions, "u.id IN (SELECT user_id FROM talent_profile WHERE status = ?)")
+			args = append(args, *params.TalentProfileStatus)
+		}
+	}
+
+	if params.UserID != nil {
+		conditions = append(conditions, "u.id = ?")
+		args = append(args, *params.UserID)
+	}
+
+	if params.UserStatus != nil {
+		conditions = append(conditions, "u.user_status = ?")
+		args = append(args, *params.UserStatus)
+	}
+
+	if params.InvitationFeedbackStatus != nil {
+		conditions = append(conditions, `EXISTS (
+			SELECT 1
+			FROM invitation_feedback f
+			LEFT JOIN pending_invitation p
+				ON p.user_id = f.user_id
+				AND p.invite_type = 'SUPER_ADMIN'
+				AND p.expire_at > CURRENT_TIMESTAMP
+			WHERE f.user_id = u.id
+				AND `+InvitationFeedbackEffectiveStatusSQL+` = ?
+		)`)
+		args = append(args, *params.InvitationFeedbackStatus)
+	}
+
+	whereClause := strings.Join(conditions, " AND ")
+
+	return whereClause, args, nil
 }
