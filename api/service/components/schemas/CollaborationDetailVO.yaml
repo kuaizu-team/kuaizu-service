@@ -1,0 +1,29 @@
+type: object
+required: [userId, score, level, ranges, projects]
+properties:
+  userId: {type: integer}
+  score: {type: number, format: double, minimum: 0, maximum: 100}
+  level: {type: string}
+  ranges:
+    type: array
+    items:
+      type: object
+      required: [level, min, max, maxInclusive]
+      properties:
+        level: {type: string}
+        min: {type: number, format: double}
+        max: {type: number, format: double}
+        maxInclusive: {type: boolean}
+  projects:
+    type: array
+    items:
+      type: object
+      required: [projectId, projectName, score]
+      properties:
+        projectId: {type: integer}
+        projectName: {type: string}
+        score:
+          type: number
+          format: double
+          nullable: true
+          description: 项目综合分；null 表示暂无评分，不是零分

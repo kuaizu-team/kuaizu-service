@@ -1,0 +1,20 @@
+get:
+  tags:
+    - Operations
+  summary: List campus operations leaders and members
+  description: Requires login. Contact details and administrator/user identifiers are never returned.
+  operationId: listOperationsTeam
+  responses:
+    '200':
+      description: Success
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/BaseResponse.yaml
+              - type: object
+                properties:
+                  data:
+                    $ref: ../components/schemas/OperationsTeamResponse.yaml
+    '401':
+      description: Authentication required

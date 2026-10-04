@@ -10,6 +10,7 @@ import (
 
 // Project represents a project in the database
 type Project struct {
+	ApplicationCount            *int  `db:"application_count"`
 	DefaultTimelineHidden       bool  `db:"default_timeline_hidden"`
 	DefaultTimelineHiddenUpdate *bool `db:"-"`
 
@@ -172,6 +173,7 @@ func (p *Project) ToDetailVO() *api.ProjectDetailVO {
 	status := api.ProjectStatus(p.Status)
 
 	vo := &api.ProjectDetailVO{
+		ApplicationCount:       p.ApplicationCount,
 		DefaultTimelineHidden:  &p.DefaultTimelineHidden,
 		Id:                     &p.ID,
 		Name:                   &p.Name,

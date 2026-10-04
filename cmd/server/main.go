@@ -89,6 +89,7 @@ func main() {
 	svc := service.New(repo, deps)
 	service.StartProjectCleanupScheduler(ctx, repo)
 	service.StartMediaCleanupScheduler(ctx, repo.Media, svc.Commons)
+	service.StartAutoUrgeSmsScheduler(ctx, repo, svc.AdminSms)
 	if err := svc.Message.CheckSubscribeDeliverySchema(ctx); err != nil {
 		log.Fatalf("Failed to initialize WeChat subscribe delivery: %v", err)
 	}
@@ -122,6 +123,7 @@ func main() {
 			"/api/v2/recommendations/podcasts",          // Info-center podcast recommendations
 			"/api/v2/recommendations/news",              // Info-center news recommendations
 			"/api/v2/roadmap",                           // Platform roadmap
+			"/api/v2/operations/summary",                // Public operated-school count
 		}
 
 		// Keep the legacy timeline public. Personalized school-event views use

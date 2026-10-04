@@ -107,6 +107,8 @@ func main() {
 	adminGroup.PATCH("/talent-profiles/:id/takedown", server.TakedownTalentProfile)
 
 	adminGroup.GET("/users", server.ListUsers)
+	adminGroup.POST("/users/export", server.ExportUsers)
+	adminGroup.POST("/users/talent-approve", server.BatchApproveUsers)
 	adminGroup.GET("/users/:id/orders", server.ListUserOrders)
 	adminGroup.GET("/users/:id/invitation-status", server.GetUserInvitationStatus)
 	adminGroup.PUT("/users/:id/invitation/conversation-status", server.UpdateUserInvitationConversationStatus)

@@ -1,0 +1,22 @@
+type: object
+required:
+  - operatedSchoolCount
+  - teams
+properties:
+  operatedSchoolCount:
+    type: integer
+    minimum: 0
+  currentUserSchoolId:
+    type: integer
+    nullable: true
+  currentUserSchoolName:
+    type: string
+    nullable: true
+  currentSchoolLeader:
+    allOf:
+      - $ref: ./OperationsPersonVO.yaml
+    nullable: true
+  teams:
+    type: array
+    items:
+      $ref: ./OperationsSchoolTeamVO.yaml

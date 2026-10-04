@@ -38,6 +38,7 @@ type TalentProfileListParams struct {
 	UserSchoolCity     *string
 	UserSchoolDistrict *string
 	UserMajorClassID   *int // class_id of the user's major
+	ViewerUserID       int  // authenticated identity, never supplied by the client
 	RandomSeed         string
 }
 
@@ -321,6 +322,25 @@ func (r *TalentProfileRepository) List(ctx context.Context, params TalentProfile
 		extraJoins += "\n\t\tLEFT JOIN major tm ON u.major_id = tm.id"
 	}
 
+	// Tags are subordinate to both existing tier expressions (including auth/heat).
+	var joinArgs []interface{}
+	if params.SortBy != nil && *params.SortBy == "school_priority" && params.ViewerUserID > 0 && total > 0 {
+		scores, missing, err := r.talentTagScores(ctx, params.ViewerUserID, whereClause, whereArgs)
+		if err != nil {
+			return nil, 0, fmt.Errorf("score talent tags: %w", err)
+		}
+		extraJoins += ` LEFT JOIN JSON_TABLE(?, '$[*]' COLUMNS (
+   id BIGINT PATH '$.id', exact_score INT PATH '$.exact',
+   role_score INT PATH '$.role', tag_count INT PATH '$.count'
+  )) tag_scores ON tag_scores.id = tp.id`
+		joinArgs = append(joinArgs, scores)
+		tagOrder := "COALESCE(tag_scores.exact_score, 0) DESC, COALESCE(tag_scores.role_score, 0) DESC, "
+		if missing {
+			tagOrder = "COALESCE(tag_scores.tag_count, 0) ASC, "
+		}
+		orderClause = strings.Replace(orderClause, "CRC32(CONCAT(", tagOrder+"CRC32(CONCAT(", 1)
+	}
+
 	// ── Main data query ─────────────────────────────────────────────────────────
 	offset := (params.Page - 1) * params.Size
 	query := fmt.Sprintf(`
@@ -337,8 +357,9 @@ func (r *TalentProfileRepository) List(ctx context.Context, params TalentProfile
 		LIMIT ? OFFSET ?
 	`, extraJoins, whereClause, orderClause)
 
-	// Combine: WHERE args → ORDER BY args → LIMIT/OFFSET
-	dataArgs := make([]interface{}, 0, len(whereArgs)+len(orderArgs)+2)
+	// Combine: JOIN args → WHERE args → ORDER BY args → LIMIT/OFFSET
+	dataArgs := make([]interface{}, 0, len(joinArgs)+len(whereArgs)+len(orderArgs)+2)
+	dataArgs = append(dataArgs, joinArgs...)
 	dataArgs = append(dataArgs, whereArgs...)
 	dataArgs = append(dataArgs, orderArgs...)
 	dataArgs = append(dataArgs, params.Size, offset)

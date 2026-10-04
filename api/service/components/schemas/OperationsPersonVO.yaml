@@ -1,0 +1,26 @@
+type: object
+required:
+  - name
+  - schoolId
+  - schoolName
+  - position
+properties:
+  talentProfileId:
+    type: integer
+    nullable: true
+    description: Present only when the person has an enabled public talent profile.
+  avatarUrl:
+    type: string
+    nullable: true
+    description: User avatar URL, present only when the person has an enabled public talent profile.
+  name:
+    type: string
+  schoolId:
+    type: integer
+  schoolName:
+    type: string
+  position:
+    type: string
+    enum:
+      - 运营负责人
+      - 运营成员

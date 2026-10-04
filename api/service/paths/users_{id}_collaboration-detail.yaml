@@ -1,0 +1,26 @@
+get:
+  tags: [Users]
+  summary: 获取用户协作指数详情（需登录，仅项目综合分）
+  operationId: getUserCollaborationDetail
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: {type: integer, minimum: 1}
+  responses:
+    '200':
+      description: 协作指数、等级区间和参与项目；不返回评分者或单次评分
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/BaseResponse.yaml
+              - type: object
+                required: [data]
+                properties:
+                  data:
+                    $ref: ../components/schemas/CollaborationDetailVO.yaml
+    '401':
+      description: 未登录
+    '404':
+      description: 用户不存在

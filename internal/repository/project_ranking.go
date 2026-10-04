@@ -32,10 +32,11 @@ type projectRankCandidate struct {
 	EventMatches    int     `db:"event_matches"`
 	EventCharacters int     `db:"event_characters"`
 
-	Tier       int    `db:"-"`
-	MajorMatch int    `db:"-"`
-	Heat       int    `db:"-"`
-	RandomRank uint64 `db:"-"`
+	TagScore   tagMatchScore `db:"-"`
+	Tier       int           `db:"-"`
+	MajorMatch int           `db:"-"`
+	Heat       int           `db:"-"`
+	RandomRank uint64        `db:"-"`
 }
 
 func (r *ProjectRepository) listRankedProjectIDs(ctx context.Context, whereClause string, whereArgs []interface{}, params ListParams, searchSQL *degradedSearchSQL, eventFilterSQL *projectEventFilterSQL) ([]int, error) {
@@ -72,6 +73,9 @@ func (r *ProjectRepository) listRankedProjectIDs(ctx context.Context, whereClaus
 	var candidates []projectRankCandidate
 	if err := r.db.SelectContext(ctx, &candidates, query, queryArgs...); err != nil {
 		return nil, fmt.Errorf("query project ranking candidates: %w", err)
+	}
+	if err := r.scoreProjectTags(ctx, candidates, params.ViewerUserID); err != nil {
+		return nil, fmt.Errorf("score project tags: %w", err)
 	}
 	ranked := rankProjectCandidates(candidates, params)
 	ids := make([]int, len(ranked))
@@ -127,6 +131,7 @@ func rankProjectCandidates(candidates []projectRankCandidate, params ListParams)
 
 	ordered := flattenProjectPools(pools)
 	ordered = demoteAdjacentProjectOwners(ordered)
+	sortProjectTagsWithinPools(ordered)
 	ordered = avoidAdjacentProjectOwners(ordered)
 	if params.Keyword != nil && strings.TrimSpace(*params.Keyword) != "" {
 		sort.SliceStable(ordered, func(i, j int) bool {
@@ -359,4 +364,30 @@ func projectOwnerTailFeasible(counts map[int]int, remaining, blockedCreator int)
 		}
 	}
 	return true
+}
+
+// Keep borrowing, singleton exchanges and owner demotions independent of tags.
+// Reorder only slots with the same resulting geographic tier and major tier;
+// the existing owner-diversity pass remains the final constraint.
+func sortProjectTagsWithinPools(items []projectRankCandidate) {
+	groups := map[[2]int][]int{}
+	for i, c := range items {
+		key := [2]int{c.Tier, c.MajorMatch}
+		groups[key] = append(groups[key], i)
+	}
+	for _, indexes := range groups {
+		group := make([]projectRankCandidate, len(indexes))
+		for i, index := range indexes {
+			group[i] = items[index]
+		}
+		sort.SliceStable(group, func(i, j int) bool {
+			if group[i].TagScore.Exact != group[j].TagScore.Exact {
+				return group[i].TagScore.Exact > group[j].TagScore.Exact
+			}
+			return group[i].TagScore.Role > group[j].TagScore.Role
+		})
+		for i, index := range indexes {
+			items[index] = group[i]
+		}
+	}
 }

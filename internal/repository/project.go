@@ -393,6 +393,7 @@ func (r *ProjectRepository) GetByID(ctx context.Context, id int) (*models.Projec
 	query := `
 		SELECT
 			p.id, p.creator_id, p.name, p.description, p.school_id,
+ (SELECT COUNT(*) FROM project_application pa WHERE pa.project_id=p.id) AS application_count,
 			p.direction, p.member_count, p.status,
 			p.promotion_status, p.promotion_expire_time, p.view_count,
 			p.default_timeline_hidden, p.created_at, p.updated_at, p.recruit_completed_at, p.ended_at, p.reject_reason, p.deleted_at, p.is_cross_school,
