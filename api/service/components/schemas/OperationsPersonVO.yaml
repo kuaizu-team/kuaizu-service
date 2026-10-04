@@ -19,6 +19,24 @@ properties:
     type: integer
   schoolName:
     type: string
+  studySchoolName:
+    type: string
+    nullable: true
+    description: The linked user's school of study, independent of the operated school; null when unavailable.
+  majorName:
+    type: string
+    nullable: true
+    description: The linked user's major; null when unavailable.
+  grade:
+    type: integer
+    nullable: true
+    description: The linked user's entrance year, using the same format as talent profiles; null when unavailable.
+  skills:
+    type: array
+    nullable: true
+    items:
+      type: string
+    description: Personal tags from the enabled public talent profile; null when unavailable.
   position:
     type: string
     enum:

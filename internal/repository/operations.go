@@ -5,18 +5,24 @@ import (
 	"fmt"
 
 	"github.com/jmoiron/sqlx"
+	"github.com/kuaizu-team/kuaizu-service/internal/models"
 	"github.com/kuaizu-team/kuaizu-service/internal/oss"
 )
 
 // OperationsPerson is the deliberately limited public directory projection.
 // Contact details and internal administrator/user identifiers are never selected.
 type OperationsPerson struct {
-	TalentProfileID *int    `db:"talent_profile_id" json:"talentProfileId,omitempty"`
-	AvatarURL       *string `db:"avatar_url" json:"avatarUrl,omitempty"`
-	Name            string  `db:"name" json:"name"`
-	SchoolID        int     `db:"school_id" json:"schoolId"`
-	SchoolName      string  `db:"school_name" json:"schoolName"`
-	Position        string  `db:"-" json:"position"`
+	Skills          *[]string              `db:"-" json:"skills"`
+	SkillSummary    models.JSONStringArray `db:"skill_summary" json:"-"`
+	StudySchoolName *string                `db:"study_school_name" json:"studySchoolName"`
+	MajorName       *string                `db:"major_name" json:"majorName"`
+	Grade           *int                   `db:"grade" json:"grade"`
+	TalentProfileID *int                   `db:"talent_profile_id" json:"talentProfileId,omitempty"`
+	AvatarURL       *string                `db:"avatar_url" json:"avatarUrl,omitempty"`
+	Name            string                 `db:"name" json:"name"`
+	SchoolID        int                    `db:"school_id" json:"schoolId"`
+	SchoolName      string                 `db:"school_name" json:"schoolName"`
+	Position        string                 `db:"-" json:"position"`
 }
 
 type OperationsSchoolTeam struct {
@@ -58,7 +64,11 @@ func (r *OperationsRepository) ListSchoolTeams(ctx context.Context) ([]Operation
 			CASE WHEN tp.id IS NOT NULL THEN NULLIF(TRIM(u.avatar_url), '') END AS avatar_url,
 			COALESCE(NULLIF(TRIM(au.nickname), ''), NULLIF(TRIM(u.nickname), ''), '快组运营负责人') AS name,
 			rel.school_id,
-			s.school_name
+			s.school_name,
+			NULLIF(TRIM(study_school.school_name), '') AS study_school_name,
+			NULLIF(TRIM(m.major_name), '') AS major_name,
+			u.grade,
+			tp.skill_summary
 		FROM admin_school_relation rel
 		JOIN admin_user au ON au.id = rel.admin_user_id
 		JOIN school s ON s.id = rel.school_id
@@ -67,6 +77,8 @@ func (r *OperationsRepository) ListSchoolTeams(ctx context.Context) ([]Operation
 		 AND au.phone IS NOT NULL
 		 AND au.phone <> ''
 		 AND u.user_status = 0
+		LEFT JOIN school study_school ON study_school.id = u.school_id
+		LEFT JOIN major m ON m.id = u.major_id
 		LEFT JOIN talent_profile tp
 		  ON tp.user_id = u.id
 		 AND tp.status = 1
@@ -87,6 +99,9 @@ func (r *OperationsRepository) ListSchoolTeams(ctx context.Context) ([]Operation
 			leader.AvatarURL = &fullURL
 		}
 		leader.Position = "运营负责人"
+		if leader.SkillSummary.Valid {
+			leader.Skills = &leader.SkillSummary.Items
+		}
 		teamIndex[leader.SchoolID] = len(teams)
 		teams = append(teams, OperationsSchoolTeam{
 			SchoolID:   leader.SchoolID,
@@ -109,7 +124,11 @@ func (r *OperationsRepository) ListSchoolTeams(ctx context.Context) ([]Operation
 			CASE WHEN tp.id IS NOT NULL THEN NULLIF(TRIM(u.avatar_url), '') END AS avatar_url,
 			COALESCE(NULLIF(TRIM(au.nickname), ''), NULLIF(TRIM(u.nickname), ''), '快组运营成员') AS name,
 			au.school_id,
-			s.school_name
+			s.school_name,
+			NULLIF(TRIM(study_school.school_name), '') AS study_school_name,
+			NULLIF(TRIM(m.major_name), '') AS major_name,
+			u.grade,
+			tp.skill_summary
 		FROM admin_user au
 		JOIN school s ON s.id = au.school_id
 		LEFT JOIN `+"`user`"+` u
@@ -117,6 +136,8 @@ func (r *OperationsRepository) ListSchoolTeams(ctx context.Context) ([]Operation
 		 AND au.phone IS NOT NULL
 		 AND au.phone <> ''
 		 AND u.user_status = 0
+		LEFT JOIN school study_school ON study_school.id = u.school_id
+		LEFT JOIN major m ON m.id = u.major_id
 		LEFT JOIN talent_profile tp
 		  ON tp.user_id = u.id
 		 AND tp.status = 1
@@ -137,6 +158,9 @@ func (r *OperationsRepository) ListSchoolTeams(ctx context.Context) ([]Operation
 			member.AvatarURL = &fullURL
 		}
 		member.Position = "运营成员"
+		if member.SkillSummary.Valid {
+			member.Skills = &member.SkillSummary.Items
+		}
 		if index, ok := teamIndex[member.SchoolID]; ok {
 			teams[index].Members = append(teams[index].Members, member)
 		}
