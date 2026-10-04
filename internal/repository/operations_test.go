@@ -3,6 +3,8 @@ package repository
 import (
 	"context"
 	"database/sql/driver"
+	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/jmoiron/sqlx"
@@ -45,5 +47,44 @@ func TestOperationsTeamAvatarURLs(t *testing.T) {
 	}
 	if team.Leader.TalentProfileID == nil || *team.Leader.TalentProfileID != 11 || team.Members[0].Position != "运营成员" {
 		t.Fatal("profile or hierarchy changed")
+	}
+}
+
+func TestOperationsTeamAcademics(t *testing.T) {
+	db := openCaptureDB(t)
+	defer db.Close()
+	columns := []string{"talent_profile_id", "avatar_url", "name", "school_id", "school_name", "study_school_name", "major_name", "grade"}
+	setCapturedQueryQueue(
+		captureQueryResult{columns: columns, rows: [][]driver.Value{{int64(11), nil, "负责人", int64(1), "运营学校", "就读学校", "计算机", int64(2024)}}},
+		captureQueryResult{columns: columns, rows: [][]driver.Value{{nil, nil, "成员", int64(1), "运营学校", nil, nil, nil}}},
+	)
+	teams, err := NewOperationsRepository(sqlx.NewDb(db, "capture_user_repo")).ListSchoolTeams(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	leader := teams[0].Leader
+	if leader.SchoolName != "运营学校" || leader.StudySchoolName == nil || *leader.StudySchoolName != "就读学校" || leader.MajorName == nil || *leader.MajorName != "计算机" || leader.Grade == nil || *leader.Grade != 2024 {
+		t.Fatalf("academics or operated school changed: %#v", leader)
+	}
+	member := teams[0].Members[0]
+	if member.StudySchoolName != nil || member.MajorName != nil || member.Grade != nil || member.Position != "运营成员" || leader.Position != "运营负责人" {
+		t.Fatalf("missing academics or roles changed: %#v", member)
+	}
+	payload, err := json.Marshal(member)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, field := range []string{`"studySchoolName":null`, `"majorName":null`, `"grade":null`} {
+		if !strings.Contains(string(payload), field) {
+			t.Fatalf("missing nullable field %s", field)
+		}
+	}
+	queries, _ := capturedQueriesAndArgs()
+	for _, query := range queries {
+		for _, projection := range []string{"study_school.id = u.school_id", "m.id = u.major_id", "u.grade"} {
+			if !strings.Contains(query, projection) {
+				t.Fatalf("wrong academic source: %s", projection)
+			}
+		}
 	}
 }
