@@ -88,3 +88,44 @@ func TestOperationsTeamAcademics(t *testing.T) {
 		}
 	}
 }
+
+func TestOperationsTeamPersonalTags(t *testing.T) {
+	for _, tt := range []struct {
+		name  string
+		value driver.Value
+		want  string
+	}{
+		{"custom tags", `["领导力","摄影"]`, `"skills":["领导力","摄影"]`},
+		{"empty tags", `[]`, `"skills":[]`},
+		{"missing profile or tags", nil, `"skills":null`},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			db := openCaptureDB(t)
+			defer db.Close()
+			columns := []string{"talent_profile_id", "avatar_url", "name", "school_id", "school_name", "skill_summary"}
+			setCapturedQueryQueue(
+				captureQueryResult{columns: columns, rows: [][]driver.Value{{int64(11), nil, "负责人", int64(1), "学校", tt.value}}},
+				captureQueryResult{columns: columns, rows: [][]driver.Value{{int64(12), nil, "成员", int64(1), "学校", tt.value}}},
+			)
+			teams, err := NewOperationsRepository(sqlx.NewDb(db, "capture_user_repo")).ListSchoolTeams(context.Background())
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, person := range []OperationsPerson{teams[0].Leader, teams[0].Members[0]} {
+				payload, err := json.Marshal(person)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if !strings.Contains(string(payload), tt.want) || strings.Contains(string(payload), "skill_summary") || strings.Contains(string(payload), "SkillSummary") {
+					t.Fatalf("unexpected public tags: %s", payload)
+				}
+			}
+			queries, _ := capturedQueriesAndArgs()
+			for _, query := range queries {
+				if !strings.Contains(query, "tp.skill_summary") || !strings.Contains(query, "tp.status = 1") {
+					t.Fatal("tags must come from the enabled public profile")
+				}
+			}
+		})
+	}
+}
