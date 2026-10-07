@@ -9,6 +9,7 @@ import (
 // Repository aggregates all sub-repositories
 type Repository struct {
 	db                   *sqlx.DB
+	AutoUrge             *AutoUrgeRepository
 	User                 UserRepo
 	Project              ProjectRepo
 	Event                EventRepo
@@ -49,8 +50,9 @@ func (r *Repository) DB() *sqlx.DB {
 
 // New creates a new Repository with all sub-repositories
 func New(db *sqlx.DB) *Repository {
-	return &Repository{
+	r := &Repository{
 		db:                   db,
+		AutoUrge:             NewAutoUrgeRepository(db),
 		User:                 NewUserRepository(db),
 		Project:              NewProjectRepository(db),
 		Event:                NewEventRepository(db),
@@ -83,6 +85,9 @@ func New(db *sqlx.DB) *Repository {
 		Media:                NewMediaRepository(db),
 		WelcomeEmailDelivery: NewWelcomeEmailDeliveryRepository(db),
 	}
+	r.Project.(*ProjectRepository).autoUrge = r.AutoUrge
+	r.Application.(*ApplicationRepository).autoUrge = r.AutoUrge
+	return r
 }
 
 // UpdateUserCollaborationScoreTx recalculates the user's collaboration score

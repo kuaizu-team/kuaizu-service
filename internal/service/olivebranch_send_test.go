@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/jmoiron/sqlx"
@@ -60,18 +61,18 @@ type oliveSendDeliveryRepo struct {
 	attempts int
 }
 
-func (r *oliveSendDeliveryRepo) Create(context.Context, *models.WxSubscribeDelivery) (int64, error) {
-	r.attempts++
-	return 0, errors.New("notification unavailable in test")
+func (r *oliveSendDeliveryRepo) Claim(context.Context, int64, time.Time) (bool, error) {
+	return false, nil
 }
 
 func TestSendOliveBranchQuotaGuards(t *testing.T) {
 	for _, tc := range []struct {
-		name                             string
-		status                           int
-		member, paid, resend, wantCharge bool
+		name                                           string
+		status                                         int
+		member, paid, resend, wantCharge, queueFailure bool
 	}{
 		{name: "new free invitation", status: -1, wantCharge: true},
+		{name: "outbox failure rolls back invitation", status: -1, wantCharge: true, queueFailure: true},
 		{name: "rejected invitation sends again", status: -1, paid: true, wantCharge: true},
 		{name: "pending duplicate", status: models.OliveBranchStatusPending},
 		{name: "discussing duplicate", status: models.OliveBranchStatusDiscussing},
@@ -119,7 +120,13 @@ func TestSendOliveBranchQuotaGuards(t *testing.T) {
 				if tc.resend {
 					dbMock.ExpectExec("UPDATE olive_branch_record SET status").WithArgs(0, 1, 20).WillReturnResult(sqlmock.NewResult(0, 1))
 				}
-				dbMock.ExpectCommit()
+				if tc.queueFailure {
+					dbMock.ExpectExec("INSERT INTO wx_subscribe_delivery").WillReturnError(errors.New("outbox unavailable"))
+					dbMock.ExpectRollback()
+				} else {
+					dbMock.ExpectExec("INSERT INTO wx_subscribe_delivery").WillReturnResult(sqlmock.NewResult(100, 1))
+					dbMock.ExpectCommit()
+				}
 			} else {
 				dbMock.ExpectRollback()
 			}
@@ -129,7 +136,7 @@ func TestSendOliveBranchQuotaGuards(t *testing.T) {
 			} else {
 				result, err = svc.SendOliveBranch(context.Background(), 1, SendRequest{ReceiverID: 2, RelatedProjectID: 10})
 			}
-			if tc.member || (tc.resend && !tc.wantCharge) {
+			if tc.queueFailure || tc.member || (tc.resend && !tc.wantCharge) {
 				require.Error(t, err)
 			} else {
 				require.NoError(t, err)
@@ -137,7 +144,6 @@ func TestSendOliveBranchQuotaGuards(t *testing.T) {
 			}
 			if tc.wantCharge {
 				require.Equal(t, 1, user.quotaWrites)
-				require.Equal(t, 1, delivery.attempts)
 				if tc.paid {
 					require.Equal(t, 1, *user.user.OliveBranchCount)
 					require.Equal(t, models.OliveBranchDailyFreeQuota, *user.user.FreeBranchUsedToday)
@@ -148,7 +154,6 @@ func TestSendOliveBranchQuotaGuards(t *testing.T) {
 			} else {
 				require.Zero(t, user.quotaWrites)
 				require.Zero(t, record.creates)
-				require.Zero(t, delivery.attempts)
 				require.Equal(t, 0, *user.user.FreeBranchUsedToday)
 				require.Equal(t, 2, *user.user.OliveBranchCount)
 			}

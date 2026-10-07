@@ -72,12 +72,24 @@ func (s *UserService) ReviewUserAuth(ctx context.Context, id, status int) error 
 		return ErrNotFound("用户不存在")
 	}
 
-	if err := s.repo.User.UpdateAuthStatus(ctx, id, status); err != nil {
+	tx, err := s.repo.DB().BeginTxx(ctx, nil)
+	if err != nil {
+		return ErrInternal("审核失败")
+	}
+	defer tx.Rollback()
+	result, err := tx.ExecContext(ctx, "UPDATE `user` SET auth_status=? WHERE id=? AND auth_status <=> ?", status, id, user.AuthStatus)
+	if err != nil {
 		log.Printf("[UserService.ReviewUserAuth] repository error updating status: %v", err)
 		return ErrInternal("审核失败")
 	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return ErrInternal("审核失败")
+	}
+	if affected != 1 {
+		return ErrBadRequest("认证状态已变化，请刷新后重试")
+	}
 
-	// Persist the notification before returning; delivery itself remains asynchronous.
 	resultStr := "认证通过"
 	remark := "恭喜！您的身份认证已通过。"
 	if status == models.UserAuthStatusFailed {
@@ -89,9 +101,14 @@ func (s *UserService) ReviewUserAuth(ctx context.Context, id, status int) error 
 		"result":   resultStr,
 		"remark":   remark,
 	}
-	if sendErr := s.message.SendSubscribeMsgByBizKey(context.WithoutCancel(ctx), id, models.MsgBizKeyIdentityAuth, data); sendErr != nil {
-		log.Printf("[UserService.ReviewUserAuth] queue notification error: %v", sendErr)
+	deliveryID, err := s.message.QueueSubscribeTx(ctx, tx, id, models.MsgBizKeyIdentityAuth, data)
+	if err != nil {
+		return ErrInternal("保存通知失败")
 	}
+	if err := tx.Commit(); err != nil {
+		return ErrInternal("审核失败")
+	}
+	s.message.DispatchCommittedSubscribe(deliveryID)
 
 	return nil
 }

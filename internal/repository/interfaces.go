@@ -309,10 +309,12 @@ type WxSubscribeDeliveryRepo interface {
 	GetByID(ctx context.Context, id int64) (*models.WxSubscribeDelivery, error)
 	ListDue(ctx context.Context, staleBefore time.Time, limit int) ([]int64, error)
 	Claim(ctx context.Context, id int64, staleBefore time.Time) (bool, error)
-	MarkSent(ctx context.Context, id int64, templateID string) error
-	MarkSkipped(ctx context.Context, id int64, templateID string, errCode int, message string) error
-	MarkFailed(ctx context.Context, id int64, templateID string, errCode *int, message string) error
-	ScheduleRetry(ctx context.Context, id int64, templateID string, errCode *int, message string, nextAttemptAt time.Time) error
+	BeginDispatch(ctx context.Context, id int64, attempt int) (bool, error)
+	MarkUnknown(ctx context.Context, id int64, attempt int, templateID string, message string) error
+	MarkSent(ctx context.Context, id int64, attempt int, templateID string) error
+	MarkSkipped(ctx context.Context, id int64, attempt int, templateID string, errCode int, message string) error
+	MarkFailed(ctx context.Context, id int64, attempt int, templateID string, errCode *int, message string) error
+	ScheduleRetry(ctx context.Context, id int64, attempt int, templateID string, errCode *int, message string, nextAttemptAt time.Time) error
 	ListRecent(ctx context.Context, limit int) ([]models.WxSubscribeDelivery, error)
 	CountByStatusSince(ctx context.Context, since time.Time) (map[string]int, error)
 }

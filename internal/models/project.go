@@ -109,7 +109,7 @@ func (m ProjectMember) ToVO() api.ProjectMemberVO {
 		RoleName:  m.RoleName,
 	}
 	if m.User != nil {
-		vo.User = m.User.ToVO()
+		vo.User = m.User.ToPublicVO()
 	}
 	return vo
 }
@@ -163,7 +163,7 @@ func (p *Project) ToVO() *api.ProjectVO {
 		vo.Tags = &tags
 	}
 	if p.Creator != nil {
-		vo.Creator = p.Creator.ToVO()
+		vo.Creator = p.Creator.ToPublicVO()
 	}
 	return vo
 }
@@ -220,7 +220,10 @@ func (p *Project) ToDetailVO() *api.ProjectDetailVO {
 	}
 
 	if p.Creator != nil {
-		vo.Creator = p.Creator.ToVO()
+		vo.Creator = p.Creator.ToPublicVO()
+		// The service has already applied contact authorization. Authentication
+		// documents and quota fields are never part of a project detail.
+		vo.Creator.Phone, vo.Creator.Email, vo.Creator.Wechat = p.Creator.Phone, p.Creator.Email, p.Creator.WechatID
 	}
 	if len(p.Milestones) > 0 {
 		milestones := make([]api.ProjectMilestoneVO, len(p.Milestones))

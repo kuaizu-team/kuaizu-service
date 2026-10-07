@@ -129,9 +129,11 @@ type welcomeEmailEnvelope struct {
 }
 
 type AdminSmsSendRequest struct {
-	TemplateKey string                 `json:"template_key"`
-	UserID      int                    `json:"user_id"`
-	Variables   map[string]interface{} `json:"variables,omitempty"`
+	RequestKey    string                 `json:"request_key,omitempty"`
+	ReconcileOnly bool                   `json:"reconcile_only,omitempty"`
+	TemplateKey   string                 `json:"template_key"`
+	UserID        int                    `json:"user_id"`
+	Variables     map[string]interface{} `json:"variables,omitempty"`
 }
 
 type AdminSmsSendResponse struct {
@@ -482,7 +484,9 @@ func (c *Client) SendAdminSms(ctx context.Context, req AdminSmsSendRequest) (*Ad
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("Authorization", "Bearer "+c.apiToken)
 
-	resp, err := c.httpClient.Do(httpReq)
+	httpClient := *c.httpClient
+	httpClient.Timeout = 35 * time.Second
+	resp, err := httpClient.Do(httpReq)
 	if err != nil {
 		return nil, fmt.Errorf("post admin sms: %w", err)
 	}

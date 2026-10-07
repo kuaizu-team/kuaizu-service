@@ -21,12 +21,13 @@ func (s *TalentProfileService) BatchApproveUsers(ctx context.Context, ids []int,
 	}
 	defer tx.Rollback()
 	type row struct {
-		ID        int  `db:"id"`
-		SchoolID  *int `db:"school_id"`
-		ProfileID *int `db:"profile_id"`
-		Status    *int `db:"status"`
+		ID        int     `db:"id"`
+		Nickname  *string `db:"nickname"`
+		SchoolID  *int    `db:"school_id"`
+		ProfileID *int    `db:"profile_id"`
+		Status    *int    `db:"status"`
 	}
-	q, args, err := sqlx.In("SELECT u.id,u.school_id,tp.id AS profile_id,tp.status FROM `user` u LEFT JOIN talent_profile tp ON tp.user_id=u.id WHERE u.id IN (?) ORDER BY u.id FOR UPDATE", ids)
+	q, args, err := sqlx.In("SELECT u.id,u.school_id,tp.id AS profile_id,tp.status,u.nickname FROM `user` u LEFT JOIN talent_profile tp ON tp.user_id=u.id WHERE u.id IN (?) ORDER BY u.id FOR UPDATE", ids)
 	if err != nil {
 		return nil, ErrInternal("构建审核查询失败")
 	}
@@ -73,14 +74,32 @@ func (s *TalentProfileService) BatchApproveUsers(ctx context.Context, ids []int,
 		}
 		results = append(results, result)
 	}
+	deliveryIDs := make([]int64, 0, len(results))
+	names := make(map[int]*string, len(rows))
+	for _, r := range rows {
+		names[r.ID] = r.Nickname
+	}
+	for _, result := range results {
+		if !result.Approved {
+			continue
+		}
+		userName := "同学"
+		if name := names[result.UserID]; name != nil && *name != "" {
+			userName = truncate20(*name)
+		}
+		id, err := s.message.QueueSubscribeTx(ctx, tx, result.UserID, models.MsgBizKeyAuditResultUser, map[string]string{
+			"user_name": userName, "result": "审核通过", "remark": "名片已上架人才库，快去看看吧！",
+		})
+		if err != nil {
+			return nil, ErrInternal("保存通知失败，整批已回滚")
+		}
+		deliveryIDs = append(deliveryIDs, id)
+	}
 	if err = tx.Commit(); err != nil {
 		return nil, ErrInternal("提交批量审核失败")
 	}
-	// Preserve the existing subscription notification path, only after commit.
-	for _, r := range results {
-		if r.Approved {
-			s.notifyTalentReviewResult(ctx, r.UserID, "审核通过", "名片已上架人才库，快去看看吧！")
-		}
+	for _, id := range deliveryIDs {
+		s.message.DispatchCommittedSubscribe(id)
 	}
 	return results, nil
 }

@@ -58,10 +58,10 @@ func (o *OliveBranch) ToVO() *api.OliveBranchVO {
 	}
 
 	if o.Sender != nil {
-		vo.Sender = o.Sender.ToVO()
+		vo.Sender = o.Sender.ToPublicVO()
 	}
 	if o.Receiver != nil {
-		vo.Receiver = o.Receiver.ToVO()
+		vo.Receiver = o.Receiver.ToPublicVO()
 	}
 	if o.SmsNotice != nil {
 		status := int(o.SmsNotice.Status)

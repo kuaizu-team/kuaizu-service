@@ -31,15 +31,15 @@ func (f *fakeUrgeStore) Candidates(_ context.Context, after, limit int) ([]repos
 	f.pages = f.pages[1:]
 	return p, nil
 }
-func (f *fakeUrgeStore) Claim(_ context.Context, _ int, token string) (bool, error) {
+func (f *fakeUrgeStore) Claim(_ context.Context, userID int, token string) (*repository.AutoUrgeClaim, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.state != "" && f.state != "failed" && f.state != "ready" {
-		return false, nil
+		return nil, nil
 	}
 	f.state = "claimed"
 	f.token = token
-	return true, nil
+	return &repository.AutoUrgeClaim{UserID: userID, CycleID: 1, Token: token, RequestKey: "auto-urge:7:1"}, nil
 }
 func (f *fakeUrgeStore) Recheck(context.Context, int) (*repository.AutoUrgeCandidate, error) {
 	if !f.eligible {
@@ -47,16 +47,17 @@ func (f *fakeUrgeStore) Recheck(context.Context, int) (*repository.AutoUrgeCandi
 	}
 	return &repository.AutoUrgeCandidate{UserID: 7, Nickname: "测试用户", PendingCount: 3}, nil
 }
-func (f *fakeUrgeStore) Snapshot(context.Context, repository.AutoUrgeCandidate, string) error {
+func (f *fakeUrgeStore) Snapshot(context.Context, repository.AutoUrgeCandidate, repository.AutoUrgeClaim) error {
 	return nil
 }
-func (f *fakeUrgeStore) Finish(_ context.Context, _ int, token string, r repository.AutoUrgeResult) error {
+func (f *fakeUrgeStore) MarkDispatched(context.Context, repository.AutoUrgeClaim) error { return nil }
+func (f *fakeUrgeStore) Finish(_ context.Context, claim repository.AutoUrgeClaim, r repository.AutoUrgeResult) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.failSave {
 		return errors.New("database down")
 	}
-	if token != f.token {
+	if claim.Token != f.token {
 		return errors.New("wrong owner")
 	}
 	f.result = r
@@ -75,7 +76,7 @@ func (s *fakeUrgeSender) Send(_ context.Context, req messagecenter.AdminSmsSendR
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.calls++
-	if req.TemplateKey != "URGE_PROCESS" || req.UserID != 7 || req.Variables["nickname"] != "测试用户" {
+	if req.RequestKey == "" || req.TemplateKey != "URGE_PROCESS" || req.UserID != 7 || req.Variables["nickname"] != "测试用户" {
 		return nil, errors.New("invalid request")
 	}
 	return s.response, s.err
@@ -187,5 +188,107 @@ func TestAutoUrgeTenAMBeijing(t *testing.T) {
 		if next.Hour() != 10 || next.Minute() != 0 || !next.After(now) || next.Sub(now) > 24*time.Hour {
 			t.Fatalf("%s -> %s", now, next)
 		}
+	}
+}
+
+type recoveryUrgeStore struct {
+	fakeUrgeStore
+	rechecked, dispatched int
+}
+
+func (f *recoveryUrgeStore) Claim(_ context.Context, userID int, token string) (*repository.AutoUrgeClaim, error) {
+	f.token = token
+	return &repository.AutoUrgeClaim{UserID: userID, CycleID: 1, Token: token, RequestKey: "auto-urge:7:1", ReconcileOnly: true}, nil
+}
+func (f *recoveryUrgeStore) Recheck(context.Context, int) (*repository.AutoUrgeCandidate, error) {
+	f.rechecked++
+	return nil, errors.New("must not recheck for lookup")
+}
+func (f *recoveryUrgeStore) MarkDispatched(context.Context, repository.AutoUrgeClaim) error {
+	f.dispatched++
+	return errors.New("must not dispatch")
+}
+
+type captureUrgeSender struct {
+	request  messagecenter.AdminSmsSendRequest
+	response *messagecenter.AdminSmsSendResponse
+}
+
+func (s *captureUrgeSender) Send(_ context.Context, req messagecenter.AdminSmsSendRequest) (*messagecenter.AdminSmsSendResponse, error) {
+	s.request = req
+	return s.response, nil
+}
+func TestAutoUrgeRecoveryOnlyLooksUpExistingKey(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		response *messagecenter.AdminSmsSendResponse
+		state    string
+	}{
+		{"success persisted", &messagecenter.AdminSmsSendResponse{Success: true, RecordID: 12}, "sent"},
+		{"never dispatched", &messagecenter.AdminSmsSendResponse{ErrorCode: "NOT_DISPATCHED"}, "failed"},
+		{"still sending", &messagecenter.AdminSmsSendResponse{ErrorCode: "OUTCOME_UNKNOWN"}, "unknown"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			store := &recoveryUrgeStore{}
+			sender := &captureUrgeSender{response: tc.response}
+			err := (autoUrgeWorker{store: store, sender: sender}).process(context.Background(), 7)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !sender.request.ReconcileOnly || sender.request.RequestKey != "auto-urge:7:1" || sender.request.UserID != 7 {
+				t.Fatal(sender.request)
+			}
+			if store.rechecked != 0 || store.dispatched != 0 || store.state != tc.state {
+				t.Fatalf("state=%s recheck=%d dispatch=%d", store.state, store.rechecked, store.dispatched)
+			}
+		})
+	}
+}
+
+type failingUserUrgeStore struct {
+	fakeUrgeStore
+	claimed []int
+}
+
+func (f *failingUserUrgeStore) Claim(_ context.Context, userID int, _ string) (*repository.AutoUrgeClaim, error) {
+	f.claimed = append(f.claimed, userID)
+	if userID == 7 {
+		return nil, errors.New("bad row")
+	}
+	return nil, nil
+}
+func TestAutoUrgeUserFailureDoesNotBlockRemainingPage(t *testing.T) {
+	store := &failingUserUrgeStore{fakeUrgeStore: fakeUrgeStore{pages: [][]repository.AutoUrgeCandidate{{{UserID: 7}, {UserID: 9}}}}}
+	err := (autoUrgeWorker{store: store, sender: &fakeUrgeSender{}}).run(context.Background())
+	if err == nil || len(store.claimed) != 2 || store.claimed[1] != 9 {
+		t.Fatalf("%v %v", err, store.claimed)
+	}
+}
+func TestAutoUrgeStartupCatchupAndCompletedDay(t *testing.T) {
+	for _, tc := range []struct{ now, completed, want string }{
+		{"2026-10-06T01:59:59Z", "", "2026-10-06T02:00:00Z"},
+		{"2026-10-06T02:00:00Z", "", "2026-10-06T02:00:00Z"},
+		{"2026-10-06T08:00:00Z", "", "2026-10-06T08:00:00Z"},
+		{"2026-10-06T08:00:00Z", "2026-10-06", "2026-10-07T02:00:00Z"},
+	} {
+		now, _ := time.Parse(time.RFC3339, tc.now)
+		want, _ := time.Parse(time.RFC3339, tc.want)
+		if got := autoUrgeScanDue(now, tc.completed); !got.Equal(want) {
+			t.Fatalf("%s completed=%s got=%s", tc.now, tc.completed, got)
+		}
+	}
+}
+
+type fencedUrgeStore struct{ fakeUrgeStore }
+
+func (f *fencedUrgeStore) MarkDispatched(context.Context, repository.AutoUrgeClaim) error {
+	return repository.ErrAutoUrgeClaimLost
+}
+func TestAutoUrgeClosedCycleCannotDispatch(t *testing.T) {
+	store := &fencedUrgeStore{fakeUrgeStore: fakeUrgeStore{eligible: true}}
+	sender := &fakeUrgeSender{}
+	err := (autoUrgeWorker{store: store, sender: sender}).process(context.Background(), 7)
+	if !errors.Is(err, repository.ErrAutoUrgeClaimLost) || sender.calls != 0 {
+		t.Fatalf("err=%v calls=%d", err, sender.calls)
 	}
 }

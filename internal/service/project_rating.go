@@ -196,14 +196,21 @@ func (s *ProjectService) RateProjectMember(ctx context.Context, projectID, rater
 		"SELECT COALESCE(collaboration_score, 90) FROM `user` WHERE id=?", targetUserID); err != nil {
 		return nil, ErrInternal("获取最新协作指数失败")
 	}
+	var deliveryID int64
+	if previousCollaborationScore != collaborationScore && s.message != nil {
+		deliveryID, err = s.message.QueueSubscribeTx(ctx, tx, targetUserID, models.MsgBizKeyCollaborationScore, collaborationScoreBusinessData(collaborationScore, now))
+		if err != nil {
+			return nil, ErrInternal("保存协作指数通知失败")
+		}
+	}
 	if err := tx.Commit(); err != nil {
 		return nil, ErrInternal("提交评分事务失败")
 	}
 
 	if previousCollaborationScore != collaborationScore {
-		SendCollaborationScoreUpdateNotificationAsync(
-			ctx, s.message, targetUserID, collaborationScore, now, "ProjectService.RateProjectMember",
-		)
+		if s.message != nil {
+			s.message.DispatchCommittedSubscribe(deliveryID)
+		}
 	} else {
 		log.Printf("[ProjectService.RateProjectMember] collaboration score unchanged, notification skipped, user_id=%d score=%v",
 			targetUserID, collaborationScore)

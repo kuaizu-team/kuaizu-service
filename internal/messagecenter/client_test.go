@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -288,5 +289,37 @@ func TestCountAdminSms(t *testing.T) {
 	}
 	if resp.Count != 3 || resp.TemplateKey != "INVITE_SUPER_ADMIN" {
 		t.Fatalf("response = %+v", resp)
+	}
+}
+
+func TestAdminSmsCycleKeyAndReadOnlyLookupWireContract(t *testing.T) {
+	for _, lookup := range []bool{false, true} {
+		t.Run(fmt.Sprint(lookup), func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				var req map[string]interface{}
+				if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+					t.Error(err)
+					w.WriteHeader(400)
+					return
+				}
+				if req["request_key"] != "auto-urge:7:2" || req["template_key"] != "URGE_PROCESS" || req["user_id"] != float64(7) {
+					t.Errorf("request=%v", req)
+				}
+				if lookup && req["reconcile_only"] != true {
+					t.Error("read-only lookup flag lost")
+				}
+				if !lookup {
+					if _, ok := req["reconcile_only"]; ok {
+						t.Error("normal request should omit lookup flag")
+					}
+				}
+				_ = json.NewEncoder(w).Encode(map[string]interface{}{"code": 200, "data": map[string]interface{}{"success": true, "record_id": 123}})
+			}))
+			defer server.Close()
+			resp, err := NewClient(server.URL, "test-token", 0).SendAdminSms(context.Background(), AdminSmsSendRequest{UserID: 7, TemplateKey: "URGE_PROCESS", RequestKey: "auto-urge:7:2", ReconcileOnly: lookup})
+			if err != nil || resp == nil || !resp.Success || resp.RecordID != 123 {
+				t.Fatalf("response=%v err=%v", resp, err)
+			}
+		})
 	}
 }

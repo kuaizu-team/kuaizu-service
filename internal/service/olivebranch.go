@@ -137,13 +137,11 @@ func (s *OliveBranchService) SendOliveBranch(ctx context.Context, userID int, re
 		OperatorRole:     operatorRole,
 	}
 
+	if err := s.repo.AutoUrge.ObserveClearanceTx(ctx, tx, req.ReceiverID); err != nil {
+		return nil, ErrInternal("记录催处理周期失败")
+	}
 	if err := s.repo.OliveBranch.CreateTx(ctx, tx, ob); err != nil {
 		log.Printf("[OliveBranchService.SendOliveBranch] repository error creating olive branch: %v", err)
-		return nil, ErrInternal("发送橄榄枝失败")
-	}
-
-	if err := tx.Commit(); err != nil {
-		log.Printf("[OliveBranchService.SendOliveBranch] failed to commit transaction: %v", err)
 		return nil, ErrInternal("发送橄榄枝失败")
 	}
 
@@ -161,9 +159,14 @@ func (s *OliveBranchService) SendOliveBranch(ctx context.Context, userID int, re
 		"inviter":      truncate20(inviterName),
 		"remark":       "您收到一条橄榄枝邀请",
 	}
-	if queueErr := s.message.SendSubscribeMsgByBizKey(context.WithoutCancel(ctx), req.ReceiverID, models.MsgBizKeyInviteJoin, data); queueErr != nil {
-		log.Printf("[OliveBranchService.SendOliveBranch] queue notification error: %v", queueErr)
+	deliveryID, queueErr := s.message.QueueSubscribeTx(ctx, tx, req.ReceiverID, models.MsgBizKeyInviteJoin, data)
+	if queueErr != nil {
+		return nil, ErrInternal("保存通知失败")
 	}
+	if err := tx.Commit(); err != nil {
+		return nil, ErrInternal("发送橄榄枝失败")
+	}
+	s.message.DispatchCommittedSubscribe(deliveryID)
 
 	return ob, nil
 }
@@ -280,10 +283,10 @@ func (s *OliveBranchService) ResendOliveBranch(ctx context.Context, userID, bran
 	if err := s.repo.User.UpdateQuotaTx(ctx, tx, sender); err != nil {
 		return nil, ErrInternal("更新额度失败")
 	}
-	if _, err := tx.ExecContext(ctx, `UPDATE olive_branch_record SET status=?, cost_type=?, is_read=FALSE, updated_at=CURRENT_TIMESTAMP WHERE id=?`, models.OliveBranchStatusPending, ob.CostType, branchID); err != nil {
-		return nil, ErrInternal("再次发送橄榄枝失败")
+	if err := s.repo.AutoUrge.ObserveClearanceTx(ctx, tx, ob.ReceiverID); err != nil {
+		return nil, ErrInternal("记录催处理周期失败")
 	}
-	if err := tx.Commit(); err != nil {
+	if _, err := tx.ExecContext(ctx, `UPDATE olive_branch_record SET status=?, cost_type=?, is_read=FALSE, updated_at=CURRENT_TIMESTAMP WHERE id=?`, models.OliveBranchStatusPending, ob.CostType, branchID); err != nil {
 		return nil, ErrInternal("再次发送橄榄枝失败")
 	}
 
@@ -293,23 +296,19 @@ func (s *OliveBranchService) ResendOliveBranch(ctx context.Context, userID, bran
 	ob.OperatorRoleName = operatorRoleName
 	ob.ProjectName = &project.Name
 
-	sender, senderErr := s.repo.User.GetByID(context.WithoutCancel(ctx), userID)
-	if senderErr != nil || sender == nil {
-		log.Printf("[OliveBranchService.ResendOliveBranch] notification: failed to get sender: %v", senderErr)
-	} else {
-		inviterName := "匿名用户"
-		if sender.Nickname != nil && *sender.Nickname != "" {
-			inviterName = *sender.Nickname
-		}
-		data := map[string]string{
-			"project_name": truncate20(project.Name),
-			"inviter":      truncate20(inviterName),
-			"remark":       "您收到一条新的橄榄枝邀请",
-		}
-		if queueErr := s.message.SendSubscribeMsgByBizKey(context.WithoutCancel(ctx), ob.ReceiverID, models.MsgBizKeyInviteJoin, data); queueErr != nil {
-			log.Printf("[OliveBranchService.ResendOliveBranch] queue notification error: %v", queueErr)
-		}
+	inviterName := "匿名用户"
+	if sender.Nickname != nil && *sender.Nickname != "" {
+		inviterName = *sender.Nickname
 	}
+	data := map[string]string{"project_name": truncate20(project.Name), "inviter": truncate20(inviterName), "remark": "您收到一条新的橄榄枝邀请"}
+	deliveryID, queueErr := s.message.QueueSubscribeTx(ctx, tx, ob.ReceiverID, models.MsgBizKeyInviteJoin, data)
+	if queueErr != nil {
+		return nil, ErrInternal("保存通知失败")
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, ErrInternal("再次发送橄榄枝失败")
+	}
+	s.message.DispatchCommittedSubscribe(deliveryID)
 
 	return ob, nil
 }
@@ -326,6 +325,18 @@ func (s *OliveBranchService) HandleOliveBranch(ctx context.Context, userID, bran
 	}
 	action = strings.ToUpper(strings.TrimSpace(action))
 	role = strings.TrimSpace(role)
+	tx, err := s.repo.DB().BeginTxx(ctx, nil)
+	if err != nil {
+		return nil, ErrInternal("开启事务失败")
+	}
+	defer tx.Rollback()
+	var currentStatus int
+	if err := tx.GetContext(ctx, &currentStatus, `SELECT status FROM olive_branch_record WHERE id=? FOR UPDATE`, branchID); err != nil {
+		return nil, ErrInternal("锁定橄榄枝失败")
+	}
+	if currentStatus != ob.Status {
+		return nil, ErrBadRequest("橄榄枝状态已变化，请刷新后重试")
+	}
 	switch action {
 	case "ACCEPT", "DISCUSS":
 		if ob.ReceiverID != userID {
@@ -334,12 +345,22 @@ func (s *OliveBranchService) HandleOliveBranch(ctx context.Context, userID, bran
 		if ob.Status != models.OliveBranchStatusPending {
 			return nil, ErrBadRequest("\u5f53\u524d\u72b6\u6001\u4e0d\u53ef\u64cd\u4f5c")
 		}
-		if err := s.repo.OliveBranch.UpdateStatus(ctx, branchID, models.OliveBranchStatusDiscussing); err != nil {
+		if err := repository.UpdateOliveStatusTx(ctx, tx, branchID, models.OliveBranchStatusDiscussing); err != nil {
 			log.Printf("[OliveBranchService.HandleOliveBranch] repository error updating status: %v", err)
 			return nil, ErrInternal("\u66f4\u65b0\u72b6\u6001\u5931\u8d25")
 		}
+		deliveryID, queueErr := s.queueOliveBranchResultTx(ctx, tx, ob.SenderID, userID, models.OliveBranchStatusDiscussing)
+		if queueErr != nil {
+			return nil, ErrInternal("保存通知失败")
+		}
+		if err := s.repo.AutoUrge.ObserveClearanceTx(ctx, tx, ob.ReceiverID); err != nil {
+			return nil, ErrInternal("记录催处理周期失败")
+		}
+		if err := tx.Commit(); err != nil {
+			return nil, ErrInternal("提交事务失败")
+		}
+		s.message.DispatchCommittedSubscribe(deliveryID)
 		ob.Status = models.OliveBranchStatusDiscussing
-		s.notifyOliveBranchResult(ctx, ob.SenderID, userID, ob.Status)
 		return ob, nil
 	case "REJECT":
 		wasDiscussing := ob.Status == models.OliveBranchStatusDiscussing
@@ -358,16 +379,22 @@ func (s *OliveBranchService) HandleOliveBranch(ctx context.Context, userID, bran
 			return nil, ErrBadRequest("\u5f53\u524d\u72b6\u6001\u4e0d\u53ef\u64cd\u4f5c")
 		}
 		if !wasDiscussing {
-			if err := s.repo.OliveBranch.UpdateStatus(ctx, branchID, models.OliveBranchStatusRejected); err != nil {
+			if err := repository.UpdateOliveStatusTx(ctx, tx, branchID, models.OliveBranchStatusRejected); err != nil {
 				log.Printf("[OliveBranchService.HandleOliveBranch] repository error updating status: %v", err)
 				return nil, ErrInternal("\u66f4\u65b0\u72b6\u6001\u5931\u8d25")
 			}
-		} else {
-			tx, err := s.repo.DB().BeginTxx(ctx, nil)
-			if err != nil {
-				return nil, ErrInternal("\u5f00\u542f\u4e8b\u52a1\u5931\u8d25")
+			deliveryID, queueErr := s.queueOliveBranchResultTx(ctx, tx, ob.SenderID, userID, models.OliveBranchStatusRejected)
+			if queueErr != nil {
+				return nil, ErrInternal("保存通知失败")
 			}
-			defer tx.Rollback()
+			if err := s.repo.AutoUrge.ObserveClearanceTx(ctx, tx, ob.ReceiverID); err != nil {
+				return nil, ErrInternal("记录催处理周期失败")
+			}
+			if err := tx.Commit(); err != nil {
+				return nil, ErrInternal("提交事务失败")
+			}
+			s.message.DispatchCommittedSubscribe(deliveryID)
+		} else {
 			if _, err := tx.ExecContext(ctx, `UPDATE olive_branch_record SET status=?, rejected_at=CURRENT_TIMESTAMP, updated_at=CURRENT_TIMESTAMP WHERE id=?`, models.OliveBranchStatusRejected, branchID); err != nil {
 				return nil, ErrInternal("\u66f4\u65b0\u72b6\u6001\u5931\u8d25")
 			}
@@ -376,12 +403,19 @@ func (s *OliveBranchService) HandleOliveBranch(ctx context.Context, userID, bran
 					return nil, ErrInternal("\u521b\u5efa\u72b6\u6001\u901a\u77e5\u5931\u8d25")
 				}
 			}
+			deliveryID, queueErr := s.queueOliveBranchResultTx(ctx, tx, ob.SenderID, userID, models.OliveBranchStatusRejected)
+			if queueErr != nil {
+				return nil, ErrInternal("保存通知失败")
+			}
+			if err := s.repo.AutoUrge.ObserveClearanceTx(ctx, tx, ob.ReceiverID); err != nil {
+				return nil, ErrInternal("记录催处理周期失败")
+			}
 			if err := tx.Commit(); err != nil {
 				return nil, ErrInternal("\u63d0\u4ea4\u4e8b\u52a1\u5931\u8d25")
 			}
+			s.message.DispatchCommittedSubscribe(deliveryID)
 		}
 		ob.Status = models.OliveBranchStatusRejected
-		s.notifyOliveBranchResult(ctx, ob.SenderID, userID, ob.Status)
 		return ob, nil
 	case "ADMIT":
 		if ob.Status != models.OliveBranchStatusDiscussing {
@@ -393,11 +427,9 @@ func (s *OliveBranchService) HandleOliveBranch(ctx context.Context, userID, bran
 		if err := s.ensureCanOperateDiscussingBranch(ctx, ob, userID, role); err != nil {
 			return nil, err
 		}
-		tx, err := s.repo.DB().BeginTxx(ctx, nil)
-		if err != nil {
-			return nil, ErrInternal("\u5f00\u542f\u4e8b\u52a1\u5931\u8d25")
+		if err := s.repo.AutoUrge.ObserveClearanceTx(ctx, tx, ob.ReceiverID); err != nil {
+			return nil, ErrInternal("记录催处理周期失败")
 		}
-		defer tx.Rollback()
 		if _, err := tx.ExecContext(ctx, `INSERT INTO project_members(project_id,user_id,role) VALUES(?,?,?) ON DUPLICATE KEY UPDATE role=VALUES(role), updated_at=CURRENT_TIMESTAMP`, ob.RelatedProjectID, ob.ReceiverID, role); err != nil {
 			log.Printf("[OliveBranchService.HandleOliveBranch] add member failed: %v", err)
 			return nil, ErrInternal("\u52a0\u5165\u56e2\u961f\u5931\u8d25")
@@ -409,12 +441,19 @@ func (s *OliveBranchService) HandleOliveBranch(ctx context.Context, userID, bran
 		if err := repository.CreateOliveStatusNotificationTx(ctx, tx, ob.ReceiverID, branchID, models.StatusNotificationOliveAccepted); err != nil {
 			return nil, ErrInternal("\u521b\u5efa\u72b6\u6001\u901a\u77e5\u5931\u8d25")
 		}
+		deliveryID, queueErr := s.queueOliveBranchResultTx(ctx, tx, ob.ReceiverID, userID, models.OliveBranchStatusAccepted)
+		if queueErr != nil {
+			return nil, ErrInternal("保存通知失败")
+		}
+		if err := s.repo.AutoUrge.ObserveClearanceTx(ctx, tx, ob.ReceiverID); err != nil {
+			return nil, ErrInternal("记录催处理周期失败")
+		}
 		if err := tx.Commit(); err != nil {
 			return nil, ErrInternal("\u63d0\u4ea4\u4e8b\u52a1\u5931\u8d25")
 		}
+		s.message.DispatchCommittedSubscribe(deliveryID)
 		ob.Status = models.OliveBranchStatusAccepted
 		ob.AssignedRole = &role
-		s.notifyOliveBranchResult(ctx, ob.ReceiverID, userID, ob.Status)
 		return ob, nil
 	default:
 		return nil, ErrBadRequest("\u4e0d\u652f\u6301\u7684\u64cd\u4f5c")
@@ -454,14 +493,13 @@ func (s *OliveBranchService) ensureCanOperateDiscussingBranch(ctx context.Contex
 	return nil
 }
 
-func (s *OliveBranchService) notifyOliveBranchResult(ctx context.Context, targetUserID, responderID, status int) {
-	responder, err := s.repo.User.GetByID(context.WithoutCancel(ctx), responderID)
+func (s *OliveBranchService) queueOliveBranchResultTx(ctx context.Context, tx *sqlx.Tx, targetUserID, responderID, status int) (int64, error) {
+	responder, err := s.repo.User.GetByID(ctx, responderID)
 	if err != nil || responder == nil {
 		log.Printf("[OliveBranchService.HandleOliveBranch] notification: failed to get responder: %v", err)
-		return
 	}
 	responderName := "\u5bf9\u65b9"
-	if responder.Nickname != nil && *responder.Nickname != "" {
+	if responder != nil && responder.Nickname != nil && *responder.Nickname != "" {
 		responderName = *responder.Nickname
 	}
 	resultStr := "\u4e92\u76f8\u4e86\u89e3"
@@ -474,7 +512,5 @@ func (s *OliveBranchService) notifyOliveBranchResult(ctx context.Context, target
 		remark = "\u5df2\u51c6\u8bb8\u52a0\u5165\u56e2\u961f"
 	}
 	data := map[string]string{"nickname": truncate20(responderName), "result": resultStr, "remark": remark}
-	if queueErr := s.message.SendSubscribeMsgByBizKey(context.WithoutCancel(ctx), targetUserID, models.MsgBizKeyUserReply, data); queueErr != nil {
-		log.Printf("[OliveBranchService.HandleOliveBranch] queue notification error: %v", queueErr)
-	}
+	return s.message.QueueSubscribeTx(ctx, tx, targetUserID, models.MsgBizKeyUserReply, data)
 }

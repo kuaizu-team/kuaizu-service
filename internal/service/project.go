@@ -210,6 +210,15 @@ func (s *ProjectService) GetProjectDetail(ctx context.Context, id, viewerUserID,
 		log.Printf("[ProjectService.GetProjectDetail] permission enrichment error: %v", err)
 		return nil, ErrInternal("获取项目详情失败")
 	}
+	if project.Creator != nil {
+		allowed, err := repository.CanViewContacts(ctx, s.repo.DB(), viewerUserID, project.CreatorID)
+		if err != nil {
+			return nil, ErrInternal("检查联系方式权限失败")
+		}
+		if !allowed {
+			project.Creator.Phone, project.Creator.Email, project.Creator.WechatID, project.Creator.AuthImgUrl = nil, nil, nil, nil
+		}
+	}
 	if !shouldRecordProjectView(recordView, viewerUserID, project.CreatorID) {
 		return project, nil
 	}
@@ -923,6 +932,9 @@ func (s *ProjectService) RemoveMember(ctx context.Context, projectID int, operat
 			return nil, ErrInternal("创建状态通知失败")
 		}
 	}
+	if err := s.repo.AutoUrge.ObserveClearanceTx(ctx, tx, memberID); err != nil {
+		return nil, ErrInternal("记录催处理周期失败")
+	}
 	if err := tx.Commit(); err != nil {
 		return nil, ErrInternal("提交事务失败")
 	}
@@ -1412,8 +1424,23 @@ func (s *ProjectService) restoreProject(ctx context.Context, id int, project *mo
 	}, "恢复项目"); err != nil {
 		return err
 	}
-	if err := s.repo.Project.UpdateStatus(ctx, id, models.ProjectStatusPending); err != nil {
+	tx, err := s.repo.DB().BeginTxx(ctx, nil)
+	if err != nil {
+		return ErrInternal("恢复项目失败")
+	}
+	defer tx.Rollback()
+	if err := s.repo.AutoUrge.ObserveProjectClearanceTx(ctx, tx, id); err != nil {
+		return ErrInternal("记录催处理周期失败")
+	}
+	updated, err := repository.UpdateProjectStatusTx(ctx, tx, id, models.ProjectStatusDeleting, models.ProjectStatusPending, nil)
+	if err != nil {
 		log.Printf("[ProjectService.RestoreProject] repository error: %v", err)
+		return ErrInternal("恢复项目失败")
+	}
+	if !updated {
+		return ErrBadRequest("项目状态已变化，请刷新后重试")
+	}
+	if err := tx.Commit(); err != nil {
 		return ErrInternal("恢复项目失败")
 	}
 	return nil
@@ -1533,29 +1560,46 @@ func (s *ProjectService) ApplyToProject(ctx context.Context, input ApplyToProjec
 		Status:    models.ApplicationStatusPending,
 	}
 
-	if err := s.repo.Application.Create(ctx, application); err != nil {
-		log.Printf("[ProjectService.ApplyToProject] repository error creating application: %v", err)
+	senderName := "匿名用户"
+	applicant, applicantErr := s.repo.User.GetByID(ctx, input.UserID)
+	if applicantErr == nil && applicant != nil && applicant.Nickname != nil && *applicant.Nickname != "" {
+		senderName = *applicant.Nickname
+	}
+	tx, err := s.repo.DB().BeginTxx(ctx, nil)
+	if err != nil {
 		return nil, ErrInternal("提交申请失败")
 	}
-
-	// Persist the notification before returning; delivery itself remains asynchronous.
-	applicant, applicantErr := s.repo.User.GetByID(context.WithoutCancel(ctx), input.UserID)
-	if applicantErr != nil {
-		log.Printf("[ProjectService.ApplyToProject] error getting applicant for notification: %v", applicantErr)
-	} else {
-		senderName := "匿名用户"
-		if applicant != nil && applicant.Nickname != nil && *applicant.Nickname != "" {
-			senderName = *applicant.Nickname
-		}
-		data := map[string]string{
-			"sender": truncate20(senderName),
-			"remark": "恭喜，请在我的项目中及时处理哦。",
-		}
-		if queueErr := s.message.SendSubscribeMsgByBizKey(context.WithoutCancel(ctx), project.CreatorID, models.MsgBizKeyCardReceived, data); queueErr != nil {
-			log.Printf("[ProjectService.ApplyToProject] queue notification error: %v", queueErr)
-		}
+	defer tx.Rollback()
+	var currentStatus int
+	if err := tx.GetContext(ctx, &currentStatus, `SELECT status FROM project WHERE id=? FOR UPDATE`, input.ProjectID); err != nil {
+		return nil, ErrInternal("锁定项目失败")
 	}
-
+	if currentStatus != models.ProjectStatusApproved {
+		return nil, ErrBadRequest("该项目当前不接受申请")
+	}
+	var duplicate bool
+	if err := tx.GetContext(ctx, &duplicate, `SELECT EXISTS(SELECT 1 FROM project_application WHERE project_id=? AND user_id=?)`, input.ProjectID, input.UserID); err != nil {
+		return nil, ErrInternal("检查申请状态失败")
+	}
+	if duplicate {
+		return nil, ErrBadRequest("您已申请过该项目")
+	}
+	if err := s.repo.AutoUrge.ObserveProjectClearanceTx(ctx, tx, input.ProjectID); err != nil {
+		return nil, ErrInternal("记录催处理周期失败")
+	}
+	if err := repository.CreateApplicationTx(ctx, tx, application); err != nil {
+		return nil, ErrInternal("提交申请失败")
+	}
+	deliveryID, err := s.message.QueueSubscribeTx(ctx, tx, project.CreatorID, models.MsgBizKeyCardReceived, map[string]string{
+		"sender": truncate20(senderName), "remark": "恭喜，请在我的项目中及时处理哦。",
+	})
+	if err != nil {
+		return nil, ErrInternal("保存通知失败")
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, ErrInternal("提交申请失败")
+	}
+	s.message.DispatchCommittedSubscribe(deliveryID)
 	return application, nil
 }
 
@@ -1631,15 +1675,15 @@ func (s *ProjectService) ReviewApplication(ctx context.Context, applicationID, u
 			discussing_at = CASE WHEN ? = ? THEN CURRENT_TIMESTAMP ELSE discussing_at END,
 			rejected_at = CASE WHEN ? = ? THEN CURRENT_TIMESTAMP ELSE rejected_at END,
 			updated_at = CURRENT_TIMESTAMP
-		WHERE id = ?`, status, userID, reviewerRole,
+		WHERE id = ? AND status = ? AND reviewer_id <=> ? AND reviewer_role <=> ?`, status, userID, reviewerRole,
 		status, models.ApplicationStatusDiscussing,
-		status, models.ApplicationStatusRejected, applicationID)
+		status, models.ApplicationStatusRejected, applicationID, app.Status, app.ReviewerID, app.ReviewerRole)
 	if err != nil {
 		log.Printf("[ProjectService.ReviewApplication] repository error updating status: %v", err)
 		return ErrInternal("更新申请状态失败")
 	}
 	if rows, _ := result.RowsAffected(); rows == 0 {
-		return ErrNotFound("申请不存在")
+		return ErrBadRequest("申请状态已变化，请刷新后重试")
 	}
 	if status == models.ApplicationStatusRejected {
 		if err := repository.CreateTx(ctx, tx, app.UserID, applicationID, models.StatusNotificationApplicationRejected); err != nil {
@@ -1647,10 +1691,6 @@ func (s *ProjectService) ReviewApplication(ctx context.Context, applicationID, u
 			return ErrInternal("创建状态通知失败")
 		}
 	}
-	if err := tx.Commit(); err != nil {
-		return ErrInternal("提交事务失败")
-	}
-
 	resultStr := "互相了解"
 	remark := "请及时查看投递进展。"
 	if status == models.ApplicationStatusRejected {
@@ -1662,9 +1702,17 @@ func (s *ProjectService) ReviewApplication(ctx context.Context, applicationID, u
 		"delivery_result": resultStr,
 		"remark":          remark,
 	}
-	if queueErr := s.message.SendSubscribeMsgByBizKey(context.WithoutCancel(ctx), app.UserID, models.MsgBizKeyCardDeliveryResult, data); queueErr != nil {
-		log.Printf("[ProjectService.ReviewApplication] queue notification error: %v", queueErr)
+	deliveryID, queueErr := s.message.QueueSubscribeTx(ctx, tx, app.UserID, models.MsgBizKeyCardDeliveryResult, data)
+	if queueErr != nil {
+		return ErrInternal("保存通知失败")
 	}
+	if err := s.repo.AutoUrge.ObserveProjectClearanceTx(ctx, tx, app.ProjectID); err != nil {
+		return ErrInternal("记录催处理周期失败")
+	}
+	if err := tx.Commit(); err != nil {
+		return ErrInternal("提交事务失败")
+	}
+	s.message.DispatchCommittedSubscribe(deliveryID)
 
 	return nil
 }
@@ -1754,6 +1802,9 @@ func (s *ProjectService) AssignApplicationRole(ctx context.Context, input Assign
 		return ErrInternal("开启事务失败")
 	}
 	defer tx.Rollback()
+	if err := s.repo.AutoUrge.ObserveClearanceTx(ctx, tx, app.UserID); err != nil {
+		return ErrInternal("记录催处理周期失败")
+	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO project_members(project_id,user_id,role)
 		VALUES(?,?,?)
 		ON DUPLICATE KEY UPDATE role=VALUES(role), updated_at=CURRENT_TIMESTAMP`, app.ProjectID, app.UserID, role); err != nil {
@@ -1762,29 +1813,31 @@ func (s *ProjectService) AssignApplicationRole(ctx context.Context, input Assign
 	}
 	result, err := tx.ExecContext(ctx, `UPDATE project_application
 		SET status=?, assigned_role=?, joined_at=CURRENT_TIMESTAMP, updated_at=CURRENT_TIMESTAMP
-		WHERE id=?`, models.ApplicationStatusJoined, role, input.ApplicationID)
+		WHERE id=? AND status=? AND reviewer_id <=> ? AND reviewer_role <=> ?`, models.ApplicationStatusJoined, role, input.ApplicationID, app.Status, app.ReviewerID, app.ReviewerRole)
 	if err != nil {
 		log.Printf("[ProjectService.AssignApplicationRole] update application failed: %v", err)
 		return ErrInternal("更新申请状态失败")
 	}
 	if rows, _ := result.RowsAffected(); rows == 0 {
-		return ErrNotFound("申请不存在")
+		return ErrBadRequest("申请状态已变化，请刷新后重试")
 	}
 	if err := repository.CreateTx(ctx, tx, app.UserID, input.ApplicationID, models.StatusNotificationApplicationAccepted); err != nil {
 		log.Printf("[ProjectService.AssignApplicationRole] create status notification failed: %v", err)
 		return ErrInternal("创建状态通知失败")
-	}
-	if err := tx.Commit(); err != nil {
-		return ErrInternal("提交事务失败")
 	}
 	data := map[string]string{
 		"project_name":    truncate20(project.Name),
 		"delivery_result": "同意入队",
 		"remark":          "恭喜加入团队，请及时查看项目。",
 	}
-	if queueErr := s.message.SendSubscribeMsgByBizKey(context.WithoutCancel(ctx), app.UserID, models.MsgBizKeyCardDeliveryResult, data); queueErr != nil {
-		log.Printf("[ProjectService.AssignApplicationRole] queue notification error: %v", queueErr)
+	deliveryID, queueErr := s.message.QueueSubscribeTx(ctx, tx, app.UserID, models.MsgBizKeyCardDeliveryResult, data)
+	if queueErr != nil {
+		return ErrInternal("保存通知失败")
 	}
+	if err := tx.Commit(); err != nil {
+		return ErrInternal("提交事务失败")
+	}
+	s.message.DispatchCommittedSubscribe(deliveryID)
 	return nil
 }
 
@@ -1802,11 +1855,6 @@ func (s *ProjectService) TakedownProject(ctx context.Context, id int, rejectReas
 		return ErrBadRequest("只有上线中的项目可以下架")
 	}
 
-	if err := s.repo.Project.UpdateStatusWithRejectReason(ctx, id, models.ProjectStatusRejected, rejectReason); err != nil {
-		log.Printf("[ProjectService.TakedownProject] repository error updating status: %v", err)
-		return ErrInternal("下架失败")
-	}
-
 	remark := "请按照审核意见重新提交项目。"
 	if rejectReason != nil && strings.TrimSpace(*rejectReason) != "" {
 		remark = truncate20WithEllipsis(strings.TrimSpace(*rejectReason))
@@ -1816,11 +1864,7 @@ func (s *ProjectService) TakedownProject(ctx context.Context, id int, rejectReas
 		"status":       "审核拒绝",
 		"remark":       remark,
 	}
-	if queueErr := s.message.SendSubscribeMsgByBizKey(context.WithoutCancel(ctx), project.CreatorID, models.MsgBizKeyAuditResultProj, data); queueErr != nil {
-		log.Printf("[ProjectService.TakedownProject] queue notification error: %v", queueErr)
-	}
-
-	return nil
+	return s.persistProjectReview(ctx, project, models.ProjectStatusRejected, rejectReason, data)
 }
 
 // ReviewProject (admin only) updates project status and notifies creator.
@@ -1832,23 +1876,6 @@ func (s *ProjectService) ReviewProject(ctx context.Context, id, status int, reje
 	}
 	if project == nil {
 		return ErrNotFound("项目不存在")
-	}
-
-	if status == models.ProjectStatusRejected {
-		if err := s.repo.Project.UpdateStatusWithRejectReason(ctx, id, status, rejectReason); err != nil {
-			log.Printf("[ProjectService.ReviewProject] repository error updating status: %v", err)
-			return ErrInternal("审核失败")
-		}
-	} else if err := s.repo.Project.UpdateStatus(ctx, id, status); err != nil {
-		log.Printf("[ProjectService.ReviewProject] repository error updating status: %v", err)
-		return ErrInternal("审核失败")
-	}
-	if project.Status == models.ProjectStatusPending &&
-		(status == models.ProjectStatusApproved || status == models.ProjectStatusRejected) {
-		if err := s.repo.Project.MarkPassiveStatusChange(ctx, id); err != nil {
-			log.Printf("[ProjectService.ReviewProject] repository error marking passive status change: %v", err)
-			return ErrInternal("审核失败")
-		}
 	}
 
 	statusStr := "审核通过"
@@ -1866,9 +1893,29 @@ func (s *ProjectService) ReviewProject(ctx context.Context, id, status int, reje
 		"status":       statusStr,
 		"remark":       remark,
 	}
-	if queueErr := s.message.SendSubscribeMsgByBizKey(context.WithoutCancel(ctx), project.CreatorID, models.MsgBizKeyAuditResultProj, data); queueErr != nil {
-		log.Printf("[ProjectService.ReviewProject] queue notification error: %v", queueErr)
-	}
+	return s.persistProjectReview(ctx, project, status, rejectReason, data)
+}
 
+func (s *ProjectService) persistProjectReview(ctx context.Context, project *models.Project, status int, reason *string, data map[string]string) error {
+	tx, err := s.repo.DB().BeginTxx(ctx, nil)
+	if err != nil {
+		return ErrInternal("开启事务失败")
+	}
+	defer tx.Rollback()
+	updated, err := repository.UpdateProjectStatusTx(ctx, tx, project.ID, project.Status, status, reason)
+	if err != nil {
+		return ErrInternal("更新项目状态失败")
+	}
+	if !updated {
+		return ErrBadRequest("项目状态已变化，请刷新后重试")
+	}
+	deliveryID, err := s.message.QueueSubscribeTx(ctx, tx, project.CreatorID, models.MsgBizKeyAuditResultProj, data)
+	if err != nil {
+		return ErrInternal("保存通知失败")
+	}
+	if err := tx.Commit(); err != nil {
+		return ErrInternal("提交事务失败")
+	}
+	s.message.DispatchCommittedSubscribe(deliveryID)
 	return nil
 }

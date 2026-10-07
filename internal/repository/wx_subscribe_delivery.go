@@ -52,7 +52,13 @@ func (r *WxSubscribeDeliveryRepository) CheckSchema(ctx context.Context) error {
 }
 
 func (r *WxSubscribeDeliveryRepository) Create(ctx context.Context, delivery *models.WxSubscribeDelivery) (int64, error) {
-	result, err := r.db.NamedExecContext(ctx, `
+	return createWxSubscribeDelivery(ctx, r.db, delivery)
+}
+func CreateWxSubscribeDeliveryTx(ctx context.Context, tx *sqlx.Tx, delivery *models.WxSubscribeDelivery) (int64, error) {
+	return createWxSubscribeDelivery(ctx, tx, delivery)
+}
+func createWxSubscribeDelivery(ctx context.Context, exec sqlx.ExtContext, delivery *models.WxSubscribeDelivery) (int64, error) {
+	result, err := sqlx.NamedExecContext(ctx, exec, `
 		INSERT INTO wx_subscribe_delivery
 			(user_id, biz_key, business_data, page_path, status, next_attempt_at)
 		VALUES
@@ -86,6 +92,12 @@ func (r *WxSubscribeDeliveryRepository) ListDue(ctx context.Context, staleBefore
 	if limit <= 0 || limit > 500 {
 		limit = 100
 	}
+	// Stale provider dispatch must be reconciled, never lease-retried.
+	if _, err := r.db.ExecContext(ctx, `UPDATE wx_subscribe_delivery
+      SET status=?,last_errmsg='Dispatch outcome unknown; reconcile before retry',updated_at=CURRENT_TIMESTAMP
+      WHERE status IN (?,?) AND claimed_at<?`, models.WxSubscribeDeliveryUnknown, models.WxSubscribeDeliveryDispatching, models.WxSubscribeDeliveryProcessing, staleBefore); err != nil {
+		return nil, err
+	}
 	var ids []int64
 	err := r.db.SelectContext(ctx, &ids, `
 		SELECT id FROM wx_subscribe_delivery
@@ -96,7 +108,7 @@ func (r *WxSubscribeDeliveryRepository) ListDue(ctx context.Context, staleBefore
 		)
 		ORDER BY id ASC LIMIT ?
 	`, models.WxSubscribeDeliveryPending, models.WxSubscribeDeliveryRetry,
-		models.WxSubscribeDeliveryProcessing, staleBefore, limit)
+		models.WxSubscribeDeliveryPreparing, staleBefore, limit)
 	if err != nil {
 		return nil, fmt.Errorf("list due wx subscribe deliveries: %w", err)
 	}
@@ -112,9 +124,9 @@ func (r *WxSubscribeDeliveryRepository) Claim(ctx context.Context, id int64, sta
 			(status IN (?, ?) AND next_attempt_at <= CURRENT_TIMESTAMP)
 			OR (status = ? AND claimed_at < ?)
 		)
-	`, models.WxSubscribeDeliveryProcessing, id,
+	`, models.WxSubscribeDeliveryPreparing, id,
 		models.WxSubscribeDeliveryPending, models.WxSubscribeDeliveryRetry,
-		models.WxSubscribeDeliveryProcessing, staleBefore)
+		models.WxSubscribeDeliveryPreparing, staleBefore)
 	if err != nil {
 		return false, fmt.Errorf("claim wx subscribe delivery: %w", err)
 	}
@@ -122,44 +134,109 @@ func (r *WxSubscribeDeliveryRepository) Claim(ctx context.Context, id int64, sta
 	return affected == 1, nil
 }
 
-func (r *WxSubscribeDeliveryRepository) MarkSent(ctx context.Context, id int64, templateID string) error {
-	_, err := r.db.ExecContext(ctx, `
+func (r *WxSubscribeDeliveryRepository) BeginDispatch(ctx context.Context, id int64, attempt int) (bool, error) {
+	res, err := r.db.ExecContext(ctx, `UPDATE wx_subscribe_delivery SET status=?,claimed_at=CURRENT_TIMESTAMP
+ WHERE id=? AND attempt_count=? AND status=?`, models.WxSubscribeDeliveryDispatching, id, attempt, models.WxSubscribeDeliveryPreparing)
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	return n == 1, err
+}
+func (r *WxSubscribeDeliveryRepository) MarkUnknown(ctx context.Context, id int64, attempt int, templateID, message string) error {
+	result, err := r.db.ExecContext(ctx, `UPDATE wx_subscribe_delivery SET status=?,template_id=NULLIF(?,''),last_errmsg=?,updated_at=CURRENT_TIMESTAMP
+ WHERE id=? AND attempt_count=? AND status=?`, models.WxSubscribeDeliveryUnknown, templateID, message, id, attempt, models.WxSubscribeDeliveryDispatching)
+	if err != nil {
+		return err
+	}
+	n, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n != 1 {
+		return fmt.Errorf("wx subscribe claim lost for id=%d attempt=%d", id, attempt)
+	}
+	return nil
+}
+
+func (r *WxSubscribeDeliveryRepository) MarkSent(ctx context.Context, id int64, attempt int, templateID string) error {
+	result, err := r.db.ExecContext(ctx, `
 		UPDATE wx_subscribe_delivery
 		SET status = ?, template_id = ?, sent_at = CURRENT_TIMESTAMP,
 			last_errcode = NULL, last_errmsg = NULL, updated_at = CURRENT_TIMESTAMP
-		WHERE id = ?
-	`, models.WxSubscribeDeliverySent, templateID, id)
-	return err
+		WHERE id = ? AND attempt_count = ? AND status IN ('PREPARING','DISPATCHING')
+	`, models.WxSubscribeDeliverySent, templateID, id, attempt)
+	if err != nil {
+		return err
+	}
+	n, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n != 1 {
+		return fmt.Errorf("wx subscribe claim lost for id=%d attempt=%d", id, attempt)
+	}
+	return nil
 }
 
-func (r *WxSubscribeDeliveryRepository) MarkSkipped(ctx context.Context, id int64, templateID string, errCode int, message string) error {
-	_, err := r.db.ExecContext(ctx, `
+func (r *WxSubscribeDeliveryRepository) MarkSkipped(ctx context.Context, id int64, attempt int, templateID string, errCode int, message string) error {
+	result, err := r.db.ExecContext(ctx, `
 		UPDATE wx_subscribe_delivery
 		SET status = ?, template_id = ?, last_errcode = ?, last_errmsg = ?,
 			updated_at = CURRENT_TIMESTAMP
-		WHERE id = ?
-	`, models.WxSubscribeDeliverySkipped, templateID, errCode, message, id)
-	return err
+		WHERE id = ? AND attempt_count = ? AND status IN ('PREPARING','DISPATCHING')
+	`, models.WxSubscribeDeliverySkipped, templateID, errCode, message, id, attempt)
+	if err != nil {
+		return err
+	}
+	n, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n != 1 {
+		return fmt.Errorf("wx subscribe claim lost for id=%d attempt=%d", id, attempt)
+	}
+	return nil
 }
 
-func (r *WxSubscribeDeliveryRepository) MarkFailed(ctx context.Context, id int64, templateID string, errCode *int, message string) error {
-	_, err := r.db.ExecContext(ctx, `
+func (r *WxSubscribeDeliveryRepository) MarkFailed(ctx context.Context, id int64, attempt int, templateID string, errCode *int, message string) error {
+	result, err := r.db.ExecContext(ctx, `
 		UPDATE wx_subscribe_delivery
 		SET status = ?, template_id = NULLIF(?, ''), last_errcode = ?, last_errmsg = ?,
 			updated_at = CURRENT_TIMESTAMP
-		WHERE id = ?
-	`, models.WxSubscribeDeliveryFailed, templateID, errCode, message, id)
-	return err
+		WHERE id = ? AND attempt_count = ? AND status IN ('PREPARING','DISPATCHING')
+	`, models.WxSubscribeDeliveryFailed, templateID, errCode, message, id, attempt)
+	if err != nil {
+		return err
+	}
+	n, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n != 1 {
+		return fmt.Errorf("wx subscribe claim lost for id=%d attempt=%d", id, attempt)
+	}
+	return nil
 }
 
-func (r *WxSubscribeDeliveryRepository) ScheduleRetry(ctx context.Context, id int64, templateID string, errCode *int, message string, nextAttemptAt time.Time) error {
-	_, err := r.db.ExecContext(ctx, `
+func (r *WxSubscribeDeliveryRepository) ScheduleRetry(ctx context.Context, id int64, attempt int, templateID string, errCode *int, message string, nextAttemptAt time.Time) error {
+	result, err := r.db.ExecContext(ctx, `
 		UPDATE wx_subscribe_delivery
 		SET status = ?, template_id = NULLIF(?, ''), last_errcode = ?, last_errmsg = ?,
 			next_attempt_at = ?, updated_at = CURRENT_TIMESTAMP
-		WHERE id = ?
-	`, models.WxSubscribeDeliveryRetry, templateID, errCode, message, nextAttemptAt, id)
-	return err
+		WHERE id = ? AND attempt_count = ? AND status IN ('PREPARING','DISPATCHING')
+	`, models.WxSubscribeDeliveryRetry, templateID, errCode, message, nextAttemptAt, id, attempt)
+	if err != nil {
+		return err
+	}
+	n, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n != 1 {
+		return fmt.Errorf("wx subscribe claim lost for id=%d attempt=%d", id, attempt)
+	}
+	return nil
 }
 
 func (r *WxSubscribeDeliveryRepository) ListRecent(ctx context.Context, limit int) ([]models.WxSubscribeDelivery, error) {

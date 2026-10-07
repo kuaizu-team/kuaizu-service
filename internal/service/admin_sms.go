@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"strings"
+	"sync"
 
 	"github.com/kuaizu-team/kuaizu-service/internal/messagecenter"
 )
@@ -19,6 +20,7 @@ type adminSmsSender interface {
 }
 
 type AdminSmsService struct {
+	mu                   sync.Mutex
 	messageCenter        adminSmsSender
 	messageCenterInitErr error
 	messageCenterFactory func() (*messagecenter.Client, error)
@@ -98,6 +100,8 @@ func (s *AdminSmsService) resolveMessageCenter() (adminSmsSender, error) {
 	if s == nil {
 		return nil, ErrInternal("admin sms service is nil")
 	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if s.messageCenter != nil && s.messageCenterInitErr == nil {
 		return s.messageCenter, nil
 	}

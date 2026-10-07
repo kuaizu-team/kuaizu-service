@@ -14,12 +14,18 @@ import (
 // deleting status until cutoff. It also clears project-related tables that do
 // not consistently have database-level ON DELETE CASCADE constraints.
 func (r *Repository) PurgeDeletedProjectsBefore(ctx context.Context, cutoff time.Time) (int64, error) {
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return 0, fmt.Errorf("begin purge deleted projects: %w", err)
+	}
+	defer tx.Rollback()
 	var ids []int
-	if err := r.db.SelectContext(ctx, &ids, `
+	if err := tx.SelectContext(ctx, &ids, `
 		SELECT id
 		FROM project
 		WHERE status = ? AND deleted_at IS NOT NULL AND deleted_at <= ?
 		ORDER BY deleted_at ASC, id ASC
+		LIMIT 100 FOR UPDATE
 	`, models.ProjectStatusDeleting, cutoff); err != nil {
 		return 0, fmt.Errorf("list expired deleted projects: %w", err)
 	}
@@ -27,12 +33,16 @@ func (r *Repository) PurgeDeletedProjectsBefore(ctx context.Context, cutoff time
 		return 0, nil
 	}
 
-	tx, err := r.db.BeginTxx(ctx, nil)
-	if err != nil {
-		return 0, fmt.Errorf("begin purge deleted projects: %w", err)
+	var cycleRecipients []int
+	if r.AutoUrge.TrackingEnabled() {
+		for _, projectID := range ids {
+			recipients, err := r.AutoUrge.ProjectRecipientsTx(ctx, tx, projectID)
+			if err != nil {
+				return 0, err
+			}
+			cycleRecipients = append(cycleRecipients, recipients...)
+		}
 	}
-	defer tx.Rollback()
-
 	if err := deleteProjectRelations(ctx, tx, ids); err != nil {
 		return 0, err
 	}
@@ -46,6 +56,9 @@ func (r *Repository) PurgeDeletedProjectsBefore(ctx context.Context, cutoff time
 	}
 	deleted, _ := result.RowsAffected()
 
+	if err = r.AutoUrge.ObserveClearanceTx(ctx, tx, cycleRecipients...); err != nil {
+		return 0, err
+	}
 	if err := tx.Commit(); err != nil {
 		return 0, fmt.Errorf("commit purge deleted projects: %w", err)
 	}
@@ -71,6 +84,16 @@ func (r *Repository) PurgeDeletedProjectBefore(ctx context.Context, id int, cuto
 	}
 
 	ids := []int{eligibleID}
+	var cycleRecipients []int
+	if r.AutoUrge.TrackingEnabled() {
+		for _, projectID := range ids {
+			recipients, err := r.AutoUrge.ProjectRecipientsTx(ctx, tx, projectID)
+			if err != nil {
+				return 0, err
+			}
+			cycleRecipients = append(cycleRecipients, recipients...)
+		}
+	}
 	if err := deleteProjectRelations(ctx, tx, ids); err != nil {
 		return 0, err
 	}
@@ -84,6 +107,9 @@ func (r *Repository) PurgeDeletedProjectBefore(ctx context.Context, id int, cuto
 	deleted, _ := result.RowsAffected()
 	if deleted == 0 {
 		return 0, sql.ErrNoRows
+	}
+	if err = r.AutoUrge.ObserveClearanceTx(ctx, tx, cycleRecipients...); err != nil {
+		return 0, err
 	}
 	if err := tx.Commit(); err != nil {
 		return 0, fmt.Errorf("commit permanent project deletion: %w", err)

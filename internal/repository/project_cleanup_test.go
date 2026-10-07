@@ -158,9 +158,9 @@ func TestProjectPurgeTimelineCleanupIsAtomic(t *testing.T) {
 					mock.ExpectQuery("SELECT id FROM project").WithArgs(42, models.ProjectStatusDeleting, cutoff).
 						WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(42))
 				} else {
+					mock.ExpectBegin()
 					mock.ExpectQuery("SELECT id FROM project").WithArgs(models.ProjectStatusDeleting, cutoff).
 						WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(42))
-					mock.ExpectBegin()
 				}
 				mock.ExpectExec("UPDATE media_upload").WillReturnResult(sqlmock.NewResult(0, 0))
 				mock.ExpectExec("UPDATE media_upload").WillReturnResult(sqlmock.NewResult(0, 0))

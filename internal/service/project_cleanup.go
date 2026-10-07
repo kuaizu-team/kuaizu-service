@@ -32,13 +32,18 @@ func StartProjectCleanupScheduler(ctx context.Context, repo *repository.Reposito
 
 func runProjectCleanup(ctx context.Context, repo *repository.Repository) {
 	cutoff := time.Now().AddDate(0, 0, -projectDeleteRetentionDays)
-	deleted, err := repo.PurgeDeletedProjectsBefore(ctx, cutoff)
-	if err != nil {
-		log.Printf("[ProjectCleanup] purge expired deleted projects failed: %v", err)
-		return
-	}
-	if deleted > 0 {
-		log.Printf("[ProjectCleanup] purged %d expired deleted projects", deleted)
+	for ctx.Err() == nil {
+		deleted, err := repo.PurgeDeletedProjectsBefore(ctx, cutoff)
+		if err != nil {
+			log.Printf("[ProjectCleanup] purge expired deleted projects failed: %v", err)
+			return
+		}
+		if deleted > 0 {
+			log.Printf("[ProjectCleanup] purged %d expired deleted projects", deleted)
+		}
+		if deleted < 100 {
+			return
+		}
 	}
 }
 

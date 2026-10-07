@@ -41,9 +41,11 @@ func UserStatusCheck(repo *repository.Repository) echo.MiddlewareFunc {
 			}
 
 			user, err := repo.User.GetByID(c.Request().Context(), userID)
-			if err != nil || user == nil {
-				// Fail open: if we can't determine status, let the request through.
-				return next(c)
+			if err != nil {
+				return echo.NewHTTPError(http.StatusServiceUnavailable, "用户状态暂时无法确认，请稍后重试")
+			}
+			if user == nil {
+				return echo.NewHTTPError(http.StatusUnauthorized, "用户不存在，请重新登录")
 			}
 
 			switch user.UserStatus {

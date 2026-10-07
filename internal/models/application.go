@@ -57,7 +57,7 @@ func (a *ProjectApplication) ToVO() *api.ProjectApplicationVO {
 	}
 
 	if a.Applicant != nil {
-		vo.Applicant = a.Applicant.ToVO()
+		vo.Applicant = a.Applicant.ToPublicVO()
 	}
 
 	if a.TalentProfile != nil {
