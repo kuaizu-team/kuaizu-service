@@ -13,7 +13,8 @@ import (
 
 // ProjectRepository handles project database operations
 type ProjectRepository struct {
-	db *sqlx.DB
+	db       *sqlx.DB
+	autoUrge *AutoUrgeRepository
 }
 
 // NewProjectRepository creates a new ProjectRepository
@@ -609,6 +610,13 @@ func (r *ProjectRepository) UpdateWithMetadata(ctx context.Context, p *models.Pr
 	if rowsAffected == 0 {
 		return nil, fmt.Errorf("project not found")
 	}
+	var cycleRecipients []int
+	if members != nil {
+		cycleRecipients, err = r.membershipCycleRecipientsTx(ctx, tx, p.ID, *members)
+		if err != nil {
+			return nil, err
+		}
+	}
 	if err := saveProjectMetadataTx(ctx, tx, p.ID, tags, publisherRole, initiatingSchoolID, milestones, members, eventIDs); err != nil {
 		return nil, err
 	}
@@ -628,6 +636,9 @@ func (r *ProjectRepository) UpdateWithMetadata(ctx context.Context, p *models.Pr
 		if _, err := tx.ExecContext(ctx, `UPDATE project SET status=? WHERE id=?`, models.ProjectStatusPending, p.ID); err != nil {
 			return nil, err
 		}
+	}
+	if err = r.autoUrge.ObserveClearanceTx(ctx, tx, cycleRecipients...); err != nil {
+		return nil, err
 	}
 	if err := tx.Commit(); err != nil {
 		return nil, err
@@ -734,14 +745,7 @@ func saveProjectMetadataTx(ctx context.Context, tx *sqlx.Tx, projectID int, tags
 		}
 	}
 	if eventIDs != nil {
-		if _, err := tx.ExecContext(ctx, "DELETE FROM project_event WHERE project_id=?", projectID); err != nil {
-			return err
-		}
-		for _, eventID := range uniquePositiveIDs(*eventIDs) {
-			if _, err := tx.ExecContext(ctx, `INSERT IGNORE INTO project_event(project_id,event_id) VALUES(?,?)`, projectID, eventID); err != nil {
-				return err
-			}
-		}
+		return replaceProjectEventsTx(ctx, tx, projectID, *eventIDs)
 	}
 	return nil
 }
@@ -831,12 +835,19 @@ func (r *ProjectRepository) AddMembers(ctx context.Context, projectID int, membe
 		return err
 	}
 	defer tx.Rollback()
+	cycleRecipients, err := r.membershipCycleRecipientsTx(ctx, tx, projectID, members)
+	if err != nil {
+		return err
+	}
 	for _, member := range members {
 		if _, err := tx.ExecContext(ctx, `INSERT INTO project_members(project_id,user_id,role)
 			VALUES(?,?,?)
 			ON DUPLICATE KEY UPDATE role=role`, projectID, member.UserID, member.Role); err != nil {
 			return fmt.Errorf("add project member: %w", err)
 		}
+	}
+	if err = r.autoUrge.ObserveClearanceTx(ctx, tx, cycleRecipients...); err != nil {
+		return err
 	}
 	return tx.Commit()
 }
@@ -871,7 +882,14 @@ func (r *ProjectRepository) ReplaceMembers(ctx context.Context, projectID int, m
 		return err
 	}
 	defer tx.Rollback()
+	cycleRecipients, err := r.membershipCycleRecipientsTx(ctx, tx, projectID, members)
+	if err != nil {
+		return err
+	}
 	if err := syncProjectMembersTx(ctx, tx, projectID, members); err != nil {
+		return err
+	}
+	if err = r.autoUrge.ObserveClearanceTx(ctx, tx, cycleRecipients...); err != nil {
 		return err
 	}
 	return tx.Commit()
@@ -946,9 +964,28 @@ func (r *ProjectRepository) RoleExists(ctx context.Context, role string) (bool, 
 
 // Delete performs a logical delete (sets status to DELETING).
 func (r *ProjectRepository) Delete(ctx context.Context, id int) error {
+	if !r.autoUrge.TrackingEnabled() {
+		query := `UPDATE project SET status = ?, deleted_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?`
+
+		result, err := r.db.ExecContext(ctx, query, models.ProjectStatusDeleting, id)
+		if err != nil {
+			return fmt.Errorf("delete project: %w", err)
+		}
+
+		rowsAffected, _ := result.RowsAffected()
+		if rowsAffected == 0 {
+			return fmt.Errorf("project not found")
+		}
+		return nil
+	}
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
 	query := `UPDATE project SET status = ?, deleted_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?`
 
-	result, err := r.db.ExecContext(ctx, query, models.ProjectStatusDeleting, id)
+	result, err := tx.ExecContext(ctx, query, models.ProjectStatusDeleting, id)
 	if err != nil {
 		return fmt.Errorf("delete project: %w", err)
 	}
@@ -957,7 +994,10 @@ func (r *ProjectRepository) Delete(ctx context.Context, id int) error {
 	if rowsAffected == 0 {
 		return fmt.Errorf("project not found")
 	}
-	return nil
+	if err = r.autoUrge.ObserveProjectClearanceTx(ctx, tx, id); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // IsOwner checks if a user is the creator of a project
@@ -1056,4 +1096,23 @@ func (r *ProjectRepository) IncrementViewCount(ctx context.Context, id int) erro
 		return fmt.Errorf("increment view count: %w", err)
 	}
 	return nil
+}
+
+// Capture departing members before replacement; new members are observed before
+// they gain pending applications. The post-write observation closes departures.
+func (r *ProjectRepository) membershipCycleRecipientsTx(ctx context.Context, tx *sqlx.Tx, projectID int, members []models.ProjectMember) ([]int, error) {
+	if !r.autoUrge.TrackingEnabled() {
+		return nil, nil
+	}
+	ids, err := r.autoUrge.ProjectRecipientsTx(ctx, tx, projectID)
+	if err != nil {
+		return nil, err
+	}
+	for _, member := range members {
+		ids = append(ids, member.UserID)
+	}
+	if err = r.autoUrge.ObserveClearanceTx(ctx, tx, ids...); err != nil {
+		return nil, err
+	}
+	return ids, nil
 }

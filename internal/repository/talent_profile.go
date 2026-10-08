@@ -578,12 +578,18 @@ func (r *TalentProfileRepository) UpdateStatus(ctx context.Context, id int, stat
 
 // UpdateStatusIfCurrent performs a compare-and-set status transition.
 func (r *TalentProfileRepository) UpdateStatusIfCurrent(ctx context.Context, id int, currentStatus int, status int, rejectReason *string) (bool, error) {
+	return updateTalentStatusIfCurrent(ctx, r.db, id, currentStatus, status, rejectReason)
+}
+func UpdateTalentStatusTx(ctx context.Context, tx *sqlx.Tx, id, currentStatus, status int, reason *string) (bool, error) {
+	return updateTalentStatusIfCurrent(ctx, tx, id, currentStatus, status, reason)
+}
+func updateTalentStatusIfCurrent(ctx context.Context, exec sqlx.ExtContext, id, currentStatus, status int, rejectReason *string) (bool, error) {
 	query := `
 		UPDATE talent_profile
 		SET status = ?, reject_reason = ?, updated_at = CURRENT_TIMESTAMP
 		WHERE id = ? AND status = ?
 	`
-	result, err := r.db.ExecContext(ctx, query, status, rejectReason, id, currentStatus)
+	result, err := exec.ExecContext(ctx, query, status, rejectReason, id, currentStatus)
 	if err != nil {
 		return false, fmt.Errorf("conditionally update talent profile status: %w", err)
 	}

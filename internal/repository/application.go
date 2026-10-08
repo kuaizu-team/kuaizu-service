@@ -17,7 +17,8 @@ var ErrNotProjectOwner = errors.New("not project owner")
 
 // ApplicationRepository handles project application database operations
 type ApplicationRepository struct {
-	db *sqlx.DB
+	db       *sqlx.DB
+	autoUrge *AutoUrgeRepository
 }
 
 // ApplicationDashboardStats contains compact application metrics for dashboards.
@@ -225,6 +226,12 @@ func (r *ApplicationRepository) List(ctx context.Context, params ApplicationList
 
 // Create creates a new application
 func (r *ApplicationRepository) Create(ctx context.Context, app *models.ProjectApplication) error {
+	return createApplication(ctx, r.db, app)
+}
+func CreateApplicationTx(ctx context.Context, tx *sqlx.Tx, app *models.ProjectApplication) error {
+	return createApplication(ctx, tx, app)
+}
+func createApplication(ctx context.Context, exec sqlx.ExtContext, app *models.ProjectApplication) error {
 	query := `
 		INSERT INTO project_application (
 			project_id, user_id, status
@@ -233,7 +240,7 @@ func (r *ApplicationRepository) Create(ctx context.Context, app *models.ProjectA
 		)
 	`
 
-	result, err := r.db.NamedExecContext(ctx, query, app)
+	result, err := sqlx.NamedExecContext(ctx, exec, query, app)
 	if err != nil {
 		return fmt.Errorf("create application: %w", err)
 	}
@@ -415,6 +422,34 @@ func (r *ApplicationRepository) UpdateStatus(ctx context.Context, id int, status
 }
 
 func (r *ApplicationRepository) DeletePendingByIDAndUser(ctx context.Context, id int, userID int) (bool, error) {
+	if r.autoUrge.TrackingEnabled() {
+		tx, err := r.db.BeginTxx(ctx, nil)
+		if err != nil {
+			return false, err
+		}
+		defer tx.Rollback()
+		var projectID int
+		if err = tx.GetContext(ctx, &projectID, `SELECT project_id FROM project_application WHERE id=? AND user_id=? AND status=? FOR UPDATE`, id, userID, models.ApplicationStatusPending); err == sql.ErrNoRows {
+			return false, nil
+		} else if err != nil {
+			return false, err
+		}
+		res, err := tx.ExecContext(ctx, `DELETE FROM project_application WHERE id=? AND user_id=? AND status=?`, id, userID, models.ApplicationStatusPending)
+		if err != nil {
+			return false, err
+		}
+		n, err := res.RowsAffected()
+		if err != nil {
+			return false, err
+		}
+		if err = r.autoUrge.ObserveProjectClearanceTx(ctx, tx, projectID); err != nil {
+			return false, err
+		}
+		if err = tx.Commit(); err != nil {
+			return false, err
+		}
+		return n > 0, nil
+	}
 	result, err := r.db.ExecContext(ctx,
 		`DELETE FROM project_application WHERE id = ? AND user_id = ? AND status = ?`,
 		id, userID, models.ApplicationStatusPending,

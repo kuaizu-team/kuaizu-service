@@ -238,6 +238,28 @@ func (s *TalentProfileService) GetTalentProfile(ctx context.Context, id int) (*m
 	return profile, nil
 }
 
+// AuthorizeProfileRead also protects the user-ID fallback without fake views.
+func (s *TalentProfileService) AuthorizeProfileRead(ctx context.Context, profile *models.TalentProfile, viewerID int) error {
+	allowed, err := repository.CanViewContacts(ctx, s.repo.DB(), viewerID, profile.UserID)
+	if err != nil {
+		return ErrInternal("检查名片访问权限失败")
+	}
+	if !allowed && (profile.Status == nil || *profile.Status != models.TalentStatusOnline) {
+		submitted, readErr := repository.CanReadSubmittedProfile(ctx, s.repo.DB(), viewerID, profile.UserID)
+		if readErr != nil {
+			return ErrInternal("检查名片访问权限失败")
+		}
+		if !submitted {
+			return ErrNotFound("名片暂未公开")
+		}
+	}
+	if !allowed {
+		profile.Phone, profile.Email, profile.WechatID = nil, nil, nil
+		profile.RejectReason = nil
+	}
+	return nil
+}
+
 // GetTalentProfileWithView returns a talent profile and records a real view.
 func (s *TalentProfileService) GetTalentProfileWithView(ctx context.Context, id, viewerUserID, source int) (*models.TalentProfile, error) {
 	profile, err := s.GetTalentProfile(ctx, id)
@@ -245,6 +267,9 @@ func (s *TalentProfileService) GetTalentProfileWithView(ctx context.Context, id,
 		return nil, err
 	}
 
+	if err := s.AuthorizeProfileRead(ctx, profile, viewerUserID); err != nil {
+		return nil, err
+	}
 	var uidPtr *int
 	if viewerUserID > 0 {
 		uid := viewerUserID
@@ -470,14 +495,7 @@ func (s *TalentProfileService) TakedownTalentProfile(ctx context.Context, id int
 		return ErrBadRequest("当前名片状态不是已上架，无法下架")
 	}
 
-	if err := s.repo.TalentProfile.UpdateStatus(ctx, id, models.TalentStatusPrivate, &reason); err != nil {
-		log.Printf("[TalentProfileService.TakedownTalentProfile] repository error updating status: %v", err)
-		return ErrInternal("下架失败")
-	}
-
-	s.notifyTalentReviewResult(ctx, profile.UserID, "名片下架", truncate20WithEllipsis(reason))
-
-	return nil
+	return s.persistTalentReview(ctx, profile, models.TalentStatusPrivate, &reason, "名片下架", truncate20WithEllipsis(reason))
 }
 
 // ReviewTalentProfile reviews a talent profile from reviewing to approved or private.
@@ -509,71 +527,42 @@ func (s *TalentProfileService) ReviewTalentProfile(ctx context.Context, id, stat
 		return ErrBadRequest("当前人才档案状态不允许审核")
 	}
 
-	updated, err := s.repo.TalentProfile.UpdateStatusIfCurrent(
-		ctx,
-		id,
-		models.TalentStatusReviewing,
-		status,
-		cleanedReason,
-	)
-	if err != nil {
-		log.Printf("[TalentProfileService.ReviewTalentProfile] repository error updating status: %v", err)
-		return ErrInternal("审核失败")
+	resultStr := "审核通过"
+	remark := "名片已上架人才库，快去看看吧！"
+	if status == models.TalentStatusPrivate {
+		resultStr = "审核拒绝"
+		remark = truncate20WithEllipsis(*cleanedReason)
 	}
-	if !updated {
-		return ErrBadRequest("当前人才档案状态不允许审核")
-	}
-
-	userID := profile.UserID
-	user, err := s.repo.User.GetByID(context.WithoutCancel(ctx), userID)
-	if err != nil || user == nil {
-		log.Printf("[TalentProfileService.ReviewTalentProfile] get user for notification error: %v", err)
-	} else {
-		resultStr := "审核通过"
-		remark := "名片已上架人才库，快去看看吧！"
-		if status == models.TalentStatusPrivate {
-			resultStr = "审核拒绝"
-			remark = truncate20WithEllipsis(*cleanedReason)
-		}
-
-		userName := "同学"
-		if user.Nickname != nil && *user.Nickname != "" {
-			userName = truncate20(*user.Nickname)
-		}
-
-		data := map[string]string{
-			"user_name": userName,
-			"result":    resultStr,
-			"remark":    remark,
-		}
-
-		if queueErr := s.message.SendSubscribeMsgByBizKey(context.WithoutCancel(ctx), userID, models.MsgBizKeyAuditResultUser, data); queueErr != nil {
-			log.Printf("[TalentProfileService.ReviewTalentProfile] queue notification error: %v", queueErr)
-		}
-	}
-
-	return nil
+	return s.persistTalentReview(ctx, profile, status, cleanedReason, resultStr, remark)
 }
 
-func (s *TalentProfileService) notifyTalentReviewResult(ctx context.Context, userID int, resultStr string, remark string) {
-	user, err := s.repo.User.GetByID(context.WithoutCancel(ctx), userID)
-	if err != nil || user == nil {
-		log.Printf("[TalentProfileService.notifyTalentReviewResult] get user for notification error: %v", err)
-		return
-	}
-
+func (s *TalentProfileService) persistTalentReview(ctx context.Context, profile *models.TalentProfile, status int, reason *string, resultStr, remark string) error {
 	userName := "同学"
-	if user.Nickname != nil && *user.Nickname != "" {
+	user, err := s.repo.User.GetByID(ctx, profile.UserID)
+	if err == nil && user != nil && user.Nickname != nil && *user.Nickname != "" {
 		userName = truncate20(*user.Nickname)
 	}
-
-	data := map[string]string{
-		"user_name": userName,
-		"result":    resultStr,
-		"remark":    remark,
+	tx, err := s.repo.DB().BeginTxx(ctx, nil)
+	if err != nil {
+		return ErrInternal("开启事务失败")
 	}
-
-	if queueErr := s.message.SendSubscribeMsgByBizKey(context.WithoutCancel(ctx), userID, models.MsgBizKeyAuditResultUser, data); queueErr != nil {
-		log.Printf("[TalentProfileService.notifyTalentReviewResult] queue notification error: %v", queueErr)
+	defer tx.Rollback()
+	updated, err := repository.UpdateTalentStatusTx(ctx, tx, profile.ID, *profile.Status, status, reason)
+	if err != nil {
+		return ErrInternal("更新名片状态失败")
 	}
+	if !updated {
+		return ErrBadRequest("人才档案状态已变化，请刷新后重试")
+	}
+	deliveryID, err := s.message.QueueSubscribeTx(ctx, tx, profile.UserID, models.MsgBizKeyAuditResultUser, map[string]string{
+		"user_name": userName, "result": resultStr, "remark": remark,
+	})
+	if err != nil {
+		return ErrInternal("保存通知失败")
+	}
+	if err := tx.Commit(); err != nil {
+		return ErrInternal("提交事务失败")
+	}
+	s.message.DispatchCommittedSubscribe(deliveryID)
+	return nil
 }

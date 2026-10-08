@@ -449,6 +449,32 @@ func (r *EventRepository) ListProjectIDs(ctx context.Context, eventID int) ([]in
 }
 
 func (r *EventRepository) ReplaceProjectEventsTx(ctx context.Context, tx *sqlx.Tx, projectID int, eventIDs []int) error {
+	return replaceProjectEventsTx(ctx, tx, projectID, eventIDs)
+}
+func replaceProjectEventsTx(ctx context.Context, tx *sqlx.Tx, projectID int, eventIDs []int) error {
+	var existingProject int
+	if err := tx.GetContext(ctx, &existingProject, "SELECT id FROM project WHERE id=? FOR UPDATE", projectID); err != nil {
+		return fmt.Errorf("project does not exist: %w", err)
+	}
+	for _, id := range eventIDs {
+		if id <= 0 {
+			return fmt.Errorf("invalid event ID")
+		}
+	}
+	ids := uniquePositiveIDs(eventIDs)
+	if len(ids) > 0 {
+		query, args, err := sqlx.In("SELECT id FROM event WHERE id IN (?) ORDER BY id FOR UPDATE", ids)
+		if err != nil {
+			return err
+		}
+		var found []int
+		if err := tx.SelectContext(ctx, &found, tx.Rebind(query), args...); err != nil {
+			return err
+		}
+		if len(found) != len(ids) {
+			return fmt.Errorf("one or more events do not exist")
+		}
+	}
 	if _, err := tx.ExecContext(ctx, "DELETE FROM project_event WHERE project_id = ?", projectID); err != nil {
 		return err
 	}

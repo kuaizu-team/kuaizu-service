@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
-	"time"
 )
 
 // SubscribeMessageData 订阅消息数据字段
@@ -67,6 +66,9 @@ func (c *Client) SendSubscribeMessageContext(ctx context.Context, req *Subscribe
 
 	const maxAttempts = 3
 	var result SubscribeMessageResponse
+	// A redirect or an ambiguous response must not replay this non-idempotent POST.
+	httpClient := *c.httpClient
+	httpClient.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	for attempt := 0; attempt < maxAttempts; attempt++ {
 		accessToken, err := c.GetAccessToken()
 		if err != nil {
@@ -84,37 +86,29 @@ func (c *Client) SendSubscribeMessageContext(ctx context.Context, req *Subscribe
 		}
 		httpReq.Header.Set("Content-Type", "application/json")
 
-		resp, err := c.httpClient.Do(httpReq)
+		resp, err := httpClient.Do(httpReq)
 		if err != nil {
-			if attempt+1 < maxAttempts && ctx.Err() == nil {
-				if err := waitSubscribeRetry(ctx, attempt); err != nil {
-					return err
-				}
-				continue
-			}
 			return fmt.Errorf("send request: %w", err)
-		}
-		if resp.StatusCode >= http.StatusInternalServerError {
-			resp.Body.Close()
-			if attempt+1 < maxAttempts {
-				if err := waitSubscribeRetry(ctx, attempt); err != nil {
-					return err
-				}
-				continue
-			}
-			return fmt.Errorf("wechat api http status: %d", resp.StatusCode)
 		}
 		if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 			resp.Body.Close()
 			return fmt.Errorf("wechat api http status: %d", resp.StatusCode)
 		}
-		result = SubscribeMessageResponse{}
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		var response struct {
+			ErrCode *int   `json:"errcode"`
+			ErrMsg  string `json:"errmsg"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
 			resp.Body.Close()
 			return fmt.Errorf("decode response: %w", err)
 		}
 		resp.Body.Close()
+		if response.ErrCode == nil {
+			return fmt.Errorf("wechat subscribe response is missing errcode")
+		}
+		result = SubscribeMessageResponse{ErrCode: *response.ErrCode, ErrMsg: response.ErrMsg}
 
+		// Only a definite invalid-token rejection permits a retry within this call.
 		if isAccessTokenInvalidCode(result.ErrCode) && attempt+1 < maxAttempts {
 			if _, err := c.refreshAccessToken(); err != nil {
 				return fmt.Errorf("refresh access token: %w", err)
@@ -129,18 +123,6 @@ func (c *Client) SendSubscribeMessageContext(ctx context.Context, req *Subscribe
 	}
 
 	return nil
-}
-
-func waitSubscribeRetry(ctx context.Context, attempt int) error {
-	delay := time.Duration(attempt+1) * 200 * time.Millisecond
-	timer := time.NewTimer(delay)
-	defer timer.Stop()
-	select {
-	case <-ctx.Done():
-		return fmt.Errorf("subscribe message retry canceled: %w", ctx.Err())
-	case <-timer.C:
-		return nil
-	}
 }
 
 var (

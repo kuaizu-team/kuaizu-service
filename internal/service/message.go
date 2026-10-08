@@ -12,6 +12,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/jmoiron/sqlx"
 	"github.com/kuaizu-team/kuaizu-service/internal/models"
 	"github.com/kuaizu-team/kuaizu-service/internal/repository"
 	"github.com/kuaizu-team/kuaizu-service/internal/wechat"
@@ -27,6 +28,13 @@ type VersionUpdateBroadcastResult struct {
 	RoadmapID int    `json:"roadmapId"`
 	Status    string `json:"status"`
 }
+
+var errSubscribeClaimLost = errors.New("delivery claim lost")
+
+type uncertainSubscribeDeliveryError struct{ err error }
+
+func (e uncertainSubscribeDeliveryError) Error() string { return e.err.Error() }
+func (e uncertainSubscribeDeliveryError) Unwrap() error { return e.err }
 
 type permanentSubscribeDeliveryError struct {
 	err error
@@ -66,11 +74,15 @@ func (s *MessageService) SendCollaborationScoreUpdateNotification(
 	score float64,
 	updatedAt time.Time,
 ) error {
-	return s.SendSubscribeMsgByBizKey(ctx, userID, models.MsgBizKeyCollaborationScore, map[string]string{
+	return s.SendSubscribeMsgByBizKey(ctx, userID, models.MsgBizKeyCollaborationScore, collaborationScoreBusinessData(score, updatedAt))
+}
+
+func collaborationScoreBusinessData(score float64, updatedAt time.Time) map[string]string {
+	return map[string]string{
 		"score":      strconv.FormatFloat(score, 'f', -1, 64),
 		"updated_at": formatChinaTime(updatedAt),
 		"remark":     "请点击查看详情",
-	})
+	}
 }
 
 func SendCollaborationScoreUpdateNotificationAsync(
@@ -114,7 +126,24 @@ func (s *MessageService) enqueueSubscribeMsg(ctx context.Context, userID int, bi
 	return nil
 }
 
-func (s *MessageService) deliverSubscribeMsg(ctx context.Context, userID int, bizKey string, businessData map[string]string, pageOverride string) (string, error) {
+// QueueSubscribeTx records intent before the business transaction commits.
+// DispatchCommittedSubscribe is called only AFTER a successful commit.
+func (s *MessageService) QueueSubscribeTx(ctx context.Context, tx *sqlx.Tx, userID int, bizKey string, data map[string]string) (int64, error) {
+	payload, err := json.Marshal(data)
+	if err != nil {
+		return 0, err
+	}
+	return repository.CreateWxSubscribeDeliveryTx(ctx, tx, &models.WxSubscribeDelivery{
+		UserID: userID, BizKey: bizKey, BusinessData: string(payload), Status: models.WxSubscribeDeliveryPending,
+	})
+}
+func (s *MessageService) DispatchCommittedSubscribe(id int64) {
+	if id > 0 {
+		go s.processSubscribeDelivery(id)
+	}
+}
+
+func (s *MessageService) deliverSubscribeMsg(ctx context.Context, userID int, bizKey string, businessData map[string]string, pageOverride string, delivery *models.WxSubscribeDelivery) (string, error) {
 	// 1. Get user openid
 	user, err := s.repo.User.GetByID(ctx, userID)
 	if err != nil {
@@ -145,6 +174,13 @@ func (s *MessageService) deliverSubscribeMsg(ctx context.Context, userID int, bi
 		page = *config.PagePath
 	}
 
+	claimed, claimErr := s.repo.WxSubscribeDelivery.BeginDispatch(ctx, delivery.ID, delivery.AttemptCount)
+	if claimErr != nil {
+		return config.TemplateID, fmt.Errorf("persist dispatch intent: %w", claimErr)
+	}
+	if !claimed {
+		return config.TemplateID, errSubscribeClaimLost
+	}
 	err = s.wxClient.SendByConfigContext(ctx, user.OpenID, config.TemplateID, config.ContentJSON, businessData, page)
 	if err != nil {
 		// 5. Sync state if user rejected on WeChat side
@@ -163,6 +199,10 @@ func (s *MessageService) deliverSubscribeMsg(ctx context.Context, userID int, bi
 		}
 
 		log.Printf("[MessageService.sendSubscribeMsg] error sending message: %v", err)
+		var payloadErr wechat.SubscribePayloadError
+		if !errors.As(err, &wxErr) && !errors.As(err, &payloadErr) {
+			return config.TemplateID, uncertainSubscribeDeliveryError{err: err}
+		}
 		return config.TemplateID, fmt.Errorf("send message: %w", err)
 	}
 
@@ -228,7 +268,10 @@ func (s *MessageService) processSubscribeDelivery(deliveryID int64) {
 	if delivery.PagePath != nil {
 		pagePath = *delivery.PagePath
 	}
-	templateID, sendErr := s.deliverSubscribeMsg(ctx, delivery.UserID, delivery.BizKey, businessData, pagePath)
+	templateID, sendErr := s.deliverSubscribeMsg(ctx, delivery.UserID, delivery.BizKey, businessData, pagePath, delivery)
+	if errors.Is(sendErr, errSubscribeClaimLost) {
+		return
+	}
 	s.finishSubscribeDelivery(delivery, templateID, sendErr)
 }
 
@@ -236,7 +279,7 @@ func (s *MessageService) finishSubscribeDelivery(delivery *models.WxSubscribeDel
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if sendErr == nil {
-		if err := s.repo.WxSubscribeDelivery.MarkSent(ctx, delivery.ID, templateID); err != nil {
+		if err := s.repo.WxSubscribeDelivery.MarkSent(ctx, delivery.ID, delivery.AttemptCount, templateID); err != nil {
 			log.Printf("[WxSubscribeDelivery] mark sent id=%d failed: %v", delivery.ID, err)
 			return
 		}
@@ -244,10 +287,17 @@ func (s *MessageService) finishSubscribeDelivery(delivery *models.WxSubscribeDel
 		return
 	}
 
+	var uncertain uncertainSubscribeDeliveryError
+	if errors.As(sendErr, &uncertain) {
+		if err := s.repo.WxSubscribeDelivery.MarkUnknown(ctx, delivery.ID, delivery.AttemptCount, templateID, sendErr.Error()); err != nil {
+			log.Printf("[WxSubscribeDelivery] mark unknown id=%d failed: %v", delivery.ID, err)
+		}
+		return
+	}
 	message := sendErr.Error()
 	var wxErr wechat.SubscribeMessageResponse
 	if errors.As(sendErr, &wxErr) && wxErr.ErrCode == 43101 {
-		if err := s.repo.WxSubscribeDelivery.MarkSkipped(ctx, delivery.ID, templateID, wxErr.ErrCode, message); err != nil {
+		if err := s.repo.WxSubscribeDelivery.MarkSkipped(ctx, delivery.ID, delivery.AttemptCount, templateID, wxErr.ErrCode, message); err != nil {
 			log.Printf("[WxSubscribeDelivery] mark skipped id=%d failed: %v", delivery.ID, err)
 		}
 		return
@@ -269,14 +319,14 @@ func (s *MessageService) finishSubscribeDelivery(delivery *models.WxSubscribeDel
 		permanent = true
 	}
 	if permanent || delivery.AttemptCount >= 3 {
-		if err := s.repo.WxSubscribeDelivery.MarkFailed(ctx, delivery.ID, templateID, errCode, message); err != nil {
+		if err := s.repo.WxSubscribeDelivery.MarkFailed(ctx, delivery.ID, delivery.AttemptCount, templateID, errCode, message); err != nil {
 			log.Printf("[WxSubscribeDelivery] mark failed id=%d failed: %v", delivery.ID, err)
 		}
 		return
 	}
 	delays := []time.Duration{time.Minute, 5 * time.Minute, 30 * time.Minute}
 	delay := delays[delivery.AttemptCount-1]
-	if err := s.repo.WxSubscribeDelivery.ScheduleRetry(ctx, delivery.ID, templateID, errCode, message, time.Now().Add(delay)); err != nil {
+	if err := s.repo.WxSubscribeDelivery.ScheduleRetry(ctx, delivery.ID, delivery.AttemptCount, templateID, errCode, message, time.Now().Add(delay)); err != nil {
 		log.Printf("[WxSubscribeDelivery] schedule retry id=%d failed: %v", delivery.ID, err)
 	}
 }

@@ -193,7 +193,7 @@ func (s *AdminServer) eventIDForManager(ctx echo.Context) (int, error) {
 }
 
 func (s *AdminServer) requireProjectAccess(ctx echo.Context, projectID int) error {
-	if adminRole(ctx) == models.AdminRoleSchoolSuperAdmin {
+	if adminRole(ctx) == models.AdminRoleSchoolSuperAdmin || adminRole(ctx) == models.AdminRoleSchoolAdmin {
 		var schoolID *int
 		if err := s.repo.DB().QueryRowxContext(ctx.Request().Context(), `SELECT school_id FROM project WHERE id=?`, projectID).Scan(&schoolID); err != nil {
 			return response.NotFound(ctx, "项目不存在")

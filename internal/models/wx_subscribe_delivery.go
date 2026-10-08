@@ -3,12 +3,15 @@ package models
 import "time"
 
 const (
-	WxSubscribeDeliveryPending    = "PENDING"
-	WxSubscribeDeliveryProcessing = "PROCESSING"
-	WxSubscribeDeliveryRetry      = "RETRY"
-	WxSubscribeDeliverySent       = "SENT"
-	WxSubscribeDeliverySkipped    = "SKIPPED"
-	WxSubscribeDeliveryFailed     = "FAILED"
+	WxSubscribeDeliveryPending     = "PENDING"
+	WxSubscribeDeliveryProcessing  = "PROCESSING" // legacy: dispatch may already have occurred
+	WxSubscribeDeliveryPreparing   = "PREPARING"
+	WxSubscribeDeliveryDispatching = "DISPATCHING"
+	WxSubscribeDeliveryUnknown     = "UNKNOWN"
+	WxSubscribeDeliveryRetry       = "RETRY"
+	WxSubscribeDeliverySent        = "SENT"
+	WxSubscribeDeliverySkipped     = "SKIPPED"
+	WxSubscribeDeliveryFailed      = "FAILED"
 )
 
 // WxSubscribeDelivery is both the durable outbox row and the delivery audit log.

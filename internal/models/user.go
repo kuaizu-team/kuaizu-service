@@ -64,6 +64,15 @@ type User struct {
 	PendingCount    int      `db:"pending_count"` // 管理后台用：待审核投递数+待处理橄榄枝数（仅管理后台列表填充）
 }
 
+// ToPublicVO is the explicit projection for public nested user data.
+// ToVO remains unchanged for the current user and authorized contact views.
+func (u *User) ToPublicVO() *api.UserVO {
+	vo := u.ToVO()
+	vo.Phone, vo.Email, vo.Wechat, vo.AuthImgUrl = nil, nil, nil, nil
+	vo.OliveBranchCount, vo.FreeBranchUsedToday, vo.LastActiveDate = nil, nil, nil
+	return vo
+}
+
 // ToVO converts User to API UserVO
 func (u *User) ToVO() *api.UserVO {
 	vo := &api.UserVO{

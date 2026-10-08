@@ -67,20 +67,9 @@ func (s *Server) ListEvents(ctx echo.Context) error {
 	})
 }
 
+// Platform events are created through the existing scoped admin routes.
 func (s *Server) CreateEvent(ctx echo.Context) error {
-	var req eventRequest
-	if err := ctx.Bind(&req); err != nil {
-		return BadRequest(ctx, "invalid request body")
-	}
-	event, err := buildEventModel(req)
-	if err != nil {
-		return BadRequest(ctx, err.Error())
-	}
-	created, err := s.svc.Event.CreateEvent(ctx.Request().Context(), event)
-	if err != nil {
-		return mapServiceError(ctx, err)
-	}
-	return Success(ctx, created.ToVO())
+	return Forbidden(ctx, "请通过管理后台创建赛事")
 }
 
 func (s *Server) GetEvent(ctx echo.Context) error {

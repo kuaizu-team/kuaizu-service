@@ -263,6 +263,9 @@ func (s *Server) getTalentProfileByUserIDFallback(ctx echo.Context, userID int) 
 		return InternalError(ctx, "获取人才档案失败")
 	}
 	if talent != nil {
+		if err := s.svc.TalentProfile.AuthorizeProfileRead(ctx.Request().Context(), talent, GetUserID(ctx)); err != nil {
+			return mapServiceError(ctx, err)
+		}
 		return Success(ctx, talent.ToDetailVO())
 	}
 
@@ -285,6 +288,9 @@ func (s *Server) getTalentProfileByUserIDFallback(ctx echo.Context, userID int) 
 		WechatID:   user.WechatID,
 		Grade:      user.Grade,
 		AuthStatus: user.AuthStatus,
+	}
+	if err := s.svc.TalentProfile.AuthorizeProfileRead(ctx.Request().Context(), &talentProfile, GetUserID(ctx)); err != nil {
+		return mapServiceError(ctx, err)
 	}
 	return Success(ctx, talentProfile.ToDetailVO())
 }

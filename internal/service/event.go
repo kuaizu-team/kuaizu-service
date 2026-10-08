@@ -74,22 +74,31 @@ func (s *EventService) GetEvent(ctx context.Context, id int) (*models.Event, []m
 		return nil, nil, nil, ErrInternal("get event projects failed")
 	}
 	projects := make([]models.Project, 0, len(projectIDs))
-	for _, projectID := range projectIDs {
-		project, err := s.repo.Project.GetByID(ctx, projectID)
+	if len(projectIDs) > 0 {
+		approved := models.ProjectStatusApproved
+		// Reuse the existing batched listing/enrichment; preserve association order.
+		rows, _, err := s.repo.Project.List(ctx, repository.ListParams{
+			EventID: &id, Status: &approved, Page: 1, Size: len(projectIDs),
+		})
 		if err != nil {
 			return nil, nil, nil, ErrInternal("get event projects failed")
 		}
-		if project != nil && project.Status == models.ProjectStatusApproved {
-			projects = append(projects, *project)
+		byID := make(map[int]models.Project, len(rows))
+		for _, project := range rows {
+			byID[project.ID] = project
+		}
+		for _, projectID := range projectIDs {
+			if project, ok := byID[projectID]; ok {
+				projects = append(projects, project)
+			}
 		}
 	}
 	if err := s.repo.Event.IncrementViewCount(ctx, id); err != nil {
 		log.Printf("[EventService.GetEvent] increment view count error: %v", err)
-		return nil, nil, nil, ErrInternal("record event view failed")
-	}
-	event, err = s.repo.Event.GetByID(ctx, id)
-	if err != nil || event == nil {
-		return nil, nil, nil, ErrInternal("reload event failed")
+	} else if refreshed, refreshErr := s.repo.Event.GetByID(ctx, id); refreshErr == nil && refreshed != nil {
+		event = refreshed
+	} else {
+		log.Printf("[EventService.GetEvent] reload event statistics failed: %v", refreshErr)
 	}
 	return event, projects, models.PublicEventTimeline(event, timeline), nil
 }
