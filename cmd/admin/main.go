@@ -15,6 +15,7 @@ import (
 	adminhandler "github.com/kuaizu-team/kuaizu-service/internal/admin/handler"
 	adminmw "github.com/kuaizu-team/kuaizu-service/internal/admin/middleware"
 	"github.com/kuaizu-team/kuaizu-service/internal/db"
+	"github.com/kuaizu-team/kuaizu-service/internal/feishusync"
 	"github.com/kuaizu-team/kuaizu-service/internal/repository"
 	"github.com/kuaizu-team/kuaizu-service/internal/service"
 	"github.com/labstack/echo/v4"
@@ -66,6 +67,14 @@ func main() {
 	}
 	svc.Message.StartSubscribeDeliveryRecovery(ctx)
 	server := adminhandler.NewAdminServer(repo, svc)
+	feishuSync, err := feishusync.NewFromEnv(ctx, repo)
+	if err != nil {
+		log.Printf("Feishu user sync unavailable: %v", err)
+	}
+	server.SetFeishuSync(feishuSync)
+	if feishuSync != nil {
+		feishuSync.Start(ctx)
+	}
 
 	// Public routes
 	e.POST("/admin/auth/login", server.Login)
@@ -107,7 +116,8 @@ func main() {
 	adminGroup.PATCH("/talent-profiles/:id/takedown", server.TakedownTalentProfile)
 
 	adminGroup.GET("/users", server.ListUsers)
-	adminGroup.POST("/users/export", server.ExportUsers)
+	adminGroup.POST("/users/feishu-sync", server.StartUserFeishuSync)
+	adminGroup.GET("/users/feishu-sync", server.GetUserFeishuSync)
 	adminGroup.POST("/users/talent-approve", server.BatchApproveUsers)
 	adminGroup.GET("/users/:id/orders", server.ListUserOrders)
 	adminGroup.GET("/users/:id/invitation-status", server.GetUserInvitationStatus)

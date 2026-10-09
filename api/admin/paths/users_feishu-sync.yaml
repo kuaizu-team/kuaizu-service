@@ -1,0 +1,46 @@
+post:
+  tags: [Users]
+  summary: 同步单个学校全部用户到飞书多维表格
+  description: |
+    角色 1 每次显式选择一个学校；角色 2 只能选择数据库正分成关系中的学校；
+    角色 3 仅绑定学校，省略 schoolId 时使用绑定学校；角色 4 禁止。
+    不使用列表筛选或勾选范围，不同步无学校用户。异步任务，重复点击返回本校当前任务。
+    新学校自动在配置知识库父节点下建 Bitable，用户名单严格使用原 CSV 15 列。
+    仅删除本校映射表中的已删除/转校失效记录；新增结果不明时暂停核对，避免重复插入。
+  requestBody:
+    required: true
+    content:
+      application/json:
+        schema:
+          type: object
+          additionalProperties: false
+          properties:
+            schoolId: {type: integer, minimum: 1}
+  responses:
+    '200':
+      description: 已入队或已有进行中的任务，data 为同步任务
+      content:
+        application/json:
+          schema: {$ref: ../components/schemas/FeishuUserSyncResponse.yaml}
+    '400': {$ref: ../components/responses/BadRequest.yaml}
+    '401': {$ref: ../components/responses/Unauthorized.yaml}
+    '403': {$ref: ../components/responses/Forbidden.yaml}
+    '503': {description: 后端尚未启用飞书同步}
+get:
+  tags: [Users]
+  summary: 查询授权学校最新飞书同步任务
+  parameters:
+    - in: query
+      name: schoolId
+      description: 超管必须指定；普通校区管理员可省略，使用绑定学校。
+      schema: {type: integer, minimum: 1}
+  responses:
+    '200':
+      description: 最新任务，无历史任务时 data 为 null
+      content:
+        application/json:
+          schema: {$ref: ../components/schemas/FeishuUserSyncResponse.yaml}
+    '400': {$ref: ../components/responses/BadRequest.yaml}
+    '401': {$ref: ../components/responses/Unauthorized.yaml}
+    '403': {$ref: ../components/responses/Forbidden.yaml}
+    '503': {description: 后端尚未启用飞书同步}

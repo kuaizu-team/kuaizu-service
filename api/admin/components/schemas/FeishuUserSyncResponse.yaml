@@ -1,0 +1,22 @@
+type: object
+required: [code, message, data]
+properties:
+  code: {type: integer, example: 200}
+  message: {type: string}
+  data:
+    type: object
+    nullable: true
+    required: [id, schoolId, status, total, processed, created, updated, deleted, message, createdAt, updatedAt]
+    properties:
+      id: {type: string, format: uuid}
+      schoolId: {type: integer}
+      status: {type: string, enum: [queued, running, succeeded, failed, needs_attention]}
+      total: {type: integer}
+      processed: {type: integer}
+      created: {type: integer}
+      updated: {type: integer}
+      deleted: {type: integer}
+      message: {type: string}
+      url: {type: string, format: uri}
+      createdAt: {type: string, format: date-time}
+      updatedAt: {type: string, format: date-time}

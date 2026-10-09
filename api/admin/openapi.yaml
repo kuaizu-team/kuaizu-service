@@ -88,8 +88,8 @@ paths:
     $ref: paths/talent-profiles_{id}.yaml
   /users:
     $ref: paths/users.yaml
-  /users/export:
-    $ref: paths/users_export.yaml
+  /users/feishu-sync:
+    $ref: paths/users_feishu-sync.yaml
   /users/talent-approve:
     $ref: paths/users_talent-approve.yaml
   /users/{id}:
