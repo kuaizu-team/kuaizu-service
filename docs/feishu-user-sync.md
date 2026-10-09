@@ -19,7 +19,7 @@ FEISHU_WIKI_BASE_URL=https://rw0q02v5pok.feishu.cn
 
 .env.example 默认关闭同步，Secret 留空。不能把 CLI 的凭证存储引用当作 Secret；当前 CLI 授权不等于已配置服务器 Secret。Secret 不进入前端、接口响应或版本控制。
 
-应用身份权限需要 wiki:wiki、bitable:app；“快组儿们”的首页需添加该应用并授予管理权限。这套授权已通过应用身份联调，不需要另一套 Base v3 权限。
+应用身份权限需要 wiki:wiki、bitable:app；“快组儿们”的首页需添加该应用并授予管理权限。这套授权已通过应用身份联调。默认空白项目清理另外使用 Base v3，应用身份需具备 base:block:read、base:block:delete、base:field:read、base:view:read、base:record:read、base:dashboard:read、base:workflow:read；以开放平台权限管理显示及实际接口授权为准，发布应用权限版本后再验证。
 
 启用前手动执行 sql/20261008_feishu_user_sync.sql，创建三张新表，不修改用户数据。配置异常时禁用同步，其他后台功能继续运行。MySQL 连接池上限至少为 2，默认 50；多个 admin 实例需连接同一 MySQL 写入节点，连接链路需支持会话级 GET_LOCK。
 
@@ -43,7 +43,7 @@ FEISHU_WIKI_BASE_URL=https://rw0q02v5pok.feishu.cn
 
 ## 15 列合同
 
-每个学校首次同步会在首页下创建独立 Bitable，标题含学校名称和 ID。业务数据表及默认视图名为“用户名单”。飞书可能附一个初始化的空数据表；同步仅使用映射中的业务表，不接管其他表。
+每个学校首次同步会在首页下创建独立 Bitable，标题含学校名称和 ID。业务数据表及默认视图名为“用户名单”。飞书附带的默认 Table、Dashboard、Workflow 会在用户名单成功同步后按下文规则检查并清理，覆盖已生成和今后新建的学校 Bitable。业务表始终以数据库 table_id 映射识别。
 
 | 顺序 | 原列名 | 类型 | 含义 |
 | --- | --- | --- | --- |
@@ -83,6 +83,18 @@ feishu_user_sync_target 保存学校→节点/Bitable/数据表/视图及创建�
 
 数据库与飞书没有跨系统事务。同步以各次查询快照为准，并发转校和远端写入不能原子提交，结束清理及下一次同步负责收敛。
 
+## 默认空白项目清理
+
+每次名单和失效受管记录同步完成后，只检查当前学校映射的 Bitable 顶层目录。必须先确认业务数据表存在；映射中的 table_id 永不删除，即使其被改名为 Table。仅考虑唯一匹配名称和类型的 Table、Dashboard、Workflow；同名多项、重命名、子目录项目及不符合默认模板的项目保留。
+
+Table 必须是 rev=0、0 条或 10 条空白占位记录，默认四列 Text/Single option/Date/Attachment 的结构、类型及默认值完全匹配；仅有默认 Grid 视图且筛选、分组、排序等摘要保持默认。读取全部四列最多 11 行，核验完整返回、全记录范围、列 ID、记录 ID、修订版本和每个单元格均为 null，不使用“可见行为空”替代全表为空。Dashboard 必须无组件且保持默认主题；Workflow 必须禁用、无步骤且创建/修改时间及操作者一致。删除前重新读取目录确认名称、类型、归属、记录数及修订信息未变，再复核管理员权限和同步锁。
+
+调用官方 CLI 已注册的 Base v3 blocks/list、dashboard/workflow 读取与 blocks/{id} 删除接口。应用 App ID/Secret 复用原配置；Base v3 单独采用官方 CLI 的 accounts.feishu.cn/oauth/v3/token client_credentials 授权并缓存 Bearer token，不改变已有 Wiki/Bitable v1 授权和写入路径。所有请求共享原每秒 2 次节奏，清理总时限 45 秒；清理后每次同步只需一次目录读取。无新增数据库表或环境变量。
+
+清理权限不足、超时、接口错误或不能完整确认目录时保留项目，用户名单成功结果保留，并在任务 message 提示默认空白项目未全部清理；服务日志只记录学校、类型及固定错误/错误码。权限撤销、锁失效仍终止任务。默认项目删除不计入用户 deleted 统计。已修改的默认项目不强制删除，未知模板保持原状。
+
+飞书删除接口没有提供原子“仅在仍为空时删除”的条件参数，读取与删除间仍存在短暂竞态；同步期间请勿编辑待清理的默认项目。人工添加的其他项目不在清理范围。这次改动只在部署后点击同步时生效，本地回归测试不删除真实飞书资源。
+
 ## 中断与核对
 
 节点、表格、记录新建前先持久化创建阶段；新增记录先保存 client_token 和原始 payload，成功后保存 record_id 并清空 payload。
@@ -105,3 +117,5 @@ feishu_user_sync_target 保存学校→节点/Bitable/数据表/视图及创建�
 2026-10-09 在 codex/feishu-user-sync-batch-update 分支优化已有记录的批量更新。新增隔离回归覆盖 38 人一次更新、51 人分页、更新与逐条新增混合、UTF-8/JSON 转义后的请求大小、超大单条回退、转校与撤权过滤、未知新增不重插、完整响应确认、明确缺失的定位重建以及异常时保留已确认进度。尚未推送或部署这次优化；实际提速需部署后测量，首次全部新增仍采用原逐条新增机制。
 
 官方参考：[官方 CLI](https://github.com/larksuite/cli)、[知识库建节点](https://open.feishu.cn/document/ukTMukTMukTM/uUDN04SN0QjL1QDN/wiki-v2/space-node/create)、[建数据表](https://open.feishu.cn/document/server-docs/docs/bitable-v1/app-table/create)、[新增记录](https://open.feishu.cn/document/server-docs/docs/bitable-v1/app-table-record/create)、[更新记录](https://open.feishu.cn/document/server-docs/docs/bitable-v1/app-table-record/update)、[批量更新记录](https://open.feishu.cn/document/server-docs/docs/bitable-v1/app-table-record/batch_update)。
+
+2026-10-09 默认空白项目清理改动位于 codex/feishu-default-block-cleanup。覆盖空白占位行、结构及视图修改、已启用或已编辑工作流、配置仪表盘、业务表保护、目录变化、权限撤销、接口失败、重复清理和成功任务保留清理提示的隔离回归。尚未推送或部署；Base v3 删除权限和真实清理结果需发布后验证。官方接口依据：[目录与删除](https://github.com/larksuite/cli/blob/main/shortcuts/base/base_block_ops.go)、[应用授权](https://github.com/larksuite/cli/blob/main/internal/credential/tat_fetch.go)。

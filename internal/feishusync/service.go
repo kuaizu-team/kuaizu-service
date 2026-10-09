@@ -218,7 +218,7 @@ func (s *Service) workOne(root context.Context) bool {
 			err = s.syncSchool(ctx, job, guard)
 		}
 		if err == nil {
-			job.Status, job.Message = "succeeded", "同步完成"
+			job.Status = "succeeded"
 		} else {
 			job.Status = "failed"
 			var reconcile *ReconcileError
@@ -338,7 +338,20 @@ func (s *Service) syncSchool(ctx context.Context, job *Job, guard func() error) 
 		}
 	}
 	// Recheck users transferred/deleted while this job was running.
-	return s.cleanup(ctx, target, job, guard)
+	if err = s.cleanup(ctx, target, job, guard); err != nil {
+		return err
+	}
+	job.Message = "同步完成"
+	if cleaner, ok := s.remote.(defaultBlockCleaner); ok {
+		warning, err := cleaner.CleanupDefaultBlocks(ctx, target, guard)
+		if err != nil {
+			return err
+		}
+		if warning {
+			job.Message = defaultCleanupWarning
+		}
+	}
+	return nil
 }
 
 type pendingUpdate struct {

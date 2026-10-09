@@ -52,6 +52,9 @@ func isMissingRecord(err error) bool { e, ok := err.(*APIError); return ok && e.
 type Client struct {
 	appID, secret, space, parent string
 	baseURL                      string
+	accountsURL                  string
+	baseToken                    string
+	baseExpires                  time.Time
 	http                         *http.Client
 	mu                           sync.Mutex
 	token                        string
@@ -61,7 +64,7 @@ type Client struct {
 }
 
 func NewClient(appID, secret, space, parent string) *Client {
-	return &Client{appID: appID, secret: secret, space: space, parent: parent, baseURL: "https://open.feishu.cn", http: &http.Client{Timeout: 20 * time.Second}}
+	return &Client{appID: appID, secret: secret, space: space, parent: parent, baseURL: "https://open.feishu.cn", accountsURL: "https://accounts.feishu.cn", http: &http.Client{Timeout: 20 * time.Second}}
 }
 
 func (c *Client) accessToken(ctx context.Context) (string, error) {
@@ -86,21 +89,9 @@ func (c *Client) accessToken(ctx context.Context) (string, error) {
 
 // Do not retry mutations automatically: a timed-out create may already exist remotely.
 func (c *Client) request(ctx context.Context, method, path, token string, body, out any) error {
-	// One worker owns the shared DB lock; cap application calls at two per second.
-	c.requestMu.Lock()
-	wait := time.Until(c.nextRequest)
-	if wait > 0 {
-		timer := time.NewTimer(wait)
-		select {
-		case <-ctx.Done():
-			timer.Stop()
-			c.requestMu.Unlock()
-			return fmt.Errorf("同步请求已取消")
-		case <-timer.C:
-		}
+	if err := c.waitRequest(ctx); err != nil {
+		return err
 	}
-	c.nextRequest = time.Now().Add(500 * time.Millisecond)
-	c.requestMu.Unlock()
 	var reader io.Reader
 	if body != nil {
 		payload, err := json.Marshal(body)
@@ -272,4 +263,23 @@ func (c *Client) UpdateRecords(ctx context.Context, t Target, records []RecordUp
 
 func (c *Client) DeleteRecord(ctx context.Context, t Target, id string) error {
 	return c.call(ctx, http.MethodDelete, tablePath(t)+"/records/"+url.PathEscape(id), nil, nil)
+}
+
+func (c *Client) waitRequest(ctx context.Context) error {
+	// One worker owns the shared DB lock; cap application calls at two per second.
+	c.requestMu.Lock()
+	wait := time.Until(c.nextRequest)
+	if wait > 0 {
+		timer := time.NewTimer(wait)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			c.requestMu.Unlock()
+			return fmt.Errorf("同步请求已取消")
+		case <-timer.C:
+		}
+	}
+	c.nextRequest = time.Now().Add(500 * time.Millisecond)
+	c.requestMu.Unlock()
+	return nil
 }
