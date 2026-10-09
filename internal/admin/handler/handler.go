@@ -4,6 +4,7 @@ import (
 	"errors"
 	"strconv"
 
+	"github.com/kuaizu-team/kuaizu-service/internal/feishusync"
 	"github.com/kuaizu-team/kuaizu-service/internal/models"
 	"github.com/kuaizu-team/kuaizu-service/internal/repository"
 	"github.com/kuaizu-team/kuaizu-service/internal/response"
@@ -13,8 +14,9 @@ import (
 
 // AdminServer handles admin API requests
 type AdminServer struct {
-	repo *repository.Repository
-	svc  *service.Services
+	repo       *repository.Repository
+	svc        *service.Services
+	feishuSync *feishusync.Service
 }
 
 // NewAdminServer creates a new AdminServer instance
