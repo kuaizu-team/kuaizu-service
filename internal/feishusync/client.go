@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"sync"
@@ -22,12 +23,22 @@ type Target struct {
 	TableStarted bool   `db:"table_started"`
 }
 
+// Keep batches modest to bound payloads, response size and permission-check intervals.
+const updateBatchSize = 50
+const updateBatchBytes = 1024 * 1024
+
+type RecordUpdate struct {
+	RecordID string         `json:"record_id"`
+	Fields   map[string]any `json:"fields"`
+}
+
 type Remote interface {
 	CreateNode(context.Context, string) (string, string, error)
 	CreateTable(context.Context, Target) (string, string, error)
 	GetFields(context.Context, Target) ([]Field, error)
 	CreateRecord(context.Context, Target, string, map[string]any) (string, error)
 	UpdateRecord(context.Context, Target, string, map[string]any) error
+	UpdateRecords(context.Context, Target, []RecordUpdate) error
 	DeleteRecord(context.Context, Target, string) error
 }
 
@@ -214,6 +225,51 @@ func (c *Client) CreateRecord(ctx context.Context, t Target, key string, fields 
 func (c *Client) UpdateRecord(ctx context.Context, t Target, id string, fields map[string]any) error {
 	return c.call(ctx, http.MethodPut, tablePath(t)+"/records/"+url.PathEscape(id), map[string]any{"fields": fields}, nil)
 }
+
+// Require confirmation of every requested ID; code=0 alone is insufficient.
+// Missing or malformed acknowledgements must never trigger replacement creates.
+func (c *Client) UpdateRecords(ctx context.Context, t Target, records []RecordUpdate) (result error) {
+	if len(records) == 0 || len(records) > updateBatchSize {
+		return fmt.Errorf("飞书批量更新条数无效")
+	}
+	requested := make(map[string]bool, len(records))
+	for _, record := range records {
+		if record.RecordID == "" || requested[record.RecordID] {
+			return fmt.Errorf("飞书批量更新记录 ID 无效或重复")
+		}
+		requested[record.RecordID] = true
+	}
+	body := struct {
+		Records []RecordUpdate `json:"records"`
+	}{records}
+	payload, err := json.Marshal(body)
+	if err != nil || len(payload) > updateBatchBytes {
+		return fmt.Errorf("飞书批量更新请求过大或编码失败")
+	}
+	var out struct {
+		Records []struct {
+			ID string `json:"record_id"`
+		} `json:"records"`
+	}
+	started := time.Now()
+	defer func() {
+		log.Printf("feishu sync batch update records=%d elapsed_ms=%d confirmed=%t", len(records), time.Since(started).Milliseconds(), result == nil)
+	}()
+	if err := c.call(ctx, http.MethodPost, tablePath(t)+"/records/batch_update", body, &out); err != nil {
+		return err
+	}
+	if len(out.Records) != len(records) {
+		return fmt.Errorf("飞书批量更新结果不完整，请重新同步；记录映射已保留")
+	}
+	for _, record := range out.Records {
+		if !requested[record.ID] {
+			return fmt.Errorf("飞书批量更新结果无效，请重新同步；记录映射已保留")
+		}
+		delete(requested, record.ID)
+	}
+	return nil
+}
+
 func (c *Client) DeleteRecord(ctx context.Context, t Target, id string) error {
 	return c.call(ctx, http.MethodDelete, tablePath(t)+"/records/"+url.PathEscape(id), nil, nil)
 }

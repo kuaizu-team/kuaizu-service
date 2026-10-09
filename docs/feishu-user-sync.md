@@ -23,7 +23,7 @@ FEISHU_WIKI_BASE_URL=https://rw0q02v5pok.feishu.cn
 
 启用前手动执行 sql/20261008_feishu_user_sync.sql，创建三张新表，不修改用户数据。配置异常时禁用同步，其他后台功能继续运行。MySQL 连接池上限至少为 2，默认 50；多个 admin 实例需连接同一 MySQL 写入节点，连接链路需支持会话级 GET_LOCK。
 
-上线顺序：迁移、配置服务端 Secret、保持同步关闭并先发布 admin 再发布网站、核对版本与配置后开启同步并重建 admin 容器、选择已确认学校同步两次核验行数与权限。更新 GitHub Actions ENV_DOCKER 后由部署流程写入服务器 .env.docker；仅修改环境文件不会改变已运行容器中的环境变量。完整“管理员页面→目标数据库→飞书”的真实学校联调仍待这一步完成。
+上线顺序：迁移、配置服务端 Secret、保持同步关闭并先发布 admin 再发布网站、核对版本与配置后开启同步并重建 admin 容器、选择已确认学校同步两次核验行数与权限。更新 GitHub Actions ENV_DOCKER 后由部署流程写入服务器 .env.docker；仅修改环境文件不会改变已运行容器中的环境变量。首次上线按此顺序执行；用户已完成初版真实学校同步，后续批量更新优化只需发布新的 admin 版本。
 
 ## 范围与接口
 
@@ -73,7 +73,11 @@ feishu_user_sync_target 保存学校→节点/Bitable/数据表/视图及创建�
 
 后台 worker 持有独立 MySQL 会话锁，跨实例串行执行，每个实例最多每秒 2 个飞书请求。写入前检查锁和最新权限；释放锁失败时丢弃物理连接，避免持锁连接回池。页面断开不取消任务；单个飞书请求最多 20 秒，任务没有整校人数上限。
 
-有映射则更新全部 15 列，无映射则新增。以数据库内容覆盖受管记录，不用本地哈希跳过更新。仅在明确 RecordIdNotFound 时清理该映射并允许重建；表格不存在、无权限等错误不能当作用户行丢失。
+有映射则更新全部 15 列，无映射则新增。以数据库内容覆盖受管记录，不用本地哈希跳过更新。已有记录按最多 50 人分页读取本地映射，字段仍逐人按学校范围查询；通过原生 records/batch_update 接口串行更新，每批最多 50 条且 JSON 请求体不超过 1 MiB。超过字节预算时提前分批；单条超过预算的记录走原有单条更新流程。权限及锁状态在每页开始和每批写入前复核，写入前用带学校条件的 IN 查询再次排除已转校或删除的用户。新增用户继续逐条保存 pending/client_token、创建、确认映射，不使用批量新增。
+
+每批响应必须确认全部请求记录 ID，顺序可以不同，但缺失、重复或意外 ID 都会停止任务并保留映射；网络失败及不完整响应不会触发补插。明确 RecordIdNotFound 时将该批拆成两半定位缺失记录，不假设批量接口失败意味着全部未写入；定位到单条后仍由原单条接口确认缺失，才允许清理该受管映射并进入原防重复新增流程。表格不存在、无权限等错误不能当作用户行丢失。
+
+更新进度在每个确认成功的批次保存，新建进度仍逐条保存；页面可能从 0/38 直接跳到 38/38。任务日志记录学校 ID、任务 ID、耗时和统计；批次日志仅记录条数、请求耗时和确认状态。日志不记录用户字段、应用凭证或完整飞书资源 URL。这次优化不需要数据库迁移、新环境变量、追加应用 scope、前端页面或接口调整。
 
 仅清理本校映射中已无本校用户的行，删除前重查归属。人工未映射行完全不扫描或删除。转校后新学校建立自己的映射，旧学校记录在旧学校下次同步时清理。删除失败保留映射。任务开始和结束各清理一次。
 
@@ -96,8 +100,8 @@ feishu_user_sync_target 保存学校→节点/Bitable/数据表/视图及创建�
 
 ## 当前验证
 
-已通过同步隔离测试、管理员/repository/service 回归、go vet，以及网站 38 项测试、TypeScript 和改动文件 ESLint。测试涵盖 15 列、原文、空值、枚举、学校范围、权限撤销、新增更新映射、未知新增不重插、仅清理映射、删除失败保留映射、重复点击和中断恢复。
+初版已通过同步隔离测试、管理员/repository/service 回归、go vet，以及网站组件、类型和 ESLint 检查。真实飞书虚构数据联调验证了首页下新建 Bitable、15 列建表、幂等新增、更新、空字段、原文回读及删除，两条虚构行均已清理。用户已完成三张同步表迁移、服务器及 Actions 配置、前后端部署，并确认真实学校同步成功（38 人约 2 分钟）。
 
-真实飞书联调仅用虚构数据，验证首页下新建 Bitable、15 列建表、幂等新增、更新、空字段、原文回读及删除。两条虚构行均已清理，验证 Bitable 保留供人工检查。2026-10-09 用户已手动完成 kuaizu_db 三张同步表迁移及只读验收：表、字段及索引符合脚本，三表行数均为 0。用户已保存服务器配置及后端 GitHub Actions ENV_DOCKER；当前同步保持关闭，未同步真实用户，未部署或提交本次代码。竞态检测因本机 CGO 未启用且无 C 编译器未完成。曾完成一轮默认生产构建；最终小幅页面修正后的构建复验被原有 Google 字体下载网络故障阻断，Webpack 复验也受同一网络限制。最终版本类型检查及组件测试已通过，上线前需在能访问 Google Fonts 的环境重做生产构建。
+2026-10-09 在 codex/feishu-user-sync-batch-update 分支优化已有记录的批量更新。新增隔离回归覆盖 38 人一次更新、51 人分页、更新与逐条新增混合、UTF-8/JSON 转义后的请求大小、超大单条回退、转校与撤权过滤、未知新增不重插、完整响应确认、明确缺失的定位重建以及异常时保留已确认进度。尚未推送或部署这次优化；实际提速需部署后测量，首次全部新增仍采用原逐条新增机制。
 
-官方参考：[官方 CLI](https://github.com/larksuite/cli)、[知识库建节点](https://open.feishu.cn/document/ukTMukTMukTM/uUDN04SN0QjL1QDN/wiki-v2/space-node/create)、[建数据表](https://open.feishu.cn/document/server-docs/docs/bitable-v1/app-table/create)、[新增记录](https://open.feishu.cn/document/server-docs/docs/bitable-v1/app-table-record/create)、[更新记录](https://open.feishu.cn/document/server-docs/docs/bitable-v1/app-table-record/update)。
+官方参考：[官方 CLI](https://github.com/larksuite/cli)、[知识库建节点](https://open.feishu.cn/document/ukTMukTMukTM/uUDN04SN0QjL1QDN/wiki-v2/space-node/create)、[建数据表](https://open.feishu.cn/document/server-docs/docs/bitable-v1/app-table/create)、[新增记录](https://open.feishu.cn/document/server-docs/docs/bitable-v1/app-table-record/create)、[更新记录](https://open.feishu.cn/document/server-docs/docs/bitable-v1/app-table-record/update)、[批量更新记录](https://open.feishu.cn/document/server-docs/docs/bitable-v1/app-table-record/batch_update)。

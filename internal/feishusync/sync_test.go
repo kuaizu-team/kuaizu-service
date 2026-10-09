@@ -119,6 +119,9 @@ func TestSchoolAuthorizationIsCurrentAndFailsClosed(t *testing.T) {
 func intPtr(id int) *int { return &id }
 
 type fakeRemote struct {
+	batches                         [][]RecordUpdate
+	batchErr                        error
+	batchFunc                       func([]RecordUpdate) error
 	creates, updates                int
 	deleted                         []string
 	createErr, updateErr, deleteErr error
@@ -138,6 +141,13 @@ func (f *fakeRemote) CreateRecord(context.Context, Target, string, map[string]an
 func (f *fakeRemote) UpdateRecord(context.Context, Target, string, map[string]any) error {
 	f.updates++
 	return f.updateErr
+}
+func (f *fakeRemote) UpdateRecords(_ context.Context, _ Target, records []RecordUpdate) error {
+	f.batches = append(f.batches, append([]RecordUpdate(nil), records...))
+	if f.batchFunc != nil {
+		return f.batchFunc(records)
+	}
+	return f.batchErr
 }
 func (f *fakeRemote) DeleteRecord(_ context.Context, _ Target, id string) error {
 	f.deleted = append(f.deleted, id)

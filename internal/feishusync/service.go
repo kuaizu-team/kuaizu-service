@@ -190,6 +190,10 @@ func (s *Service) workOne(root context.Context) bool {
 	if err != nil || job == nil {
 		return false
 	}
+	started := time.Now()
+	defer func() {
+		log.Printf("feishu sync job=%s school=%d status=%s elapsed_ms=%d processed=%d total=%d created=%d updated=%d deleted=%d", job.ID, job.SchoolID, job.Status, time.Since(started).Milliseconds(), job.Processed, job.Total, job.Created, job.Updated, job.Deleted)
+	}()
 	guard := func() error {
 		if err := ctx.Err(); err != nil {
 			return fmt.Errorf("同步被中断或超时，请重新同步")
@@ -324,36 +328,178 @@ func (s *Service) syncSchool(ctx context.Context, job *Job, guard func() error) 
 	if err = s.store.Progress(ctx, job); err != nil {
 		return fmt.Errorf("保存同步进度失败")
 	}
-	for _, id := range ids {
-		if err = guard(); err != nil {
+	for offset := 0; offset < len(ids); offset += updateBatchSize {
+		end := offset + updateBatchSize
+		if end > len(ids) {
+			end = len(ids)
+		}
+		if err = s.syncPage(ctx, target, job, ids[offset:end], guard); err != nil {
 			return err
-		}
-		row, err := s.store.User(ctx, job.SchoolID, id)
-		if err != nil {
-			return fmt.Errorf("读取本校用户字段失败")
-		}
-		if row != nil {
-			fields, err := row.Values()
-			if err != nil {
-				return err
-			}
-			action, err := s.syncRecord(ctx, target, id, fields, guard)
-			if err != nil {
-				return err
-			}
-			if action == "created" {
-				job.Created++
-			} else if action == "updated" {
-				job.Updated++
-			}
-		}
-		job.Processed++
-		if err = s.store.Progress(ctx, job); err != nil {
-			return fmt.Errorf("保存同步进度失败")
 		}
 	}
 	// Recheck users transferred/deleted while this job was running.
 	return s.cleanup(ctx, target, job, guard)
+}
+
+type pendingUpdate struct {
+	userID int
+	record RecordUpdate
+}
+
+func (s *Service) saveProgress(ctx context.Context, job *Job) error {
+	if err := s.store.Progress(ctx, job); err != nil {
+		return fmt.Errorf("保存同步进度失败")
+	}
+	return nil
+}
+
+func (s *Service) syncPage(ctx context.Context, target Target, job *Job, ids []int, guard func() error) error {
+	if err := guard(); err != nil {
+		return err
+	}
+	mappings, err := s.store.Records(ctx, target.SchoolID, ids)
+	if err != nil {
+		return fmt.Errorf("读取用户记录映射失败")
+	}
+	pending := make([]pendingUpdate, 0, updateBatchSize)
+	// Include JSON envelope and commas in the byte budget. Large individual rows
+	// use the original single-record path, without relaxing batch memory limits.
+	bytes := len(`{"records":[]}`)
+	flush := func() error {
+		if len(pending) == 0 {
+			return nil
+		}
+		if err := s.flushUpdates(ctx, target, job, pending, guard); err != nil {
+			return err
+		}
+		pending = make([]pendingUpdate, 0, updateBatchSize)
+		bytes = len(`{"records":[]}`)
+		return nil
+	}
+	for _, id := range ids {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		row, err := s.store.User(ctx, target.SchoolID, id)
+		if err != nil {
+			return fmt.Errorf("读取本校用户字段失败")
+		}
+		if row == nil {
+			job.Processed++
+			continue
+		}
+		fields, err := row.Values()
+		if err != nil {
+			return err
+		}
+		record, exists := mappings[id]
+		if exists && (record.State != "ready" || record.RecordID == "") {
+			return &ReconcileError{fmt.Sprintf("用户 %d 的飞书新增结果待核对，请管理员核对记录映射后重试；系统不会重新插入。", id)}
+		}
+		if exists {
+			update := RecordUpdate{RecordID: record.RecordID, Fields: fields}
+			payload, err := json.Marshal(update)
+			if err != nil {
+				return fmt.Errorf("用户字段编码失败")
+			}
+			size := len(payload) + 1
+			if bytes+size > updateBatchBytes {
+				if err = flush(); err != nil {
+					return err
+				}
+			}
+			if bytes+size <= updateBatchBytes {
+				pending = append(pending, pendingUpdate{userID: id, record: update})
+				bytes += size
+				continue
+			}
+		}
+		// Flush before slow creates so buffered fields do not wait behind new rows.
+		if err = flush(); err != nil {
+			return err
+		}
+		action, err := s.syncRecord(ctx, target, id, fields, guard)
+		if err != nil {
+			return err
+		}
+		if action == "created" {
+			job.Created++
+		} else if action == "updated" {
+			job.Updated++
+		}
+		job.Processed++
+		if err = s.saveProgress(ctx, job); err != nil {
+			return err
+		}
+	}
+	if err = flush(); err != nil {
+		return err
+	}
+	return s.saveProgress(ctx, job)
+}
+
+func (s *Service) flushUpdates(ctx context.Context, target Target, job *Job, pending []pendingUpdate, guard func() error) error {
+	if err := guard(); err != nil {
+		return err
+	}
+	ids := make([]int, 0, len(pending))
+	for _, update := range pending {
+		ids = append(ids, update.userID)
+	}
+	belongs, err := s.store.BelongingUsers(ctx, target.SchoolID, ids)
+	if err != nil {
+		return fmt.Errorf("校验用户学校归属失败")
+	}
+	eligible := make([]pendingUpdate, 0, len(pending))
+	records := make([]RecordUpdate, 0, len(pending))
+	for _, update := range pending {
+		if !belongs[update.userID] {
+			job.Processed++
+			continue
+		}
+		eligible = append(eligible, update)
+		records = append(records, update.record)
+	}
+	if len(records) == 0 {
+		return s.saveProgress(ctx, job)
+	}
+	// Check permission and named-lock ownership after the school query as well.
+	if err = guard(); err != nil {
+		return err
+	}
+	if err = s.remote.UpdateRecords(ctx, target, records); err == nil {
+		job.Updated += len(records)
+		job.Processed += len(records)
+		return s.saveProgress(ctx, job)
+	}
+	if !isMissingRecord(err) {
+		// Network errors, incomplete responses and permission failures retain every
+		// mapping. A subsequent full overwrite is safe; an inferred create is not.
+		return err
+	}
+	// Only an explicit RecordIdNotFound permits narrowing the batch. Do not assume
+	// atomicity: confirmed sub-batches count once even if earlier writes applied.
+	if len(eligible) > 1 {
+		middle := len(eligible) / 2
+		if err = s.flushUpdates(ctx, target, job, eligible[:middle], guard); err != nil {
+			return err
+		}
+		return s.flushUpdates(ctx, target, job, eligible[middle:], guard)
+	}
+	update := eligible[0]
+	// The existing path confirms the missing ID with a single-record update before
+	// removing its own mapping and entering the persisted, fail-closed create path.
+	action, err := s.syncRecord(ctx, target, update.userID, update.record.Fields, guard)
+	if err != nil {
+		return err
+	}
+	if action == "created" {
+		job.Created++
+	} else if action == "updated" {
+		job.Updated++
+	}
+	job.Processed++
+	return s.saveProgress(ctx, job)
 }
 
 func (s *Service) syncRecord(ctx context.Context, target Target, id int, fields map[string]any, guard func() error) (string, error) {

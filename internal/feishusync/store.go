@@ -197,3 +197,43 @@ func (s *Store) Belongs(ctx context.Context, schoolID, userID int) (bool, error)
 	err := s.db.GetContext(ctx, &count, "SELECT COUNT(*) FROM `user` WHERE id=? AND school_id=?", userID, schoolID)
 	return count == 1, err
 }
+
+// Fetch only this page's managed mappings; never scan or adopt manual Feishu rows.
+func (s *Store) Records(ctx context.Context, schoolID int, userIDs []int) (map[int]Record, error) {
+	result := make(map[int]Record)
+	if len(userIDs) == 0 {
+		return result, nil
+	}
+	query, args, err := sqlx.In("SELECT user_id,record_id,client_token,state FROM feishu_user_sync_record WHERE school_id=? AND user_id IN (?)", schoolID, userIDs)
+	if err != nil {
+		return nil, err
+	}
+	var rows []Record
+	if err = s.db.SelectContext(ctx, &rows, s.db.Rebind(query), args...); err != nil {
+		return nil, err
+	}
+	for _, row := range rows {
+		result[row.UserID] = row
+	}
+	return result, nil
+}
+
+// Recheck the entire bounded batch immediately before a remote mutation.
+func (s *Store) BelongingUsers(ctx context.Context, schoolID int, userIDs []int) (map[int]bool, error) {
+	result := make(map[int]bool)
+	if len(userIDs) == 0 {
+		return result, nil
+	}
+	query, args, err := sqlx.In("SELECT id FROM `user` WHERE school_id=? AND id IN (?)", schoolID, userIDs)
+	if err != nil {
+		return nil, err
+	}
+	var ids []int
+	if err = s.db.SelectContext(ctx, &ids, s.db.Rebind(query), args...); err != nil {
+		return nil, err
+	}
+	for _, id := range ids {
+		result[id] = true
+	}
+	return result, nil
+}
