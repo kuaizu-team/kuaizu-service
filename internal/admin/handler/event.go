@@ -19,6 +19,7 @@ import (
 
 type adminEventRequest struct {
 	Name                 string  `json:"name"`
+	ShortName            *string `json:"shortName"`
 	IsRanking            *bool   `json:"isRanking"`
 	RegistrationDeadline *string `json:"registrationDeadline"`
 	ArticleURL           *string `json:"articleUrl"`
@@ -677,6 +678,12 @@ func (s *AdminServer) MergeEvent(ctx echo.Context) error {
 
 func buildAdminEventModel(req adminEventRequest, role int, adminSchoolID *int) (*models.Event, error) {
 	event := &models.Event{Name: strings.TrimSpace(req.Name), AllowCrossSchool: 1, AllowCrossMajor: 1}
+	if req.ShortName != nil {
+		value := strings.TrimSpace(*req.ShortName)
+		if value != "" {
+			event.ShortName = &value
+		}
+	}
 	if req.Level != nil && strings.TrimSpace(*req.Level) != "" {
 		level := strings.TrimSpace(*req.Level)
 		if level != "national" && level != "regional" && level != "school" {
@@ -775,6 +782,7 @@ func preserveOmittedEventDetails(event, existing *models.Event, raw map[string]j
 		target **string
 		stored *string
 	}{
+		{"shortName", &event.ShortName, existing.ShortName},
 		{"organizerName", &event.OrganizerName, existing.OrganizerName},
 		{"description", &event.Description, existing.Description},
 		{"resourceUrl", &event.ResourceURL, existing.ResourceURL},

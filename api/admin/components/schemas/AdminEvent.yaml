@@ -12,6 +12,10 @@ properties:
     type: integer
   name:
     type: string
+  shortName:
+    type: string
+    nullable: true
+    maxLength: 64
   isRanking:
     type: boolean
   registrationDeadline:

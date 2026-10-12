@@ -151,6 +151,7 @@ type AdminInformationContentVO struct {
 type AdminEventVO struct {
 	ID                   int        `json:"id"`
 	Name                 string     `json:"name"`
+	ShortName            *string    `json:"shortName"`
 	IsRanking            bool       `json:"isRanking"`
 	RegistrationDeadline *time.Time `json:"registrationDeadline"`
 	ArticleURL           *string    `json:"articleUrl"`
@@ -188,6 +189,7 @@ func NewAdminEventVO(e *models.Event) *AdminEventVO {
 	return &AdminEventVO{
 		ID:                   e.ID,
 		Name:                 e.Name,
+		ShortName:            e.ShortName,
 		IsRanking:            e.IsRanking == 1,
 		RegistrationDeadline: e.RegistrationDeadline,
 		ArticleURL:           e.ArticleURL,

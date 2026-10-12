@@ -12,7 +12,7 @@ import (
 
 func TestAdminEventWebsiteNoteRoundTrip(t *testing.T) {
 	var req adminEventRequest
-	if err := json.Unmarshal([]byte(`{"name":"event","officialWebsite":" https://example.com ","participationNote":"  赛道说明  ","participationMode":"both","teamMinMembers":1,"teamMaxMembers":null}`), &req); err != nil {
+	if err := json.Unmarshal([]byte(`{"name":"event","shortName":" 简称 ","officialWebsite":" https://example.com ","participationNote":"  赛道说明  ","participationMode":"both","teamMinMembers":1,"teamMaxMembers":null}`), &req); err != nil {
 		t.Fatal(err)
 	}
 	event, err := buildAdminEventModel(req, models.AdminRoleSuperAdmin, nil)
@@ -20,7 +20,7 @@ func TestAdminEventWebsiteNoteRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	vo := adminvo.NewAdminEventVO(event)
-	if *vo.OfficialWebsite != "https://example.com" || *vo.ParticipationNote != "赛道说明" || *vo.ParticipationMode != "both" || *vo.TeamMinMembers != 1 || vo.TeamMaxMembers != nil {
+	if *vo.ShortName != "简称" || *vo.OfficialWebsite != "https://example.com" || *vo.ParticipationNote != "赛道说明" || *vo.ParticipationMode != "both" || *vo.TeamMinMembers != 1 || vo.TeamMaxMembers != nil {
 		t.Fatalf("fields lost: %#v", vo)
 	}
 	if err := json.Unmarshal([]byte(`{"name":"event","officialWebsite":null,"participationNote":null,"participationMode":null}`), &req); err != nil {
