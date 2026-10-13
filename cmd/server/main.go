@@ -186,6 +186,12 @@ func main() {
 	apiGroup.POST("/project-applications/my/mark-read", server.MarkMyApplicationsRead)
 	apiGroup.GET("/users/me/status-notifications/pending", server.GetMyPendingStatusNotification)
 	apiGroup.POST("/users/me/status-notifications/:id/displayed", server.MarkMyStatusNotificationDisplayed)
+	apiGroup.GET("/users/me/messages", server.ListMyStatusMessages)
+	apiGroup.GET("/users/me/messages/unread-count", server.GetMyUnreadStatusMessageCount)
+	apiGroup.GET("/users/me/messages/latest", server.GetMyLatestStatusMessage)
+	apiGroup.GET("/users/me/messages/:id", server.GetMyStatusMessage)
+	apiGroup.POST("/users/me/messages/:id/read", server.MarkMyStatusMessageRead)
+	apiGroup.POST("/users/me/messages/:id/displayed", server.MarkMyStatusMessageDisplayed)
 
 	// Project-application reviewer read status
 	apiGroup.POST("/project-applications/mark-read", server.MarkReviewerApplicationRead)

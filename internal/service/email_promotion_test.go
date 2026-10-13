@@ -235,7 +235,7 @@ func (m *MockProjectRepo) ReplaceMembers(ctx context.Context, projectID int, mem
 	return args.Error(0)
 }
 
-func (m *MockProjectRepo) UpdateStatus(ctx context.Context, id int, status int) error {
+func (m *MockProjectRepo) UpdateStatus(ctx context.Context, id int, status int, actorIDs ...int) error {
 	args := m.Called(ctx, id, status)
 	return args.Error(0)
 }
@@ -245,7 +245,7 @@ func (m *MockProjectRepo) UpdateStatusWithRejectReason(ctx context.Context, id i
 	return args.Error(0)
 }
 
-func (m *MockProjectRepo) CompleteRecruit(ctx context.Context, id int) (int64, error) {
+func (m *MockProjectRepo) CompleteRecruit(ctx context.Context, id int, actorIDs ...int) (int64, error) {
 	args := m.Called(ctx, id)
 	return int64(args.Int(0)), args.Error(1)
 }

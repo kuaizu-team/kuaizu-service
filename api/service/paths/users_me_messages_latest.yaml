@@ -1,0 +1,34 @@
+get:
+  tags: [Users]
+  summary: Resolve the current user's latest message for an immediate full-screen display
+  operationId: getMyLatestStatusMessage
+  parameters:
+    - name: type
+      in: query
+      required: true
+      schema:
+        type: string
+        enum: [application-accepted, application-rejected, olive-accepted, olive-rejected, member-removed, recruit-completed, project-ended, talent-published, project-published, application-discussing, super-admin-invitation]
+    - name: projectId
+      in: query
+      schema: { type: integer, minimum: 1 }
+  responses:
+    '200':
+      description: Success
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '../components/schemas/BaseResponse.yaml'
+              - type: object
+                properties:
+                  data:
+                    nullable: true
+                    allOf:
+                      - $ref: '../components/schemas/StatusMessageVO.yaml'
+    '401':
+      description: Authentication required
+    '403':
+      description: Account restricted
+    '404':
+      description: Message absent or belongs to another user

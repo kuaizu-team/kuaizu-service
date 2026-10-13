@@ -11,6 +11,7 @@ const (
 )
 
 type StatusNotification struct {
+	MessageID        *int64     `db:"message_id" json:"messageId,omitempty"`
 	ID               int64      `db:"id" json:"id"`
 	UserID           int        `db:"user_id" json:"-"`
 	Type             string     `db:"type" json:"type"`

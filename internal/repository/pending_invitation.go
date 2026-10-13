@@ -20,6 +20,11 @@ func NewPendingInvitationRepository(db *sqlx.DB) *PendingInvitationRepository {
 }
 
 func (r *PendingInvitationRepository) Upsert(ctx context.Context, userID int, inviteType string, expireAt time.Time) error {
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
 	query := `
 		INSERT INTO pending_invitation (user_id, invite_type, expire_at)
 		VALUES (?, ?, ?)
@@ -27,10 +32,13 @@ func (r *PendingInvitationRepository) Upsert(ctx context.Context, userID int, in
 			expire_at = VALUES(expire_at),
 			updated_at = CURRENT_TIMESTAMP
 	`
-	if _, err := r.db.ExecContext(ctx, query, userID, inviteType, expireAt); err != nil {
+	if _, err := tx.ExecContext(ctx, query, userID, inviteType, expireAt); err != nil {
 		return fmt.Errorf("upsert pending invitation: %w", err)
 	}
-	return nil
+	if err := archiveSuperAdminInvitationTx(ctx, tx, userID); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (r *PendingInvitationRepository) GetActiveByUserID(ctx context.Context, userID int, now time.Time) (*models.PendingInvitation, error) {

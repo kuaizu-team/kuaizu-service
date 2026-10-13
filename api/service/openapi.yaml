@@ -54,6 +54,18 @@ tags:
   - name: Operations
     description: Campus operations directory APIs
 paths:
+  /users/me/messages:
+    $ref: './paths/users_me_messages.yaml'
+  /users/me/messages/unread-count:
+    $ref: './paths/users_me_messages_unread-count.yaml'
+  /users/me/messages/latest:
+    $ref: './paths/users_me_messages_latest.yaml'
+  /users/me/messages/{id}:
+    $ref: './paths/users_me_messages_{id}.yaml'
+  /users/me/messages/{id}/read:
+    $ref: './paths/users_me_messages_{id}_read.yaml'
+  /users/me/messages/{id}/displayed:
+    $ref: './paths/users_me_messages_{id}_displayed.yaml'
   /projects/{id}/member-timeline:
     $ref: './paths/projects_{id}_member-timeline.yaml'
   /projects/{id}/member-timeline/{nodeId}:

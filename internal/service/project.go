@@ -1365,7 +1365,7 @@ func (s *ProjectService) CompleteRecruit(ctx context.Context, id, userID int) er
 	}, "完成招募"); err != nil {
 		return err
 	}
-	if _, err := s.repo.Project.CompleteRecruit(ctx, id); err != nil {
+	if _, err := s.repo.Project.CompleteRecruit(ctx, id, userID); err != nil {
 		log.Printf("[ProjectService.CompleteRecruit] repository error: %v", err)
 		return ErrInternal("完成招募失败")
 	}
@@ -1399,7 +1399,7 @@ func (s *ProjectService) EndProject(ctx context.Context, id, userID int) error {
 	}, "结束项目"); err != nil {
 		return err
 	}
-	if err := s.repo.Project.UpdateStatus(ctx, id, models.ProjectStatusEnded); err != nil {
+	if err := s.repo.Project.UpdateStatus(ctx, id, models.ProjectStatusEnded, userID); err != nil {
 		log.Printf("[ProjectService.EndProject] repository error: %v", err)
 		return ErrInternal("结束项目失败")
 	}
@@ -1689,6 +1689,11 @@ func (s *ProjectService) ReviewApplication(ctx context.Context, applicationID, u
 		if err := repository.CreateTx(ctx, tx, app.UserID, applicationID, models.StatusNotificationApplicationRejected); err != nil {
 			log.Printf("[ProjectService.ReviewApplication] create status notification failed: %v", err)
 			return ErrInternal("创建状态通知失败")
+		}
+	}
+	if status == models.ApplicationStatusDiscussing {
+		if err := repository.CreateDiscussingMessageTx(ctx, tx, applicationID, false); err != nil {
+			return ErrInternal("保存状态消息失败")
 		}
 	}
 	resultStr := "互相了解"

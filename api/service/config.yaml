@@ -4,3 +4,12 @@ generate:
   models: true
   embedded-spec: true
 output: api/api.gen.go
+output-options:
+  # These endpoints use the existing manually registered authenticated handlers.
+  exclude-operation-ids:
+    - listMyStatusMessages
+    - getMyUnreadStatusMessageCount
+    - getMyLatestStatusMessage
+    - getMyStatusMessage
+    - markMyStatusMessageRead
+    - markMyStatusMessageDisplayed

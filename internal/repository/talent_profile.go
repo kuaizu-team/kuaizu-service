@@ -494,7 +494,13 @@ func (r *TalentProfileRepository) UpsertWithWorkImages(ctx context.Context, p *m
 
 func upsertTalentProfileTx(ctx context.Context, tx *sqlx.Tx, p *models.TalentProfile) error {
 	var existingID int
-	err := tx.GetContext(ctx, &existingID, `SELECT id FROM talent_profile WHERE user_id=? FOR UPDATE`, p.UserID)
+	var existing struct {
+		ID     int  `db:"id"`
+		Status *int `db:"status"`
+	}
+	err := tx.GetContext(ctx, &existing, `SELECT id,status FROM talent_profile WHERE user_id=? FOR UPDATE`, p.UserID)
+	existingID = existing.ID
+	wasReviewing := existing.Status != nil && *existing.Status == models.TalentStatusReviewing
 	if err != nil && err != sql.ErrNoRows {
 		return fmt.Errorf("query talent profile for update: %w", err)
 	}
@@ -532,6 +538,11 @@ func upsertTalentProfileTx(ctx context.Context, tx *sqlx.Tx, p *models.TalentPro
 			return fmt.Errorf("update talent profile: %w", err)
 		}
 		p.ID = existingID
+	}
+	if p.Status != nil && *p.Status == models.TalentStatusReviewing && !wasReviewing {
+		if err := archiveTalentPublishedTx(ctx, tx, p.ID); err != nil {
+			return err
+		}
 	}
 
 	return nil

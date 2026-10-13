@@ -25,6 +25,7 @@ func TestApplicationNotificationFailureRollsBackReview(t *testing.T) {
 	repo.Project = projects
 	dbMock.ExpectBegin()
 	dbMock.ExpectExec("WHERE id = \\? AND status = \\? AND reviewer_id").WithArgs(1, 2, models.ProjectRoleTeamLeader, 1, 1, 1, 2, 5, 0, nil, nil).WillReturnResult(sqlmock.NewResult(0, 1))
+	dbMock.ExpectExec("INSERT INTO user_status_message").WithArgs("application", 5).WillReturnResult(sqlmock.NewResult(20, 1))
 	dbMock.ExpectExec("INSERT INTO wx_subscribe_delivery").WillReturnError(errors.New("outbox unavailable"))
 	dbMock.ExpectRollback()
 	err = NewProjectService(repo, nil, NewMessageService(repo, nil)).ReviewApplication(context.Background(), 5, 2, api.ApplicationStatus(1))
@@ -45,6 +46,7 @@ func TestApplicationCycleFailureRollsBackBusinessAndNotification(t *testing.T) {
 	repo.Project = projects
 	dbMock.ExpectBegin()
 	dbMock.ExpectExec("WHERE id = \\? AND status = \\? AND reviewer_id").WithArgs(1, 2, models.ProjectRoleTeamLeader, 1, 1, 1, 2, 5, 0, nil, nil).WillReturnResult(sqlmock.NewResult(0, 1))
+	dbMock.ExpectExec("INSERT INTO user_status_message").WithArgs("application", 5).WillReturnResult(sqlmock.NewResult(20, 1))
 	dbMock.ExpectExec("INSERT INTO wx_subscribe_delivery").WillReturnResult(sqlmock.NewResult(12, 1))
 	dbMock.ExpectQuery("SELECT creator_id AS user_id FROM project").WithArgs(42, 42, 42).WillReturnRows(sqlmock.NewRows([]string{"user_id"}).AddRow(2))
 	dbMock.ExpectExec("UPDATE auto_urge_sms_state a SET closed_at").WithArgs(2).WillReturnError(errors.New("cycle state unavailable"))

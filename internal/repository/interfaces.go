@@ -47,9 +47,9 @@ type ProjectRepo interface {
 	ListMembers(ctx context.Context, projectID int) ([]models.ProjectMember, error)
 	AddMembers(ctx context.Context, projectID int, members []models.ProjectMember) error
 	ReplaceMembers(ctx context.Context, projectID int, members []models.ProjectMember) error
-	UpdateStatus(ctx context.Context, id int, status int) error
+	UpdateStatus(ctx context.Context, id int, status int, actorIDs ...int) error
 	UpdateStatusWithRejectReason(ctx context.Context, id int, status int, rejectReason *string) error
-	CompleteRecruit(ctx context.Context, id int) (int64, error)
+	CompleteRecruit(ctx context.Context, id int, actorIDs ...int) (int64, error)
 	IncrementViewCount(ctx context.Context, id int) error
 }
 
@@ -281,6 +281,11 @@ type PendingInvitationRepo interface {
 }
 
 type StatusNotificationRepo interface {
+	ListMessages(ctx context.Context, userID, page, size int, read *bool) ([]models.StatusMessage, int64, error)
+	GetMessage(ctx context.Context, userID int, id int64) (*models.StatusMessage, error)
+	LatestMessage(ctx context.Context, userID int, kind string, projectID int) (*models.StatusMessage, error)
+	UnreadMessageCount(ctx context.Context, userID int) (int64, error)
+	MarkMessage(ctx context.Context, userID int, id int64, displayed, read bool) error
 	GetPending(ctx context.Context, userID int) (*models.StatusNotification, error)
 	MarkDisplayed(ctx context.Context, id int64, userID int) error
 	MarkAllPendingDisplayed(ctx context.Context, userID int) error
