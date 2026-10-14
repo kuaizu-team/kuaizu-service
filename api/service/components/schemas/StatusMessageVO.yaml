@@ -6,7 +6,7 @@ properties:
     format: int64
   type:
     type: string
-    enum: [application-accepted, application-rejected, olive-accepted, olive-rejected, member-removed, recruit-completed, project-ended, talent-published, project-published, application-discussing, super-admin-invitation]
+    enum: [application-accepted, application-rejected, olive-accepted, olive-rejected, member-removed, recruit-completed, project-ended, talent-published, project-published, application-discussing, super-admin-invitation, cooperation-approved, cooperation-rejected]
   params:
     type: object
     description: Immutable snapshot of display parameters. Never includes private contacts.

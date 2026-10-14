@@ -3,6 +3,10 @@ get:
   summary: List the current user's status message archive
   operationId: listMyStatusMessages
   parameters:
+    - name: includeCooperation
+      in: query
+      schema: { type: boolean, default: false }
+      description: New clients opt in to cooperation approval/rejection records.
     - name: page
       in: query
       schema: { type: integer, minimum: 1, maximum: 1000000, default: 1 }

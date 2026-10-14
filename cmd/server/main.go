@@ -184,6 +184,10 @@ func main() {
 	// Project-application unread badge endpoints
 	apiGroup.GET("/project-applications/my/unread-status", server.GetMyApplicationUnreadStatus)
 	apiGroup.POST("/project-applications/my/mark-read", server.MarkMyApplicationsRead)
+	apiGroup.GET("/campus-cooperations", server.ListCampusCooperations)
+	apiGroup.GET("/campus-cooperations/:id", server.GetCampusCooperation)
+	apiGroup.POST("/campus-cooperations/:id/applications", server.ApplyCampusCooperation)
+	apiGroup.GET("/campus-cooperation-applications/my", server.ListMyCampusCooperationApplications)
 	apiGroup.GET("/users/me/status-notifications/pending", server.GetMyPendingStatusNotification)
 	apiGroup.POST("/users/me/status-notifications/:id/displayed", server.MarkMyStatusNotificationDisplayed)
 	apiGroup.GET("/users/me/messages", server.ListMyStatusMessages)

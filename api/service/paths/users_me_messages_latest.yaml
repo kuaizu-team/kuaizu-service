@@ -8,7 +8,7 @@ get:
       required: true
       schema:
         type: string
-        enum: [application-accepted, application-rejected, olive-accepted, olive-rejected, member-removed, recruit-completed, project-ended, talent-published, project-published, application-discussing, super-admin-invitation]
+        enum: [application-accepted, application-rejected, olive-accepted, olive-rejected, member-removed, recruit-completed, project-ended, talent-published, project-published, application-discussing, super-admin-invitation, cooperation-approved, cooperation-rejected]
     - name: projectId
       in: query
       schema: { type: integer, minimum: 1 }

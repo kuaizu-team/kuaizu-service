@@ -88,6 +88,16 @@ func main() {
 	adminJWTConfig.AdminUsers = repo.AdminUser
 	adminGroup.Use(adminmw.AdminJWTAuth(adminJWTConfig))
 	adminGroup.GET("/auth/me", server.GetCurrentAdmin)
+	adminGroup.GET("/commercial-orders", server.ListCommercialOrders)
+	adminGroup.POST("/commercial-orders", server.SaveCommercialOrder)
+	adminGroup.PUT("/commercial-orders/:id", server.SaveCommercialOrder)
+	adminGroup.POST("/commercial-orders/:id/claims", server.ClaimCommercialOrder)
+	adminGroup.GET("/campus-cooperations", server.ListCampusCooperations)
+	adminGroup.GET("/campus-cooperations/:id", server.GetCampusCooperation)
+	adminGroup.PUT("/campus-cooperations/:id", server.SaveCampusCooperation)
+	adminGroup.POST("/campus-cooperations/:id/images", server.UploadCampusCooperationImage)
+	adminGroup.GET("/campus-cooperations/:id/applications", server.ListCampusCooperationApplications)
+	adminGroup.PATCH("/campus-cooperation-applications/:id", server.ReviewCampusCooperationApplication)
 
 	adminGroup.GET("/dashboard/stats", server.GetDashboardStats)
 	adminGroup.GET("/subscribe-messages/overview", server.GetSubscribeMessageOverview)

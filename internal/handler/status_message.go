@@ -1,10 +1,13 @@
 package handler
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"strconv"
 
+	"github.com/kuaizu-team/kuaizu-service/internal/models"
+	"github.com/kuaizu-team/kuaizu-service/internal/service"
 	"github.com/labstack/echo/v4"
 )
 
@@ -16,6 +19,10 @@ func messageError(ctx echo.Context, err error) error {
 }
 
 func (s *Server) ListMyStatusMessages(ctx echo.Context) error {
+	includeCooperation, err := cooperationClientCapability(ctx)
+	if err != nil {
+		return mapServiceError(ctx, err)
+	}
 	page, size := 1, 20
 	for name, target := range map[string]*int{"page": &page, "size": &size} {
 		if raw := ctx.QueryParam(name); raw != "" {
@@ -37,7 +44,15 @@ func (s *Server) ListMyStatusMessages(ctx echo.Context) error {
 		value := raw == "true"
 		read = &value
 	}
-	list, total, err := s.repo.StatusNotification.ListMessages(ctx.Request().Context(), GetUserID(ctx), page, size, read)
+	var list []models.StatusMessage
+	var total int64
+	if legacy, ok := s.repo.StatusNotification.(interface {
+		ListLegacyMessages(context.Context, int, int, int, *bool) ([]models.StatusMessage, int64, error)
+	}); ok && !includeCooperation {
+		list, total, err = legacy.ListLegacyMessages(ctx.Request().Context(), GetUserID(ctx), page, size, read)
+	} else {
+		list, total, err = s.repo.StatusNotification.ListMessages(ctx.Request().Context(), GetUserID(ctx), page, size, read)
+	}
 	if err != nil {
 		return messageError(ctx, err)
 	}
@@ -60,7 +75,7 @@ func (s *Server) GetMyLatestStatusMessage(ctx echo.Context) error {
 	kind := ctx.QueryParam("type")
 	switch kind {
 	case "application-accepted", "application-rejected", "olive-accepted", "olive-rejected", "member-removed",
-		"recruit-completed", "project-ended", "talent-published", "project-published", "application-discussing", "super-admin-invitation":
+		"recruit-completed", "project-ended", "talent-published", "project-published", "application-discussing", "super-admin-invitation", "cooperation-approved", "cooperation-rejected":
 	default:
 		return BadRequest(ctx, "消息类型无效")
 	}
@@ -83,7 +98,18 @@ func (s *Server) GetMyLatestStatusMessage(ctx echo.Context) error {
 }
 
 func (s *Server) GetMyUnreadStatusMessageCount(ctx echo.Context) error {
-	count, err := s.repo.StatusNotification.UnreadMessageCount(ctx.Request().Context(), GetUserID(ctx))
+	includeCooperation, err := cooperationClientCapability(ctx)
+	if err != nil {
+		return mapServiceError(ctx, err)
+	}
+	var count int64
+	if legacy, ok := s.repo.StatusNotification.(interface {
+		LegacyUnreadMessageCount(context.Context, int) (int64, error)
+	}); ok && !includeCooperation {
+		count, err = legacy.LegacyUnreadMessageCount(ctx.Request().Context(), GetUserID(ctx))
+	} else {
+		count, err = s.repo.StatusNotification.UnreadMessageCount(ctx.Request().Context(), GetUserID(ctx))
+	}
 	if err != nil {
 		return messageError(ctx, err)
 	}
@@ -115,4 +141,15 @@ func (s *Server) markMyStatusMessage(ctx echo.Context, displayed bool) error {
 		return messageError(ctx, err)
 	}
 	return SuccessMessage(ctx, "success")
+}
+
+func cooperationClientCapability(ctx echo.Context) (bool, error) {
+	switch ctx.QueryParam("includeCooperation") {
+	case "", "false":
+		return false, nil
+	case "true":
+		return true, nil
+	default:
+		return false, service.ErrBadRequest("合作消息能力参数无效")
+	}
 }

@@ -125,7 +125,16 @@ func decodeStatusMessage(m *models.StatusMessage) error {
 }
 
 func (r *StatusNotificationRepository) ListMessages(ctx context.Context, userID, page, size int, read *bool) ([]models.StatusMessage, int64, error) {
+	return r.listMessages(ctx, userID, page, size, read, true)
+}
+func (r *StatusNotificationRepository) ListLegacyMessages(ctx context.Context, userID, page, size int, read *bool) ([]models.StatusMessage, int64, error) {
+	return r.listMessages(ctx, userID, page, size, read, false)
+}
+func (r *StatusNotificationRepository) listMessages(ctx context.Context, userID, page, size int, read *bool, includeCooperation bool) ([]models.StatusMessage, int64, error) {
 	where, args := "user_id=?", []interface{}{userID}
+	if !includeCooperation {
+		where += " AND type NOT IN ('cooperation-approved','cooperation-rejected')"
+	}
 	if read != nil {
 		if *read {
 			where += " AND read_at IS NOT NULL"
@@ -208,4 +217,10 @@ func (r *StatusNotificationRepository) MarkMessage(ctx context.Context, userID i
 		return sql.ErrNoRows
 	}
 	return nil
+}
+
+func (r *StatusNotificationRepository) LegacyUnreadMessageCount(ctx context.Context, userID int) (int64, error) {
+	var count int64
+	err := r.db.GetContext(ctx, &count, `SELECT COUNT(*) FROM user_status_message WHERE user_id=? AND read_at IS NULL AND type NOT IN ('cooperation-approved','cooperation-rejected')`, userID)
+	return count, err
 }

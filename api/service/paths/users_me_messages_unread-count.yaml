@@ -2,6 +2,11 @@ get:
   tags: [Users]
   summary: Count unread messages for the current user
   operationId: getMyUnreadStatusMessageCount
+  parameters:
+    - name: includeCooperation
+      in: query
+      schema: { type: boolean, default: false }
+      description: Must match the message-list capability so legacy red dots exclude new types.
   responses:
     '200':
       description: Success

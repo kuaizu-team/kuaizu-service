@@ -1,0 +1,430 @@
+{
+  "list": {
+    "get": {
+      "tags": [
+        "CampusCooperations"
+      ],
+      "operationId": "listCampusCooperations",
+      "summary": "List published opportunities in the current user school",
+      "security": [
+        {
+          "bearerAuth": []
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Success",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "code": {
+                    "type": "integer"
+                  },
+                  "message": {
+                    "type": "string"
+                  },
+                  "data": {
+                    "type": "object",
+                    "properties": {
+                      "state": {
+                        "type": "string",
+                        "enum": [
+                          "school-required",
+                          "no-team",
+                          "ready"
+                        ]
+                      },
+                      "schoolId": {
+                        "type": "integer",
+                        "format": "int64",
+                        "nullable": true
+                      },
+                      "schoolName": {
+                        "type": "string",
+                        "nullable": true
+                      },
+                      "operationLeaderArticleUrl": {
+                        "type": "string"
+                      },
+                      "list": {
+                        "type": "array",
+                        "items": {
+                          "$ref": "../../common/campus_cooperation.yaml#/schemas/CooperationPublicView"
+                        }
+                      },
+                      "total": {
+                        "type": "integer",
+                        "format": "int64"
+                      },
+                      "page": {
+                        "type": "integer",
+                        "format": "int64"
+                      },
+                      "size": {
+                        "type": "integer",
+                        "format": "int64"
+                      }
+                    },
+                    "required": [
+                      "state",
+                      "list",
+                      "total",
+                      "page",
+                      "size"
+                    ]
+                  }
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data"
+                ]
+              }
+            }
+          }
+        },
+        "400": {
+          "description": "Invalid input or business state"
+        },
+        "401": {
+          "description": "Authentication required"
+        },
+        "403": {
+          "description": "Role/account forbidden"
+        },
+        "404": {
+          "description": "Resource absent or outside the current school scope"
+        }
+      },
+      "parameters": [
+        {
+          "name": "page",
+          "in": "query",
+          "schema": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000000,
+            "default": 1
+          }
+        },
+        {
+          "name": "size",
+          "in": "query",
+          "schema": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 20
+          },
+          "description": "Capped at 50."
+        }
+      ]
+    }
+  },
+  "detail": {
+    "get": {
+      "tags": [
+        "CampusCooperations"
+      ],
+      "operationId": "getCampusCooperation",
+      "summary": "Get same-school cooperation with server-side contact access control",
+      "security": [
+        {
+          "bearerAuth": []
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Success",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "code": {
+                    "type": "integer"
+                  },
+                  "message": {
+                    "type": "string"
+                  },
+                  "data": {
+                    "$ref": "../../common/campus_cooperation.yaml#/schemas/CooperationPublicView"
+                  }
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data"
+                ]
+              }
+            }
+          }
+        },
+        "400": {
+          "description": "Invalid input or business state"
+        },
+        "401": {
+          "description": "Authentication required"
+        },
+        "403": {
+          "description": "Role/account forbidden"
+        },
+        "404": {
+          "description": "Resource absent or outside the current school scope"
+        }
+      },
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          }
+        }
+      ]
+    }
+  },
+  "apply": {
+    "post": {
+      "tags": [
+        "CampusCooperations"
+      ],
+      "operationId": "applyCampusCooperation",
+      "summary": "Apply using the confirmed current card; subscription refusal/failure does not block",
+      "security": [
+        {
+          "bearerAuth": []
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Success",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "code": {
+                    "type": "integer"
+                  },
+                  "message": {
+                    "type": "string"
+                  },
+                  "data": {
+                    "$ref": "../../common/campus_cooperation.yaml#/schemas/CooperationApplication"
+                  }
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data"
+                ]
+              }
+            }
+          }
+        },
+        "400": {
+          "description": "Invalid input or business state"
+        },
+        "401": {
+          "description": "Authentication required"
+        },
+        "403": {
+          "description": "Role/account forbidden"
+        },
+        "404": {
+          "description": "Resource absent or outside the current school scope"
+        }
+      },
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          }
+        }
+      ]
+    }
+  },
+  "my": {
+    "get": {
+      "tags": [
+        "CampusCooperations"
+      ],
+      "operationId": "listMyCampusCooperationApplications",
+      "summary": "List only the current user application attempts; no private review/card snapshot",
+      "security": [
+        {
+          "bearerAuth": []
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Success",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "code": {
+                    "type": "integer"
+                  },
+                  "message": {
+                    "type": "string"
+                  },
+                  "data": {
+                    "type": "object",
+                    "properties": {
+                      "list": {
+                        "type": "array",
+                        "items": {
+                          "$ref": "../../common/campus_cooperation.yaml#/schemas/CooperationApplication"
+                        }
+                      },
+                      "total": {
+                        "type": "integer",
+                        "format": "int64"
+                      },
+                      "page": {
+                        "type": "integer",
+                        "format": "int64"
+                      },
+                      "size": {
+                        "type": "integer",
+                        "format": "int64"
+                      }
+                    },
+                    "required": [
+                      "list",
+                      "total",
+                      "page",
+                      "size"
+                    ]
+                  }
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data"
+                ]
+              }
+            }
+          }
+        },
+        "400": {
+          "description": "Invalid input or business state"
+        },
+        "401": {
+          "description": "Authentication required"
+        },
+        "403": {
+          "description": "Role/account forbidden"
+        },
+        "404": {
+          "description": "Resource absent or outside the current school scope"
+        }
+      },
+      "parameters": [
+        {
+          "name": "page",
+          "in": "query",
+          "schema": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000000,
+            "default": 1
+          }
+        },
+        {
+          "name": "size",
+          "in": "query",
+          "schema": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 20
+          },
+          "description": "Capped at 50."
+        }
+      ]
+    }
+  },
+  "pending": {
+    "get": {
+      "tags": [
+        "CampusCooperations"
+      ],
+      "operationId": "getMyPendingStatusNotification",
+      "summary": "Existing fullscreen queue; cooperation types require explicit capability",
+      "security": [
+        {
+          "bearerAuth": []
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Success",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "code": {
+                    "type": "integer"
+                  },
+                  "message": {
+                    "type": "string"
+                  },
+                  "data": {
+                    "allOf": [
+                      {
+                        "$ref": "../../common/campus_cooperation.yaml#/schemas/CooperationPendingNotification"
+                      }
+                    ],
+                    "nullable": true,
+                    "type": "object"
+                  }
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data"
+                ]
+              }
+            }
+          }
+        },
+        "400": {
+          "description": "Invalid input or business state"
+        },
+        "401": {
+          "description": "Authentication required"
+        },
+        "403": {
+          "description": "Role/account forbidden"
+        },
+        "404": {
+          "description": "Resource absent or outside the current school scope"
+        }
+      },
+      "parameters": [
+        {
+          "name": "includeCooperation",
+          "in": "query",
+          "schema": {
+            "type": "boolean",
+            "default": false
+          },
+          "description": "New clients set true for cooperation message types. Default keeps legacy archive/count/fullscreen behavior."
+        }
+      ]
+    }
+  }
+}

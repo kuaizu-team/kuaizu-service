@@ -7,6 +7,11 @@ output: api/api.gen.go
 output-options:
   # These endpoints use the existing manually registered authenticated handlers.
   exclude-operation-ids:
+    - listCampusCooperations
+    - getCampusCooperation
+    - applyCampusCooperation
+    - listMyCampusCooperationApplications
+    - getMyPendingStatusNotification
     - listMyStatusMessages
     - getMyUnreadStatusMessageCount
     - getMyLatestStatusMessage

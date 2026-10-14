@@ -16,6 +16,7 @@ type Services struct {
 	Order               *OrderService
 	OliveBranch         *OliveBranchService
 	Commons             *CommonsService
+	CampusCooperation   *CampusCooperationService
 	ContentAudit        *ContentAuditService
 	TalentProfile       *TalentProfileService
 	Project             *ProjectService
@@ -35,6 +36,7 @@ type Services struct {
 func New(repo *repository.Repository, deps *Dependencies) *Services {
 	contentAudit := NewContentAuditService(deps.WechatClient)
 	message := NewMessageService(repo, deps.WechatClient)
+	commons := NewCommonsService(deps.OSSClient, repo.User)
 	emailPromotion := NewEmailPromotionServiceWithMessageCenter(repo, deps.MessageCenter, deps.MessageCenterInitError)
 	smsNotice := NewSmsNoticeService(repo, deps.MessageCenter, deps.MessageCenterInitError)
 	paidOrderDelivery := NewPaidOrderDeliveryService(repo, emailPromotion, smsNotice)
@@ -52,7 +54,8 @@ func New(repo *repository.Repository, deps *Dependencies) *Services {
 		EmailUnsubscribe:    NewEmailUnsubscribeService(repo),
 		Order:               order,
 		OliveBranch:         NewOliveBranchService(repo, message),
-		Commons:             NewCommonsService(deps.OSSClient, repo.User),
+		Commons:             commons,
+		CampusCooperation:   NewCampusCooperationService(repo, message, commons),
 		ContentAudit:        contentAudit,
 		TalentProfile:       NewTalentProfileService(repo, contentAudit, message),
 		Project:             NewProjectService(repo, contentAudit, message),

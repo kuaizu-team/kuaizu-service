@@ -89,7 +89,7 @@ func TestPendingPrioritySuppressionDoesNotMarkArchiveRead(t *testing.T) {
 	defer raw.Close()
 	repo := NewStatusNotificationRepository(sqlx.NewDb(raw, "sqlmock"))
 	mock.ExpectQuery(`(?s)SELECT sn.id.*WHERE sn.user_id = \? AND sn.displayed_at IS NULL\s+ORDER BY sn.priority DESC, sn.created_at DESC, sn.id DESC LIMIT 1`).WithArgs(7).WillReturnRows(sqlmock.NewRows([]string{"id", "user_id", "type", "priority", "message_id"}).AddRow(9, 7, "member-removed", 1000, 12))
-	mock.ExpectExec(regexp.QuoteMeta(`UPDATE status_notification SET displayed_at=CURRENT_TIMESTAMP WHERE user_id=? AND displayed_at IS NULL AND id<>?`)).WithArgs(7, int64(9)).WillReturnResult(sqlmock.NewResult(0, 3))
+	mock.ExpectExec(regexp.QuoteMeta(`UPDATE status_notification SET displayed_at=CURRENT_TIMESTAMP WHERE user_id=? AND displayed_at IS NULL AND id<>? AND type NOT IN ('cooperation-approved','cooperation-rejected')`)).WithArgs(7, int64(9)).WillReturnResult(sqlmock.NewResult(0, 3))
 	item, err := repo.GetPending(context.Background(), 7)
 	if err != nil || item.ID != 9 || *item.MessageID != 12 {
 		t.Fatalf("item=%v error=%v", item, err)

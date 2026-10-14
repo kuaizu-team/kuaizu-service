@@ -129,12 +129,21 @@ func (s *MessageService) enqueueSubscribeMsg(ctx context.Context, userID int, bi
 // QueueSubscribeTx records intent before the business transaction commits.
 // DispatchCommittedSubscribe is called only AFTER a successful commit.
 func (s *MessageService) QueueSubscribeTx(ctx context.Context, tx *sqlx.Tx, userID int, bizKey string, data map[string]string) (int64, error) {
+	return s.QueueSubscribeTxWithPage(ctx, tx, userID, bizKey, data, "")
+}
+
+// QueueSubscribeTxWithPage preserves the existing outbox and adds an optional entity target.
+func (s *MessageService) QueueSubscribeTxWithPage(ctx context.Context, tx *sqlx.Tx, userID int, bizKey string, data map[string]string, page string) (int64, error) {
 	payload, err := json.Marshal(data)
 	if err != nil {
 		return 0, err
 	}
+	var pagePath *string
+	if page != "" {
+		pagePath = &page
+	}
 	return repository.CreateWxSubscribeDeliveryTx(ctx, tx, &models.WxSubscribeDelivery{
-		UserID: userID, BizKey: bizKey, BusinessData: string(payload), Status: models.WxSubscribeDeliveryPending,
+		UserID: userID, BizKey: bizKey, BusinessData: string(payload), Status: models.WxSubscribeDeliveryPending, PagePath: pagePath,
 	})
 }
 func (s *MessageService) DispatchCommittedSubscribe(id int64) {
