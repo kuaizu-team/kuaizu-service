@@ -1,0 +1,30 @@
+get:
+  tags: [Users]
+  summary: Count unread messages for the current user
+  operationId: getMyUnreadStatusMessageCount
+  parameters:
+    - name: includeCooperation
+      in: query
+      schema: { type: boolean, default: false }
+      description: Must match the message-list capability so legacy red dots exclude new types.
+  responses:
+    '200':
+      description: Success
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '../components/schemas/BaseResponse.yaml'
+              - type: object
+                properties:
+                  data:
+                    type: object
+                    required: [count]
+                    properties:
+                      count: { type: integer, format: int64 }
+    '401':
+      description: Authentication required
+    '403':
+      description: Account restricted
+    '404':
+      description: Message absent or belongs to another user

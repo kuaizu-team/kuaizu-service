@@ -547,6 +547,9 @@ func (r *ProjectRepository) CreateWithMetadata(ctx context.Context, p *models.Pr
 	if err := saveProjectMetadataTx(ctx, tx, p.ID, tags, publisherRole, initiatingSchoolID, milestones, members, eventIDs); err != nil {
 		return err
 	}
+	if err := ArchiveProjectStatusTx(ctx, tx, p.ID, "project-published", p.CreatorID); err != nil {
+		return err
+	}
 	if imageKeys != nil {
 		if _, err := replaceImagesTx(ctx, tx, imageOwnerUserID, MediaTypeProjectImage, "project", p.ID, "project_image", "project_id", "project-images/", 6, *imageKeys); err != nil {
 			return err
@@ -1011,7 +1014,18 @@ func (r *ProjectRepository) IsOwner(ctx context.Context, projectID, userID int) 
 }
 
 // UpdateStatus updates the review status of a project
-func (r *ProjectRepository) UpdateStatus(ctx context.Context, id int, status int) error {
+func (r *ProjectRepository) UpdateStatus(ctx context.Context, id int, status int, actorIDs ...int) error {
+	var exec sqlx.ExtContext = r.db
+	var tx *sqlx.Tx
+	if status == models.ProjectStatusEnded {
+		var err error
+		tx, err = r.db.BeginTxx(ctx, nil)
+		if err != nil {
+			return err
+		}
+		defer tx.Rollback()
+		exec = tx
+	}
 	query := `UPDATE project
 		SET status = ?,
 			reject_reason = CASE WHEN ? = ? THEN reject_reason ELSE NULL END,
@@ -1021,7 +1035,7 @@ func (r *ProjectRepository) UpdateStatus(ctx context.Context, id int, status int
 			updated_at = CURRENT_TIMESTAMP
 		WHERE id = ?`
 
-	result, err := r.db.ExecContext(ctx, query,
+	result, err := exec.ExecContext(ctx, query,
 		status,
 		status, models.ProjectStatusRejected,
 		status, models.ProjectStatusDeleting,
@@ -1036,6 +1050,12 @@ func (r *ProjectRepository) UpdateStatus(ctx context.Context, id int, status int
 	rowsAffected, _ := result.RowsAffected()
 	if rowsAffected == 0 {
 		return fmt.Errorf("project not found")
+	}
+	if tx != nil {
+		if err := ArchiveProjectStatusTx(ctx, tx, id, "project-ended", actorIDs...); err != nil {
+			return err
+		}
+		return tx.Commit()
 	}
 	return nil
 }
@@ -1055,7 +1075,7 @@ func (r *ProjectRepository) UpdateStatusWithRejectReason(ctx context.Context, id
 	return nil
 }
 
-func (r *ProjectRepository) CompleteRecruit(ctx context.Context, id int) (int64, error) {
+func (r *ProjectRepository) CompleteRecruit(ctx context.Context, id int, actorIDs ...int) (int64, error) {
 	tx, err := r.db.BeginTxx(ctx, nil)
 	if err != nil {
 		return 0, err
@@ -1082,6 +1102,9 @@ func (r *ProjectRepository) CompleteRecruit(ctx context.Context, id int) (int64,
 		return 0, fmt.Errorf("reject pending applications after complete recruit: %w", err)
 	}
 	pendingRejected, _ := result.RowsAffected()
+	if err := ArchiveProjectStatusTx(ctx, tx, id, "recruit-completed", actorIDs...); err != nil {
+		return 0, err
+	}
 
 	if err := tx.Commit(); err != nil {
 		return 0, err

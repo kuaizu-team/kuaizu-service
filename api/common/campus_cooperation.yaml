@@ -1,0 +1,599 @@
+{
+  "schemas": {
+    "CooperationLink": {
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string",
+          "description": "When linksVisible=true this must be a non-empty HTTP/HTTPS URL without embedded credentials."
+        }
+      },
+      "required": [
+        "title",
+        "url"
+      ]
+    },
+    "CooperationContact": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "qq_group",
+            "wechat",
+            "qq",
+            "email"
+          ]
+        },
+        "label": {
+          "type": "string"
+        },
+        "value": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "type",
+        "value"
+      ]
+    },
+    "CommercialOrderInput": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "companyName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "description": {
+          "type": "string",
+          "nullable": true
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "available",
+            "closed"
+          ],
+          "default": "available"
+        }
+      },
+      "required": [
+        "name",
+        "companyName"
+      ]
+    },
+    "CommercialOrder": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "name": {
+          "type": "string"
+        },
+        "companyName": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string",
+          "nullable": true
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "available",
+            "closed"
+          ]
+        },
+        "createdBy": {
+          "type": "integer",
+          "format": "int64",
+          "nullable": true
+        },
+        "updatedBy": {
+          "type": "integer",
+          "format": "int64",
+          "nullable": true
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "companyName",
+        "status"
+      ]
+    },
+    "CooperationContentInput": {
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 20
+        },
+        "introduction": {
+          "type": "string",
+          "minLength": 1
+        },
+        "linksVisible": {
+          "type": "boolean",
+          "default": false
+        },
+        "links": {
+          "type": "array",
+          "items": {
+            "$ref": "#/schemas/CooperationLink"
+          }
+        },
+        "imagesVisible": {
+          "type": "boolean",
+          "default": false
+        },
+        "imageTitle": {
+          "type": "string",
+          "nullable": true,
+          "maxLength": 100
+        },
+        "images": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^campus-cooperation-images/"
+          }
+        },
+        "contactsVisible": {
+          "type": "boolean",
+          "default": true
+        },
+        "contacts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/schemas/CooperationContact"
+          }
+        },
+        "applicationRequired": {
+          "type": "boolean",
+          "default": false
+        },
+        "published": {
+          "type": "boolean",
+          "default": false
+        }
+      },
+      "required": [
+        "title",
+        "introduction"
+      ]
+    },
+    "CampusCooperation": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "commercialOrderId": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "schoolId": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "claimedBy": {
+          "type": "integer",
+          "format": "int64",
+          "nullable": true
+        },
+        "claimedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "orderName": {
+          "type": "string"
+        },
+        "companyName": {
+          "type": "string"
+        },
+        "schoolName": {
+          "type": "string"
+        },
+        "updatedBy": {
+          "type": "integer",
+          "format": "int64",
+          "nullable": true
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "title": {
+          "type": "string",
+          "nullable": true,
+          "maxLength": 20
+        },
+        "introduction": {
+          "type": "string",
+          "nullable": true
+        },
+        "linksVisible": {
+          "type": "boolean",
+          "default": false
+        },
+        "links": {
+          "type": "array",
+          "items": {
+            "$ref": "#/schemas/CooperationLink"
+          }
+        },
+        "imagesVisible": {
+          "type": "boolean",
+          "default": false
+        },
+        "imageTitle": {
+          "type": "string",
+          "nullable": true,
+          "maxLength": 100
+        },
+        "images": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^campus-cooperation-images/"
+          }
+        },
+        "contactsVisible": {
+          "type": "boolean",
+          "default": true
+        },
+        "contacts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/schemas/CooperationContact"
+          }
+        },
+        "applicationRequired": {
+          "type": "boolean",
+          "default": false
+        },
+        "published": {
+          "type": "boolean",
+          "default": false
+        },
+        "imageUrls": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Resolved preview URLs in the same order as images; saving still uses registered object keys."
+        }
+      },
+      "required": [
+        "id",
+        "commercialOrderId",
+        "schoolId",
+        "companyName",
+        "schoolName",
+        "published"
+      ]
+    },
+    "CooperationPublicView": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "orderName": {
+          "type": "string"
+        },
+        "companyName": {
+          "type": "string"
+        },
+        "schoolName": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string",
+          "nullable": true,
+          "maxLength": 20
+        },
+        "introduction": {
+          "type": "string",
+          "nullable": true
+        },
+        "linksVisible": {
+          "type": "boolean",
+          "default": false
+        },
+        "links": {
+          "type": "array",
+          "items": {
+            "$ref": "#/schemas/CooperationLink"
+          }
+        },
+        "imagesVisible": {
+          "type": "boolean",
+          "default": false
+        },
+        "imageTitle": {
+          "type": "string",
+          "nullable": true
+        },
+        "images": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "description": "Resolved image URL."
+          }
+        },
+        "contactsVisible": {
+          "type": "boolean",
+          "default": false
+        },
+        "contacts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/schemas/CooperationContact"
+          }
+        },
+        "applicationRequired": {
+          "type": "boolean",
+          "default": false
+        },
+        "applicationStatus": {
+          "type": "string",
+          "enum": [
+            "",
+            "pending",
+            "approved",
+            "rejected"
+          ]
+        },
+        "canApply": {
+          "type": "boolean",
+          "default": false
+        }
+      },
+      "required": [
+        "id",
+        "orderName",
+        "companyName",
+        "schoolName",
+        "title",
+        "introduction",
+        "links",
+        "images",
+        "contactsVisible",
+        "applicationRequired",
+        "applicationStatus",
+        "canApply"
+      ],
+      "description": "Contacts are omitted by the server until approval when applicationRequired=true. Links remain public according to their visibility switch. Internal admin IDs and card snapshots are never included."
+    },
+    "CooperationApplication": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "cooperationId": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "userId": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "attemptNo": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 1
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "pending",
+            "approved",
+            "rejected"
+          ]
+        },
+        "appliedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "reviewedBy": {
+          "type": "integer",
+          "format": "int64",
+          "nullable": true
+        },
+        "reviewedAt": {
+          "type": "string",
+          "nullable": true,
+          "format": "date-time"
+        },
+        "reviewRemark": {
+          "type": "string",
+          "nullable": true,
+          "maxLength": 500
+        },
+        "profileSnapshot": {
+          "type": "object",
+          "additionalProperties": true,
+          "description": "Only present in the school-authorized admin review response. Whitelisted server-generated card snapshot; never credentials/OpenID."
+        },
+        "cooperationTitle": {
+          "type": "string",
+          "nullable": true
+        },
+        "companyName": {
+          "type": "string"
+        },
+        "schoolName": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "cooperationId",
+        "userId",
+        "attemptNo",
+        "status",
+        "appliedAt"
+      ]
+    },
+    "CooperationPendingNotification": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "application-accepted",
+            "application-rejected",
+            "olive-accepted",
+            "olive-rejected",
+            "member-removed",
+            "cooperation-approved",
+            "cooperation-rejected"
+          ]
+        },
+        "priority": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "messageId": {
+          "type": "integer",
+          "format": "int64",
+          "nullable": true
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "projectId": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "projectName": {
+          "type": "string"
+        },
+        "appliedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "discussingAt": {
+          "type": "string",
+          "nullable": true,
+          "format": "date-time"
+        },
+        "rejectedAt": {
+          "type": "string",
+          "nullable": true,
+          "format": "date-time"
+        },
+        "joinedAt": {
+          "type": "string",
+          "nullable": true,
+          "format": "date-time"
+        },
+        "reviewerRoleName": {
+          "type": "string",
+          "nullable": true
+        },
+        "assignedRoleName": {
+          "type": "string",
+          "nullable": true
+        },
+        "operatorName": {
+          "type": "string",
+          "nullable": true
+        },
+        "removedAt": {
+          "type": "string",
+          "nullable": true,
+          "format": "date-time"
+        },
+        "cooperationId": {
+          "type": "integer",
+          "format": "int64",
+          "nullable": true
+        },
+        "cooperationApplicationId": {
+          "type": "integer",
+          "format": "int64",
+          "nullable": true
+        },
+        "cooperationTitle": {
+          "type": "string",
+          "nullable": true
+        },
+        "companyName": {
+          "type": "string",
+          "nullable": true
+        },
+        "schoolName": {
+          "type": "string",
+          "nullable": true
+        },
+        "applicationStatus": {
+          "type": "string",
+          "nullable": true,
+          "enum": [
+            "pending",
+            "approved",
+            "rejected"
+          ]
+        },
+        "reviewedAt": {
+          "type": "string",
+          "nullable": true,
+          "format": "date-time"
+        },
+        "applicationId": {
+          "type": "integer",
+          "format": "int64",
+          "nullable": true
+        },
+        "oliveBranchId": {
+          "type": "integer",
+          "format": "int64",
+          "nullable": true
+        },
+        "memberRemovalId": {
+          "type": "integer",
+          "format": "int64",
+          "nullable": true
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "priority"
+      ]
+    }
+  }
+}

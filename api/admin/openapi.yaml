@@ -17,6 +17,8 @@ servers:
   - url: https://dev.darker233.top/admin
     description: 测试
 tags:
+  - name: CampusCooperations
+    description: School-specific commercial learning opportunities
   - name: Auth
     description: 认证相关接口
   - name: Dashboard
@@ -44,6 +46,22 @@ tags:
 security:
   - bearerAuth: []
 paths:
+  /commercial-orders:
+    $ref: './paths/campus_cooperation.yaml#/orders'
+  /commercial-orders/{id}:
+    $ref: './paths/campus_cooperation.yaml#/order'
+  /commercial-orders/{id}/claims:
+    $ref: './paths/campus_cooperation.yaml#/claim'
+  /campus-cooperations:
+    $ref: './paths/campus_cooperation.yaml#/list'
+  /campus-cooperations/{id}:
+    $ref: './paths/campus_cooperation.yaml#/detail'
+  /campus-cooperations/{id}/applications:
+    $ref: './paths/campus_cooperation.yaml#/applications'
+  /campus-cooperation-applications/{id}:
+    $ref: './paths/campus_cooperation.yaml#/review'
+  /campus-cooperations/{id}/images:
+    $ref: './paths/campus_cooperation.yaml#/upload'
   /health:
     $ref: paths/health.yaml
   /auth/login:
@@ -88,8 +106,8 @@ paths:
     $ref: paths/talent-profiles_{id}.yaml
   /users:
     $ref: paths/users.yaml
-  /users/export:
-    $ref: paths/users_export.yaml
+  /users/feishu-sync:
+    $ref: paths/users_feishu-sync.yaml
   /users/talent-approve:
     $ref: paths/users_talent-approve.yaml
   /users/{id}:
@@ -147,6 +165,25 @@ paths:
   /subscribe-messages/templates/{bizKey}:
     $ref: paths/subscribe-messages_templates_{bizKey}.yaml
 components:
+  schemas:
+    CooperationLink:
+      $ref: '../common/campus_cooperation.yaml#/schemas/CooperationLink'
+    CooperationContact:
+      $ref: '../common/campus_cooperation.yaml#/schemas/CooperationContact'
+    CommercialOrderInput:
+      $ref: '../common/campus_cooperation.yaml#/schemas/CommercialOrderInput'
+    CommercialOrder:
+      $ref: '../common/campus_cooperation.yaml#/schemas/CommercialOrder'
+    CooperationContentInput:
+      $ref: '../common/campus_cooperation.yaml#/schemas/CooperationContentInput'
+    CampusCooperation:
+      $ref: '../common/campus_cooperation.yaml#/schemas/CampusCooperation'
+    CooperationPublicView:
+      $ref: '../common/campus_cooperation.yaml#/schemas/CooperationPublicView'
+    CooperationApplication:
+      $ref: '../common/campus_cooperation.yaml#/schemas/CooperationApplication'
+    CooperationPendingNotification:
+      $ref: '../common/campus_cooperation.yaml#/schemas/CooperationPendingNotification'
   securitySchemes:
     bearerAuth:
       type: http

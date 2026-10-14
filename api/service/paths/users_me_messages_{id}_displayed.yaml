@@ -1,0 +1,38 @@
+post:
+  tags: [Users]
+  summary: Record a real full-screen display without touching the priority queue
+  operationId: markMyStatusMessageDisplayed
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: integer, format: int64, minimum: 1 }
+  requestBody:
+    required: true
+    content:
+      application/json:
+        schema:
+          type: object
+          properties:
+            read:
+              type: boolean
+              default: false
+              description: True for normal immediate display, false for archive replay.
+  responses:
+    '200':
+      description: Success
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '../components/schemas/BaseResponse.yaml'
+              - type: object
+                properties:
+                  data:
+                    nullable: true
+    '401':
+      description: Authentication required
+    '403':
+      description: Account restricted
+    '404':
+      description: Message absent or belongs to another user

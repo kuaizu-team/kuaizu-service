@@ -37,7 +37,12 @@ func TestIsEventRegistrationOpenWithoutDeadline(t *testing.T) {
 
 func TestEventToVOIncludesRegistrationStatus(t *testing.T) {
 	deadline := time.Now().AddDate(0, 0, -1)
-	vo := (&Event{RegistrationDeadline: &deadline}).ToVO()
+	shortName := "大挑"
+	vo := (&Event{ShortName: &shortName, RegistrationDeadline: &deadline}).ToVO()
+
+	if vo.ShortName == nil || *vo.ShortName != shortName {
+		t.Fatal("event short name should be exposed")
+	}
 
 	if vo.IsOpen == nil || *vo.IsOpen {
 		t.Fatal("an event whose deadline date has passed should not be open")

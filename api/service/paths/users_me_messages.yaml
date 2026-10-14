@@ -1,0 +1,46 @@
+get:
+  tags: [Users]
+  summary: List the current user's status message archive
+  operationId: listMyStatusMessages
+  parameters:
+    - name: includeCooperation
+      in: query
+      schema: { type: boolean, default: false }
+      description: New clients opt in to cooperation approval/rejection records.
+    - name: page
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 1000000, default: 1 }
+    - name: size
+      in: query
+      schema: { type: integer, minimum: 1, default: 20 }
+      description: Values above 50 are capped at 50.
+    - name: read
+      in: query
+      schema: { type: boolean }
+  responses:
+    '200':
+      description: Success
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '../components/schemas/BaseResponse.yaml'
+              - type: object
+                properties:
+                  data:
+                    type: object
+                    required: [list, total, page, size]
+                    properties:
+                      list:
+                        type: array
+                        items:
+                          $ref: '../components/schemas/StatusMessageVO.yaml'
+                      total: { type: integer, format: int64 }
+                      page: { type: integer }
+                      size: { type: integer }
+    '401':
+      description: Authentication required
+    '403':
+      description: Account restricted
+    '404':
+      description: Message absent or belongs to another user

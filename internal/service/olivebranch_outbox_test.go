@@ -31,6 +31,9 @@ func TestOliveLifecycleTimestampsAndNotificationTransaction(t *testing.T) {
 				dbMock.ExpectExec("(?s)UPDATE olive_branch_record SET status.*discussing_at=CASE.*rejected_at=CASE").
 					WithArgs(status, status, models.OliveBranchStatusDiscussing, status, models.OliveBranchStatusRejected, 5).
 					WillReturnResult(sqlmock.NewResult(0, 1))
+				if action == "ACCEPT" {
+					dbMock.ExpectExec("INSERT INTO user_status_message").WithArgs("olive", 5).WillReturnResult(sqlmock.NewResult(20, 1))
+				}
 				if fail {
 					dbMock.ExpectExec("INSERT INTO wx_subscribe_delivery").WillReturnError(errors.New("outbox down"))
 					dbMock.ExpectRollback()
