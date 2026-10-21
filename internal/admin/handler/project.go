@@ -553,7 +553,6 @@ func (s *AdminServer) UpdateProjectLifecycleStatus(ctx echo.Context) error {
 	if err := ctx.Bind(&req); err != nil {
 		return response.BadRequest(ctx, "invalid request body")
 	}
-	var result sql.Result
 	if req.Status == models.ProjectStatusRecruitCompleted {
 		var currentStatus int
 		if err := s.repo.DB().QueryRowxContext(ctx.Request().Context(), "SELECT status FROM project WHERE id=?", id).Scan(&currentStatus); err != nil || currentStatus != models.ProjectStatusApproved {
@@ -563,17 +562,31 @@ func (s *AdminServer) UpdateProjectLifecycleStatus(ctx echo.Context) error {
 			return response.InternalError(ctx, "更新项目状态失败")
 		}
 		return response.SuccessMessage(ctx, "项目状态已更新")
-	} else if req.Status == models.ProjectStatusEnded {
-		result, err = s.repo.DB().ExecContext(ctx.Request().Context(), "UPDATE project SET status=?,ended_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP WHERE id=? AND status IN (?,?)", req.Status, id, models.ProjectStatusApproved, models.ProjectStatusRecruitCompleted)
-	} else {
+	} else if req.Status != models.ProjectStatusEnded {
 		return response.BadRequest(ctx, "status must be 3 or 5")
 	}
+	tx, err := s.repo.DB().BeginTxx(ctx.Request().Context(), nil)
 	if err != nil {
 		return response.InternalError(ctx, "更新项目状态失败")
 	}
-	affected, _ := result.RowsAffected()
+	defer tx.Rollback()
+	result, err := tx.ExecContext(ctx.Request().Context(), "UPDATE project SET status=?,ended_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP WHERE id=? AND status IN (?,?)", req.Status, id, models.ProjectStatusApproved, models.ProjectStatusRecruitCompleted)
+	if err != nil {
+		return response.InternalError(ctx, "更新项目状态失败")
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return response.InternalError(ctx, "更新项目状态失败")
+	}
 	if affected == 0 {
 		return response.BadRequest(ctx, "当前项目状态不支持此操作")
+	}
+	// Admin actions archive to the project creator; both writes must commit together.
+	if err := repository.ArchiveProjectStatusTx(ctx.Request().Context(), tx, id, "project-ended"); err != nil {
+		return response.InternalError(ctx, "更新项目状态失败")
+	}
+	if err := tx.Commit(); err != nil {
+		return response.InternalError(ctx, "更新项目状态失败")
 	}
 	return response.SuccessMessage(ctx, "项目状态已更新")
 }
