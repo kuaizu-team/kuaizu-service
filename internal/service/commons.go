@@ -98,6 +98,11 @@ func validateImageContent(file multipart.File, ext string) error {
 	return nil
 }
 
+// UploadCooperationImage reuses image validation without expanding ordinary-user upload types.
+func (s *CommonsService) UploadCooperationImage(file multipart.File, header *multipart.FileHeader) (*oss.UploadResult, error) {
+	return s.uploadFileTo(file, header, "campus-cooperation-images", maxFileSize)
+}
+
 // DeleteFile removes a file from OSS by its key. Errors are logged but treated as
 // non-fatal so they do not roll back an otherwise successful operation.
 func (s *CommonsService) DeleteFile(key string) error {

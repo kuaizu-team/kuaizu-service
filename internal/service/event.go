@@ -131,6 +131,7 @@ func validateEvent(event *models.Event) error {
 		max   int
 		name  string
 	}{
+		{&event.ShortName, 64, "shortName"},
 		{&event.OrganizerName, 200, "organizerName"},
 		{&event.Description, 10000, "description"},
 		{&event.ResourceURL, 2048, "resourceUrl"},

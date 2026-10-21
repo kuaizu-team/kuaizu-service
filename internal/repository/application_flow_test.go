@@ -3,7 +3,7 @@ package repository
 import (
 	"context"
 	"database/sql/driver"
-	"strings"
+	"github.com/DATA-DOG/go-sqlmock"
 	"testing"
 
 	"github.com/jmoiron/sqlx"
@@ -41,26 +41,22 @@ func TestApplicationDashboardStatsCountJoinedAsApproved(t *testing.T) {
 }
 
 func TestCompleteRecruitRejectsPendingAndDiscussingApplications(t *testing.T) {
-	db := openCaptureDB(t)
-	defer db.Close()
-	repo := NewProjectRepository(sqlx.NewDb(db, "capture_user_repo"))
-	capturedExec.Lock()
-	capturedExec.query = ""
-	capturedExec.args = nil
-	capturedExec.Unlock()
-
-	if _, err := repo.CompleteRecruit(context.Background(), 42); err != nil {
+	raw, mock, err := sqlmock.New()
+	if err != nil {
 		t.Fatal(err)
 	}
-
-	capturedExec.Lock()
-	query := normalizeSQL(capturedExec.query)
-	args := append([]driver.NamedValue(nil), capturedExec.args...)
-	capturedExec.Unlock()
-	if !strings.Contains(query, "status IN (?, ?)") {
-		t.Fatalf("query = %q, want status IN (?, ?)", query)
+	defer raw.Close()
+	repo := NewProjectRepository(sqlx.NewDb(raw, "sqlmock"))
+	mock.ExpectBegin()
+	mock.ExpectExec("UPDATE project SET status").WithArgs(models.ProjectStatusRecruitCompleted, 42).WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec("(?s)UPDATE project_application.*status IN").WithArgs(models.ApplicationStatusRejected, 42, models.ApplicationStatusPending, models.ApplicationStatusDiscussing).WillReturnResult(sqlmock.NewResult(0, 3))
+	mock.ExpectExec("INSERT INTO user_status_message").WithArgs("recruit-completed", 42).WillReturnResult(sqlmock.NewResult(9, 1))
+	mock.ExpectCommit()
+	count, err := repo.CompleteRecruit(context.Background(), 42)
+	if err != nil || count != 3 {
+		t.Fatalf("count=%d error=%v", count, err)
 	}
-	if len(args) != 4 || args[0].Value != int64(models.ApplicationStatusRejected) || args[1].Value != int64(42) || args[2].Value != int64(models.ApplicationStatusPending) || args[3].Value != int64(models.ApplicationStatusDiscussing) {
-		t.Fatalf("unexpected complete recruit args: %#v", args)
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
 	}
 }

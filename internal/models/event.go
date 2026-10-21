@@ -18,6 +18,7 @@ func ParseEventDate(value string) (time.Time, error) {
 type Event struct {
 	ID                   int        `db:"id"`
 	Name                 string     `db:"name"`
+	ShortName            *string    `db:"short_name"`
 	IsRanking            int        `db:"is_ranking"`
 	RegistrationDeadline *time.Time `db:"registration_deadline"`
 	ArticleURL           *string    `db:"article_url"`
@@ -57,6 +58,7 @@ func (e *Event) ToVO() api.EventVO {
 	vo := api.EventVO{
 		Id:                &e.ID,
 		Name:              &e.Name,
+		ShortName:         e.ShortName,
 		IsRanking:         &isRanking,
 		IsOpen:            &isOpen,
 		IsExpired:         &isExpired,

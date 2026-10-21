@@ -1,0 +1,27 @@
+get:
+  tags: [Users]
+  summary: Get a message owned by the current user
+  operationId: getMyStatusMessage
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: integer, format: int64, minimum: 1 }
+  responses:
+    '200':
+      description: Success
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '../components/schemas/BaseResponse.yaml'
+              - type: object
+                properties:
+                  data:
+                    $ref: '../components/schemas/StatusMessageVO.yaml'
+    '401':
+      description: Authentication required
+    '403':
+      description: Account restricted
+    '404':
+      description: Message absent or belongs to another user

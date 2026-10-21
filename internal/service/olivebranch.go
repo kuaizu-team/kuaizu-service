@@ -349,6 +349,9 @@ func (s *OliveBranchService) HandleOliveBranch(ctx context.Context, userID, bran
 			log.Printf("[OliveBranchService.HandleOliveBranch] repository error updating status: %v", err)
 			return nil, ErrInternal("\u66f4\u65b0\u72b6\u6001\u5931\u8d25")
 		}
+		if err := repository.CreateDiscussingMessageTx(ctx, tx, branchID, true); err != nil {
+			return nil, ErrInternal("保存状态消息失败")
+		}
 		deliveryID, queueErr := s.queueOliveBranchResultTx(ctx, tx, ob.SenderID, userID, models.OliveBranchStatusDiscussing)
 		if queueErr != nil {
 			return nil, ErrInternal("保存通知失败")

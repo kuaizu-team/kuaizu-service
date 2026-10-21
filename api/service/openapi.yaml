@@ -21,6 +21,8 @@ servers:
 security:
   - bearerAuth: []
 tags:
+  - name: CampusCooperations
+    description: School-specific commercial learning opportunities
   - name: Auth
     description: 认证相关接口
   - name: Users
@@ -54,6 +56,28 @@ tags:
   - name: Operations
     description: Campus operations directory APIs
 paths:
+  /campus-cooperations:
+    $ref: './paths/campus_cooperation.yaml#/list'
+  /campus-cooperations/{id}:
+    $ref: './paths/campus_cooperation.yaml#/detail'
+  /campus-cooperations/{id}/applications:
+    $ref: './paths/campus_cooperation.yaml#/apply'
+  /campus-cooperation-applications/my:
+    $ref: './paths/campus_cooperation.yaml#/my'
+  /users/me/status-notifications/pending:
+    $ref: './paths/campus_cooperation.yaml#/pending'
+  /users/me/messages:
+    $ref: './paths/users_me_messages.yaml'
+  /users/me/messages/unread-count:
+    $ref: './paths/users_me_messages_unread-count.yaml'
+  /users/me/messages/latest:
+    $ref: './paths/users_me_messages_latest.yaml'
+  /users/me/messages/{id}:
+    $ref: './paths/users_me_messages_{id}.yaml'
+  /users/me/messages/{id}/read:
+    $ref: './paths/users_me_messages_{id}_read.yaml'
+  /users/me/messages/{id}/displayed:
+    $ref: './paths/users_me_messages_{id}_displayed.yaml'
   /projects/{id}/member-timeline:
     $ref: './paths/projects_{id}_member-timeline.yaml'
   /projects/{id}/member-timeline/{nodeId}:
@@ -239,6 +263,25 @@ paths:
   /commons/uploads:
     $ref: paths/commons_uploads.yaml
 components:
+  schemas:
+    CooperationLink:
+      $ref: '../common/campus_cooperation.yaml#/schemas/CooperationLink'
+    CooperationContact:
+      $ref: '../common/campus_cooperation.yaml#/schemas/CooperationContact'
+    CommercialOrderInput:
+      $ref: '../common/campus_cooperation.yaml#/schemas/CommercialOrderInput'
+    CommercialOrder:
+      $ref: '../common/campus_cooperation.yaml#/schemas/CommercialOrder'
+    CooperationContentInput:
+      $ref: '../common/campus_cooperation.yaml#/schemas/CooperationContentInput'
+    CampusCooperation:
+      $ref: '../common/campus_cooperation.yaml#/schemas/CampusCooperation'
+    CooperationPublicView:
+      $ref: '../common/campus_cooperation.yaml#/schemas/CooperationPublicView'
+    CooperationApplication:
+      $ref: '../common/campus_cooperation.yaml#/schemas/CooperationApplication'
+    CooperationPendingNotification:
+      $ref: '../common/campus_cooperation.yaml#/schemas/CooperationPendingNotification'
   securitySchemes:
     bearerAuth:
       type: http

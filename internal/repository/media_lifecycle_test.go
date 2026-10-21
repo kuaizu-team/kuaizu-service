@@ -45,9 +45,9 @@ func TestUpsertTalentProfileRollsBackWhenImageValidationFails(t *testing.T) {
 
 	repo := NewTalentProfileRepository(sqlx.NewDb(raw, "sqlmock"))
 	mock.ExpectBegin()
-	mock.ExpectQuery("SELECT id FROM talent_profile").
+	mock.ExpectQuery("SELECT id,status FROM talent_profile").
 		WithArgs(17).
-		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(91))
+		WillReturnRows(sqlmock.NewRows([]string{"id", "status"}).AddRow(91, 2))
 	mock.ExpectExec("UPDATE talent_profile SET").WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectQuery("SELECT object_key FROM media_upload").
 		WithArgs("talent-work-images/2026/08/31/not-owned.jpg", 17, MediaTypeTalentWork, "talent_profile", 91).

@@ -1,0 +1,33 @@
+type: object
+required: [id, type, params, readAt, fullscreenDisplayed, fullscreenDisplayedAt, createdAt]
+properties:
+  id:
+    type: integer
+    format: int64
+  type:
+    type: string
+    enum: [application-accepted, application-rejected, olive-accepted, olive-rejected, member-removed, recruit-completed, project-ended, talent-published, project-published, application-discussing, super-admin-invitation, cooperation-approved, cooperation-rejected]
+  params:
+    type: object
+    description: Immutable snapshot of display parameters. Never includes private contacts.
+    additionalProperties:
+      nullable: true
+      anyOf:
+        - type: string
+        - type: number
+        - type: boolean
+  readAt:
+    type: string
+    format: date-time
+    nullable: true
+  fullscreenDisplayed:
+    type: boolean
+    nullable: true
+    description: Null means historical display state unknown.
+  fullscreenDisplayedAt:
+    type: string
+    format: date-time
+    nullable: true
+  createdAt:
+    type: string
+    format: date-time
