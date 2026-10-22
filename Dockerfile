@@ -1,5 +1,10 @@
-# Build stage
-FROM golang:1.26.10-alpine AS builder
+# Keep both build toolchains on their patched release lines.
+FROM golang:1.26.10-alpine AS go-toolchain
+FROM node:22.23.4-alpine AS builder
+
+COPY --from=go-toolchain /usr/local/go /usr/local/go
+ENV GOPATH=/go
+ENV PATH="/usr/local/go/bin:/go/bin:${PATH}"
 
 ENV GOTOOLCHAIN=local
 ENV CGO_ENABLED=0
@@ -7,7 +12,7 @@ ENV CGO_ENABLED=0
 WORKDIR /app
 
 # Install build dependencies
-RUN apk add --no-cache make git nodejs npm
+RUN apk add --no-cache make git
 
 # Copy go mod and sum files
 COPY go.mod go.sum ./
@@ -17,7 +22,7 @@ RUN go mod download
 COPY . .
 
 # Generate code
-RUN make generate
+RUN node scripts/check-build-node.mjs && make generate
 
 ARG VERSION=dev
 ARG COMMIT=none

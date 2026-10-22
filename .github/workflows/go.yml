@@ -42,7 +42,10 @@ jobs:
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version-file: .nvmrc
+
+      - name: Verify build Node security baseline
+        run: node scripts/check-build-node.mjs
 
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v6
