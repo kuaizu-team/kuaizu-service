@@ -207,6 +207,9 @@ jobs:
             cp release-metadata.json .release-runtime/
 
             rm kuaizu-server.tar.gz
+
+            # Compose defaults to latest; advance it only after every release check passes.
+            docker tag '${{ needs.verify.outputs.image_id }}' kuaizu-server:latest
           EOF
 
       # Keep the previous tagged images and restricted backups for recovery.

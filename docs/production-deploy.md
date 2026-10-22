@@ -209,6 +209,14 @@ so it fails with a container name conflict.
 These steps keep `.env.docker` on the server and do not remove images or data
 volumes.
 
+Complete a successful Actions deployment with the current workflow before using
+`VERSION=latest`. Actions advances the server-local `kuaizu-server:latest` alias
+only after both services pass health checks, their binary checksums match the
+verified artifact, and their running image IDs match the verified image. Failed
+health or integrity checks leave the alias unchanged; this does not automatically
+roll back containers that were already restarted. Builds and downloads alone do
+not update the alias.
+
 ```bash
 cd /root/kuaizu-server
 
@@ -229,9 +237,15 @@ If the server only has the legacy `docker-compose` command, replace
 
 ## Deploy commands
 
+Actions images use `build-<ref>-<commit-prefix>` tags. For a manual deployment, use
+the exact `version` from the downloaded artifact's `release-metadata.json`, rather
+than the Git tag or branch name. An explicit `VERSION` in the shell or Compose
+`.env` overrides the default `latest`; clear an old override before relying on
+the default. `.env.docker` supplies application settings, not this image choice.
+
 ```bash
 cd /root/kuaizu-server
-export VERSION=<tag>
+export VERSION=<version-from-release-metadata.json>
 gunzip -c kuaizu-server.tar.gz | docker load
 docker compose down --remove-orphans
 docker compose up -d --no-build --remove-orphans kuaizu-api kuaizu-console
@@ -257,6 +271,22 @@ docker logs --tail 200 kuaizu-console
 The admin login health check should return `401` for the fake account. That
 means the container, HTTP listener, database lookup, and Nginx upstream path are
 alive. Any `5xx` response should fail the deploy.
+
+After a manual deployment or rollback, update `latest` only after both health
+checks pass and both running image IDs and binary checksums have been verified
+against the selected release's evidence (or its recorded rollback image ID).
+Using the exact image ID prevents accidentally selecting a different local tag:
+
+```bash
+expected_image_id=<verified-image-id>
+test "$(docker inspect -f '{{.Image}}' kuaizu-api)" = "$expected_image_id" && \
+test "$(docker inspect -f '{{.Image}}' kuaizu-console)" = "$expected_image_id" && \
+docker tag "$expected_image_id" kuaizu-server:latest
+```
+
+This keeps a later Compose recreation with no version override on that selected
+release. Actions performs the checks and alias update automatically. Keep the
+versioned and rollback image tags for explicit recovery.
 
 ## Rollback
 
