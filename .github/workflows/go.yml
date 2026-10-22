@@ -5,45 +5,28 @@ on:
   pull_request:
     branches: [ "main" ]
   push:
+    branches:
+      - main
+      - 'codex/go-security-*'
     tags:
       - 'v*'
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  # Job 1: 编译检查 (PR 阶段执行)
-  # 只有在 Pull Request 或手动触发且不是 Tag 时运行
   check:
-    if: |
-      github.event_name == 'pull_request' || 
-      github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.24'
-          cache: true
-
-      - name: GoReleaser Check
-        uses: goreleaser/goreleaser-action@v6
-        with:
-          distribution: goreleaser
-          version: latest
-          args: check # 仅检查 .goreleaser.yaml 配置和基础编译
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    uses: ./.github/workflows/verify.yml
 
   # Job 2: 正式发布 (Push Tag 阶段执行)
   release:
+    needs: check
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GOTOOLCHAIN: local
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -53,8 +36,13 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.24'
+          go-version: '1.26.10'
           cache: true
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
 
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v6

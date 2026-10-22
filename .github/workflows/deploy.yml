@@ -5,74 +5,121 @@ on:
     tags:
       - 'v*'
   workflow_dispatch:
+    inputs:
+      deploy:
+        description: Deploy to production after verification
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: kuaizu-production
+  cancel-in-progress: false
 
 jobs:
+  verify:
+    uses: ./.github/workflows/verify.yml
+
   deploy:
+    needs: verify
+    if: github.event_name == 'push' || inputs.deploy
     runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ needs.verify.outputs.image_version }}
+      SSH_HOST: ${{ secrets.SSH_HOST }}
+      SSH_USER: ${{ secrets.SSH_USER }}
+      SSH_PORT: ${{ secrets.SSH_PORT || 22 }}
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Download verified image and evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: verified-backend
+          path: verified-release
+
       - name: Validate admin secrets
         env:
           ADMIN_CREDENTIAL_KEY: ${{ secrets.ADMIN_CREDENTIAL_KEY }}
           ADMIN_JWT_SECRET: ${{ secrets.ADMIN_JWT_SECRET }}
+          ENV_DOCKER: ${{ secrets.ENV_DOCKER }}
         run: |
-          for name in ADMIN_CREDENTIAL_KEY ADMIN_JWT_SECRET; do
+          for name in ENV_DOCKER ADMIN_CREDENTIAL_KEY ADMIN_JWT_SECRET; do
             if [ -z "${!name}" ]; then
               echo "::error::${name} secret is not configured."
               exit 1
             fi
           done
+          umask 077
+          printf '%s\n' "$ENV_DOCKER" > .env.docker
+          printf 'ADMIN_CREDENTIAL_KEY=%s\nADMIN_JWT_SECRET=%s\n' \
+            "$ADMIN_CREDENTIAL_KEY" "$ADMIN_JWT_SECRET" >> .env.docker
 
       - name: Setup SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
         run: |
           mkdir -p ~/.ssh
-          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          umask 077
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
-          ssh-keyscan -p ${{ secrets.SSH_PORT || 22 }} -H ${{ secrets.SSH_HOST }} >> ~/.ssh/known_hosts
+          ssh-keyscan -p "$SSH_PORT" -H "$SSH_HOST" >> ~/.ssh/known_hosts
 
-      - name: Set image version
+      - name: Verify downloaded release
+        working-directory: verified-release
+        env:
+          EXPECTED_IMAGE_ID: ${{ needs.verify.outputs.image_id }}
         run: |
-          VERSION=$(echo "${{ github.ref_name }}" | sed 's/[^a-zA-Z0-9._-]/-/g')
-          echo "VERSION=${VERSION}" >> $GITHUB_ENV
+          sha256sum -c kuaizu-server.tar.gz.sha256
+          test "$(jq -r .commit release-metadata.json)" = "$GITHUB_SHA"
+          test "$(jq -r .version release-metadata.json)" = "$VERSION"
+          test "$(jq -r .image_id release-metadata.json)" = "$EXPECTED_IMAGE_ID"
 
-      - name: Build Docker image
+      - name: Preserve current deployment
         run: |
-          export COMMIT=${{ github.sha }}
-          docker build \
-            --build-arg VERSION=$VERSION \
-            --build-arg COMMIT=$COMMIT \
-            -t kuaizu-server:$VERSION .
-          docker tag kuaizu-server:$VERSION kuaizu-server:latest
-
-      - name: Save Docker image to tarball
-        run: |
-          docker save kuaizu-server:$VERSION | gzip > kuaizu-server.tar.gz
+          ssh -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" << 'EOF'
+            set -eu
+            umask 077
+            mkdir -p ~/kuaizu-server
+            cd ~/kuaizu-server
+            backup="backups/${{ github.run_id }}-${{ github.run_attempt }}"
+            mkdir -p "$backup"
+            for file in docker-compose.yml .env.docker; do
+              if [ -f "$file" ]; then cp -p "$file" "$backup/"; fi
+            done
+            for name in kuaizu-api kuaizu-console; do
+              if docker inspect "$name" >/dev/null 2>&1; then
+                docker inspect -f '{{.Name}} image_id={{.Image}} image_ref={{.Config.Image}}' "$name" >> "$backup/previous-images.txt"
+                old_image="$(docker inspect -f '{{.Image}}' "$name")"
+                docker tag "$old_image" "kuaizu-server:rollback-${{ github.run_id }}-${{ github.run_attempt }}-$name"
+              fi
+            done
+          EOF
 
       - name: Transfer image and compose file to server
         run: |
-          ssh -p ${{ secrets.SSH_PORT || 22 }} ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} "mkdir -p ~/kuaizu-server"
-          scp -P ${{ secrets.SSH_PORT || 22 }} kuaizu-server.tar.gz ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:~/kuaizu-server/
-          scp -P ${{ secrets.SSH_PORT || 22 }} docker-compose.yml ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:~/kuaizu-server/
+          ssh -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" "mkdir -p ~/kuaizu-server"
+          scp -P "$SSH_PORT" verified-release/kuaizu-server.tar.gz verified-release/kuaizu-server.tar.gz.sha256 verified-release/binaries.sha256 verified-release/release-metadata.json "$SSH_USER@$SSH_HOST:~/kuaizu-server/"
+          scp -P "$SSH_PORT" docker-compose.yml "$SSH_USER@$SSH_HOST:~/kuaizu-server/"
 
       - name: Create .env.docker on server
         run: |
-          ssh -p ${{ secrets.SSH_PORT || 22 }} ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} << 'EOF'
+          scp -P "$SSH_PORT" .env.docker "$SSH_USER@$SSH_HOST:~/kuaizu-server/"
+          ssh -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" << 'EOF'
             set -e
             cd ~/kuaizu-server
-            cat > .env.docker << 'ENVEOF'
-          ${{ secrets.ENV_DOCKER }}
-          ADMIN_CREDENTIAL_KEY=${{ secrets.ADMIN_CREDENTIAL_KEY }}
-          ADMIN_JWT_SECRET=${{ secrets.ADMIN_JWT_SECRET }}
-          ENVEOF
+            chmod 600 .env.docker
           EOF
 
       - name: Load image, restart services, and healthcheck
         run: |
-          ssh -p ${{ secrets.SSH_PORT || 22 }} ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} << 'EOF'
-            set -e
+          ssh -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" << 'EOF'
+            set -euo pipefail
             cd ~/kuaizu-server
 
             compose() {
@@ -134,8 +181,10 @@ jobs:
               fail_with_logs "${name} healthcheck timed out; last HTTP code: ${code:-none}"
             }
 
+            sha256sum -c kuaizu-server.tar.gz.sha256
             gunzip -c kuaizu-server.tar.gz | docker load
             export VERSION=${{ env.VERSION }}
+            test "$(docker image inspect -f '{{.Id}}' "kuaizu-server:$VERSION")" = '${{ needs.verify.outputs.image_id }}'
 
             ensure_compose_owned_or_absent kuaizu-api
             ensure_compose_owned_or_absent kuaizu-console
@@ -147,11 +196,17 @@ jobs:
             wait_http "kuaizu-api" "http://127.0.0.1:8080/health" "200"
             wait_http "kuaizu-console" "http://127.0.0.1:8081/admin/auth/login" "401" "POST" '{"username":"__healthcheck__","password":"__healthcheck__"}'
 
+            umask 077
+            mkdir -p .release-runtime
+            docker cp kuaizu-api:/app/kuaizu-server .release-runtime/kuaizu-server
+            docker cp kuaizu-console:/app/kuaizu-admin .release-runtime/kuaizu-admin
+            (cd .release-runtime && sha256sum -c ../binaries.sha256)
+            for name in kuaizu-api kuaizu-console; do
+              test "$(docker inspect -f '{{.Image}}' "$name")" = '${{ needs.verify.outputs.image_id }}'
+            done
+            cp release-metadata.json .release-runtime/
+
             rm kuaizu-server.tar.gz
           EOF
 
-      - name: Cleanup old images
-        run: |
-          ssh -p ${{ secrets.SSH_PORT || 22 }} ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} << 'EOF'
-            docker image prune -f
-          EOF
+      # Keep the previous tagged images and restricted backups for recovery.

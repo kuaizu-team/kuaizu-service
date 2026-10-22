@@ -1,0 +1,113 @@
+name: Verify backend and image
+
+on:
+  workflow_call:
+    outputs:
+      image_version:
+        description: Version of the verified Docker image
+        value: ${{ jobs.verify.outputs.image_version }}
+      image_id:
+        description: Immutable ID of the verified Docker image
+        value: ${{ jobs.verify.outputs.image_id }}
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    outputs:
+      image_version: ${{ steps.version.outputs.image_version }}
+      image_id: ${{ steps.image.outputs.image_id }}
+    env:
+      GOTOOLCHAIN: local
+      CGO_ENABLED: '0'
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.10'
+          cache: true
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Generate API and verify modules
+        run: |
+          go version
+          make generate
+          go mod verify
+          git diff --exit-code -- go.mod go.sum
+
+      - name: Test and vet
+        run: |
+          go test ./...
+          go vet ./...
+
+      - name: Scan Linux source
+        run: |
+          mkdir -p bin/release
+          go install golang.org/x/vuln/cmd/govulncheck@v1.9.0
+          govulncheck ./cmd/server ./cmd/admin | tee bin/release/source-vuln.txt
+
+      - name: Set image version
+        id: version
+        env:
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          ref="$(printf '%s' "$REF_NAME" | sed 's/[^a-zA-Z0-9._-]/-/g' | cut -c1-80)"
+          version="build-${ref}-${GITHUB_SHA:0:12}"
+          echo "image_version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Build image
+        env:
+          VERSION: ${{ steps.version.outputs.image_version }}
+        run: |
+          docker build --pull \
+            --build-arg VERSION="$VERSION" \
+            --build-arg COMMIT="$GITHUB_SHA" \
+            -t "kuaizu-server:$VERSION" .
+
+      - name: Check image audit failure handling
+        run: bash .github/scripts/test-audit-image.sh
+
+      - name: Audit final binaries
+        id: image
+        env:
+          VERSION: ${{ steps.version.outputs.image_version }}
+        run: |
+          bash .github/scripts/audit-image.sh "kuaizu-server:$VERSION" bin/release go1.26.10
+          image_id="$(cat bin/release/image-id.txt)"
+          echo "image_id=$image_id" >> "$GITHUB_OUTPUT"
+          jq -n --arg version "$VERSION" --arg image_id "$image_id" \
+            --arg commit "$GITHUB_SHA" --arg go_version go1.26.10 \
+            '{version:$version,image_id:$image_id,commit:$commit,go_version:$go_version}' \
+            > bin/release/release-metadata.json
+
+      - name: Package verified image
+        env:
+          VERSION: ${{ steps.version.outputs.image_version }}
+        run: |
+          docker save "kuaizu-server:$VERSION" | gzip > bin/release/kuaizu-server.tar.gz
+          cd bin/release
+          sha256sum kuaizu-server.tar.gz > kuaizu-server.tar.gz.sha256
+          rm kuaizu-server kuaizu-admin
+
+      - name: Upload verified release
+        uses: actions/upload-artifact@v4
+        with:
+          name: verified-backend
+          path: bin/release/
+          retention-days: 7
+          if-no-files-found: error
