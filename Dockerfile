@@ -1,5 +1,8 @@
 # Build stage
-FROM golang:1.24-alpine AS builder
+FROM golang:1.26.10-alpine AS builder
+
+ENV GOTOOLCHAIN=local
+ENV CGO_ENABLED=0
 
 WORKDIR /app
 
@@ -20,13 +23,18 @@ ARG VERSION=dev
 ARG COMMIT=none
 
 # Build main server
-RUN go build -ldflags "-X main.version=${VERSION} -X main.commit=${COMMIT} -X main.date=$(date +%F_%T)" -o /app/bin/kuaizu-server cmd/server/main.go
+RUN go build -trimpath -ldflags "-X main.version=${VERSION} -X main.commit=${COMMIT} -X main.date=$(date +%F_%T)" -o /app/bin/kuaizu-server ./cmd/server
 
 # Build admin server
-RUN go build -ldflags "-X main.version=${VERSION} -X main.commit=${COMMIT} -X main.date=$(date +%F_%T)" -o /app/bin/kuaizu-admin cmd/admin/main.go
+RUN go build -trimpath -ldflags "-X main.version=${VERSION} -X main.commit=${COMMIT} -X main.date=$(date +%F_%T)" -o /app/bin/kuaizu-admin ./cmd/admin
 
 # Run stage
 FROM alpine:latest
+
+ARG VERSION=dev
+ARG COMMIT=none
+LABEL org.opencontainers.image.version=${VERSION}
+LABEL org.opencontainers.image.revision=${COMMIT}
 
 WORKDIR /app
 

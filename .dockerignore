@@ -1,0 +1,14 @@
+.git
+.github
+.vscode
+.codex
+.agents
+.aws
+.env
+.env.*
+bin
+dist
+node_modules
+*.exe
+*.pem
+*.p12
