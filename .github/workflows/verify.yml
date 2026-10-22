@@ -82,6 +82,9 @@ jobs:
       - name: Check image audit failure handling
         run: bash .github/scripts/test-audit-image.sh
 
+      - name: Check deployment image alias failure handling
+        run: bash .github/scripts/test-deploy-image-alias.sh
+
       - name: Audit final binaries
         id: image
         env:
