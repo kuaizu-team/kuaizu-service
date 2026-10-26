@@ -102,11 +102,12 @@ func TestCooperationContentValidation(t *testing.T) {
 		{"twenty unicode characters", strings.Repeat("校", 20), true, models.CooperationLink{Title: "链接", URL: "https://example.org"}, false},
 		{"long title", strings.Repeat("校", 21), false, models.CooperationLink{}, true},
 		{"missing visible address", "标题", true, models.CooperationLink{Title: "链接"}, true},
-		{"hidden incomplete link", "标题", false, models.CooperationLink{}, false},
+		{"restricted incomplete link", "标题", false, models.CooperationLink{}, true},
 		{"script URL", "标题", true, models.CooperationLink{Title: "链接", URL: "javascript:alert(1)"}, true},
 		{"credential URL", "标题", true, models.CooperationLink{Title: "链接", URL: "https://name:secret@example.org"}, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			tc.link.Public = &tc.linksVisible
 			in := CooperationContentInput{Title: tc.title, Introduction: "计划", LinksVisible: tc.linksVisible, Links: []models.CooperationLink{tc.link}}
 			if (in.Validate() != nil) != tc.bad {
 				t.Fatalf("wrong validation for %+v", in)
@@ -365,9 +366,95 @@ func TestCooperationSameOrderCanBeClaimedByDifferentSchools(t *testing.T) {
 	}
 }
 
-func TestCooperationVisibleLinksCannotBeAnEmptyModule(t *testing.T) {
+func TestCooperationLinksCanAllBeRemoved(t *testing.T) {
 	in := CooperationContentInput{Title: "标题", Introduction: "计划", LinksVisible: true}
-	if err := in.Validate(); err == nil {
-		t.Fatal("visible link module without any address accepted")
+	if err := in.Validate(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestCooperationPerLinkVisibility(t *testing.T) {
+	public, restricted := true, false
+	for _, legacyPublic := range []bool{false, true} {
+		for _, applicationRequired := range []bool{false, true} {
+			for _, status := range []string{"", "pending", "rejected", "approved", "unknown"} {
+				t.Run(fmt.Sprintf("legacy=%v/application=%v/status=%s", legacyPublic, applicationRequired, status), func(t *testing.T) {
+					c := &models.CampusCooperation{ApplicationRequired: applicationRequired, LinksVisible: legacyPublic,
+						Links: []models.CooperationLink{
+							{Title: "公开介绍", URL: "https://example.org/public", Public: &public},
+							{Title: "仅通过者可见", URL: "https://example.org/approval-only", Public: &restricted},
+							{Title: "旧链接", URL: "https://example.org/legacy"},
+						}}
+					view := cooperationPublic(c, status)
+					want := 1
+					unlocked := !applicationRequired || status == "approved"
+					if unlocked {
+						want++
+					}
+					if legacyPublic || unlocked {
+						want++
+					}
+					if len(view.Links) != want || !view.LinksVisible {
+						t.Fatalf("wrong visible links: %+v", view)
+					}
+					body, err := json.Marshal(view)
+					if err != nil {
+						t.Fatal(err)
+					}
+					if strings.Contains(string(body), "approval-only") != unlocked || strings.Contains(string(body), "仅通过者可见") != unlocked {
+						t.Fatalf("restricted title or URL leaked/was lost: %s", body)
+					}
+					// Projection must not mutate the stored links.
+					if len(c.Links) != 3 || c.Links[2].Public != nil {
+						t.Fatal("projection mutated source")
+					}
+					c.Links = c.Links[1:2]
+					view = cooperationPublic(c, status)
+					if view.LinksVisible != unlocked || (len(view.Links) == 1) != unlocked {
+						t.Fatalf("wrong approval-only projection: %+v", view)
+					}
+				})
+			}
+		}
+	}
+}
+
+func TestCooperationSaveRejectsOldEditorWithoutPerLinkPermission(t *testing.T) {
+	in := CooperationContentInput{Title: "标题", Introduction: "计划", LinksVisible: true,
+		Links: []models.CooperationLink{{Title: "旧编辑页", URL: "https://example.org"}}}
+	if err := in.Validate(); err == nil || !strings.Contains(err.Error(), "刷新后台") {
+		t.Fatalf("missing permissions accepted: %v", err)
+	}
+}
+
+func TestCooperationSavePersistsIndependentLinkPermissions(t *testing.T) {
+	s, m := cooperationTestService(t)
+	m.ExpectBegin()
+	expectCooperationAdmin(m, 2, []int{42})
+	expectCooperation(m, 42)
+	public, restricted := true, false
+	in := CooperationContentInput{Title: "标题", Introduction: "计划", ApplicationRequired: true, Published: true,
+		Links: []models.CooperationLink{
+			{Title: "公开介绍", URL: "https://example.org/public", Public: &public},
+			{Title: "专属入口", URL: "https://example.org/private", Public: &restricted},
+		}}
+	links, _ := json.Marshal(in.Links)
+	m.ExpectExec("UPDATE campus_cooperation SET").
+		WithArgs("标题", "计划", false, string(links), false, nil, "null", true, "null", true, true, 7, int64(9)).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	m.ExpectCommit()
+	if err := s.SaveContent(context.Background(), 7, 9, in); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+	stored := string(links)
+	c := &models.CampusCooperation{LinksJSON: &stored, ApplicationRequired: true}
+	if err := c.DecodeContent(); err != nil {
+		t.Fatal(err)
+	}
+	if len(cooperationPublic(c, "pending").Links) != 1 || len(cooperationPublic(c, "approved").Links) != 2 {
+		t.Fatal("saved visibility did not round-trip")
 	}
 }

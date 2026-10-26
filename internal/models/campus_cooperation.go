@@ -26,8 +26,9 @@ type CommercialOrder struct {
 }
 
 type CooperationLink struct {
-	Title string `json:"title"`
-	URL   string `json:"url"`
+	Title  string `json:"title"`
+	URL    string `json:"url"`
+	Public *bool  `json:"public,omitempty"` // Missing on legacy data: inherit links_visible.
 }
 
 type CooperationContact struct {
