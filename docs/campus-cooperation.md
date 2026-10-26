@@ -67,11 +67,11 @@ POST 申请只使用服务端登录用户、当前学校和服务端白名单名
 
 分页默认 page=1、size=20，size 最大 50，page 最大 1000000。无效分页/ID/能力参数返回 400 并立即终止。跨校资源返回不可访问的 404；角色整体无权限返回 403。
 
-PUT 校区内容字段：title、introduction、linksVisible、links[{title,url}]、imagesVisible、imageTitle、images[object_key]、contactsVisible、contacts[{type,label,value}]、applicationRequired、published。标题/介绍必填；启用链接模块至少需要一条带标题和有效 HTTP/HTTPS 地址的链接；图片必须属于当前合作。其余模块可空，不限制链接的业务条数。后台读取同时返回 imageUrls 预览地址，保存仍使用 images 中归属已校验的 object_key。
+PUT 校区内容字段：title、introduction、links[{title,url,public}]、imagesVisible、imageTitle、images[object_key]、contactsVisible、contacts[{type,label,value}]、applicationRequired、published。linksVisible 仅保留为旧数据兼容字段。标题/介绍必填；每条链接均须填写标题、有效 HTTP/HTTPS 地址及明确的 public 布尔值，链接列表可为空；图片必须属于当前合作。其余模块可空，不限制链接的业务条数。后台读取同时返回 imageUrls 预览地址，保存仍使用 images 中归属已校验的 object_key。
 
 ## 申请制与通知
 
-申请制只隐藏联系方式，链接仍按显示开关公开。后端输出明确的公开投影，未通过者不返回联系方式；通过者仍遵循管理员联系方式显示开关。禁用/下架内容、不同学校、没有启用负责人时不能取得实时详情。
+申请制下，public=true 的链接公开，public=false 的链接仅向当前已通过审核者返回，未通过者不获得受限链接的标题和 URL；联系方式仍在通过后按管理员显示开关开放。非申请制下所有链接可见。禁用/下架内容、不同学校、没有启用负责人时不能取得实时详情。
 
 pending/approved 重复申请返回原轮次，rejected 新建下一轮。审核只更新 pending，重复相同决定不重复通知，冲突决定不能覆盖。普通用户拒绝订阅、弹窗失败或没有订阅记录，都不会阻止提交申请。
 
@@ -137,3 +137,21 @@ https://dev.mysql.com/doc/refman/8.0/en/create-table-secondary-indexes.html
 ## 迁移后及最新导出审查
 
 2026-10-14 用户执行修正版 01 后的结构回执确认四表、VIRTUAL active_user_id、唯一索引、新通知可空 BIGINT 引用及关联外键对应均匹配。02 完整回执确认唯一合作业务键、精确模板 ID、application=thing10/result=phrase3/remark=thing8，enabled=0。随后 14:00 最新本地导出复核四表空数据、无悬空学校管理员关系、无重复启用负责人、单条禁用模板及既有通知合作引用空值。可进入后台开发；不追加 SQL、不启用模板。后台第三阶段已实现并通过类型/定向 lint、51 项前端测试及生产构建，浏览器视觉及实际后端/OSS 联调尚未完成。
+
+## 2026-10-26：逐条链接公开权限
+
+沿用 links JSON，每条保存为 {title,url,public}，不新增表、列或路由。
+
+- public=true：无需申请审核通过即可查看。
+- public=false：开启 applicationRequired 时，仅当前申请状态为 approved 的用户可查看；未申请、pending、rejected 均不返回该条链接的标题和 URL。
+- 未开启 applicationRequired 时，全部链接直接可见。
+- 每条链接独立配置，链接顺序不变；联系方式和图片的权限规则保持原样。
+- 旧 JSON 缺少 public 时，读取兼容 links_visible（1 为公开，0 为审核后可见）。
+- 新管理端保存时必须逐条提交 public；遗漏会提示刷新后台，防止旧编辑页覆盖新的逐条权限。
+- 客户端响应 linksVisible 保留，但含义改为“当前用户过滤后的链接列表非空”；小程序旧版可沿用现有模板。
+
+手动执行 SQL：sql/20261026_01_cooperation_link_public.sql。脚本未由 Codex 执行。它只补齐缺少或为 null 的 public，保留已有布尔值、链接顺序与 updated_at；可重复执行。无需变更表结构。
+
+上线顺序：备份 campus_cooperation → 手动执行 SQL 并检查末尾查询 → 同步部署后端与后台 → 刷新已打开的后台编辑窗口 → 发布小程序更新。新后端也能读取未迁移旧数据，但旧后端无法识别逐条权限，因此升级期间暂停编辑链接权限。
+
+本次导出的 CoCraft内测活动（id=2）旧 links_visible=0，迁移后该链接 public=false；当前用户审核通过时后端即返回该链接，无需将其改为公开。SQL 不改申请记录、审核状态、商单、支付或通知。
