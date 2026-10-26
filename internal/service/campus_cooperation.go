@@ -82,16 +82,18 @@ func (in *CooperationContentInput) Validate() error {
 	if in.ImageTitle != nil && utf8.RuneCountInString(*in.ImageTitle) > 100 {
 		return ErrBadRequest("图片框名称最多100字")
 	}
+	if in.LinksVisible && len(in.Links) == 0 {
+		return ErrBadRequest("显示链接时请至少配置一个有效链接")
+	}
 	for i := range in.Links {
 		link := &in.Links[i]
 		link.Title = strings.TrimSpace(link.Title)
 		link.URL = strings.TrimSpace(link.URL)
-		u, err := url.Parse(link.URL)
-		if link.Title == "" || err != nil || u.Hostname() == "" || u.User != nil || (u.Scheme != "https" && u.Scheme != "http") {
-			return ErrBadRequest("每个链接都需要标题及有效的HTTP/HTTPS地址")
-		}
-		if link.Public == nil {
-			return ErrBadRequest("请刷新后台，为每条链接设置是否无需申请即可查看")
+		if in.LinksVisible {
+			u, err := url.Parse(link.URL)
+			if link.Title == "" || err != nil || u.Hostname() == "" || u.User != nil || (u.Scheme != "https" && u.Scheme != "http") {
+				return ErrBadRequest("显示链接时，每个链接都需要标题及有效的HTTP/HTTPS地址")
+			}
 		}
 	}
 	for _, contact := range in.Contacts {
@@ -200,20 +202,12 @@ type CooperationPublicView struct {
 
 func cooperationPublic(c *models.CampusCooperation, status string) CooperationPublicView {
 	v := CooperationPublicView{ID: c.ID, OrderName: c.OrderName, CompanyName: c.CompanyName, SchoolName: c.SchoolName, Title: c.Title, Introduction: c.Introduction,
-		Links: []models.CooperationLink{}, ImagesVisible: c.ImagesVisible, ImageTitle: c.ImageTitle, Images: []string{},
+		LinksVisible: c.LinksVisible, Links: []models.CooperationLink{}, ImagesVisible: c.ImagesVisible, ImageTitle: c.ImageTitle, Images: []string{},
 		ContactsVisible: c.ContactsVisible && (!c.ApplicationRequired || status == "approved"), ApplicationRequired: c.ApplicationRequired, ApplicationStatus: status,
 		CanApply: c.ApplicationRequired && (status == "" || status == "rejected")}
-	for _, link := range c.Links {
-		public := c.LinksVisible
-		if link.Public != nil {
-			public = *link.Public
-		}
-		if public || !c.ApplicationRequired || status == "approved" {
-			v.Links = append(v.Links, link)
-		}
+	if c.LinksVisible {
+		v.Links = c.Links
 	}
-	// Retain the response flag for existing clients; it describes the filtered list.
-	v.LinksVisible = len(v.Links) > 0
 	if c.ImagesVisible {
 		for _, key := range c.Images {
 			v.Images = append(v.Images, oss.FullURL(key))
