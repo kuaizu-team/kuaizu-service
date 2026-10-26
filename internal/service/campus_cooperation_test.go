@@ -6,9 +6,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/jmoiron/sqlx"
@@ -456,5 +458,63 @@ func TestCooperationSavePersistsIndependentLinkPermissions(t *testing.T) {
 	}
 	if len(cooperationPublic(c, "pending").Links) != 1 || len(cooperationPublic(c, "approved").Links) != 2 {
 		t.Fatal("saved visibility did not round-trip")
+	}
+}
+
+func TestCooperationTagsReuseProjectLimits(t *testing.T) {
+	for _, tags := range [][]string{{"科研", "AI写作"}, {}, {" 重复 ", "重复"}, {"这是一个超过十二个字符的合作标签"}, {"1", "2", "3", "4", "5", "6"}} {
+		in := CooperationContentInput{Title: "标题", Introduction: "计划", Tags: &tags}
+		err := in.Validate()
+		wantError := len(tags) > 5 || (len(tags) > 0 && (tags[0] == "重复" || utf8.RuneCountInString(tags[0]) > 12))
+		if (err != nil) != wantError {
+			t.Fatalf("tags=%+v err=%v", tags, err)
+		}
+	}
+}
+
+func TestCooperationTagsSaveInSameAuthorizedTransaction(t *testing.T) {
+	for _, failLibrary := range []bool{false, true} {
+		t.Run(fmt.Sprint(failLibrary), func(t *testing.T) {
+			s, m := cooperationTestService(t)
+			m.ExpectBegin()
+			expectCooperationAdmin(m, 2, []int{42})
+			expectCooperation(m, 42)
+			m.ExpectExec("UPDATE campus_cooperation SET title=").WillReturnResult(sqlmock.NewResult(0, 1))
+			first := m.ExpectExec("(?s)INSERT INTO project_tag.*ON DUPLICATE KEY UPDATE").WithArgs("科研")
+			if failLibrary {
+				first.WillReturnError(errors.New("library write failed"))
+				m.ExpectRollback()
+			} else {
+				first.WillReturnResult(sqlmock.NewResult(28, 1))
+				m.ExpectExec("(?s)INSERT INTO project_tag.*ON DUPLICATE KEY UPDATE").WithArgs("AI写作").WillReturnResult(sqlmock.NewResult(29, 1))
+				m.ExpectExec(regexp.QuoteMeta("UPDATE campus_cooperation SET tags=? WHERE id=?")).WithArgs(`["科研","AI写作"]`, int64(9)).WillReturnResult(sqlmock.NewResult(0, 1))
+				m.ExpectCommit()
+			}
+			tags := []string{" 科研 ", "AI写作"}
+			err := s.SaveContent(context.Background(), 7, 9, CooperationContentInput{Title: "标题", Introduction: "计划", Tags: &tags})
+			if (err != nil) != failLibrary {
+				t.Fatalf("error=%v", err)
+			}
+			if err := m.ExpectationsWereMet(); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
+func TestCooperationExplicitEmptyTagsClearWithoutCreatingLibraryEntries(t *testing.T) {
+	s, m := cooperationTestService(t)
+	m.ExpectBegin()
+	expectCooperationAdmin(m, 2, []int{42})
+	expectCooperation(m, 42)
+	m.ExpectExec("UPDATE campus_cooperation SET title=").WillReturnResult(sqlmock.NewResult(0, 1))
+	m.ExpectExec(regexp.QuoteMeta("UPDATE campus_cooperation SET tags=? WHERE id=?")).WithArgs("[]", int64(9)).WillReturnResult(sqlmock.NewResult(0, 1))
+	m.ExpectCommit()
+	tags := []string{}
+	if err := s.SaveContent(context.Background(), 7, 9, CooperationContentInput{Title: "标题", Introduction: "计划", Tags: &tags}); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
 	}
 }

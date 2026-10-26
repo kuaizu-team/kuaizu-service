@@ -52,6 +52,8 @@ paths:
     $ref: './paths/campus_cooperation.yaml#/order'
   /commercial-orders/{id}/claims:
     $ref: './paths/campus_cooperation.yaml#/claim'
+  /project-tags:
+    $ref: './paths/campus_cooperation.yaml#/tags'
   /campus-cooperations:
     $ref: './paths/campus_cooperation.yaml#/list'
   /campus-cooperations/{id}:

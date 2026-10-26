@@ -77,7 +77,7 @@ func HasCooperationTeam(ctx context.Context, q sqlx.QueryerContext, schoolID int
 	return exists, err
 }
 
-const cooperationColumns = `c.id,c.commercial_order_id,c.school_id,c.claimed_by,c.claimed_at,c.title,c.introduction,c.links_visible,c.links,c.images_visible,c.image_title,c.images,c.contacts_visible,c.contacts,c.application_required,c.published,c.updated_by,c.updated_at,o.name AS order_name,o.company_name,s.school_name`
+const cooperationColumns = `c.id,c.commercial_order_id,c.school_id,c.claimed_by,c.claimed_at,c.title,c.introduction,c.tags,(SELECT COUNT(*) FROM campus_cooperation_view cv WHERE cv.cooperation_id=c.id) AS view_count,c.links_visible,c.links,c.images_visible,c.image_title,c.images,c.contacts_visible,c.contacts,c.application_required,c.published,c.updated_by,c.updated_at,o.name AS order_name,o.company_name,s.school_name`
 const cooperationJoins = ` FROM campus_cooperation c JOIN commercial_order o ON o.id=c.commercial_order_id JOIN school s ON s.id=c.school_id`
 const cooperationApplicationColumns = `a.id,a.cooperation_id,a.user_id,a.attempt_no,a.status,a.profile_snapshot,a.applied_at,a.reviewed_by,a.reviewed_at,a.review_remark,c.title AS cooperation_title,o.company_name,s.school_name`
 const cooperationApplicationJoins = ` FROM campus_cooperation_application a JOIN campus_cooperation c ON c.id=a.cooperation_id JOIN commercial_order o ON o.id=c.commercial_order_id JOIN school s ON s.id=c.school_id`
@@ -220,4 +220,23 @@ func CooperationResultTx(ctx context.Context, tx *sqlx.Tx, a *models.Cooperation
 	}
 	_, err = tx.ExecContext(ctx, `INSERT INTO user_status_message(user_id,type,source_key,status_notification_id,payload,fullscreen_displayed) VALUES(?,?,?,?,?,0)`, a.UserID, kind, fmt.Sprintf("cooperation-review:%d", a.ID), id, string(payload))
 	return id, err
+}
+
+func (r *CampusCooperationRepository) RecordView(ctx context.Context, cooperationID int64, userID int) (int64, error) {
+	if _, err := r.db.ExecContext(ctx, "INSERT IGNORE INTO campus_cooperation_view(cooperation_id,user_id) VALUES(?,?)", cooperationID, userID); err != nil {
+		return 0, err
+	}
+	var count int64
+	err := r.db.GetContext(ctx, &count, "SELECT COUNT(*) FROM campus_cooperation_view WHERE cooperation_id=?", cooperationID)
+	return count, err
+}
+
+// SearchTags shares the existing project tag library and its literal LIKE escaping.
+func (r *CampusCooperationRepository) SearchTags(ctx context.Context, keyword string, limit int) ([]models.ProjectTag, error) {
+	tags := []models.ProjectTag{}
+	err := r.db.SelectContext(ctx, &tags, `SELECT id,name FROM project_tag
+		WHERE status=1 AND name LIKE ? ESCAPE '!'
+		ORDER BY CASE WHEN name LIKE ? ESCAPE '!' THEN 0 ELSE 1 END,sort_order,id LIMIT ?`,
+		roleTagLikePattern(keyword, false), roleTagLikePattern(keyword, true), limit)
+	return tags, err
 }

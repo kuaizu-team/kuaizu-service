@@ -92,6 +92,7 @@ func main() {
 	adminGroup.POST("/commercial-orders", server.SaveCommercialOrder)
 	adminGroup.PUT("/commercial-orders/:id", server.SaveCommercialOrder)
 	adminGroup.POST("/commercial-orders/:id/claims", server.ClaimCommercialOrder)
+	adminGroup.GET("/project-tags", server.SearchCooperationTags)
 	adminGroup.GET("/campus-cooperations", server.ListCampusCooperations)
 	adminGroup.GET("/campus-cooperations/:id", server.GetCampusCooperation)
 	adminGroup.PUT("/campus-cooperations/:id", server.SaveCampusCooperation)

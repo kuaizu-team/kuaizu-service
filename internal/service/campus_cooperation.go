@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"mime/multipart"
 	"net/url"
 	"strings"
@@ -42,6 +43,7 @@ type CommercialOrderInput struct {
 type CooperationContentInput struct {
 	Title               string                      `json:"title"`
 	Introduction        string                      `json:"introduction"`
+	Tags                *[]string                   `json:"tags"`
 	LinksVisible        bool                        `json:"linksVisible"`
 	Links               []models.CooperationLink    `json:"links"`
 	ImagesVisible       bool                        `json:"imagesVisible"`
@@ -71,6 +73,9 @@ func (in *CommercialOrderInput) Validate() error {
 	return nil
 }
 func (in *CooperationContentInput) Validate() error {
+	if err := validateProjectTags(in.Tags); err != nil {
+		return ErrBadRequest("标签最多5个，每个1–12字且不可重复")
+	}
 	in.Title = strings.TrimSpace(in.Title)
 	in.Introduction = strings.TrimSpace(in.Introduction)
 	if len(in.Introduction) > 65535 {
@@ -186,6 +191,8 @@ type CooperationPublicView struct {
 	SchoolName          string                      `json:"schoolName"`
 	Title               *string                     `json:"title"`
 	Introduction        *string                     `json:"introduction"`
+	Tags                []string                    `json:"tags"`
+	ViewCount           int64                       `json:"viewCount"`
 	LinksVisible        bool                        `json:"linksVisible"`
 	Links               []models.CooperationLink    `json:"links"`
 	ImagesVisible       bool                        `json:"imagesVisible"`
@@ -203,6 +210,8 @@ func cooperationPublic(c *models.CampusCooperation, status string) CooperationPu
 		Links: []models.CooperationLink{}, ImagesVisible: c.ImagesVisible, ImageTitle: c.ImageTitle, Images: []string{},
 		ContactsVisible: c.ContactsVisible && (!c.ApplicationRequired || status == "approved"), ApplicationRequired: c.ApplicationRequired, ApplicationStatus: status,
 		CanApply: c.ApplicationRequired && (status == "" || status == "rejected")}
+	v.Tags = append([]string{}, c.Tags...)
+	v.ViewCount = c.ViewCount
 	for _, link := range c.Links {
 		public := c.LinksVisible
 		if link.Public != nil {
@@ -303,6 +312,12 @@ func (s *CampusCooperationService) ClientDetail(ctx context.Context, userID int,
 	status := ""
 	if a != nil {
 		status = a.Status
+	}
+	// Count only authenticated, school-authorized detail reads; repeated reads are deduplicated.
+	if count, err := s.repo.CampusCooperation.RecordView(ctx, id, userID); err != nil {
+		log.Printf("[CampusCooperationService.ClientDetail] record view failed: %v", err)
+	} else {
+		c.ViewCount = count
 	}
 	out := cooperationPublic(c, status)
 	return &out, nil
@@ -436,6 +451,21 @@ func (s *CampusCooperationService) SaveContent(ctx context.Context, adminID int,
 	_, err = tx.ExecContext(ctx, `UPDATE campus_cooperation SET title=?,introduction=?,links_visible=?,links=?,images_visible=?,image_title=?,images=?,contacts_visible=?,contacts=?,application_required=?,published=?,updated_by=? WHERE id=?`, in.Title, in.Introduction, in.LinksVisible, string(links), in.ImagesVisible, in.ImageTitle, string(images), visible, string(contacts), in.ApplicationRequired, in.Published, adminID, id)
 	if err != nil {
 		return err
+	}
+	if in.Tags != nil {
+		for _, name := range *in.Tags {
+			if _, err := tx.ExecContext(ctx, `INSERT INTO project_tag(name,status) VALUES(?,1)
+				ON DUPLICATE KEY UPDATE id=LAST_INSERT_ID(id),status=1`, name); err != nil {
+				return err
+			}
+		}
+		tags, err := json.Marshal(*in.Tags)
+		if err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE campus_cooperation SET tags=? WHERE id=?`, string(tags), id); err != nil {
+			return err
+		}
 	}
 	return tx.Commit()
 }
@@ -621,4 +651,18 @@ func (s *CampusCooperationService) UploadImage(ctx context.Context, adminID int,
 		return nil, cooperationError(err)
 	}
 	return result, nil
+}
+
+func (s *CampusCooperationService) SearchTags(ctx context.Context, adminID int, keyword string, limit int) ([]models.ProjectTag, error) {
+	if _, err := s.adminScope(ctx, s.repo.DB(), adminID, false); err != nil {
+		return nil, err
+	}
+	keyword = strings.TrimSpace(keyword)
+	if utf8.RuneCountInString(keyword) > 32 {
+		return nil, ErrBadRequest("标签关键词最多32字")
+	}
+	if limit < 1 || limit > 20 {
+		return nil, ErrBadRequest("标签数量需在1–20之间")
+	}
+	return s.repo.CampusCooperation.SearchTags(ctx, keyword, limit)
 }

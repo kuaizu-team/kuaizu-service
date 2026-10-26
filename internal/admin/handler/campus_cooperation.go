@@ -182,3 +182,19 @@ func (s *AdminServer) UploadCampusCooperationImage(ctx echo.Context) error {
 	}
 	return response.Success(ctx, map[string]string{"url": data.URL, "key": data.Key})
 }
+
+func (s *AdminServer) SearchCooperationTags(ctx echo.Context) error {
+	limit := 12
+	if raw := ctx.QueryParam("limit"); raw != "" {
+		value, err := strconv.Atoi(raw)
+		if err != nil || value < 1 || value > 20 {
+			return response.BadRequest(ctx, "标签数量需在1–20之间")
+		}
+		limit = value
+	}
+	tags, err := s.svc.CampusCooperation.SearchTags(ctx.Request().Context(), currentAdminID(ctx), ctx.QueryParam("keyword"), limit)
+	if err != nil {
+		return mapServiceError(ctx, err)
+	}
+	return response.Success(ctx, tags)
+}

@@ -184,6 +184,17 @@
         "published": {
           "type": "boolean",
           "default": false
+        },
+        "tags": {
+          "type": "array",
+          "uniqueItems": true,
+          "description": "Ordered names from the shared project_tag library. New names are inserted atomically when saving cooperation content. Omit to preserve existing tags; send an empty array to clear.",
+          "maxItems": 5,
+          "items": {
+            "type": "string",
+            "maxLength": 12,
+            "minLength": 1
+          }
         }
       },
       "required": [
@@ -294,6 +305,23 @@
             "type": "string"
           },
           "description": "Resolved preview URLs in the same order as images; saving still uses registered object keys."
+        },
+        "tags": {
+          "type": "array",
+          "uniqueItems": true,
+          "description": "Ordered tag names from the shared project_tag library.",
+          "maxItems": 5,
+          "items": {
+            "type": "string",
+            "maxLength": 12,
+            "minLength": 1
+          }
+        },
+        "viewCount": {
+          "description": "Number of distinct authenticated users who successfully accessed this school-scoped cooperation detail. Repeated views do not increment it.",
+          "type": "integer",
+          "minimum": 0,
+          "format": "int64"
         }
       },
       "required": [
@@ -302,7 +330,9 @@
         "schoolId",
         "companyName",
         "schoolName",
-        "published"
+        "published",
+        "tags",
+        "viewCount"
       ]
     },
     "CooperationPublicView": {
@@ -383,6 +413,23 @@
         "canApply": {
           "type": "boolean",
           "default": false
+        },
+        "tags": {
+          "type": "array",
+          "uniqueItems": true,
+          "description": "Ordered tag names from the shared project_tag library.",
+          "maxItems": 5,
+          "items": {
+            "type": "string",
+            "maxLength": 12,
+            "minLength": 1
+          }
+        },
+        "viewCount": {
+          "description": "Number of distinct authenticated users who successfully accessed this school-scoped cooperation detail. Repeated views do not increment it.",
+          "type": "integer",
+          "minimum": 0,
+          "format": "int64"
         }
       },
       "required": [
@@ -397,7 +444,9 @@
         "contactsVisible",
         "applicationRequired",
         "applicationStatus",
-        "canApply"
+        "canApply",
+        "tags",
+        "viewCount"
       ],
       "description": "In application mode the server filters links per public flag and current user approval, and omits contacts until approval. Normal mode returns all links. Contact and image visibility switches are unchanged. Internal admin IDs and card snapshots are never included."
     },
