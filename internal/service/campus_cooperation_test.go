@@ -372,8 +372,8 @@ func TestCommercialOrderEndRetractsPublishedSchools(t *testing.T) {
 	s, m := cooperationTestService(t)
 	m.ExpectBegin()
 	expectCooperationAdmin(m, 1, nil)
-	m.ExpectQuery(`SELECT status,content_template FROM commercial_order WHERE id=\? FOR UPDATE`).WithArgs(int64(3)).WillReturnRows(sqlmock.NewRows([]string{"status", "content_template"}).AddRow("available", nil))
-	m.ExpectExec(`UPDATE commercial_order SET`).WithArgs("商单", "企业", nil, "ended", nil, 7, int64(3)).WillReturnResult(sqlmock.NewResult(0, 1))
+	m.ExpectQuery(`SELECT status,content_template,feishu_wiki_node_token FROM commercial_order WHERE id=\? FOR UPDATE`).WithArgs(int64(3)).WillReturnRows(sqlmock.NewRows([]string{"status", "content_template", "feishu_wiki_node_token"}).AddRow("available", nil, nil))
+	m.ExpectExec(`UPDATE commercial_order SET`).WithArgs("商单", "企业", nil, nil, "ended", nil, 7, int64(3)).WillReturnResult(sqlmock.NewResult(0, 1))
 	m.ExpectExec(`UPDATE campus_cooperation SET published=0`).WithArgs(7, int64(3)).WillReturnResult(sqlmock.NewResult(0, 2))
 	m.ExpectCommit()
 	if _, err := s.SaveOrder(context.Background(), 7, 3, CommercialOrderInput{Name: "商单", CompanyName: "企业", Status: "ended"}); err != nil {

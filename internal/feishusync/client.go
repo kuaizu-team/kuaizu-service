@@ -150,6 +150,12 @@ func (c *Client) call(ctx context.Context, method, path string, body, out any) e
 	}
 	return c.request(ctx, method, path, token, body, out)
 }
+
+// Call shares the existing application token, throttling and response checks with
+// the cooperation export. Paths must be fixed OpenAPI paths assembled by callers.
+func (c *Client) Call(ctx context.Context, method, path string, body, out any) error {
+	return c.call(ctx, method, path, body, out)
+}
 func tablePath(t Target) string {
 	return "/open-apis/bitable/v1/apps/" + url.PathEscape(t.AppToken) + "/tables/" + url.PathEscape(t.TableID)
 }

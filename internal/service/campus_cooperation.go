@@ -35,11 +35,12 @@ func NewCampusCooperationService(repo *repository.Repository, message *MessageSe
 }
 
 type CommercialOrderInput struct {
-	Name        string          `json:"name"`
-	CompanyName string          `json:"companyName"`
-	Description *string         `json:"description"`
-	Status      string          `json:"status"`
-	Template    json.RawMessage `json:"template"`
+	Name                string          `json:"name"`
+	CompanyName         string          `json:"companyName"`
+	Description         *string         `json:"description"`
+	FeishuWikiNodeToken *string         `json:"feishuWikiNodeToken"`
+	Status              string          `json:"status"`
+	Template            json.RawMessage `json:"template"`
 }
 type CooperationContentInput struct {
 	Title               string                      `json:"title"`
@@ -59,6 +60,20 @@ type CooperationContentInput struct {
 func (in *CommercialOrderInput) Validate() error {
 	in.Name = strings.TrimSpace(in.Name)
 	in.CompanyName = strings.TrimSpace(in.CompanyName)
+	if in.FeishuWikiNodeToken != nil {
+		token := strings.TrimSpace(*in.FeishuWikiNodeToken)
+		if strings.Contains(token, "/wiki/") {
+			u, err := url.Parse(token)
+			if err != nil || u.Scheme != "https" || (u.Host != "feishu.cn" && !strings.HasSuffix(u.Host, ".feishu.cn")) || u.User != nil {
+				return ErrBadRequest("飞书文档链接无效")
+			}
+			token = strings.TrimPrefix(u.Path, "/wiki/")
+		}
+		if len(token) > 128 || strings.ContainsAny(token, "/?# \t\r\n") {
+			return ErrBadRequest("飞书知识库文档标识无效")
+		}
+		*in.FeishuWikiNodeToken = token
+	}
 	if in.Status == "" {
 		in.Status = "available"
 	}
@@ -372,7 +387,10 @@ func (s *CampusCooperationService) SaveOrder(ctx context.Context, adminID int, i
 		templateValue = string(in.Template)
 	}
 	if id == 0 {
-		result, err := tx.ExecContext(ctx, `INSERT INTO commercial_order(name,company_name,description,status,content_template,created_by,updated_by) VALUES(?,?,?,?,?,?,?)`, in.Name, in.CompanyName, in.Description, in.Status, templateValue, adminID, adminID)
+		if in.FeishuWikiNodeToken != nil && *in.FeishuWikiNodeToken == "" {
+			in.FeishuWikiNodeToken = nil
+		}
+		result, err := tx.ExecContext(ctx, `INSERT INTO commercial_order(name,company_name,description,feishu_wiki_node_token,status,content_template,created_by,updated_by) VALUES(?,?,?,?,?,?,?,?)`, in.Name, in.CompanyName, in.Description, in.FeishuWikiNodeToken, in.Status, templateValue, adminID, adminID)
 		if err != nil {
 			return 0, err
 		}
@@ -384,8 +402,9 @@ func (s *CampusCooperationService) SaveOrder(ctx context.Context, adminID int, i
 		var existing struct {
 			Status   string  `db:"status"`
 			Template *string `db:"content_template"`
+			WikiNode *string `db:"feishu_wiki_node_token"`
 		}
-		if err := tx.GetContext(ctx, &existing, `SELECT status,content_template FROM commercial_order WHERE id=? FOR UPDATE`, id); err != nil {
+		if err := tx.GetContext(ctx, &existing, `SELECT status,content_template,feishu_wiki_node_token FROM commercial_order WHERE id=? FOR UPDATE`, id); err != nil {
 			return 0, cooperationError(err)
 		}
 		if existing.Status == "ended" && in.Status != "ended" {
@@ -396,7 +415,26 @@ func (s *CampusCooperationService) SaveOrder(ctx context.Context, adminID int, i
 				templateValue = *existing.Template
 			}
 		}
-		if _, err := tx.ExecContext(ctx, `UPDATE commercial_order SET name=?,company_name=?,description=?,status=?,content_template=?,updated_by=? WHERE id=?`, in.Name, in.CompanyName, in.Description, in.Status, templateValue, adminID, id); err != nil {
+		if in.FeishuWikiNodeToken == nil {
+			in.FeishuWikiNodeToken = existing.WikiNode
+		}
+		changedWiki := (in.FeishuWikiNodeToken == nil) != (existing.WikiNode == nil)
+		if in.FeishuWikiNodeToken != nil && existing.WikiNode != nil {
+			changedWiki = *in.FeishuWikiNodeToken != *existing.WikiNode
+		}
+		if changedWiki {
+			var synced bool
+			if err := tx.GetContext(ctx, &synced, `SELECT EXISTS(SELECT 1 FROM cooperation_feishu_target t JOIN campus_cooperation c ON c.id=t.cooperation_id WHERE c.commercial_order_id=? AND t.app_token IS NOT NULL)`, id); err != nil {
+				return 0, err
+			}
+			if synced {
+				return 0, ErrBadRequest("已有学校申请表，不能更换商单飞书文档")
+			}
+		}
+		if in.FeishuWikiNodeToken != nil && *in.FeishuWikiNodeToken == "" {
+			in.FeishuWikiNodeToken = nil
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE commercial_order SET name=?,company_name=?,description=?,feishu_wiki_node_token=?,status=?,content_template=?,updated_by=? WHERE id=?`, in.Name, in.CompanyName, in.Description, in.FeishuWikiNodeToken, in.Status, templateValue, adminID, id); err != nil {
 			return 0, err
 		}
 		if in.Status == "ended" && existing.Status != "ended" {

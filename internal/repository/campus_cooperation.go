@@ -77,7 +77,7 @@ func HasCooperationTeam(ctx context.Context, q sqlx.QueryerContext, schoolID int
 	return exists, err
 }
 
-const cooperationColumns = `c.id,c.commercial_order_id,c.school_id,c.claimed_by,c.claimed_at,c.title,c.introduction,c.tags,(SELECT COUNT(*) FROM campus_cooperation_view cv WHERE cv.cooperation_id=c.id) AS view_count,c.links_visible,c.links,c.images_visible,c.image_title,c.images,c.contacts_visible,c.contacts,c.application_required,c.published,c.updated_by,c.updated_at,o.name AS order_name,o.status AS order_status,o.content_template AS order_template,o.company_name,s.school_name`
+const cooperationColumns = `c.id,c.commercial_order_id,c.school_id,c.claimed_by,c.claimed_at,c.title,c.introduction,c.tags,(SELECT COUNT(*) FROM campus_cooperation_view cv WHERE cv.cooperation_id=c.id) AS view_count,c.links_visible,c.links,c.images_visible,c.image_title,c.images,c.contacts_visible,c.contacts,c.application_required,c.published,c.updated_by,c.updated_at,o.name AS order_name,o.status AS order_status,o.content_template AS order_template,o.feishu_wiki_node_token,o.company_name,s.school_name`
 const cooperationJoins = ` FROM campus_cooperation c JOIN commercial_order o ON o.id=c.commercial_order_id JOIN school s ON s.id=c.school_id`
 const cooperationApplicationColumns = `a.id,a.cooperation_id,a.user_id,a.attempt_no,a.status,a.profile_snapshot,a.applied_at,a.reviewed_by,a.reviewed_at,a.review_remark,c.title AS cooperation_title,o.company_name,s.school_name`
 const cooperationApplicationJoins = ` FROM campus_cooperation_application a JOIN campus_cooperation c ON c.id=a.cooperation_id JOIN commercial_order o ON o.id=c.commercial_order_id JOIN school s ON s.id=c.school_id`
@@ -109,7 +109,7 @@ func (r *CampusCooperationRepository) ListOrders(ctx context.Context, page, size
 	}
 	rows := []models.CommercialOrder{}
 	args = append(args, size, (page-1)*size)
-	err := r.db.SelectContext(ctx, &rows, `SELECT id,name,company_name,description,status,content_template,created_by,updated_by,created_at,updated_at FROM commercial_order WHERE `+where+` ORDER BY created_at DESC,id DESC LIMIT ? OFFSET ?`, args...)
+	err := r.db.SelectContext(ctx, &rows, `SELECT id,name,company_name,description,feishu_wiki_node_token,status,content_template,created_by,updated_by,created_at,updated_at FROM commercial_order WHERE `+where+` ORDER BY created_at DESC,id DESC LIMIT ? OFFSET ?`, args...)
 	if err == nil {
 		for i := range rows {
 			if err := rows[i].DecodeTemplate(); err != nil {
