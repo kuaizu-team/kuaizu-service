@@ -35,10 +35,11 @@ func NewCampusCooperationService(repo *repository.Repository, message *MessageSe
 }
 
 type CommercialOrderInput struct {
-	Name        string  `json:"name"`
-	CompanyName string  `json:"companyName"`
-	Description *string `json:"description"`
-	Status      string  `json:"status"`
+	Name        string          `json:"name"`
+	CompanyName string          `json:"companyName"`
+	Description *string         `json:"description"`
+	Status      string          `json:"status"`
+	Template    json.RawMessage `json:"template"`
 }
 type CooperationContentInput struct {
 	Title               string                      `json:"title"`
@@ -67,8 +68,32 @@ func (in *CommercialOrderInput) Validate() error {
 	if in.Name == "" || in.CompanyName == "" || utf8.RuneCountInString(in.Name) > 100 || utf8.RuneCountInString(in.CompanyName) > 100 {
 		return ErrBadRequest("商单名称和公司名称必填，且各不超过100字")
 	}
-	if in.Status != "available" && in.Status != "closed" {
+	if in.Status != "available" && in.Status != "closed" && in.Status != "ended" {
 		return ErrBadRequest("商单状态无效")
+	}
+	if len(in.Template) > 0 && string(in.Template) != "null" {
+		var template CooperationContentInput
+		if err := json.Unmarshal(in.Template, &template); err != nil || template.Published || template.ImagesVisible || template.ImageTitle != nil || len(template.Images) > 0 {
+			return ErrBadRequest("商单模板内容无效")
+		}
+		if err := template.Validate(); err != nil {
+			return err
+		}
+		if template.Tags == nil {
+			tags := []string{}
+			template.Tags = &tags
+		}
+		if template.Links == nil {
+			template.Links = []models.CooperationLink{}
+		}
+		if template.Contacts == nil {
+			template.Contacts = []models.CooperationContact{}
+		}
+		if template.ContactsVisible == nil {
+			visible := true
+			template.ContactsVisible = &visible
+		}
+		in.Template, _ = json.Marshal(template)
 	}
 	return nil
 }
@@ -147,10 +172,10 @@ func (s *CampusCooperationService) AdminOrders(ctx context.Context, adminID, pag
 	if scope.Role != models.AdminRoleSuperAdmin && (scope.Role != models.AdminRoleSchoolSuperAdmin || len(scope.SchoolIDs) == 0) {
 		return nil, 0, ErrForbidden("只有平台超管或当前校区负责人可进入单据大厅")
 	}
-	if status != "" && status != "available" && status != "closed" {
+	if status != "" && status != "available" && status != "closed" && status != "ended" {
 		return nil, 0, ErrBadRequest("商单状态无效")
 	}
-	return s.repo.CampusCooperation.ListOrders(ctx, page, size, status)
+	return s.repo.CampusCooperation.ListOrders(ctx, page, size, status, scope.SchoolIDs)
 }
 func (s *CampusCooperationService) AdminList(ctx context.Context, adminID, page, size int) ([]models.CampusCooperation, int64, error) {
 	scope, err := s.adminScope(ctx, s.repo.DB(), adminID, false)
@@ -295,7 +320,7 @@ func (s *CampusCooperationService) ClientDetail(ctx context.Context, userID int,
 	if err != nil {
 		return nil, cooperationError(err)
 	}
-	if user == nil || user.SchoolID == nil || *user.SchoolID != c.SchoolID || !c.Published {
+	if user == nil || user.SchoolID == nil || *user.SchoolID != c.SchoolID || !c.Published || c.OrderStatus == "ended" {
 		return nil, ErrNotFound("合作资源不存在或不可访问")
 	}
 	team, err := repository.HasCooperationTeam(ctx, s.repo.DB(), c.SchoolID)
@@ -342,8 +367,12 @@ func (s *CampusCooperationService) SaveOrder(ctx context.Context, adminID int, i
 	if scope.Role != models.AdminRoleSuperAdmin {
 		return 0, ErrForbidden("只有平台超管可以录入或更新商单")
 	}
+	var templateValue interface{}
+	if len(in.Template) > 0 && string(in.Template) != "null" {
+		templateValue = string(in.Template)
+	}
 	if id == 0 {
-		result, err := tx.ExecContext(ctx, `INSERT INTO commercial_order(name,company_name,description,status,created_by,updated_by) VALUES(?,?,?,?,?,?)`, in.Name, in.CompanyName, in.Description, in.Status, adminID, adminID)
+		result, err := tx.ExecContext(ctx, `INSERT INTO commercial_order(name,company_name,description,status,content_template,created_by,updated_by) VALUES(?,?,?,?,?,?,?)`, in.Name, in.CompanyName, in.Description, in.Status, templateValue, adminID, adminID)
 		if err != nil {
 			return 0, err
 		}
@@ -352,12 +381,28 @@ func (s *CampusCooperationService) SaveOrder(ctx context.Context, adminID int, i
 			return 0, err
 		}
 	} else {
-		var existing int64
-		if err := tx.GetContext(ctx, &existing, `SELECT id FROM commercial_order WHERE id=? FOR UPDATE`, id); err != nil {
+		var existing struct {
+			Status   string  `db:"status"`
+			Template *string `db:"content_template"`
+		}
+		if err := tx.GetContext(ctx, &existing, `SELECT status,content_template FROM commercial_order WHERE id=? FOR UPDATE`, id); err != nil {
 			return 0, cooperationError(err)
 		}
-		if _, err := tx.ExecContext(ctx, `UPDATE commercial_order SET name=?,company_name=?,description=?,status=?,updated_by=? WHERE id=?`, in.Name, in.CompanyName, in.Description, in.Status, adminID, id); err != nil {
+		if existing.Status == "ended" && in.Status != "ended" {
+			return 0, ErrBadRequest("已结束的商单不可重新开放")
+		}
+		if len(in.Template) == 0 {
+			if existing.Template != nil {
+				templateValue = *existing.Template
+			}
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE commercial_order SET name=?,company_name=?,description=?,status=?,content_template=?,updated_by=? WHERE id=?`, in.Name, in.CompanyName, in.Description, in.Status, templateValue, adminID, id); err != nil {
 			return 0, err
+		}
+		if in.Status == "ended" && existing.Status != "ended" {
+			if _, err := tx.ExecContext(ctx, `UPDATE campus_cooperation SET published=0,updated_by=? WHERE commercial_order_id=?`, adminID, id); err != nil {
+				return 0, err
+			}
 		}
 	}
 	return id, tx.Commit()
@@ -426,6 +471,15 @@ func (s *CampusCooperationService) SaveContent(ctx context.Context, adminID int,
 	if !scope.CanAccess(c.SchoolID, true) {
 		return ErrNotFound("合作资源不存在或不可编辑")
 	}
+	if in.Published {
+		var status string
+		if err := tx.GetContext(ctx, &status, `SELECT status FROM commercial_order WHERE id=? FOR UPDATE`, c.CommercialOrderID); err != nil {
+			return err
+		}
+		if status == "ended" {
+			return ErrBadRequest("商单已结束，不能发布")
+		}
+	}
 	for _, key := range in.Images {
 		var registered string
 		if err := tx.GetContext(ctx, &registered, `SELECT object_key FROM campus_cooperation_image WHERE object_key=? AND cooperation_id=? FOR UPDATE`, key, id); err != nil {
@@ -489,7 +543,7 @@ func (s *CampusCooperationService) Apply(ctx context.Context, userID int, id int
 	if err := tx.GetContext(ctx, &user, "SELECT school_id,user_status FROM `user` WHERE id=? FOR UPDATE", userID); err != nil {
 		return nil, cooperationError(err)
 	}
-	if user.Status != 0 || user.SchoolID == nil || *user.SchoolID != c.SchoolID || !c.Published {
+	if user.Status != 0 || user.SchoolID == nil || *user.SchoolID != c.SchoolID || !c.Published || c.OrderStatus == "ended" {
 		return nil, ErrNotFound("合作资源不存在或不可申请")
 	}
 	team, err := repository.HasCooperationTeam(ctx, tx, c.SchoolID)

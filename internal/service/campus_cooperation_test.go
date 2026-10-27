@@ -368,6 +368,45 @@ func TestCooperationSameOrderCanBeClaimedByDifferentSchools(t *testing.T) {
 	}
 }
 
+func TestCommercialOrderEndRetractsPublishedSchools(t *testing.T) {
+	s, m := cooperationTestService(t)
+	m.ExpectBegin()
+	expectCooperationAdmin(m, 1, nil)
+	m.ExpectQuery(`SELECT status,content_template FROM commercial_order WHERE id=\? FOR UPDATE`).WithArgs(int64(3)).WillReturnRows(sqlmock.NewRows([]string{"status", "content_template"}).AddRow("available", nil))
+	m.ExpectExec(`UPDATE commercial_order SET`).WithArgs("商单", "企业", nil, "ended", nil, 7, int64(3)).WillReturnResult(sqlmock.NewResult(0, 1))
+	m.ExpectExec(`UPDATE campus_cooperation SET published=0`).WithArgs(7, int64(3)).WillReturnResult(sqlmock.NewResult(0, 2))
+	m.ExpectCommit()
+	if _, err := s.SaveOrder(context.Background(), 7, 3, CommercialOrderInput{Name: "商单", CompanyName: "企业", Status: "ended"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestCommercialOrderTemplateRejectsImages(t *testing.T) {
+	in := CommercialOrderInput{Name: "商单", CompanyName: "企业", Template: json.RawMessage(`{"title":"标题","introduction":"简介","images":["campus-cooperation-images/other.jpg"]}`)}
+	if err := in.Validate(); err == nil {
+		t.Fatal("template accepted school-owned image")
+	}
+}
+
+func TestEndedCommercialOrderCannotBePublished(t *testing.T) {
+	s, m := cooperationTestService(t)
+	m.ExpectBegin()
+	expectCooperationAdmin(m, 2, []int{42})
+	expectCooperation(m, 42)
+	m.ExpectQuery(`SELECT status FROM commercial_order WHERE id=\? FOR UPDATE`).WithArgs(int64(3)).WillReturnRows(sqlmock.NewRows([]string{"status"}).AddRow("ended"))
+	m.ExpectRollback()
+	err := s.SaveContent(context.Background(), 7, 9, CooperationContentInput{Title: "标题", Introduction: "简介", Published: true})
+	if err == nil {
+		t.Fatal("ended order was published")
+	}
+	if err := m.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestCooperationLinksCanAllBeRemoved(t *testing.T) {
 	in := CooperationContentInput{Title: "标题", Introduction: "计划", LinksVisible: true}
 	if err := in.Validate(); err != nil {
@@ -441,6 +480,7 @@ func TestCooperationSavePersistsIndependentLinkPermissions(t *testing.T) {
 			{Title: "专属入口", URL: "https://example.org/private", Public: &restricted},
 		}}
 	links, _ := json.Marshal(in.Links)
+	m.ExpectQuery(`SELECT status FROM commercial_order WHERE id=\? FOR UPDATE`).WithArgs(int64(3)).WillReturnRows(sqlmock.NewRows([]string{"status"}).AddRow("available"))
 	m.ExpectExec("UPDATE campus_cooperation SET").
 		WithArgs("标题", "计划", false, string(links), false, nil, "null", true, "null", true, true, 7, int64(9)).
 		WillReturnResult(sqlmock.NewResult(0, 1))

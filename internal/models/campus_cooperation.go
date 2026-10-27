@@ -2,6 +2,7 @@ package models
 
 import (
 	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/kuaizu-team/kuaizu-service/internal/oss"
@@ -14,15 +15,28 @@ const (
 )
 
 type CommercialOrder struct {
-	ID          int64     `db:"id" json:"id"`
-	Name        string    `db:"name" json:"name"`
-	CompanyName string    `db:"company_name" json:"companyName"`
-	Description *string   `db:"description" json:"description"`
-	Status      string    `db:"status" json:"status"`
-	CreatedBy   *int      `db:"created_by" json:"createdBy"`
-	UpdatedBy   *int      `db:"updated_by" json:"updatedBy"`
-	CreatedAt   time.Time `db:"created_at" json:"createdAt"`
-	UpdatedAt   time.Time `db:"updated_at" json:"updatedAt"`
+	ClaimedSchoolIDs []int           `db:"-" json:"claimedSchoolIds"`
+	Template         json.RawMessage `db:"-" json:"template"`
+	TemplateJSON     *string         `db:"content_template" json:"-"`
+	ID               int64           `db:"id" json:"id"`
+	Name             string          `db:"name" json:"name"`
+	CompanyName      string          `db:"company_name" json:"companyName"`
+	Description      *string         `db:"description" json:"description"`
+	Status           string          `db:"status" json:"status"`
+	CreatedBy        *int            `db:"created_by" json:"createdBy"`
+	UpdatedBy        *int            `db:"updated_by" json:"updatedBy"`
+	CreatedAt        time.Time       `db:"created_at" json:"createdAt"`
+	UpdatedAt        time.Time       `db:"updated_at" json:"updatedAt"`
+}
+
+func (o *CommercialOrder) DecodeTemplate() error {
+	if o.TemplateJSON != nil {
+		if !json.Valid([]byte(*o.TemplateJSON)) {
+			return fmt.Errorf("invalid commercial order template")
+		}
+		o.Template = json.RawMessage(*o.TemplateJSON)
+	}
+	return nil
 }
 
 type CooperationLink struct {
@@ -61,6 +75,9 @@ type CampusCooperation struct {
 	UpdatedBy           *int                 `db:"updated_by" json:"updatedBy"`
 	UpdatedAt           time.Time            `db:"updated_at" json:"updatedAt"`
 	OrderName           string               `db:"order_name" json:"orderName"`
+	OrderStatus         string               `db:"order_status" json:"orderStatus"`
+	OrderTemplateJSON   *string              `db:"order_template" json:"-"`
+	OrderTemplate       json.RawMessage      `db:"-" json:"orderTemplate"`
 	CompanyName         string               `db:"company_name" json:"companyName"`
 	SchoolName          string               `db:"school_name" json:"schoolName"`
 	Links               []CooperationLink    `db:"-" json:"links"`
@@ -69,6 +86,12 @@ type CampusCooperation struct {
 }
 
 func (c *CampusCooperation) DecodeContent() error {
+	if c.OrderTemplateJSON != nil {
+		if !json.Valid([]byte(*c.OrderTemplateJSON)) {
+			return fmt.Errorf("invalid commercial order template")
+		}
+		c.OrderTemplate = json.RawMessage(*c.OrderTemplateJSON)
+	}
 	c.Tags = []string{}
 	c.Links = []CooperationLink{}
 	c.Images = []string{}
