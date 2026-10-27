@@ -31,6 +31,7 @@ type Target struct {
 	UpdatedAt     time.Time  `db:"updated_at" json:"updatedAt"`
 	WikiURL       string     `db:"-" json:"wikiUrl,omitempty"`
 	BaseURL       string     `db:"-" json:"baseUrl,omitempty"`
+	Retryable     bool       `db:"-" json:"retryable,omitempty"`
 }
 
 type Service struct {
@@ -99,6 +100,10 @@ func (s *Service) Get(ctx context.Context, adminID int, cooperationID int64) (*T
 	if t.Status == "running" && time.Since(t.UpdatedAt) > 21*time.Minute {
 		t.Status, t.Message = "needs_attention", "同步进程可能已中断，请技术人员核对远端表格和记录映射"
 	}
+	if t.Status == "needs_attention" && s.canRetryRecords(ctx, cooperationID) {
+		t.Retryable = true
+		t.Message = "申请记录写入结果待确认，可安全重试"
+	}
 	if c.FeishuWikiNodeToken != nil && *c.FeishuWikiNodeToken != "" {
 		t.WikiURL = s.baseURL + "/wiki/" + url.PathEscape(*c.FeishuWikiNodeToken)
 	}
@@ -122,7 +127,19 @@ func (s *Service) Start(ctx context.Context, adminID int, cooperationID int64) (
 	if _, err = s.db.ExecContext(ctx, `INSERT IGNORE INTO cooperation_feishu_target(cooperation_id) VALUES(?)`, cooperationID); err != nil {
 		return nil, err
 	}
-	result, err := s.db.ExecContext(ctx, `UPDATE cooperation_feishu_target SET status='running',message='正在同步' WHERE cooperation_id=? AND status IN ('idle','succeeded','failed')`, cooperationID)
+	var target Target
+	if err = s.db.GetContext(ctx, &target, `SELECT `+targetColumns+` FROM cooperation_feishu_target WHERE cooperation_id=?`, cooperationID); err != nil {
+		return nil, err
+	}
+	allowAttentionRetry := target.Status == "needs_attention" && s.canRetryRecords(ctx, cooperationID)
+	if target.Status == "needs_attention" && !allowAttentionRetry {
+		return nil, service.ErrBadRequest("当前同步结果无法安全自动重试，请先核对远端表格")
+	}
+	statuses := "'idle','succeeded','failed'"
+	if allowAttentionRetry {
+		statuses += ", 'needs_attention'"
+	}
+	result, err := s.db.ExecContext(ctx, `UPDATE cooperation_feishu_target SET status='running',message='正在同步' WHERE cooperation_id=? AND status IN (`+statuses+`)`, cooperationID)
 	if err != nil {
 		return nil, err
 	}
@@ -134,6 +151,37 @@ func (s *Service) Start(ctx context.Context, adminID int, cooperationID int64) (
 		go s.run(cooperationID, adminID)
 	}
 	return s.Get(ctx, adminID, cooperationID)
+}
+
+// Only expose a retry when a complete Wiki Base/table already exists and all
+// unresolved writes can be replayed with the same UUIDv4 idempotency key.
+func (s *Service) canRetryRecords(ctx context.Context, cooperationID int64) bool {
+	var target Target
+	if err := s.db.GetContext(ctx, &target, `SELECT `+targetColumns+` FROM cooperation_feishu_target WHERE cooperation_id=?`, cooperationID); err != nil {
+		return false
+	}
+	if target.AppToken == nil || target.TableID == nil || target.DocBlockID == nil || !strings.HasPrefix(*target.DocBlockID, "wiki:") {
+		return false
+	}
+	needsReplacement, err := s.tableSchemaMismatch(ctx, *target.AppToken, *target.TableID)
+	if err != nil || needsReplacement {
+		return false
+	}
+	var mappings []record
+	if err = s.db.SelectContext(ctx, &mappings, `SELECT application_id,record_id,client_token,state FROM cooperation_feishu_record WHERE cooperation_id=?`, cooperationID); err != nil || len(mappings) == 0 {
+		return false
+	}
+	pending := false
+	for _, mapping := range mappings {
+		if mapping.State == "ready" && mapping.RecordID != nil && *mapping.RecordID != "" {
+			continue
+		}
+		if mapping.State != "pending" || mapping.RecordID != nil || (!isUUIDv4(mapping.ClientToken) && !strings.HasPrefix(mapping.ClientToken, "cooperation-application-")) {
+			return false
+		}
+		pending = true
+	}
+	return pending
 }
 
 func (s *Service) run(cooperationID int64, adminID int) {
@@ -152,7 +200,12 @@ func (s *Service) run(cooperationID int64, adminID int) {
 		fmt.Fprintf(os.Stderr, "cooperation feishu status persistence failed cooperation=%d: %v\n", cooperationID, dbErr)
 	}
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "cooperation feishu sync failed cooperation=%d error_type=%T\n", cooperationID, err)
+		var apiErr *feishusync.APIError
+		if errors.As(err, &apiErr) {
+			fmt.Fprintf(os.Stderr, "cooperation feishu sync failed cooperation=%d error_type=%T feishu_http_status=%d feishu_code=%d\n", cooperationID, err, apiErr.Status, apiErr.Code)
+		} else {
+			fmt.Fprintf(os.Stderr, "cooperation feishu sync failed cooperation=%d error_type=%T\n", cooperationID, err)
+		}
 	}
 }
 

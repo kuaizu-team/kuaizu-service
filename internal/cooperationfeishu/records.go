@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/kuaizu-team/kuaizu-service/internal/feishusync"
 )
 
@@ -30,6 +31,7 @@ type application struct {
 type record struct {
 	ApplicationID int64   `db:"application_id"`
 	RecordID      *string `db:"record_id"`
+	ClientToken   string  `db:"client_token"`
 	State         string  `db:"state"`
 }
 
@@ -39,7 +41,7 @@ func (s *Service) syncRecords(ctx context.Context, cooperationID int64, appToken
 		return err
 	}
 	mappings := []record{}
-	if err := s.db.SelectContext(ctx, &mappings, `SELECT application_id,record_id,state FROM cooperation_feishu_record WHERE cooperation_id=?`, cooperationID); err != nil {
+	if err := s.db.SelectContext(ctx, &mappings, `SELECT application_id,record_id,client_token,state FROM cooperation_feishu_record WHERE cooperation_id=?`, cooperationID); err != nil {
 		return err
 	}
 	byID := make(map[int64]record, len(mappings))
@@ -61,9 +63,30 @@ func (s *Service) syncRecords(ctx context.Context, cooperationID int64, appToken
 		}
 		mapping, exists := byID[row.ID]
 		if !exists {
-			key := "cooperation-application-" + strconv.FormatInt(row.ID, 10)
+			key := uuid.NewString()
 			if _, err = s.db.ExecContext(ctx, `INSERT INTO cooperation_feishu_record(application_id,cooperation_id,client_token,state) VALUES(?,?,?,'pending')`, row.ID, cooperationID, key); err != nil {
 				return err
+			}
+			mapping = record{ApplicationID: row.ID, ClientToken: key, State: "pending"}
+			exists = true
+		}
+		if mapping.State == "pending" && mapping.RecordID == nil {
+			key := mapping.ClientToken
+			if !isUUIDv4(key) {
+				// Earlier versions used a non-UUID token that Feishu rejects before
+				// creating a record. Replace only that known legacy token format.
+				if !strings.HasPrefix(key, "cooperation-application-") {
+					return errNeedsAttention
+				}
+				key = uuid.NewString()
+				result, updateErr := s.db.ExecContext(ctx, `UPDATE cooperation_feishu_record SET client_token=? WHERE application_id=? AND cooperation_id=? AND record_id IS NULL AND state='pending' AND client_token=?`, key, row.ID, cooperationID, mapping.ClientToken)
+				if updateErr != nil {
+					return errNeedsAttention
+				}
+				changed, rowsErr := result.RowsAffected()
+				if rowsErr != nil || changed != 1 {
+					return errNeedsAttention
+				}
 			}
 			var out struct {
 				Record struct {
@@ -71,21 +94,24 @@ func (s *Service) syncRecords(ctx context.Context, cooperationID int64, appToken
 				} `json:"record"`
 			}
 			if err = s.client.Call(ctx, http.MethodPost, path+"?client_token="+url.QueryEscape(key), map[string]any{"fields": values}, &out); err != nil {
-				return errNeedsAttention
+				return fmt.Errorf("%w: %w", errNeedsAttention, err)
 			}
 			if out.Record.ID == "" {
 				return errNeedsAttention
 			}
-			if _, err = s.db.ExecContext(ctx, `UPDATE cooperation_feishu_record SET record_id=?,state='ready' WHERE application_id=?`, out.Record.ID, row.ID); err != nil {
+			if _, err = s.db.ExecContext(ctx, `UPDATE cooperation_feishu_record SET record_id=?,state='ready' WHERE application_id=? AND cooperation_id=? AND state='pending' AND record_id IS NULL`, out.Record.ID, row.ID, cooperationID); err != nil {
 				return errNeedsAttention
 			}
-		} else {
-			if mapping.State != "ready" || mapping.RecordID == nil || *mapping.RecordID == "" {
+			var confirmed int
+			if err = s.db.GetContext(ctx, &confirmed, `SELECT COUNT(*) FROM cooperation_feishu_record WHERE application_id=? AND cooperation_id=? AND state='ready' AND record_id=?`, row.ID, cooperationID, out.Record.ID); err != nil || confirmed != 1 {
 				return errNeedsAttention
 			}
+		} else if mapping.State == "ready" && mapping.RecordID != nil && *mapping.RecordID != "" {
 			if err = s.client.Call(ctx, http.MethodPut, path+"/"+url.PathEscape(*mapping.RecordID), map[string]any{"fields": values}, nil); err != nil {
 				return err
 			}
+		} else {
+			return errNeedsAttention
 		}
 	}
 	// A user deletion removes their application locally; remove the remote private row too.
@@ -104,6 +130,11 @@ func (s *Service) syncRecords(ctx context.Context, cooperationID int64, appToken
 		}
 	}
 	return nil
+}
+
+func isUUIDv4(value string) bool {
+	parsed, err := uuid.Parse(value)
+	return err == nil && parsed.Version() == uuid.Version(4)
 }
 
 func (a application) values() (map[string]any, error) {

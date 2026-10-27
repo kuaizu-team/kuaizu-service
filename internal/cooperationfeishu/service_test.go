@@ -14,3 +14,9 @@ func TestApplicationValuesOnlyUseCapturedCardFields(t *testing.T) {
 	require.Equal(t, "未处理", values["申请结果"])
 	require.NotContains(t, values, "unrelatedSecret")
 }
+
+func TestApplicationClientTokensRequireUUIDv4(t *testing.T) {
+	require.True(t, isUUIDv4("550e8400-e29b-41d4-a716-446655440000"))
+	require.False(t, isUUIDv4("cooperation-application-1"))
+	require.False(t, isUUIDv4("550e8400-e29b-11d4-a716-446655440000"))
+}
