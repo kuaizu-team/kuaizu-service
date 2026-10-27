@@ -2,6 +2,7 @@ package cooperationfeishu
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -9,6 +10,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/kuaizu-team/kuaizu-service/internal/feishusync"
 )
 
 type application struct {
@@ -20,6 +23,8 @@ type application struct {
 	AppliedAt  time.Time  `db:"applied_at"`
 	ReviewedAt *time.Time `db:"reviewed_at"`
 	Remark     *string    `db:"review_remark"`
+	Talent     int        `db:"talent_status"`
+	UserStatus int        `db:"user_status"`
 }
 
 type record struct {
@@ -30,7 +35,7 @@ type record struct {
 
 func (s *Service) syncRecords(ctx context.Context, cooperationID int64, appToken, tableID string) error {
 	rows := []application{}
-	if err := s.db.SelectContext(ctx, &rows, `SELECT id,user_id,attempt_no,status,profile_snapshot,applied_at,reviewed_at,review_remark FROM campus_cooperation_application WHERE cooperation_id=? ORDER BY id`, cooperationID); err != nil {
+	if err := s.db.SelectContext(ctx, &rows, "SELECT a.id,a.user_id,a.attempt_no,a.status,a.profile_snapshot,a.applied_at,a.reviewed_at,a.review_remark,COALESCE(tp.status,0) AS talent_status,COALESCE(u.user_status,0) AS user_status FROM campus_cooperation_application a LEFT JOIN talent_profile tp ON tp.user_id=a.user_id LEFT JOIN `user` u ON u.id=a.user_id WHERE a.cooperation_id=? ORDER BY a.id", cooperationID); err != nil {
 		return err
 	}
 	mappings := []record{}
@@ -46,9 +51,6 @@ func (s *Service) syncRecords(ctx context.Context, cooperationID int64, appToken
 	for i, row := range rows {
 		if i%50 == 0 {
 			if _, err := s.cooperation.AdminDetail(ctx, s.currentAdminID(ctx), cooperationID, false); err != nil {
-				return err
-			}
-			if err := s.shareForTenant(ctx, appToken); err != nil {
 				return err
 			}
 		}
@@ -125,18 +127,49 @@ func (a application) values() (map[string]any, error) {
 		}
 		return fmt.Sprint(value)
 	}
-	status := map[string]string{"pending": "待审核", "approved": "已通过", "rejected": "已拒绝"}[a.Status]
+	textValue := func(key string) string {
+		value := get(key)
+		if value == nil {
+			return ""
+		}
+		return fmt.Sprint(value)
+	}
+	status := map[string]string{"pending": "未处理", "approved": "成功", "rejected": "失败"}[a.Status]
 	if status == "" {
 		return nil, fmt.Errorf("申请状态无效")
 	}
-	values := map[string]any{
-		"申请ID": strconv.FormatInt(a.ID, 10), "用户ID": strconv.Itoa(a.UserID), "申请轮次": strconv.Itoa(a.AttemptNo),
-		"审核状态": status, "申请时间": a.AppliedAt.Format(time.DateTime),
-		"昵称": get("nickname"), "学校": get("schoolName"), "专业": get("majorName"), "入学年份": get("grade"),
-		"手机": get("phone"), "微信": get("wechat"), "邮箱": get("email"), "技能": get("skills"),
-		"MBTI": get("mbti"), "自我评价": get("selfEvaluation"), "项目经历": get("projectExperience"), "协作分": get("collaborationScore"),
-		"审核时间": nil, "审核备注": nil,
+	floatValue := func(key string) float64 {
+		switch value := card[key].(type) {
+		case float64:
+			return value
+		case json.Number:
+			result, _ := value.Float64()
+			return result
+		case string:
+			result, _ := strconv.ParseFloat(value, 64)
+			return result
+		default:
+			return 0
+		}
 	}
+	score, scoreExists := card["collaborationScore"]
+	row := feishusync.UserRow{
+		ID: a.UserID, Nickname: textValue("nickname"), MBTI: textValue("mbti"),
+		School: textValue("schoolName"), Major: textValue("majorName"), Grade: textValue("grade"),
+		Intro: textValue("selfEvaluation"), Experience: textValue("projectExperience"),
+		Score: sql.NullFloat64{Float64: floatValue("collaborationScore"), Valid: scoreExists && score != nil},
+		Auth:  int(floatValue("authStatus")), Talent: a.Talent, Phone: textValue("phone"),
+		Wechat: textValue("wechat"), Email: textValue("email"), Status: a.UserStatus,
+	}
+	values, err := row.Values()
+	if err != nil {
+		return nil, err
+	}
+	values["申请结果"] = status
+	values["申请轮次"] = a.AttemptNo
+	values["申请时间"] = a.AppliedAt.Format(time.DateTime)
+	values["审核时间"] = nil
+	values["审核备注"] = nil
 	if a.ReviewedAt != nil {
 		values["审核时间"] = a.ReviewedAt.Format(time.DateTime)
 	}

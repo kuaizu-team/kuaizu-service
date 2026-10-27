@@ -37,9 +37,9 @@ type Service struct {
 	db          *sqlx.DB
 	cooperation *service.CampusCooperationService
 	client      remote
+	cleanup     *feishusync.Client
 	spaceID     string
 	baseURL     string
-	ownerOpenID string
 }
 
 type remote interface {
@@ -54,10 +54,6 @@ func NewFromEnv(ctx context.Context, repo *repository.Repository, cooperation *s
 	if app == "" || secret == "" {
 		return nil, fmt.Errorf("合作申请飞书同步缺少应用凭证")
 	}
-	owner := strings.TrimSpace(os.Getenv("FEISHU_COOPERATION_OWNER_OPEN_ID"))
-	if !strings.HasPrefix(owner, "ou_") {
-		return nil, fmt.Errorf("合作申请飞书同步缺少平台飞书管理人 Open ID")
-	}
 	space := strings.TrimSpace(os.Getenv("FEISHU_COOPERATION_WIKI_SPACE_ID"))
 	if space == "" {
 		space = defaultSpaceID
@@ -70,7 +66,8 @@ func NewFromEnv(ctx context.Context, repo *repository.Repository, cooperation *s
 	if err != nil || u.Scheme != "https" || u.Path != "" || u.User != nil || (u.Host != "feishu.cn" && !strings.HasSuffix(u.Host, ".feishu.cn")) {
 		return nil, fmt.Errorf("飞书知识库域名配置无效")
 	}
-	s := &Service{db: repo.DB(), cooperation: cooperation, client: feishusync.NewClient(app, secret, "", ""), spaceID: space, baseURL: base, ownerOpenID: owner}
+	client := feishusync.NewClient(app, secret, space, "")
+	s := &Service{db: repo.DB(), cooperation: cooperation, client: client, cleanup: client, spaceID: space, baseURL: base}
 	for _, query := range []string{
 		`SELECT feishu_wiki_node_token FROM commercial_order LIMIT 0`,
 		`SELECT cooperation_id,app_token,table_id,view_id,doc_block_id,status,message,synced_at,updated_at FROM cooperation_feishu_target LIMIT 0`,
@@ -176,29 +173,24 @@ func (s *Service) sync(ctx context.Context, cooperationID int64, adminID int) er
 	if err = s.db.GetContext(ctx, &t, `SELECT `+targetColumns+` FROM cooperation_feishu_target WHERE cooperation_id=?`, cooperationID); err != nil {
 		return err
 	}
-	if t.AppToken == nil {
-		var out struct {
-			App struct {
-				Token string `json:"app_token"`
-			} `json:"app"`
+	needsWikiBase := t.AppToken == nil || t.DocBlockID == nil || !strings.HasPrefix(*t.DocBlockID, "wiki:")
+	if !needsWikiBase && t.TableID != nil {
+		needsWikiBase, err = s.tableSchemaMismatch(ctx, *t.AppToken, *t.TableID)
+		if err != nil {
+			return err
 		}
-		name := fmt.Sprintf("%s · %s · 合作申请", c.CompanyName, c.SchoolName)
-		if err = s.client.Call(ctx, http.MethodPost, "/open-apis/bitable/v1/apps", map[string]any{"name": name}, &out); err != nil {
-			return errNeedsAttention
-		}
-		if out.App.Token == "" {
-			return errNeedsAttention
-		}
-		if _, err = s.db.ExecContext(ctx, `UPDATE cooperation_feishu_target SET app_token=? WHERE cooperation_id=?`, out.App.Token, cooperationID); err != nil {
-			return errNeedsAttention
-		}
-		t.AppToken = &out.App.Token
 	}
-	if err = s.shareForTenant(ctx, *t.AppToken); err != nil {
-		return err
-	}
-	if err = s.ensureOwner(ctx, *t.AppToken); err != nil {
-		return err
+	if needsWikiBase {
+		title := fmt.Sprintf("%s · %s · 合作申请", c.CompanyName, c.SchoolName)
+		nodeToken, appToken, createErr := s.createWikiBase(ctx, *c.FeishuWikiNodeToken, title)
+		if createErr != nil {
+			return errNeedsAttention
+		}
+		if err = s.replaceTargetBase(cooperationID, nodeToken, appToken); err != nil {
+			return errNeedsAttention
+		}
+		t.AppToken, t.DocBlockID = &appToken, stringPointer("wiki:"+nodeToken)
+		t.TableID, t.ViewID = nil, nil
 	}
 	if t.TableID == nil {
 		var out struct {
@@ -221,12 +213,101 @@ func (s *Service) sync(ctx context.Context, cooperationID int64, adminID int) er
 	if err = s.syncRecords(ctx, cooperationID, *t.AppToken, *t.TableID); err != nil {
 		return err
 	}
-	if t.DocBlockID == nil || !strings.HasPrefix(*t.DocBlockID, "wiki:") {
-		if err = s.attachToWiki(ctx, *c.FeishuWikiNodeToken, *t.AppToken, cooperationID); err != nil {
-			return err
-		}
+	_, err = s.cleanup.CleanupDefaultBlocks(ctx, feishusync.Target{AppToken: *t.AppToken, TableID: *t.TableID}, func() error {
+		_, err := s.cooperation.AdminDetail(ctx, adminID, cooperationID, false)
+		return err
+	})
+	if err != nil {
+		return err
 	}
 	return nil
+}
+
+func (s *Service) createWikiBase(ctx context.Context, parentNode, title string) (string, string, error) {
+	var out struct {
+		Node struct {
+			NodeToken string `json:"node_token"`
+			AppToken  string `json:"obj_token"`
+		} `json:"node"`
+	}
+	path := "/open-apis/wiki/v2/spaces/" + url.PathEscape(s.spaceID) + "/nodes"
+	err := s.client.Call(ctx, http.MethodPost, path, map[string]any{
+		"obj_type": "bitable", "node_type": "origin", "parent_node_token": parentNode, "title": title,
+	}, &out)
+	if err != nil {
+		return "", "", err
+	}
+	if out.Node.NodeToken == "" || out.Node.AppToken == "" {
+		return "", "", errNeedsAttention
+	}
+	return out.Node.NodeToken, out.Node.AppToken, nil
+}
+
+func (s *Service) replaceTargetBase(cooperationID int64, nodeToken, appToken string) error {
+	tx, err := s.db.Beginx()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err = tx.Exec(`DELETE FROM cooperation_feishu_record WHERE cooperation_id=?`, cooperationID); err != nil {
+		return err
+	}
+	if _, err = tx.Exec(`UPDATE cooperation_feishu_target SET app_token=?,table_id=NULL,view_id=NULL,doc_block_id=? WHERE cooperation_id=?`, appToken, "wiki:"+nodeToken, cooperationID); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func stringPointer(value string) *string { return &value }
+
+func (s *Service) tableSchemaMismatch(ctx context.Context, appToken, tableID string) (bool, error) {
+	var out struct {
+		Items []struct {
+			Name     string `json:"field_name"`
+			Type     int    `json:"type"`
+			Property struct {
+				Options []struct {
+					Name string `json:"name"`
+				} `json:"options"`
+				Formatter string `json:"formatter"`
+			} `json:"property"`
+		} `json:"items"`
+		HasMore bool `json:"has_more"`
+	}
+	path := "/open-apis/bitable/v1/apps/" + url.PathEscape(appToken) + "/tables/" + url.PathEscape(tableID) + "/fields?page_size=100"
+	if err := s.client.Call(ctx, http.MethodGet, path, nil, &out); err != nil {
+		return false, err
+	}
+	expected := fields()
+	if out.HasMore || len(out.Items) != len(expected) {
+		return true, nil
+	}
+	for index, field := range expected {
+		value := field.(feishusync.Field)
+		actual := out.Items[index]
+		if actual.Name != value.Name || actual.Type != value.Type {
+			return true, nil
+		}
+		if value.Property == nil {
+			continue
+		}
+		if value.Property.Formatter != "" && actual.Property.Formatter != value.Property.Formatter {
+			return true, nil
+		}
+		for _, option := range value.Property.Options {
+			found := false
+			for _, actualOption := range actual.Property.Options {
+				if actualOption.Name == option.Name {
+					found = true
+					break
+				}
+			}
+			if !found {
+				return true, nil
+			}
+		}
+	}
+	return false, nil
 }
 
 func (s *Service) document(ctx context.Context, nodeToken string) (string, error) {
@@ -247,118 +328,24 @@ func (s *Service) document(ctx context.Context, nodeToken string) (string, error
 	return out.Node.Token, nil
 }
 
-func (s *Service) shareForTenant(ctx context.Context, appToken string) error {
-	path := "/open-apis/drive/v1/permissions/" + url.PathEscape(appToken) + "/public?type=bitable"
-	var out any
-	if err := s.client.Call(ctx, http.MethodPatch, path, map[string]any{"link_share_entity": "tenant_readable", "external_access": false, "share_entity": "only_full_access"}, &out); err != nil {
-		return err
+func fields() []any {
+	out := make([]any, 0, len(feishusync.Fields())+5)
+	for _, field := range feishusync.Fields() {
+		out = append(out, field)
 	}
-	var settings struct {
-		Permission struct {
-			Link     string `json:"link_share_entity"`
-			External string `json:"external_access_entity"`
-		} `json:"permission_public"`
-	}
-	if err := s.client.Call(ctx, http.MethodGet, path, nil, &settings); err != nil {
-		return err
-	}
-	if settings.Permission.Link != "tenant_readable" || settings.Permission.External != "closed" {
-		return fmt.Errorf("学校申请表的企业内链接访问未生效")
-	}
-	return nil
-}
-
-func (s *Service) ensureOwner(ctx context.Context, appToken string) error {
-	path := "/open-apis/drive/v1/permissions/" + url.PathEscape(appToken) + "/members?type=bitable"
-	var members struct {
-		Items []struct {
-			ID   string `json:"member_id"`
-			Type string `json:"member_type"`
-			Perm string `json:"perm"`
-		} `json:"items"`
-	}
-	read := func() error { return s.client.Call(ctx, http.MethodGet, path, nil, &members) }
-	if err := read(); err != nil {
-		return err
-	}
-	for _, member := range members.Items {
-		if member.ID == s.ownerOpenID && member.Type == "openid" {
-			if member.Perm != "full_access" {
-				return fmt.Errorf("飞书管理人缺少申请表管理权限")
-			}
-			return nil
+	selectField := func(name string, options ...string) feishusync.Field {
+		field := feishusync.Field{Name: name, Type: 3, Property: &feishusync.Property{}}
+		for _, option := range options {
+			field.Property.Options = append(field.Property.Options, feishusync.Option{Name: option})
 		}
+		return field
 	}
-	var out any
-	if err := s.client.Call(ctx, http.MethodPost, path, map[string]any{"member_id": s.ownerOpenID, "member_type": "openid", "perm": "full_access"}, &out); err != nil {
-		return err
-	}
-	members.Items = nil
-	if err := read(); err != nil {
-		return err
-	}
-	for _, member := range members.Items {
-		if member.ID == s.ownerOpenID && member.Type == "openid" && member.Perm == "full_access" {
-			return nil
-		}
-	}
-	return fmt.Errorf("飞书管理人权限未确认")
-}
-
-func (s *Service) attachToWiki(ctx context.Context, parentNode, appToken string, cooperationID int64) error {
-	path := "/open-apis/wiki/v2/spaces/" + url.PathEscape(s.spaceID) + "/nodes/move_docs_to_wiki"
-	var result struct {
-		WikiToken string `json:"wiki_token"`
-		TaskID    string `json:"task_id"`
-	}
-	if err := s.client.Call(ctx, http.MethodPost, path, map[string]any{
-		"obj_type": "bitable", "obj_token": appToken, "parent_wiki_token": parentNode,
-	}, &result); err != nil {
-		return errNeedsAttention
-	}
-	if result.TaskID != "" {
-		path = "/open-apis/wiki/v2/tasks/" + url.PathEscape(result.TaskID) + "?task_type=move"
-		for attempt := 0; attempt < 30 && result.WikiToken == ""; attempt++ {
-			select {
-			case <-ctx.Done():
-				return errNeedsAttention
-			case <-time.After(2 * time.Second):
-			}
-			var task struct {
-				MoveResults []struct {
-					Status int `json:"status"`
-					Node   struct {
-						Token string `json:"node_token"`
-					} `json:"node"`
-				} `json:"move_results"`
-			}
-			if err := s.client.Call(ctx, http.MethodGet, path, nil, &task); err != nil {
-				return errNeedsAttention
-			}
-			for _, moved := range task.MoveResults {
-				if moved.Status < 0 {
-					return fmt.Errorf("飞书知识库挂载任务失败")
-				}
-				if moved.Status == 0 {
-					result.WikiToken = moved.Node.Token
-				}
-			}
-		}
-	}
-	if result.WikiToken == "" {
-		return errNeedsAttention
-	}
-	if _, err := s.db.ExecContext(ctx, `UPDATE cooperation_feishu_target SET doc_block_id=? WHERE cooperation_id=?`, "wiki:"+result.WikiToken, cooperationID); err != nil {
-		return errNeedsAttention
-	}
-	return nil
-}
-
-func fields() []map[string]any {
-	names := []string{"申请ID", "用户ID", "申请轮次", "审核状态", "申请时间", "审核时间", "审核备注", "昵称", "学校", "专业", "入学年份", "手机", "微信", "邮箱", "技能", "MBTI", "自我评价", "项目经历", "协作分"}
-	out := make([]map[string]any, 0, len(names))
-	for _, name := range names {
-		out = append(out, map[string]any{"field_name": name, "type": 1})
-	}
+	out = append(out,
+		selectField("申请结果", "未处理", "成功", "失败"),
+		feishusync.Field{Name: "申请轮次", Type: 2},
+		feishusync.Field{Name: "申请时间", Type: 1},
+		feishusync.Field{Name: "审核时间", Type: 1},
+		feishusync.Field{Name: "审核备注", Type: 1},
+	)
 	return out
 }
