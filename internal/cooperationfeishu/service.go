@@ -107,6 +107,9 @@ func (s *Service) Get(ctx context.Context, adminID int, cooperationID int64) (*T
 	}
 	if t.AppToken != nil && *t.AppToken != "" {
 		t.BaseURL = s.baseURL + "/base/" + url.PathEscape(*t.AppToken)
+		if t.DocBlockID != nil && strings.HasPrefix(*t.DocBlockID, "wiki:") {
+			t.BaseURL = s.baseURL + "/wiki/" + url.PathEscape(strings.TrimPrefix(*t.DocBlockID, "wiki:"))
+		}
 	}
 	return &t, nil
 }
@@ -141,7 +144,7 @@ func (s *Service) run(cooperationID int64, adminID int) {
 	defer cancel()
 	ctx = withAdminID(ctx, adminID)
 	err := s.sync(ctx, cooperationID, adminID)
-	status, message := "succeeded", "申请已同步到该校独立表格"
+	status, message := "succeeded", "申请已同步到商单文档下的学校表格"
 	if err != nil {
 		status, message = "failed", "同步失败，请检查应用授权和表格权限"
 	}
@@ -166,8 +169,7 @@ func (s *Service) sync(ctx context.Context, cooperationID int64, adminID int) er
 	if c.FeishuWikiNodeToken == nil || *c.FeishuWikiNodeToken == "" {
 		return fmt.Errorf("unbound wiki document")
 	}
-	docToken, err := s.document(ctx, *c.FeishuWikiNodeToken)
-	if err != nil {
+	if _, err := s.document(ctx, *c.FeishuWikiNodeToken); err != nil {
 		return err
 	}
 	var t Target
@@ -192,7 +194,7 @@ func (s *Service) sync(ctx context.Context, cooperationID int64, adminID int) er
 		}
 		t.AppToken = &out.App.Token
 	}
-	if err = s.private(ctx, *t.AppToken); err != nil {
+	if err = s.shareForTenant(ctx, *t.AppToken); err != nil {
 		return err
 	}
 	if err = s.ensureOwner(ctx, *t.AppToken); err != nil {
@@ -219,10 +221,9 @@ func (s *Service) sync(ctx context.Context, cooperationID int64, adminID int) er
 	if err = s.syncRecords(ctx, cooperationID, *t.AppToken, *t.TableID); err != nil {
 		return err
 	}
-	if t.DocBlockID == nil {
-		link := s.baseURL + "/base/" + url.PathEscape(*t.AppToken)
-		if err = s.appendLink(ctx, docToken, c.SchoolName+"合作申请表", link, cooperationID); err != nil {
-			return errNeedsAttention
+	if t.DocBlockID == nil || !strings.HasPrefix(*t.DocBlockID, "wiki:") {
+		if err = s.attachToWiki(ctx, *c.FeishuWikiNodeToken, *t.AppToken, cooperationID); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -246,10 +247,10 @@ func (s *Service) document(ctx context.Context, nodeToken string) (string, error
 	return out.Node.Token, nil
 }
 
-func (s *Service) private(ctx context.Context, appToken string) error {
+func (s *Service) shareForTenant(ctx context.Context, appToken string) error {
 	path := "/open-apis/drive/v1/permissions/" + url.PathEscape(appToken) + "/public?type=bitable"
 	var out any
-	if err := s.client.Call(ctx, http.MethodPatch, path, map[string]any{"link_share_entity": "closed", "external_access": false, "share_entity": "only_full_access"}, &out); err != nil {
+	if err := s.client.Call(ctx, http.MethodPatch, path, map[string]any{"link_share_entity": "tenant_readable", "external_access": false, "share_entity": "only_full_access"}, &out); err != nil {
 		return err
 	}
 	var settings struct {
@@ -261,8 +262,8 @@ func (s *Service) private(ctx context.Context, appToken string) error {
 	if err := s.client.Call(ctx, http.MethodGet, path, nil, &settings); err != nil {
 		return err
 	}
-	if settings.Permission.Link != "closed" || settings.Permission.External != "closed" {
-		return fmt.Errorf("学校申请表未处于受限访问状态")
+	if settings.Permission.Link != "tenant_readable" || settings.Permission.External != "closed" {
+		return fmt.Errorf("学校申请表的企业内链接访问未生效")
 	}
 	return nil
 }
@@ -304,22 +305,53 @@ func (s *Service) ensureOwner(ctx context.Context, appToken string) error {
 	return fmt.Errorf("飞书管理人权限未确认")
 }
 
-func (s *Service) appendLink(ctx context.Context, docToken, title, link string, cooperationID int64) error {
-	path := "/open-apis/docx/v1/documents/" + url.PathEscape(docToken) + "/blocks/" + url.PathEscape(docToken) + "/children"
-	body := map[string]any{"children": []any{map[string]any{"block_type": 2, "text": map[string]any{"elements": []any{map[string]any{"text_run": map[string]any{"content": title, "text_element_style": map[string]any{"link": map[string]any{"url": link}}}}}}}}}
-	var out struct {
-		Children []struct {
-			ID string `json:"block_id"`
-		} `json:"children"`
+func (s *Service) attachToWiki(ctx context.Context, parentNode, appToken string, cooperationID int64) error {
+	path := "/open-apis/wiki/v2/spaces/" + url.PathEscape(s.spaceID) + "/nodes/move_docs_to_wiki"
+	var result struct {
+		WikiToken string `json:"wiki_token"`
+		TaskID    string `json:"task_id"`
 	}
-	if err := s.client.Call(ctx, http.MethodPost, path, body, &out); err != nil {
-		return err
-	}
-	if len(out.Children) != 1 || out.Children[0].ID == "" {
+	if err := s.client.Call(ctx, http.MethodPost, path, map[string]any{
+		"obj_type": "bitable", "obj_token": appToken, "parent_wiki_token": parentNode,
+	}, &result); err != nil {
 		return errNeedsAttention
 	}
-	_, err := s.db.ExecContext(ctx, `UPDATE cooperation_feishu_target SET doc_block_id=? WHERE cooperation_id=?`, out.Children[0].ID, cooperationID)
-	return err
+	if result.TaskID != "" {
+		path = "/open-apis/wiki/v2/tasks/" + url.PathEscape(result.TaskID) + "?task_type=move"
+		for attempt := 0; attempt < 30 && result.WikiToken == ""; attempt++ {
+			select {
+			case <-ctx.Done():
+				return errNeedsAttention
+			case <-time.After(2 * time.Second):
+			}
+			var task struct {
+				MoveResults []struct {
+					Status int `json:"status"`
+					Node   struct {
+						Token string `json:"node_token"`
+					} `json:"node"`
+				} `json:"move_results"`
+			}
+			if err := s.client.Call(ctx, http.MethodGet, path, nil, &task); err != nil {
+				return errNeedsAttention
+			}
+			for _, moved := range task.MoveResults {
+				if moved.Status < 0 {
+					return fmt.Errorf("飞书知识库挂载任务失败")
+				}
+				if moved.Status == 0 {
+					result.WikiToken = moved.Node.Token
+				}
+			}
+		}
+	}
+	if result.WikiToken == "" {
+		return errNeedsAttention
+	}
+	if _, err := s.db.ExecContext(ctx, `UPDATE cooperation_feishu_target SET doc_block_id=? WHERE cooperation_id=?`, "wiki:"+result.WikiToken, cooperationID); err != nil {
+		return errNeedsAttention
+	}
+	return nil
 }
 
 func fields() []map[string]any {

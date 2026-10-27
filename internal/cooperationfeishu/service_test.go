@@ -46,15 +46,15 @@ func TestOnlyConfiguredOwnerGetsFullAccess(t *testing.T) {
 	require.Equal(t, "ou_owner", remote.grantedID)
 }
 
-func TestPrivateBaseMustCloseTenantAndExternalAccess(t *testing.T) {
+func TestBaseAllowsTenantLinkAccessButNotExternalAccess(t *testing.T) {
 	for _, tc := range []struct {
 		link, external string
 		allowed        bool
 	}{
-		{"closed", "closed", true}, {"tenant_readable", "closed", false}, {"closed", "open", false}, {"", "", false},
+		{"tenant_readable", "closed", true}, {"closed", "closed", false}, {"tenant_readable", "open", false}, {"", "", false},
 	} {
 		s := &Service{client: settingRemote{tc.link, tc.external}}
-		err := s.private(context.Background(), "base-token")
+		err := s.shareForTenant(context.Background(), "base-token")
 		require.Equal(t, tc.allowed, err == nil)
 	}
 }

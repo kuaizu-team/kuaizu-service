@@ -48,7 +48,7 @@ func (s *Service) syncRecords(ctx context.Context, cooperationID int64, appToken
 			if _, err := s.cooperation.AdminDetail(ctx, s.currentAdminID(ctx), cooperationID, false); err != nil {
 				return err
 			}
-			if err := s.private(ctx, appToken); err != nil {
+			if err := s.shareForTenant(ctx, appToken); err != nil {
 				return err
 			}
 		}
