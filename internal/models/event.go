@@ -1,6 +1,7 @@
 package models
 
 import (
+	"encoding/json"
 	"time"
 
 	"github.com/kuaizu-team/kuaizu-service/api"
@@ -16,6 +17,7 @@ func ParseEventDate(value string) (time.Time, error) {
 
 // Event represents a campus competition/event.
 type Event struct {
+	TagsJSON             *string    `db:"tags"`
 	ID                   int        `db:"id"`
 	Name                 string     `db:"name"`
 	ShortName            *string    `db:"short_name"`
@@ -55,7 +57,9 @@ func (e *Event) ToVO() api.EventVO {
 	isRanking := e.IsRanking == 1
 	isOpen := IsEventRegistrationOpen(e.RegistrationDeadline, time.Now())
 	isExpired := !isOpen
+	tags := e.TagNames()
 	vo := api.EventVO{
+		Tags:              &tags,
 		Id:                &e.ID,
 		Name:              &e.Name,
 		ShortName:         e.ShortName,
@@ -95,6 +99,17 @@ func (e *Event) ToVO() api.EventVO {
 		vo.RegistrationDeadline = &date
 	}
 	return vo
+}
+
+// TagNames returns an empty list for unconfigured events.
+func (e *Event) TagNames() []string {
+	tags := []string{}
+	if e.TagsJSON != nil {
+		if err := json.Unmarshal([]byte(*e.TagsJSON), &tags); err != nil || tags == nil {
+			return []string{}
+		}
+	}
+	return tags
 }
 
 func boolPtr(value bool) *bool { return &value }
