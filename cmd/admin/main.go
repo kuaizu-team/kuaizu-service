@@ -14,6 +14,7 @@ import (
 	"github.com/kuaizu-team/kuaizu-service/cmd"
 	adminhandler "github.com/kuaizu-team/kuaizu-service/internal/admin/handler"
 	adminmw "github.com/kuaizu-team/kuaizu-service/internal/admin/middleware"
+	"github.com/kuaizu-team/kuaizu-service/internal/cooperationfeishu"
 	"github.com/kuaizu-team/kuaizu-service/internal/db"
 	"github.com/kuaizu-team/kuaizu-service/internal/feishusync"
 	"github.com/kuaizu-team/kuaizu-service/internal/repository"
@@ -75,6 +76,11 @@ func main() {
 	if feishuSync != nil {
 		feishuSync.Start(ctx)
 	}
+	cooperationSync, err := cooperationfeishu.NewFromEnv(ctx, repo, svc.CampusCooperation)
+	if err != nil {
+		log.Printf("Feishu cooperation sync unavailable: %v", err)
+	}
+	server.SetCooperationFeishu(cooperationSync)
 
 	// Public routes
 	e.POST("/admin/auth/login", server.Login)
@@ -92,11 +98,14 @@ func main() {
 	adminGroup.POST("/commercial-orders", server.SaveCommercialOrder)
 	adminGroup.PUT("/commercial-orders/:id", server.SaveCommercialOrder)
 	adminGroup.POST("/commercial-orders/:id/claims", server.ClaimCommercialOrder)
+	adminGroup.GET("/project-tags", server.SearchCooperationTags)
 	adminGroup.GET("/campus-cooperations", server.ListCampusCooperations)
 	adminGroup.GET("/campus-cooperations/:id", server.GetCampusCooperation)
 	adminGroup.PUT("/campus-cooperations/:id", server.SaveCampusCooperation)
 	adminGroup.POST("/campus-cooperations/:id/images", server.UploadCampusCooperationImage)
 	adminGroup.GET("/campus-cooperations/:id/applications", server.ListCampusCooperationApplications)
+	adminGroup.GET("/campus-cooperations/:id/feishu-sync", server.GetCooperationFeishu)
+	adminGroup.POST("/campus-cooperations/:id/feishu-sync", server.StartCooperationFeishu)
 	adminGroup.PATCH("/campus-cooperation-applications/:id", server.ReviewCampusCooperationApplication)
 
 	adminGroup.GET("/dashboard/stats", server.GetDashboardStats)

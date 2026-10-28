@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"mime/multipart"
 	"net/url"
 	"strings"
@@ -34,14 +35,17 @@ func NewCampusCooperationService(repo *repository.Repository, message *MessageSe
 }
 
 type CommercialOrderInput struct {
-	Name        string  `json:"name"`
-	CompanyName string  `json:"companyName"`
-	Description *string `json:"description"`
-	Status      string  `json:"status"`
+	Name                string          `json:"name"`
+	CompanyName         string          `json:"companyName"`
+	Description         *string         `json:"description"`
+	FeishuWikiNodeToken *string         `json:"feishuWikiNodeToken"`
+	Status              string          `json:"status"`
+	Template            json.RawMessage `json:"template"`
 }
 type CooperationContentInput struct {
 	Title               string                      `json:"title"`
 	Introduction        string                      `json:"introduction"`
+	Tags                *[]string                   `json:"tags"`
 	LinksVisible        bool                        `json:"linksVisible"`
 	Links               []models.CooperationLink    `json:"links"`
 	ImagesVisible       bool                        `json:"imagesVisible"`
@@ -56,6 +60,20 @@ type CooperationContentInput struct {
 func (in *CommercialOrderInput) Validate() error {
 	in.Name = strings.TrimSpace(in.Name)
 	in.CompanyName = strings.TrimSpace(in.CompanyName)
+	if in.FeishuWikiNodeToken != nil {
+		token := strings.TrimSpace(*in.FeishuWikiNodeToken)
+		if strings.Contains(token, "/wiki/") {
+			u, err := url.Parse(token)
+			if err != nil || u.Scheme != "https" || (u.Host != "feishu.cn" && !strings.HasSuffix(u.Host, ".feishu.cn")) || u.User != nil {
+				return ErrBadRequest("飞书文档链接无效")
+			}
+			token = strings.TrimPrefix(u.Path, "/wiki/")
+		}
+		if len(token) > 128 || strings.ContainsAny(token, "/?# \t\r\n") {
+			return ErrBadRequest("飞书知识库文档标识无效")
+		}
+		*in.FeishuWikiNodeToken = token
+	}
 	if in.Status == "" {
 		in.Status = "available"
 	}
@@ -65,12 +83,39 @@ func (in *CommercialOrderInput) Validate() error {
 	if in.Name == "" || in.CompanyName == "" || utf8.RuneCountInString(in.Name) > 100 || utf8.RuneCountInString(in.CompanyName) > 100 {
 		return ErrBadRequest("商单名称和公司名称必填，且各不超过100字")
 	}
-	if in.Status != "available" && in.Status != "closed" {
+	if in.Status != "available" && in.Status != "closed" && in.Status != "ended" {
 		return ErrBadRequest("商单状态无效")
+	}
+	if len(in.Template) > 0 && string(in.Template) != "null" {
+		var template CooperationContentInput
+		if err := json.Unmarshal(in.Template, &template); err != nil || template.Published || template.ImagesVisible || template.ImageTitle != nil || len(template.Images) > 0 {
+			return ErrBadRequest("商单模板内容无效")
+		}
+		if err := template.Validate(); err != nil {
+			return err
+		}
+		if template.Tags == nil {
+			tags := []string{}
+			template.Tags = &tags
+		}
+		if template.Links == nil {
+			template.Links = []models.CooperationLink{}
+		}
+		if template.Contacts == nil {
+			template.Contacts = []models.CooperationContact{}
+		}
+		if template.ContactsVisible == nil {
+			visible := true
+			template.ContactsVisible = &visible
+		}
+		in.Template, _ = json.Marshal(template)
 	}
 	return nil
 }
 func (in *CooperationContentInput) Validate() error {
+	if err := validateProjectTags(in.Tags); err != nil {
+		return ErrBadRequest("标签最多5个，每个1–12字且不可重复")
+	}
 	in.Title = strings.TrimSpace(in.Title)
 	in.Introduction = strings.TrimSpace(in.Introduction)
 	if len(in.Introduction) > 65535 {
@@ -82,18 +127,16 @@ func (in *CooperationContentInput) Validate() error {
 	if in.ImageTitle != nil && utf8.RuneCountInString(*in.ImageTitle) > 100 {
 		return ErrBadRequest("图片框名称最多100字")
 	}
-	if in.LinksVisible && len(in.Links) == 0 {
-		return ErrBadRequest("显示链接时请至少配置一个有效链接")
-	}
 	for i := range in.Links {
 		link := &in.Links[i]
 		link.Title = strings.TrimSpace(link.Title)
 		link.URL = strings.TrimSpace(link.URL)
-		if in.LinksVisible {
-			u, err := url.Parse(link.URL)
-			if link.Title == "" || err != nil || u.Hostname() == "" || u.User != nil || (u.Scheme != "https" && u.Scheme != "http") {
-				return ErrBadRequest("显示链接时，每个链接都需要标题及有效的HTTP/HTTPS地址")
-			}
+		u, err := url.Parse(link.URL)
+		if link.Title == "" || err != nil || u.Hostname() == "" || u.User != nil || (u.Scheme != "https" && u.Scheme != "http") {
+			return ErrBadRequest("每个链接都需要标题及有效的HTTP/HTTPS地址")
+		}
+		if link.Public == nil {
+			return ErrBadRequest("请刷新后台，为每条链接设置是否无需申请即可查看")
 		}
 	}
 	for _, contact := range in.Contacts {
@@ -144,10 +187,10 @@ func (s *CampusCooperationService) AdminOrders(ctx context.Context, adminID, pag
 	if scope.Role != models.AdminRoleSuperAdmin && (scope.Role != models.AdminRoleSchoolSuperAdmin || len(scope.SchoolIDs) == 0) {
 		return nil, 0, ErrForbidden("只有平台超管或当前校区负责人可进入单据大厅")
 	}
-	if status != "" && status != "available" && status != "closed" {
+	if status != "" && status != "available" && status != "closed" && status != "ended" {
 		return nil, 0, ErrBadRequest("商单状态无效")
 	}
-	return s.repo.CampusCooperation.ListOrders(ctx, page, size, status)
+	return s.repo.CampusCooperation.ListOrders(ctx, page, size, status, scope.SchoolIDs)
 }
 func (s *CampusCooperationService) AdminList(ctx context.Context, adminID, page, size int) ([]models.CampusCooperation, int64, error) {
 	scope, err := s.adminScope(ctx, s.repo.DB(), adminID, false)
@@ -188,6 +231,8 @@ type CooperationPublicView struct {
 	SchoolName          string                      `json:"schoolName"`
 	Title               *string                     `json:"title"`
 	Introduction        *string                     `json:"introduction"`
+	Tags                []string                    `json:"tags"`
+	ViewCount           int64                       `json:"viewCount"`
 	LinksVisible        bool                        `json:"linksVisible"`
 	Links               []models.CooperationLink    `json:"links"`
 	ImagesVisible       bool                        `json:"imagesVisible"`
@@ -202,12 +247,22 @@ type CooperationPublicView struct {
 
 func cooperationPublic(c *models.CampusCooperation, status string) CooperationPublicView {
 	v := CooperationPublicView{ID: c.ID, OrderName: c.OrderName, CompanyName: c.CompanyName, SchoolName: c.SchoolName, Title: c.Title, Introduction: c.Introduction,
-		LinksVisible: c.LinksVisible, Links: []models.CooperationLink{}, ImagesVisible: c.ImagesVisible, ImageTitle: c.ImageTitle, Images: []string{},
+		Links: []models.CooperationLink{}, ImagesVisible: c.ImagesVisible, ImageTitle: c.ImageTitle, Images: []string{},
 		ContactsVisible: c.ContactsVisible && (!c.ApplicationRequired || status == "approved"), ApplicationRequired: c.ApplicationRequired, ApplicationStatus: status,
 		CanApply: c.ApplicationRequired && (status == "" || status == "rejected")}
-	if c.LinksVisible {
-		v.Links = c.Links
+	v.Tags = append([]string{}, c.Tags...)
+	v.ViewCount = c.ViewCount
+	for _, link := range c.Links {
+		public := c.LinksVisible
+		if link.Public != nil {
+			public = *link.Public
+		}
+		if public || !c.ApplicationRequired || status == "approved" {
+			v.Links = append(v.Links, link)
+		}
 	}
+	// Retain the response flag for existing clients; it describes the filtered list.
+	v.LinksVisible = len(v.Links) > 0
 	if c.ImagesVisible {
 		for _, key := range c.Images {
 			v.Images = append(v.Images, oss.FullURL(key))
@@ -280,7 +335,7 @@ func (s *CampusCooperationService) ClientDetail(ctx context.Context, userID int,
 	if err != nil {
 		return nil, cooperationError(err)
 	}
-	if user == nil || user.SchoolID == nil || *user.SchoolID != c.SchoolID || !c.Published {
+	if user == nil || user.SchoolID == nil || *user.SchoolID != c.SchoolID || !c.Published || c.OrderStatus == "ended" {
 		return nil, ErrNotFound("合作资源不存在或不可访问")
 	}
 	team, err := repository.HasCooperationTeam(ctx, s.repo.DB(), c.SchoolID)
@@ -297,6 +352,12 @@ func (s *CampusCooperationService) ClientDetail(ctx context.Context, userID int,
 	status := ""
 	if a != nil {
 		status = a.Status
+	}
+	// Count only authenticated, school-authorized detail reads; repeated reads are deduplicated.
+	if count, err := s.repo.CampusCooperation.RecordView(ctx, id, userID); err != nil {
+		log.Printf("[CampusCooperationService.ClientDetail] record view failed: %v", err)
+	} else {
+		c.ViewCount = count
 	}
 	out := cooperationPublic(c, status)
 	return &out, nil
@@ -321,8 +382,15 @@ func (s *CampusCooperationService) SaveOrder(ctx context.Context, adminID int, i
 	if scope.Role != models.AdminRoleSuperAdmin {
 		return 0, ErrForbidden("只有平台超管可以录入或更新商单")
 	}
+	var templateValue interface{}
+	if len(in.Template) > 0 && string(in.Template) != "null" {
+		templateValue = string(in.Template)
+	}
 	if id == 0 {
-		result, err := tx.ExecContext(ctx, `INSERT INTO commercial_order(name,company_name,description,status,created_by,updated_by) VALUES(?,?,?,?,?,?)`, in.Name, in.CompanyName, in.Description, in.Status, adminID, adminID)
+		if in.FeishuWikiNodeToken != nil && *in.FeishuWikiNodeToken == "" {
+			in.FeishuWikiNodeToken = nil
+		}
+		result, err := tx.ExecContext(ctx, `INSERT INTO commercial_order(name,company_name,description,feishu_wiki_node_token,status,content_template,created_by,updated_by) VALUES(?,?,?,?,?,?,?,?)`, in.Name, in.CompanyName, in.Description, in.FeishuWikiNodeToken, in.Status, templateValue, adminID, adminID)
 		if err != nil {
 			return 0, err
 		}
@@ -331,12 +399,48 @@ func (s *CampusCooperationService) SaveOrder(ctx context.Context, adminID int, i
 			return 0, err
 		}
 	} else {
-		var existing int64
-		if err := tx.GetContext(ctx, &existing, `SELECT id FROM commercial_order WHERE id=? FOR UPDATE`, id); err != nil {
+		var existing struct {
+			Status   string  `db:"status"`
+			Template *string `db:"content_template"`
+			WikiNode *string `db:"feishu_wiki_node_token"`
+		}
+		if err := tx.GetContext(ctx, &existing, `SELECT status,content_template,feishu_wiki_node_token FROM commercial_order WHERE id=? FOR UPDATE`, id); err != nil {
 			return 0, cooperationError(err)
 		}
-		if _, err := tx.ExecContext(ctx, `UPDATE commercial_order SET name=?,company_name=?,description=?,status=?,updated_by=? WHERE id=?`, in.Name, in.CompanyName, in.Description, in.Status, adminID, id); err != nil {
+		if existing.Status == "ended" && in.Status != "ended" {
+			return 0, ErrBadRequest("已结束的商单不可重新开放")
+		}
+		if len(in.Template) == 0 {
+			if existing.Template != nil {
+				templateValue = *existing.Template
+			}
+		}
+		if in.FeishuWikiNodeToken == nil {
+			in.FeishuWikiNodeToken = existing.WikiNode
+		}
+		changedWiki := (in.FeishuWikiNodeToken == nil) != (existing.WikiNode == nil)
+		if in.FeishuWikiNodeToken != nil && existing.WikiNode != nil {
+			changedWiki = *in.FeishuWikiNodeToken != *existing.WikiNode
+		}
+		if changedWiki {
+			var synced bool
+			if err := tx.GetContext(ctx, &synced, `SELECT EXISTS(SELECT 1 FROM cooperation_feishu_target t JOIN campus_cooperation c ON c.id=t.cooperation_id WHERE c.commercial_order_id=? AND t.app_token IS NOT NULL)`, id); err != nil {
+				return 0, err
+			}
+			if synced {
+				return 0, ErrBadRequest("已有学校申请表，不能更换商单飞书文档")
+			}
+		}
+		if in.FeishuWikiNodeToken != nil && *in.FeishuWikiNodeToken == "" {
+			in.FeishuWikiNodeToken = nil
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE commercial_order SET name=?,company_name=?,description=?,feishu_wiki_node_token=?,status=?,content_template=?,updated_by=? WHERE id=?`, in.Name, in.CompanyName, in.Description, in.FeishuWikiNodeToken, in.Status, templateValue, adminID, id); err != nil {
 			return 0, err
+		}
+		if in.Status == "ended" && existing.Status != "ended" {
+			if _, err := tx.ExecContext(ctx, `UPDATE campus_cooperation SET published=0,updated_by=? WHERE commercial_order_id=?`, adminID, id); err != nil {
+				return 0, err
+			}
 		}
 	}
 	return id, tx.Commit()
@@ -405,6 +509,15 @@ func (s *CampusCooperationService) SaveContent(ctx context.Context, adminID int,
 	if !scope.CanAccess(c.SchoolID, true) {
 		return ErrNotFound("合作资源不存在或不可编辑")
 	}
+	if in.Published {
+		var status string
+		if err := tx.GetContext(ctx, &status, `SELECT status FROM commercial_order WHERE id=? FOR UPDATE`, c.CommercialOrderID); err != nil {
+			return err
+		}
+		if status == "ended" {
+			return ErrBadRequest("商单已结束，不能发布")
+		}
+	}
 	for _, key := range in.Images {
 		var registered string
 		if err := tx.GetContext(ctx, &registered, `SELECT object_key FROM campus_cooperation_image WHERE object_key=? AND cooperation_id=? FOR UPDATE`, key, id); err != nil {
@@ -431,6 +544,21 @@ func (s *CampusCooperationService) SaveContent(ctx context.Context, adminID int,
 	if err != nil {
 		return err
 	}
+	if in.Tags != nil {
+		for _, name := range *in.Tags {
+			if _, err := tx.ExecContext(ctx, `INSERT INTO project_tag(name,status) VALUES(?,1)
+				ON DUPLICATE KEY UPDATE id=LAST_INSERT_ID(id),status=1`, name); err != nil {
+				return err
+			}
+		}
+		tags, err := json.Marshal(*in.Tags)
+		if err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE campus_cooperation SET tags=? WHERE id=?`, string(tags), id); err != nil {
+			return err
+		}
+	}
 	return tx.Commit()
 }
 
@@ -453,7 +581,7 @@ func (s *CampusCooperationService) Apply(ctx context.Context, userID int, id int
 	if err := tx.GetContext(ctx, &user, "SELECT school_id,user_status FROM `user` WHERE id=? FOR UPDATE", userID); err != nil {
 		return nil, cooperationError(err)
 	}
-	if user.Status != 0 || user.SchoolID == nil || *user.SchoolID != c.SchoolID || !c.Published {
+	if user.Status != 0 || user.SchoolID == nil || *user.SchoolID != c.SchoolID || !c.Published || c.OrderStatus == "ended" {
 		return nil, ErrNotFound("合作资源不存在或不可申请")
 	}
 	team, err := repository.HasCooperationTeam(ctx, tx, c.SchoolID)
@@ -615,4 +743,18 @@ func (s *CampusCooperationService) UploadImage(ctx context.Context, adminID int,
 		return nil, cooperationError(err)
 	}
 	return result, nil
+}
+
+func (s *CampusCooperationService) SearchTags(ctx context.Context, adminID int, keyword string, limit int) ([]models.ProjectTag, error) {
+	if _, err := s.adminScope(ctx, s.repo.DB(), adminID, false); err != nil {
+		return nil, err
+	}
+	keyword = strings.TrimSpace(keyword)
+	if utf8.RuneCountInString(keyword) > 32 {
+		return nil, ErrBadRequest("标签关键词最多32字")
+	}
+	if limit < 1 || limit > 20 {
+		return nil, ErrBadRequest("标签数量需在1–20之间")
+	}
+	return s.repo.CampusCooperation.SearchTags(ctx, keyword, limit)
 }

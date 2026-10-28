@@ -4,6 +4,15 @@ properties:
     type: integer
   name:
     type: string
+  tags:
+    type: array
+    maxItems: 3
+    uniqueItems: true
+    description: 赛事特色标签，复用项目标签库；未配置时为空数组。更新时省略保留原值，空数组或 null 清空。
+    items:
+      type: string
+      minLength: 1
+      maxLength: 12
   shortName:
     type: string
     nullable: true

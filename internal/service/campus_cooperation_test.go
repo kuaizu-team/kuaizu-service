@@ -6,9 +6,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/jmoiron/sqlx"
@@ -102,11 +104,12 @@ func TestCooperationContentValidation(t *testing.T) {
 		{"twenty unicode characters", strings.Repeat("校", 20), true, models.CooperationLink{Title: "链接", URL: "https://example.org"}, false},
 		{"long title", strings.Repeat("校", 21), false, models.CooperationLink{}, true},
 		{"missing visible address", "标题", true, models.CooperationLink{Title: "链接"}, true},
-		{"hidden incomplete link", "标题", false, models.CooperationLink{}, false},
+		{"restricted incomplete link", "标题", false, models.CooperationLink{}, true},
 		{"script URL", "标题", true, models.CooperationLink{Title: "链接", URL: "javascript:alert(1)"}, true},
 		{"credential URL", "标题", true, models.CooperationLink{Title: "链接", URL: "https://name:secret@example.org"}, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			tc.link.Public = &tc.linksVisible
 			in := CooperationContentInput{Title: tc.title, Introduction: "计划", LinksVisible: tc.linksVisible, Links: []models.CooperationLink{tc.link}}
 			if (in.Validate() != nil) != tc.bad {
 				t.Fatalf("wrong validation for %+v", in)
@@ -365,9 +368,193 @@ func TestCooperationSameOrderCanBeClaimedByDifferentSchools(t *testing.T) {
 	}
 }
 
-func TestCooperationVisibleLinksCannotBeAnEmptyModule(t *testing.T) {
-	in := CooperationContentInput{Title: "标题", Introduction: "计划", LinksVisible: true}
+func TestCommercialOrderEndRetractsPublishedSchools(t *testing.T) {
+	s, m := cooperationTestService(t)
+	m.ExpectBegin()
+	expectCooperationAdmin(m, 1, nil)
+	m.ExpectQuery(`SELECT status,content_template,feishu_wiki_node_token FROM commercial_order WHERE id=\? FOR UPDATE`).WithArgs(int64(3)).WillReturnRows(sqlmock.NewRows([]string{"status", "content_template", "feishu_wiki_node_token"}).AddRow("available", nil, nil))
+	m.ExpectExec(`UPDATE commercial_order SET`).WithArgs("商单", "企业", nil, nil, "ended", nil, 7, int64(3)).WillReturnResult(sqlmock.NewResult(0, 1))
+	m.ExpectExec(`UPDATE campus_cooperation SET published=0`).WithArgs(7, int64(3)).WillReturnResult(sqlmock.NewResult(0, 2))
+	m.ExpectCommit()
+	if _, err := s.SaveOrder(context.Background(), 7, 3, CommercialOrderInput{Name: "商单", CompanyName: "企业", Status: "ended"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestCommercialOrderTemplateRejectsImages(t *testing.T) {
+	in := CommercialOrderInput{Name: "商单", CompanyName: "企业", Template: json.RawMessage(`{"title":"标题","introduction":"简介","images":["campus-cooperation-images/other.jpg"]}`)}
 	if err := in.Validate(); err == nil {
-		t.Fatal("visible link module without any address accepted")
+		t.Fatal("template accepted school-owned image")
+	}
+}
+
+func TestEndedCommercialOrderCannotBePublished(t *testing.T) {
+	s, m := cooperationTestService(t)
+	m.ExpectBegin()
+	expectCooperationAdmin(m, 2, []int{42})
+	expectCooperation(m, 42)
+	m.ExpectQuery(`SELECT status FROM commercial_order WHERE id=\? FOR UPDATE`).WithArgs(int64(3)).WillReturnRows(sqlmock.NewRows([]string{"status"}).AddRow("ended"))
+	m.ExpectRollback()
+	err := s.SaveContent(context.Background(), 7, 9, CooperationContentInput{Title: "标题", Introduction: "简介", Published: true})
+	if err == nil {
+		t.Fatal("ended order was published")
+	}
+	if err := m.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestCooperationLinksCanAllBeRemoved(t *testing.T) {
+	in := CooperationContentInput{Title: "标题", Introduction: "计划", LinksVisible: true}
+	if err := in.Validate(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestCooperationPerLinkVisibility(t *testing.T) {
+	public, restricted := true, false
+	for _, legacyPublic := range []bool{false, true} {
+		for _, applicationRequired := range []bool{false, true} {
+			for _, status := range []string{"", "pending", "rejected", "approved", "unknown"} {
+				t.Run(fmt.Sprintf("legacy=%v/application=%v/status=%s", legacyPublic, applicationRequired, status), func(t *testing.T) {
+					c := &models.CampusCooperation{ApplicationRequired: applicationRequired, LinksVisible: legacyPublic,
+						Links: []models.CooperationLink{
+							{Title: "公开介绍", URL: "https://example.org/public", Public: &public},
+							{Title: "仅通过者可见", URL: "https://example.org/approval-only", Public: &restricted},
+							{Title: "旧链接", URL: "https://example.org/legacy"},
+						}}
+					view := cooperationPublic(c, status)
+					want := 1
+					unlocked := !applicationRequired || status == "approved"
+					if unlocked {
+						want++
+					}
+					if legacyPublic || unlocked {
+						want++
+					}
+					if len(view.Links) != want || !view.LinksVisible {
+						t.Fatalf("wrong visible links: %+v", view)
+					}
+					body, err := json.Marshal(view)
+					if err != nil {
+						t.Fatal(err)
+					}
+					if strings.Contains(string(body), "approval-only") != unlocked || strings.Contains(string(body), "仅通过者可见") != unlocked {
+						t.Fatalf("restricted title or URL leaked/was lost: %s", body)
+					}
+					// Projection must not mutate the stored links.
+					if len(c.Links) != 3 || c.Links[2].Public != nil {
+						t.Fatal("projection mutated source")
+					}
+					c.Links = c.Links[1:2]
+					view = cooperationPublic(c, status)
+					if view.LinksVisible != unlocked || (len(view.Links) == 1) != unlocked {
+						t.Fatalf("wrong approval-only projection: %+v", view)
+					}
+				})
+			}
+		}
+	}
+}
+
+func TestCooperationSaveRejectsOldEditorWithoutPerLinkPermission(t *testing.T) {
+	in := CooperationContentInput{Title: "标题", Introduction: "计划", LinksVisible: true,
+		Links: []models.CooperationLink{{Title: "旧编辑页", URL: "https://example.org"}}}
+	if err := in.Validate(); err == nil || !strings.Contains(err.Error(), "刷新后台") {
+		t.Fatalf("missing permissions accepted: %v", err)
+	}
+}
+
+func TestCooperationSavePersistsIndependentLinkPermissions(t *testing.T) {
+	s, m := cooperationTestService(t)
+	m.ExpectBegin()
+	expectCooperationAdmin(m, 2, []int{42})
+	expectCooperation(m, 42)
+	public, restricted := true, false
+	in := CooperationContentInput{Title: "标题", Introduction: "计划", ApplicationRequired: true, Published: true,
+		Links: []models.CooperationLink{
+			{Title: "公开介绍", URL: "https://example.org/public", Public: &public},
+			{Title: "专属入口", URL: "https://example.org/private", Public: &restricted},
+		}}
+	links, _ := json.Marshal(in.Links)
+	m.ExpectQuery(`SELECT status FROM commercial_order WHERE id=\? FOR UPDATE`).WithArgs(int64(3)).WillReturnRows(sqlmock.NewRows([]string{"status"}).AddRow("available"))
+	m.ExpectExec("UPDATE campus_cooperation SET").
+		WithArgs("标题", "计划", false, string(links), false, nil, "null", true, "null", true, true, 7, int64(9)).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	m.ExpectCommit()
+	if err := s.SaveContent(context.Background(), 7, 9, in); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+	stored := string(links)
+	c := &models.CampusCooperation{LinksJSON: &stored, ApplicationRequired: true}
+	if err := c.DecodeContent(); err != nil {
+		t.Fatal(err)
+	}
+	if len(cooperationPublic(c, "pending").Links) != 1 || len(cooperationPublic(c, "approved").Links) != 2 {
+		t.Fatal("saved visibility did not round-trip")
+	}
+}
+
+func TestCooperationTagsReuseProjectLimits(t *testing.T) {
+	for _, tags := range [][]string{{"科研", "AI写作"}, {}, {" 重复 ", "重复"}, {"这是一个超过十二个字符的合作标签"}, {"1", "2", "3", "4", "5", "6"}} {
+		in := CooperationContentInput{Title: "标题", Introduction: "计划", Tags: &tags}
+		err := in.Validate()
+		wantError := len(tags) > 5 || (len(tags) > 0 && (tags[0] == "重复" || utf8.RuneCountInString(tags[0]) > 12))
+		if (err != nil) != wantError {
+			t.Fatalf("tags=%+v err=%v", tags, err)
+		}
+	}
+}
+
+func TestCooperationTagsSaveInSameAuthorizedTransaction(t *testing.T) {
+	for _, failLibrary := range []bool{false, true} {
+		t.Run(fmt.Sprint(failLibrary), func(t *testing.T) {
+			s, m := cooperationTestService(t)
+			m.ExpectBegin()
+			expectCooperationAdmin(m, 2, []int{42})
+			expectCooperation(m, 42)
+			m.ExpectExec("UPDATE campus_cooperation SET title=").WillReturnResult(sqlmock.NewResult(0, 1))
+			first := m.ExpectExec("(?s)INSERT INTO project_tag.*ON DUPLICATE KEY UPDATE").WithArgs("科研")
+			if failLibrary {
+				first.WillReturnError(errors.New("library write failed"))
+				m.ExpectRollback()
+			} else {
+				first.WillReturnResult(sqlmock.NewResult(28, 1))
+				m.ExpectExec("(?s)INSERT INTO project_tag.*ON DUPLICATE KEY UPDATE").WithArgs("AI写作").WillReturnResult(sqlmock.NewResult(29, 1))
+				m.ExpectExec(regexp.QuoteMeta("UPDATE campus_cooperation SET tags=? WHERE id=?")).WithArgs(`["科研","AI写作"]`, int64(9)).WillReturnResult(sqlmock.NewResult(0, 1))
+				m.ExpectCommit()
+			}
+			tags := []string{" 科研 ", "AI写作"}
+			err := s.SaveContent(context.Background(), 7, 9, CooperationContentInput{Title: "标题", Introduction: "计划", Tags: &tags})
+			if (err != nil) != failLibrary {
+				t.Fatalf("error=%v", err)
+			}
+			if err := m.ExpectationsWereMet(); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
+func TestCooperationExplicitEmptyTagsClearWithoutCreatingLibraryEntries(t *testing.T) {
+	s, m := cooperationTestService(t)
+	m.ExpectBegin()
+	expectCooperationAdmin(m, 2, []int{42})
+	expectCooperation(m, 42)
+	m.ExpectExec("UPDATE campus_cooperation SET title=").WillReturnResult(sqlmock.NewResult(0, 1))
+	m.ExpectExec(regexp.QuoteMeta("UPDATE campus_cooperation SET tags=? WHERE id=?")).WithArgs("[]", int64(9)).WillReturnResult(sqlmock.NewResult(0, 1))
+	m.ExpectCommit()
+	tags := []string{}
+	if err := s.SaveContent(context.Background(), 7, 9, CooperationContentInput{Title: "标题", Introduction: "计划", Tags: &tags}); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
 	}
 }

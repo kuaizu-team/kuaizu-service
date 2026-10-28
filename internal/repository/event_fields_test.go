@@ -15,8 +15,8 @@ func TestProjectEventQueryScansAllFields(t *testing.T) {
 	defer db.Close()
 	repo := NewEventRepository(sqlx.NewDb(db, "capture_user_repo"))
 	now := time.Now()
-	columns := strings.Split("project_id,id,name,short_name,is_ranking,registration_deadline,article_url,organizer_name,description,official_website,participation_note,resource_url,qq_group,allow_cross_school,allow_cross_major,cross_school_major_rule,participation_mode,team_min_members,team_max_members,view_count,display_order,created_at,updated_at", ",")
-	setCapturedQuery(columns, [][]driver.Value{{int64(5), int64(42), "event", "简称", int64(0), nil, nil, nil, nil, "https://example.com", "说明", nil, nil, int64(1), int64(1), "allow_cross_school_and_major", "both", int64(1), int64(3), int64(0), int64(0), now, now}})
+	columns := strings.Split("project_id,id,name,short_name,is_ranking,registration_deadline,article_url,organizer_name,description,official_website,participation_note,resource_url,qq_group,allow_cross_school,allow_cross_major,cross_school_major_rule,participation_mode,team_min_members,team_max_members,view_count,display_order,created_at,updated_at,tags", ",")
+	setCapturedQuery(columns, [][]driver.Value{{int64(5), int64(42), "event", "简称", int64(0), nil, nil, nil, nil, "https://example.com", "说明", nil, nil, int64(1), int64(1), "allow_cross_school_and_major", "both", int64(1), int64(3), int64(0), int64(0), now, now, `["科技创新","算法设计","团队协作"]`}})
 	got, err := repo.ListByProjectIDs(context.Background(), []int{5})
 	if err != nil {
 		t.Fatal(err)
@@ -83,14 +83,15 @@ func TestReplacingCustomTimelinePreservesStoredOverallDeadline(t *testing.T) {
 
 func eventAssociationFixture(parentID int64) ([]string, [][]driver.Value) {
 	now := time.Now()
-	columns := strings.Split("parent_id,id,name,short_name,is_ranking,registration_deadline,article_url,organizer_name,description,official_website,participation_note,resource_url,qq_group,allow_cross_school,allow_cross_major,cross_school_major_rule,participation_mode,team_min_members,team_max_members,view_count,display_order,created_at,updated_at", ",")
-	rows := [][]driver.Value{{parentID, int64(42), "event", "简称", int64(0), nil, nil, nil, nil, "https://example.com", "说明", nil, nil, int64(1), int64(1), "allow_cross_school_and_major", "both", int64(1), int64(3), int64(0), int64(0), now, now}}
+	columns := strings.Split("parent_id,id,name,short_name,is_ranking,registration_deadline,article_url,organizer_name,description,official_website,participation_note,resource_url,qq_group,allow_cross_school,allow_cross_major,cross_school_major_rule,participation_mode,team_min_members,team_max_members,view_count,display_order,created_at,updated_at,tags", ",")
+	rows := [][]driver.Value{{parentID, int64(42), "event", "简称", int64(0), nil, nil, nil, nil, "https://example.com", "说明", nil, nil, int64(1), int64(1), "allow_cross_school_and_major", "both", int64(1), int64(3), int64(0), int64(0), now, now, `["科技创新","算法设计","团队协作"]`}}
 	return columns, rows
 }
 
 func assertCompleteAssociatedEvent(t *testing.T, event models.Event) {
 	t.Helper()
-	if event.ShortName == nil || *event.ShortName != "简称" ||
+	if len(event.TagNames()) != 3 || event.TagNames()[0] != "科技创新" ||
+		event.ShortName == nil || *event.ShortName != "简称" ||
 		event.OfficialWebsite == nil || *event.OfficialWebsite != "https://example.com" ||
 		event.ParticipationNote == nil || *event.ParticipationNote != "说明" ||
 		event.CrossSchoolMajorRule == nil || *event.CrossSchoolMajorRule != "allow_cross_school_and_major" ||

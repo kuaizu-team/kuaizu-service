@@ -109,3 +109,73 @@ func TestLegacyMessageListExcludesCooperationButOptInIncludesIt(t *testing.T) {
 		})
 	}
 }
+
+func TestCooperationTagJSONIsOrderedAndNullSafe(t *testing.T) {
+	for _, raw := range []string{`["科研","AI写作"]`, "null"} {
+		c := models.CampusCooperation{TagsJSON: &raw}
+		if err := c.DecodeContent(); err != nil {
+			t.Fatal(err)
+		}
+		if c.Tags == nil {
+			t.Fatal("tags must be an array")
+		}
+		if raw != "null" && (len(c.Tags) != 2 || c.Tags[0] != "科研" || c.Tags[1] != "AI写作") {
+			t.Fatalf("tag order changed: %+v", c.Tags)
+		}
+	}
+}
+
+func TestCooperationReadershipDeduplicatesAuthenticatedUsers(t *testing.T) {
+	raw, m, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer raw.Close()
+	repo := NewCampusCooperationRepository(sqlx.NewDb(raw, "sqlmock"))
+	for _, visit := range []struct {
+		user            int
+		inserted, count int64
+	}{{99, 1, 1}, {99, 0, 1}, {100, 1, 2}} {
+		m.ExpectExec(regexp.QuoteMeta("INSERT IGNORE INTO campus_cooperation_view(cooperation_id,user_id) VALUES(?,?)")).
+			WithArgs(int64(9), visit.user).WillReturnResult(sqlmock.NewResult(0, visit.inserted))
+		m.ExpectQuery(regexp.QuoteMeta("SELECT COUNT(*) FROM campus_cooperation_view WHERE cooperation_id=?")).
+			WithArgs(int64(9)).WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(visit.count))
+		count, err := repo.RecordView(context.Background(), 9, visit.user)
+		if err != nil || count != visit.count {
+			t.Fatalf("count=%d err=%v", count, err)
+		}
+	}
+	if err := m.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestCooperationTagSearchUsesSharedLibraryAndLiteralPatterns(t *testing.T) {
+	raw, m, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer raw.Close()
+	repo := NewCampusCooperationRepository(sqlx.NewDb(raw, "sqlmock"))
+	m.ExpectQuery("(?s)SELECT id,name FROM project_tag.*WHERE status=1.*ORDER BY CASE").
+		WithArgs("%AI!%!_%", "AI!%!_%", 12).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "name"}).AddRow(28, "AI%_写作"))
+	tags, err := repo.SearchTags(context.Background(), "AI%_", 12)
+	if err != nil || len(tags) != 1 || tags[0].ID != 28 {
+		t.Fatalf("%+v %v", tags, err)
+	}
+	if err := m.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestCooperationNullLinksCannotEraseTags(t *testing.T) {
+	tags, links := `["科研","AI写作"]`, "null"
+	c := models.CampusCooperation{TagsJSON: &tags, LinksJSON: &links}
+	if err := c.DecodeContent(); err != nil {
+		t.Fatal(err)
+	}
+	if len(c.Tags) != 2 || c.Tags[0] != "科研" || c.Links == nil {
+		t.Fatalf("unrelated null links changed tags: %+v", c)
+	}
+}

@@ -899,5 +899,89 @@
         }
       }
     }
+  },
+  "tags": {
+    "get": {
+      "tags": [
+        "CampusCooperations"
+      ],
+      "operationId": "adminSearchProjectTags",
+      "summary": "Search the existing project tag library for cooperation editing",
+      "description": "Read-only suggestions for currently authorized cooperation administrators. Creating new tags is part of the existing cooperation save transaction; no separate create endpoint.",
+      "security": [
+        {
+          "bearerAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "name": "keyword",
+          "in": "query",
+          "schema": {
+            "type": "string",
+            "maxLength": 32
+          }
+        },
+        {
+          "name": "limit",
+          "in": "query",
+          "schema": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 20,
+            "default": 12
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Success",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "code": {
+                    "type": "integer"
+                  },
+                  "data": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "integer",
+                          "format": "int64"
+                        },
+                        "name": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "name"
+                      ]
+                    }
+                  }
+                },
+                "required": [
+                  "code",
+                  "data"
+                ]
+              }
+            }
+          }
+        },
+        "400": {
+          "description": "Invalid query"
+        },
+        "401": {
+          "description": "Authentication required"
+        },
+        "403": {
+          "description": "Role or account forbidden"
+        }
+      }
+    }
   }
 }
