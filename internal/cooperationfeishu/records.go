@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jmoiron/sqlx"
 	"github.com/kuaizu-team/kuaizu-service/internal/feishusync"
 )
 
@@ -36,50 +37,102 @@ type record struct {
 }
 
 func (s *Service) syncRecords(ctx context.Context, cooperationID int64, appToken, tableID string) error {
-	rows := []application{}
-	if err := s.db.SelectContext(ctx, &rows, "SELECT a.id,a.user_id,a.attempt_no,a.status,a.profile_snapshot,a.applied_at,a.reviewed_at,a.review_remark,COALESCE(tp.status,0) AS talent_status,COALESCE(u.user_status,0) AS user_status FROM campus_cooperation_application a LEFT JOIN talent_profile tp ON tp.user_id=a.user_id LEFT JOIN `user` u ON u.id=a.user_id WHERE a.cooperation_id=? ORDER BY a.id", cooperationID); err != nil {
+	var maxID int64
+	if err := s.db.GetContext(ctx, &maxID, `SELECT COALESCE(MAX(id),0) FROM campus_cooperation_application WHERE cooperation_id=?`, cooperationID); err != nil {
 		return err
 	}
-	mappings := []record{}
-	if err := s.db.SelectContext(ctx, &mappings, `SELECT application_id,record_id,client_token,state FROM cooperation_feishu_record WHERE cooperation_id=?`, cooperationID); err != nil {
-		return err
-	}
-	byID := make(map[int64]record, len(mappings))
-	for _, mapping := range mappings {
-		byID[mapping.ApplicationID] = mapping
-	}
-	seen := make(map[int64]bool, len(rows))
 	path := "/open-apis/bitable/v1/apps/" + url.PathEscape(appToken) + "/tables/" + url.PathEscape(tableID) + "/records"
-	for i, row := range rows {
-		if i%50 == 0 {
-			if _, err := s.cooperation.AdminDetail(ctx, s.currentAdminID(ctx), cooperationID, false); err != nil {
-				return err
-			}
+	batch := make([]feishusync.RecordUpdate, 0, 50)
+	batchBytes := 0
+	flush := func() error {
+		if len(batch) == 0 {
+			return nil
 		}
-		seen[row.ID] = true
-		values, err := row.values()
+		if err := s.cleanup.UpdateRecords(ctx, feishusync.Target{AppToken: appToken, TableID: tableID}, batch); err != nil {
+			return err
+		}
+		batch = batch[:0]
+		batchBytes = 0
+		return nil
+	}
+	var lastUserID, lastAttemptNo int
+	for {
+		rows := []application{}
+		// This order uses the existing unique (cooperation_id,user_id,attempt_no)
+		// index; paging by id would repeatedly sort all applications for a school.
+		if err := s.db.SelectContext(ctx, &rows, "SELECT a.id,a.user_id,a.attempt_no,a.status,a.profile_snapshot,a.applied_at,a.reviewed_at,a.review_remark,COALESCE(tp.status,0) AS talent_status,COALESCE(u.user_status,0) AS user_status FROM campus_cooperation_application a LEFT JOIN talent_profile tp ON tp.user_id=a.user_id LEFT JOIN `user` u ON u.id=a.user_id WHERE a.cooperation_id=? AND a.id<=? AND (a.user_id>? OR (a.user_id=? AND a.attempt_no>?)) ORDER BY a.user_id,a.attempt_no LIMIT 50", cooperationID, maxID, lastUserID, lastUserID, lastAttemptNo); err != nil {
+			return err
+		}
+		if len(rows) == 0 {
+			break
+		}
+		if _, err := s.cooperation.AdminDetail(ctx, s.currentAdminID(ctx), cooperationID, false); err != nil {
+			return err
+		}
+		ids := make([]int64, 0, len(rows))
+		for _, row := range rows {
+			ids = append(ids, row.ID)
+		}
+		query, args, err := sqlx.In(`SELECT application_id,record_id,client_token,state FROM cooperation_feishu_record WHERE cooperation_id=? AND application_id IN (?)`, cooperationID, ids)
 		if err != nil {
 			return err
 		}
-		mapping, exists := byID[row.ID]
-		if !exists {
-			key := uuid.NewString()
-			if _, err = s.db.ExecContext(ctx, `INSERT INTO cooperation_feishu_record(application_id,cooperation_id,client_token,state) VALUES(?,?,?,'pending')`, row.ID, cooperationID, key); err != nil {
+		mappings := []record{}
+		if err = s.db.SelectContext(ctx, &mappings, s.db.Rebind(query), args...); err != nil {
+			return err
+		}
+		byID := make(map[int64]record, len(mappings))
+		for _, mapping := range mappings {
+			byID[mapping.ApplicationID] = mapping
+		}
+		for _, row := range rows {
+			lastUserID, lastAttemptNo = row.UserID, row.AttemptNo
+			mapping, exists := byID[row.ID]
+			values, err := row.values()
+			if err != nil {
 				return err
 			}
-			mapping = record{ApplicationID: row.ID, ClientToken: key, State: "pending"}
-			exists = true
-		}
-		if mapping.State == "pending" && mapping.RecordID == nil {
-			key := mapping.ClientToken
-			if !isUUIDv4(key) {
-				// Earlier versions used a non-UUID token that Feishu rejects before
-				// creating a record. Replace only that known legacy token format.
-				if !strings.HasPrefix(key, "cooperation-application-") {
+			if !exists {
+				key := uuid.NewString()
+				if _, err = s.db.ExecContext(ctx, `INSERT INTO cooperation_feishu_record(application_id,cooperation_id,client_token,state) VALUES(?,?,?,'pending')`, row.ID, cooperationID, key); err != nil {
+					return err
+				}
+				mapping = record{ApplicationID: row.ID, ClientToken: key, State: "pending"}
+				exists = true
+			}
+			if mapping.State == "pending" && mapping.RecordID == nil {
+				if err := flush(); err != nil {
+					return err
+				}
+				key := mapping.ClientToken
+				if !isUUIDv4(key) {
+					// Earlier versions used a non-UUID token that Feishu rejects before
+					// creating a record. Replace only that known legacy token format.
+					if !strings.HasPrefix(key, "cooperation-application-") {
+						return errNeedsAttention
+					}
+					key = uuid.NewString()
+					result, updateErr := s.db.ExecContext(ctx, `UPDATE cooperation_feishu_record SET client_token=? WHERE application_id=? AND cooperation_id=? AND record_id IS NULL AND state='pending' AND client_token=?`, key, row.ID, cooperationID, mapping.ClientToken)
+					if updateErr != nil {
+						return errNeedsAttention
+					}
+					changed, rowsErr := result.RowsAffected()
+					if rowsErr != nil || changed != 1 {
+						return errNeedsAttention
+					}
+				}
+				var out struct {
+					Record struct {
+						ID string `json:"record_id"`
+					} `json:"record"`
+				}
+				if err = s.client.Call(ctx, http.MethodPost, path+"?client_token="+url.QueryEscape(key), map[string]any{"fields": values}, &out); err != nil {
+					return fmt.Errorf("%w: %w", errNeedsAttention, err)
+				}
+				if out.Record.ID == "" {
 					return errNeedsAttention
 				}
-				key = uuid.NewString()
-				result, updateErr := s.db.ExecContext(ctx, `UPDATE cooperation_feishu_record SET client_token=? WHERE application_id=? AND cooperation_id=? AND record_id IS NULL AND state='pending' AND client_token=?`, key, row.ID, cooperationID, mapping.ClientToken)
+				result, updateErr := s.db.ExecContext(ctx, `UPDATE cooperation_feishu_record SET record_id=?,state='ready' WHERE application_id=? AND cooperation_id=? AND state='pending' AND record_id IS NULL`, out.Record.ID, row.ID, cooperationID)
 				if updateErr != nil {
 					return errNeedsAttention
 				}
@@ -87,46 +140,56 @@ func (s *Service) syncRecords(ctx context.Context, cooperationID int64, appToken
 				if rowsErr != nil || changed != 1 {
 					return errNeedsAttention
 				}
-			}
-			var out struct {
-				Record struct {
-					ID string `json:"record_id"`
-				} `json:"record"`
-			}
-			if err = s.client.Call(ctx, http.MethodPost, path+"?client_token="+url.QueryEscape(key), map[string]any{"fields": values}, &out); err != nil {
-				return fmt.Errorf("%w: %w", errNeedsAttention, err)
-			}
-			if out.Record.ID == "" {
+			} else if mapping.State == "ready" && mapping.RecordID != nil && *mapping.RecordID != "" {
+				update := feishusync.RecordUpdate{RecordID: *mapping.RecordID, Fields: values}
+				encoded, encodeErr := json.Marshal(update)
+				if encodeErr != nil {
+					return encodeErr
+				}
+				// Leave headroom below the one-megabyte Feishu batch limit.
+				if len(batch) == 50 || batchBytes+len(encoded)+1 > 900*1024 {
+					if err := flush(); err != nil {
+						return err
+					}
+				}
+				if len(encoded)+32 > 900*1024 {
+					if err := s.client.Call(ctx, http.MethodPut, path+"/"+url.PathEscape(*mapping.RecordID), map[string]any{"fields": values}, nil); err != nil {
+						return err
+					}
+				} else {
+					batch = append(batch, update)
+					batchBytes += len(encoded) + 1
+				}
+			} else {
 				return errNeedsAttention
 			}
-			if _, err = s.db.ExecContext(ctx, `UPDATE cooperation_feishu_record SET record_id=?,state='ready' WHERE application_id=? AND cooperation_id=? AND state='pending' AND record_id IS NULL`, out.Record.ID, row.ID, cooperationID); err != nil {
-				return errNeedsAttention
-			}
-			var confirmed int
-			if err = s.db.GetContext(ctx, &confirmed, `SELECT COUNT(*) FROM cooperation_feishu_record WHERE application_id=? AND cooperation_id=? AND state='ready' AND record_id=?`, row.ID, cooperationID, out.Record.ID); err != nil || confirmed != 1 {
-				return errNeedsAttention
-			}
-		} else if mapping.State == "ready" && mapping.RecordID != nil && *mapping.RecordID != "" {
-			if err = s.client.Call(ctx, http.MethodPut, path+"/"+url.PathEscape(*mapping.RecordID), map[string]any{"fields": values}, nil); err != nil {
-				return err
-			}
-		} else {
-			return errNeedsAttention
+		}
+		if err := flush(); err != nil {
+			return err
 		}
 	}
 	// A user deletion removes their application locally; remove the remote private row too.
-	for _, mapping := range mappings {
-		if seen[mapping.ApplicationID] {
-			continue
+	for {
+		stale := []record{}
+		if err := s.db.SelectContext(ctx, &stale, `SELECT r.application_id,r.record_id,r.client_token,r.state FROM cooperation_feishu_record r LEFT JOIN campus_cooperation_application a ON a.id=r.application_id WHERE r.cooperation_id=? AND a.id IS NULL LIMIT 50`, cooperationID); err != nil {
+			return err
 		}
-		if mapping.State != "ready" || mapping.RecordID == nil {
-			return errNeedsAttention
+		if len(stale) == 0 {
+			break
 		}
-		if err := s.client.Call(ctx, http.MethodDelete, path+"/"+url.PathEscape(*mapping.RecordID), nil, nil); err != nil {
-			return errNeedsAttention
+		if _, err := s.cooperation.AdminDetail(ctx, s.currentAdminID(ctx), cooperationID, false); err != nil {
+			return err
 		}
-		if _, err := s.db.ExecContext(ctx, `DELETE FROM cooperation_feishu_record WHERE application_id=?`, mapping.ApplicationID); err != nil {
-			return errNeedsAttention
+		for _, mapping := range stale {
+			if mapping.State != "ready" || mapping.RecordID == nil {
+				return errNeedsAttention
+			}
+			if err := s.client.Call(ctx, http.MethodDelete, path+"/"+url.PathEscape(*mapping.RecordID), nil, nil); err != nil {
+				return errNeedsAttention
+			}
+			if _, err := s.db.ExecContext(ctx, `DELETE FROM cooperation_feishu_record WHERE application_id=?`, mapping.ApplicationID); err != nil {
+				return errNeedsAttention
+			}
 		}
 	}
 	return nil

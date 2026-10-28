@@ -19,6 +19,10 @@ import (
 
 const defaultSpaceID = "7701281082951437603"
 
+// Keep one long-running cooperation export per process to bound DB, memory and
+// Feishu load when several administrators click sync at the same time.
+var syncSlot = make(chan struct{}, 1)
+
 type Target struct {
 	CooperationID int64      `db:"cooperation_id" json:"cooperationId"`
 	AppToken      *string    `db:"app_token" json:"-"`
@@ -98,11 +102,17 @@ func (s *Service) Get(ctx context.Context, adminID int, cooperationID int64) (*T
 		return nil, err
 	}
 	if t.Status == "running" && time.Since(t.UpdatedAt) > 21*time.Minute {
-		t.Status, t.Message = "needs_attention", "同步进程可能已中断，请技术人员核对远端表格和记录映射"
+		_, err = s.db.ExecContext(ctx, `UPDATE cooperation_feishu_target SET status='needs_attention',message='同步进程可能已中断，请技术人员核对远端表格和记录映射' WHERE cooperation_id=? AND status='running' AND updated_at < NOW() - INTERVAL 21 MINUTE`, cooperationID)
+		if err != nil {
+			return nil, err
+		}
+		if err = s.db.GetContext(ctx, &t, `SELECT `+targetColumns+` FROM cooperation_feishu_target WHERE cooperation_id=?`, cooperationID); err != nil {
+			return nil, err
+		}
 	}
 	if t.Status == "needs_attention" && s.canRetryRecords(ctx, cooperationID) {
 		t.Retryable = true
-		t.Message = "申请记录写入结果待确认，可安全重试"
+		t.Message = "同步结果待确认，可安全重试"
 	}
 	if c.FeishuWikiNodeToken != nil && *c.FeishuWikiNodeToken != "" {
 		t.WikiURL = s.baseURL + "/wiki/" + url.PathEscape(*c.FeishuWikiNodeToken)
@@ -124,6 +134,17 @@ func (s *Service) Start(ctx context.Context, adminID int, cooperationID int64) (
 	if c.FeishuWikiNodeToken == nil || *c.FeishuWikiNodeToken == "" {
 		return nil, service.ErrBadRequest("平台超管尚未绑定商单飞书文档")
 	}
+	select {
+	case syncSlot <- struct{}{}:
+	default:
+		return nil, service.ErrBadRequest("已有合作申请正在同步，请稍后重试")
+	}
+	launched := false
+	defer func() {
+		if !launched {
+			<-syncSlot
+		}
+	}()
 	if _, err = s.db.ExecContext(ctx, `INSERT IGNORE INTO cooperation_feishu_target(cooperation_id) VALUES(?)`, cooperationID); err != nil {
 		return nil, err
 	}
@@ -148,6 +169,7 @@ func (s *Service) Start(ctx context.Context, adminID int, cooperationID int64) (
 		return nil, err
 	}
 	if changed == 1 {
+		launched = true
 		go s.run(cooperationID, adminID)
 	}
 	return s.Get(ctx, adminID, cooperationID)
@@ -168,23 +190,29 @@ func (s *Service) canRetryRecords(ctx context.Context, cooperationID int64) bool
 		return false
 	}
 	var mappings []record
-	if err = s.db.SelectContext(ctx, &mappings, `SELECT application_id,record_id,client_token,state FROM cooperation_feishu_record WHERE cooperation_id=?`, cooperationID); err != nil || len(mappings) == 0 {
+	if err = s.db.SelectContext(ctx, &mappings, `SELECT application_id,record_id,client_token,state FROM cooperation_feishu_record WHERE cooperation_id=? AND (state<>'ready' OR record_id IS NULL OR record_id='')`, cooperationID); err != nil {
 		return false
 	}
-	pending := false
 	for _, mapping := range mappings {
-		if mapping.State == "ready" && mapping.RecordID != nil && *mapping.RecordID != "" {
-			continue
-		}
 		if mapping.State != "pending" || mapping.RecordID != nil || (!isUUIDv4(mapping.ClientToken) && !strings.HasPrefix(mapping.ClientToken, "cooperation-application-")) {
 			return false
 		}
-		pending = true
 	}
-	return pending
+	return true
 }
 
 func (s *Service) run(cooperationID int64, adminID int) {
+	defer func() { <-syncSlot }()
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			fmt.Fprintf(os.Stderr, "cooperation feishu sync panic cooperation=%d panic_type=%T\n", cooperationID, recovered)
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if _, err := s.db.ExecContext(ctx, `UPDATE cooperation_feishu_target SET status='needs_attention',message='同步意外中断，请技术人员核对远端结果' WHERE cooperation_id=?`, cooperationID); err != nil {
+				fmt.Fprintf(os.Stderr, "cooperation feishu panic status persistence failed cooperation=%d: %v\n", cooperationID, err)
+			}
+		}
+	}()
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Minute)
 	defer cancel()
 	ctx = withAdminID(ctx, adminID)
@@ -196,7 +224,9 @@ func (s *Service) run(cooperationID int64, adminID int) {
 	if errors.Is(err, errNeedsAttention) {
 		status, message = "needs_attention", "远端创建结果待核对，请联系技术人员确认后重试"
 	}
-	if _, dbErr := s.db.ExecContext(context.Background(), `UPDATE cooperation_feishu_target SET status=?,message=?,synced_at=CASE WHEN ?='succeeded' THEN NOW() ELSE synced_at END WHERE cooperation_id=?`, status, message, status, cooperationID); dbErr != nil {
+	finishCtx, finishCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer finishCancel()
+	if _, dbErr := s.db.ExecContext(finishCtx, `UPDATE cooperation_feishu_target SET status=?,message=?,synced_at=CASE WHEN ?='succeeded' THEN NOW() ELSE synced_at END WHERE cooperation_id=?`, status, message, status, cooperationID); dbErr != nil {
 		fmt.Fprintf(os.Stderr, "cooperation feishu status persistence failed cooperation=%d: %v\n", cooperationID, dbErr)
 	}
 	if err != nil {
