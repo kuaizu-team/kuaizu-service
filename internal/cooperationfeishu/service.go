@@ -160,19 +160,45 @@ func (s *Service) Start(ctx context.Context, adminID int, cooperationID int64) (
 	if allowAttentionRetry {
 		statuses += ", 'needs_attention'"
 	}
-	result, err := s.db.ExecContext(ctx, `UPDATE cooperation_feishu_target SET status='running',message='正在同步' WHERE cooperation_id=? AND status IN (`+statuses+`)`, cooperationID)
+	changed, err := s.markRunning(ctx, c.CommercialOrderID, cooperationID, statuses)
 	if err != nil {
 		return nil, err
 	}
-	changed, err := result.RowsAffected()
-	if err != nil {
-		return nil, err
-	}
-	if changed == 1 {
+	if changed {
 		launched = true
 		go s.run(cooperationID, adminID)
 	}
 	return s.Get(ctx, adminID, cooperationID)
+}
+
+// markRunning and SaveOrder lock the same commercial_order row before changing
+// synchronization state or its binding, including when no remote Base exists yet.
+func (s *Service) markRunning(ctx context.Context, orderID, cooperationID int64, statuses string) (bool, error) {
+	// No remote calls run while holding this transaction's order lock.
+	tx, err := s.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback()
+	var wikiNode *string
+	if err = tx.GetContext(ctx, &wikiNode, `SELECT feishu_wiki_node_token FROM commercial_order WHERE id=? FOR UPDATE`, orderID); err != nil {
+		return false, err
+	}
+	if wikiNode == nil || *wikiNode == "" {
+		return false, service.ErrBadRequest("平台超管尚未绑定商单飞书文档")
+	}
+	result, err := tx.ExecContext(ctx, `UPDATE cooperation_feishu_target SET status='running',message='正在同步' WHERE cooperation_id=? AND status IN (`+statuses+`)`, cooperationID)
+	if err != nil {
+		return false, err
+	}
+	changed, err := result.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	if err = tx.Commit(); err != nil {
+		return false, err
+	}
+	return changed == 1, nil
 }
 
 // Only expose a retry when a complete Wiki Base/table already exists and all
@@ -344,31 +370,48 @@ func (s *Service) replaceTargetBase(cooperationID int64, nodeToken, appToken str
 func stringPointer(value string) *string { return &value }
 
 func (s *Service) tableSchemaMismatch(ctx context.Context, appToken, tableID string) (bool, error) {
-	var out struct {
-		Items []struct {
-			Name     string `json:"field_name"`
-			Type     int    `json:"type"`
-			Property struct {
-				Options []struct {
-					Name string `json:"name"`
-				} `json:"options"`
-				Formatter string `json:"formatter"`
-			} `json:"property"`
-		} `json:"items"`
-		HasMore bool `json:"has_more"`
+	type remoteField struct {
+		Name     string `json:"field_name"`
+		Type     int    `json:"type"`
+		Property struct {
+			Options []struct {
+				Name string `json:"name"`
+			} `json:"options"`
+			Formatter string `json:"formatter"`
+		} `json:"property"`
 	}
+	byName := map[string]remoteField{}
 	path := "/open-apis/bitable/v1/apps/" + url.PathEscape(appToken) + "/tables/" + url.PathEscape(tableID) + "/fields?page_size=100"
-	if err := s.client.Call(ctx, http.MethodGet, path, nil, &out); err != nil {
-		return false, err
+	seenTokens := map[string]bool{}
+	for {
+		var out struct {
+			Items     []remoteField `json:"items"`
+			HasMore   bool          `json:"has_more"`
+			PageToken string        `json:"page_token"`
+		}
+		if err := s.client.Call(ctx, http.MethodGet, path, nil, &out); err != nil {
+			return false, err
+		}
+		for _, field := range out.Items {
+			if _, exists := byName[field.Name]; exists {
+				return false, fmt.Errorf("飞书字段名称重复，无法核对申请表结构")
+			}
+			byName[field.Name] = field
+		}
+		if !out.HasMore {
+			break
+		}
+		if out.PageToken == "" || seenTokens[out.PageToken] {
+			return false, fmt.Errorf("飞书字段分页响应无效，无法核对申请表结构")
+		}
+		seenTokens[out.PageToken] = true
+		path = "/open-apis/bitable/v1/apps/" + url.PathEscape(appToken) + "/tables/" + url.PathEscape(tableID) + "/fields?page_size=100&page_token=" + url.QueryEscape(out.PageToken)
 	}
-	expected := fields()
-	if out.HasMore || len(out.Items) != len(expected) {
-		return true, nil
-	}
-	for index, field := range expected {
+	// Only required fields matter; administrators may reorder or add columns.
+	for _, field := range fields() {
 		value := field.(feishusync.Field)
-		actual := out.Items[index]
-		if actual.Name != value.Name || actual.Type != value.Type {
+		actual, exists := byName[value.Name]
+		if !exists || actual.Type != value.Type {
 			return true, nil
 		}
 		if value.Property == nil {

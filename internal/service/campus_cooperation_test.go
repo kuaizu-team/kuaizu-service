@@ -558,3 +558,49 @@ func TestCooperationExplicitEmptyTagsClearWithoutCreatingLibraryEntries(t *testi
 		t.Fatal(err)
 	}
 }
+
+func TestCooperationOrderBindingCannotChangeDuringUnresolvedSync(t *testing.T) {
+	for _, blocked := range []bool{false, true} {
+		t.Run(fmt.Sprintf("blocked=%v", blocked), func(t *testing.T) {
+			s, m := cooperationTestService(t)
+			m.ExpectBegin()
+			expectCooperationAdmin(m, 1, nil)
+			m.ExpectQuery(regexp.QuoteMeta(`SELECT status,content_template,feishu_wiki_node_token FROM commercial_order WHERE id=? FOR UPDATE`)).WithArgs(int64(3)).WillReturnRows(sqlmock.NewRows([]string{"status", "content_template", "feishu_wiki_node_token"}).AddRow("available", nil, "oldnode1"))
+			// The running marker and ambiguous remote creation both fence rebinding,
+			// even before the remote app_token has been persisted.
+			m.ExpectQuery(regexp.QuoteMeta(`SELECT EXISTS(SELECT 1 FROM cooperation_feishu_target t JOIN campus_cooperation c ON c.id=t.cooperation_id WHERE c.commercial_order_id=? AND (t.app_token IS NOT NULL OR t.status IN ('running','needs_attention')))`)).WithArgs(int64(3)).WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(blocked))
+			node := "newnode1"
+			if blocked {
+				m.ExpectRollback()
+			} else {
+				m.ExpectExec(`UPDATE commercial_order SET`).WithArgs("商单", "企业", nil, node, "available", nil, 7, int64(3)).WillReturnResult(sqlmock.NewResult(0, 1))
+				m.ExpectCommit()
+			}
+			_, err := s.SaveOrder(context.Background(), 7, 3, CommercialOrderInput{Name: "商单", CompanyName: "企业", Status: "available", FeishuWikiNodeToken: &node})
+			if (err != nil) != blocked {
+				t.Fatalf("binding guard: blocked=%v err=%v", blocked, err)
+			}
+			if err := m.ExpectationsWereMet(); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
+func TestCooperationOrderMetadataUpdateKeepsExistingBinding(t *testing.T) {
+	s, m := cooperationTestService(t)
+	m.ExpectBegin()
+	expectCooperationAdmin(m, 1, nil)
+	m.ExpectQuery(regexp.QuoteMeta(`SELECT status,content_template,feishu_wiki_node_token FROM commercial_order WHERE id=? FOR UPDATE`)).WithArgs(int64(3)).WillReturnRows(sqlmock.NewRows([]string{"status", "content_template", "feishu_wiki_node_token"}).AddRow("available", nil, "boundnode"))
+	// An unchanged binding must not query or block on synchronization state.
+	m.ExpectExec(`UPDATE commercial_order SET`).WithArgs("改名商单", "企业", nil, "boundnode", "available", nil, 7, int64(3)).WillReturnResult(sqlmock.NewResult(0, 1))
+	m.ExpectCommit()
+	node := "boundnode"
+	_, err := s.SaveOrder(context.Background(), 7, 3, CommercialOrderInput{Name: "改名商单", CompanyName: "企业", Status: "available", FeishuWikiNodeToken: &node})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := m.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}

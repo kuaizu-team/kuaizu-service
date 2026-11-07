@@ -423,12 +423,13 @@ func (s *CampusCooperationService) SaveOrder(ctx context.Context, adminID int, i
 			changedWiki = *in.FeishuWikiNodeToken != *existing.WikiNode
 		}
 		if changedWiki {
-			var synced bool
-			if err := tx.GetContext(ctx, &synced, `SELECT EXISTS(SELECT 1 FROM cooperation_feishu_target t JOIN campus_cooperation c ON c.id=t.cooperation_id WHERE c.commercial_order_id=? AND t.app_token IS NOT NULL)`, id); err != nil {
+			// Sync startup holds the same order lock before publishing its running marker.
+			var bindingLocked bool
+			if err := tx.GetContext(ctx, &bindingLocked, `SELECT EXISTS(SELECT 1 FROM cooperation_feishu_target t JOIN campus_cooperation c ON c.id=t.cooperation_id WHERE c.commercial_order_id=? AND (t.app_token IS NOT NULL OR t.status IN ('running','needs_attention')))`, id); err != nil {
 				return 0, err
 			}
-			if synced {
-				return 0, ErrBadRequest("已有学校申请表，不能更换商单飞书文档")
+			if bindingLocked {
+				return 0, ErrBadRequest("已有学校申请表或同步结果待确认，不能更换商单飞书文档")
 			}
 		}
 		if in.FeishuWikiNodeToken != nil && *in.FeishuWikiNodeToken == "" {
