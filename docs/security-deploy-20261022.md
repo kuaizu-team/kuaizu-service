@@ -85,3 +85,21 @@
 ## 后续独立处理
 
 先将通过公网地址访问本机 8080 的站点改为经过验证的 loopback upstream，再考虑将 Compose 发布地址收紧到 loopback。另行核实安全组 / 防火墙对 MySQL 与 Nacos 端口的实际访问限制，以及宝塔主机是否运行 PHP 服务。这些检查不能从 Docker 端口列表直接推断已经公网暴露或已经遭入侵。
+
+
+## 2026-11-08：部署源码扫描阻断修复
+
+后端分支 3228ae8 在 Scan Linux source 阶段复现 9 条可达报告：Echo v4.15.0 的 8 条，以及 kin-openapi v0.133.0 的 GO-2026-6795。部署作业依赖 verify，因此此时 deploy 被跳过，不能据此判断线上业务启动失败。
+
+定向升级 Echo 至 v4.16.3、kin-openapi 至 v0.148.0，配套将 oapi-codegen 从 v2.5.1 升至兼容 MappingRef 的最小 v2.7.0，runtime 从 v1.1.2 升至提供查询绑定选项的 v1.2.0，带入必要的关联模块并执行 go mod tidy。保留 Echo v4 API、现有路由及业务实现，不迁移框架主版本。Echo 修复后的默认 RealIP 不再信任任意客户端转发头；项目当前未配置 IPExtractor，也没有使用默认按 RealIP 的限流器或 Echo 反向代理，现有请求日志不记录 RealIP。本次没有额外引入代理信任配置。
+
+升级后 Go 官方数据库仍将 GO-2026-6872、GO-2026-6875 的整个 Echo v4 范围标为受影响（fixed 缺失），但以下官方公告明确将 v4.16.3 列为已修复：
+
+- https://github.com/labstack/echo/security/advisories/GHSA-246p-cpwv-v3jq
+- https://github.com/labstack/echo/security/advisories/GHSA-99jh-6h7p-pp36
+
+新增 scripts/check-govulncheck.mjs，对这两个公告做精确版本核验：要求 govulncheck v1.9.0 的符号级扫描、完整配置与 SBOM，要求实际模块和 finding 均为 github.com/labstack/echo/v4@v4.16.3，且公告别名与官方链接匹配。其他版本、其他模块、其他可达公告、缺失或异常扫描结果继续阻断。未来升级 Echo 时需重新审查，不能自动延长此核验范围；官方数据库补齐修复版本后应移除此临时规则。
+
+源码扫描和镜像最终两个二进制统一采用原始 JSON 输出并由上述脚本核验，原始报告不删改，不宣称原始 govulncheck 为零报告。JSON 模式本身不会因发现漏洞而返回失败，因此必须执行随后的核验脚本。工作流保留 pipefail，扫描器进程失败仍直接阻断。
+
+验证：模块完整性、API 生成、生成器升级前后 HTTP 方法/路径/处理器注册一致（105 条）、全量 Go 测试与 vet；Linux/amd64 两个入口的源码扫描及交叉编译后二进制扫描（原始报告为上述两条，未解决可达项为 0）；Node 门禁回归和镜像审计模拟（正常产物、旧 Go、扫描进程失败、新漏洞、缺失扫描结果）；真实请求的转发头防伪和代理头重写回归。未新增路由、数据库迁移或修改消息中心。未连接生产数据库、未推送或部署；实际 Docker 镜像生成与镜像文件审计仍由 GitHub Actions 完成。

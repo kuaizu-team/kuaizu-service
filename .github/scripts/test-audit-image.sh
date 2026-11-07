@@ -21,11 +21,17 @@ go() {
 }
 
 govulncheck() {
+  printf '%s\n' '{"config":{"scanner_name":"govulncheck","scanner_version":"v1.9.0","scan_level":"symbol","scan_mode":"binary"}}'
+  if [ "$AUDIT_TEST_CASE" = incomplete-scan ]; then return 0; fi
+  printf '%s\n' '{"SBOM":{"modules":[{"path":"example.test/app"}]}}'
+  if [ "$AUDIT_TEST_CASE" = unknown-vuln ]; then
+    printf '%s\n' '{"finding":{"osv":"GO-NEW","trace":[{"module":"example.test/app","function":"main"}]}}'
+  fi
   return "$AUDIT_TEST_SCAN_STATUS"
 }
 export -f docker go govulncheck
 
-for scenario in pass wrong-go scanner-failure; do
+for scenario in pass wrong-go scanner-failure unknown-vuln incomplete-scan; do
   export AUDIT_TEST_CASE="$scenario"
   export AUDIT_TEST_GO=go1.26.10
   export AUDIT_TEST_SCAN_STATUS=0
