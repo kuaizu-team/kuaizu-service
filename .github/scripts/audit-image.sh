@@ -18,7 +18,8 @@ for binary in kuaizu-server kuaizu-admin; do
     echo "::error::$binary was built with $actual_go; expected $expected_go"
     exit 1
   fi
-  govulncheck -mode=binary "$output/$binary" | tee "$output/$binary.vuln.txt"
+  govulncheck -json -mode=binary "$output/$binary" | tee "$output/$binary.vuln.json"
+  node "$(dirname "$0")/../../scripts/check-govulncheck.mjs" "$output/$binary.vuln.json"
 done
 
 (

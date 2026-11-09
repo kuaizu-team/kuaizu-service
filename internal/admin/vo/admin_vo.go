@@ -149,6 +149,7 @@ type AdminInformationContentVO struct {
 
 // AdminEventVO is the admin-facing campus event response model.
 type AdminEventVO struct {
+	Tags                 []string   `json:"tags"`
 	ID                   int        `json:"id"`
 	Name                 string     `json:"name"`
 	ShortName            *string    `json:"shortName"`
@@ -187,6 +188,7 @@ func NewAdminEventVO(e *models.Event) *AdminEventVO {
 		return nil
 	}
 	return &AdminEventVO{
+		Tags:                 e.TagNames(),
 		ID:                   e.ID,
 		Name:                 e.Name,
 		ShortName:            e.ShortName,

@@ -119,7 +119,8 @@
           },
           "description": "Capped at 50."
         }
-      ]
+      ],
+      "description": "Links are filtered per links[].public and the current authenticated user application status: public links are always accessible; approval-only links are returned after approval in application mode. Normal mode returns all links. Existing school scope and contact/image rules are unchanged."
     }
   },
   "detail": {
@@ -185,7 +186,8 @@
             "minimum": 1
           }
         }
-      ]
+      ],
+      "description": "Links are filtered per links[].public and the current authenticated user application status: public links are always accessible; approval-only links are returned after approval in application mode. Normal mode returns all links. Existing school scope and contact/image rules are unchanged."
     }
   },
   "apply": {

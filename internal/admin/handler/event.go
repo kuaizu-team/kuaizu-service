@@ -18,31 +18,32 @@ import (
 )
 
 type adminEventRequest struct {
-	Name                 string  `json:"name"`
-	ShortName            *string `json:"shortName"`
-	IsRanking            *bool   `json:"isRanking"`
-	RegistrationDeadline *string `json:"registrationDeadline"`
-	ArticleURL           *string `json:"articleUrl"`
-	DisplayOrder         *int    `json:"displayOrder"`
-	CreatedAt            *string `json:"createdAt"`
-	Level                *string `json:"level"`
-	Summary              *string `json:"summary"`
-	OrganizerName        *string `json:"organizerName"`
-	Description          *string `json:"description"`
-	ResourceURL          *string `json:"resourceUrl"`
-	OfficialWebsite      *string `json:"officialWebsite"`
-	ParticipationNote    *string `json:"participationNote"`
-	QQGroup              *string `json:"qqGroup"`
-	AllowCrossSchool     *bool   `json:"allowCrossSchool"`
-	AllowCrossMajor      *bool   `json:"allowCrossMajor"`
-	CrossSchoolMajorRule *string `json:"crossSchoolMajorRule"`
-	ParticipationMode    *string `json:"participationMode"`
-	TeamMinMembers       *int    `json:"teamMinMembers"`
-	TeamMaxMembers       *int    `json:"teamMaxMembers"`
-	SchoolID             *int    `json:"schoolId"`
-	ManagerAccount       *string `json:"managerAccount"`
-	ManagerPassword      *string `json:"managerPassword"`
-	ManagerPhone         *string `json:"managerPhone"`
+	Tags                 *[]string `json:"tags"`
+	Name                 string    `json:"name"`
+	ShortName            *string   `json:"shortName"`
+	IsRanking            *bool     `json:"isRanking"`
+	RegistrationDeadline *string   `json:"registrationDeadline"`
+	ArticleURL           *string   `json:"articleUrl"`
+	DisplayOrder         *int      `json:"displayOrder"`
+	CreatedAt            *string   `json:"createdAt"`
+	Level                *string   `json:"level"`
+	Summary              *string   `json:"summary"`
+	OrganizerName        *string   `json:"organizerName"`
+	Description          *string   `json:"description"`
+	ResourceURL          *string   `json:"resourceUrl"`
+	OfficialWebsite      *string   `json:"officialWebsite"`
+	ParticipationNote    *string   `json:"participationNote"`
+	QQGroup              *string   `json:"qqGroup"`
+	AllowCrossSchool     *bool     `json:"allowCrossSchool"`
+	AllowCrossMajor      *bool     `json:"allowCrossMajor"`
+	CrossSchoolMajorRule *string   `json:"crossSchoolMajorRule"`
+	ParticipationMode    *string   `json:"participationMode"`
+	TeamMinMembers       *int      `json:"teamMinMembers"`
+	TeamMaxMembers       *int      `json:"teamMaxMembers"`
+	SchoolID             *int      `json:"schoolId"`
+	ManagerAccount       *string   `json:"managerAccount"`
+	ManagerPassword      *string   `json:"managerPassword"`
+	ManagerPhone         *string   `json:"managerPhone"`
 }
 
 type adminEventMergeRequest struct {
@@ -678,6 +679,14 @@ func (s *AdminServer) MergeEvent(ctx echo.Context) error {
 
 func buildAdminEventModel(req adminEventRequest, role int, adminSchoolID *int) (*models.Event, error) {
 	event := &models.Event{Name: strings.TrimSpace(req.Name), AllowCrossSchool: 1, AllowCrossMajor: 1}
+	if req.Tags != nil {
+		encoded, err := json.Marshal(*req.Tags)
+		if err != nil {
+			return nil, err
+		}
+		value := string(encoded)
+		event.TagsJSON = &value
+	}
 	if req.ShortName != nil {
 		value := strings.TrimSpace(*req.ShortName)
 		if value != "" {
@@ -782,6 +791,7 @@ func preserveOmittedEventDetails(event, existing *models.Event, raw map[string]j
 		target **string
 		stored *string
 	}{
+		{"tags", &event.TagsJSON, existing.TagsJSON},
 		{"shortName", &event.ShortName, existing.ShortName},
 		{"organizerName", &event.OrganizerName, existing.OrganizerName},
 		{"description", &event.Description, existing.Description},

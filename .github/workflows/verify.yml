@@ -59,12 +59,14 @@ jobs:
         run: |
           go test ./...
           go vet ./...
+          node --test scripts/check-govulncheck.test.mjs
 
       - name: Scan Linux source
         run: |
           mkdir -p bin/release
           go install golang.org/x/vuln/cmd/govulncheck@v1.9.0
-          govulncheck ./cmd/server ./cmd/admin | tee bin/release/source-vuln.txt
+          govulncheck -json ./cmd/server ./cmd/admin | tee bin/release/source-vuln.json
+          node scripts/check-govulncheck.mjs bin/release/source-vuln.json
 
       - name: Set image version
         id: version

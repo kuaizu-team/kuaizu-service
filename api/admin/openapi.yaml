@@ -52,12 +52,16 @@ paths:
     $ref: './paths/campus_cooperation.yaml#/order'
   /commercial-orders/{id}/claims:
     $ref: './paths/campus_cooperation.yaml#/claim'
+  /project-tags:
+    $ref: './paths/campus_cooperation.yaml#/tags'
   /campus-cooperations:
     $ref: './paths/campus_cooperation.yaml#/list'
   /campus-cooperations/{id}:
     $ref: './paths/campus_cooperation.yaml#/detail'
   /campus-cooperations/{id}/applications:
     $ref: './paths/campus_cooperation.yaml#/applications'
+  /campus-cooperations/{id}/feishu-sync:
+    $ref: './paths/campus_cooperation.yaml#/feishuSync'
   /campus-cooperation-applications/{id}:
     $ref: './paths/campus_cooperation.yaml#/review'
   /campus-cooperations/{id}/images:

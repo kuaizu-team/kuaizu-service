@@ -8,7 +8,11 @@
         },
         "url": {
           "type": "string",
-          "description": "When linksVisible=true this must be a non-empty HTTP/HTTPS URL without embedded credentials."
+          "description": "Every link must have a non-empty HTTP/HTTPS URL without embedded credentials, including approval-only links."
+        },
+        "public": {
+          "type": "boolean",
+          "description": "True: visible without application approval. False: visible after approval when applicationRequired=true. Required on content updates; legacy stored links inherit linksVisible when absent."
         }
       },
       "required": [
@@ -62,9 +66,24 @@
           "type": "string",
           "enum": [
             "available",
-            "closed"
+            "closed",
+            "ended"
           ],
-          "default": "available"
+          "default": "available",
+          "description": "available permits new claims; closed stops new claims only; ended withdraws all school publications and cannot be reopened."
+        },
+        "feishuWikiNodeToken": {
+          "type": "string",
+          "nullable": true,
+          "description": "Bound Wiki node token. Input also accepts an HTTPS feishu.cn /wiki/ URL. Omit or null to preserve the existing binding on update; an empty string clears it. Binding changes are rejected while a Base exists or synchronization is running/needs attention."
+        },
+        "template": {
+          "allOf": [
+            {
+              "$ref": "#/schemas/CooperationTemplate"
+            }
+          ],
+          "description": "Omit to preserve the existing template on update; null clears it. School editors explicitly copy the template into a draft."
         }
       },
       "required": [
@@ -93,8 +112,10 @@
           "type": "string",
           "enum": [
             "available",
-            "closed"
-          ]
+            "closed",
+            "ended"
+          ],
+          "description": "available permits new claims; closed stops new claims only; ended withdraws all school publications and cannot be reopened."
         },
         "createdBy": {
           "type": "integer",
@@ -113,13 +134,34 @@
         "updatedAt": {
           "type": "string",
           "format": "date-time"
+        },
+        "feishuWikiNodeToken": {
+          "type": "string",
+          "nullable": true,
+          "maxLength": 128,
+          "description": "Bound commercial order Wiki document node token."
+        },
+        "template": {
+          "$ref": "#/schemas/CooperationTemplate"
+        },
+        "claimedSchoolIds": {
+          "type": "array",
+          "nullable": true,
+          "items": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "description": "Claimed schools within the current administrator ownership scope; null when that scope is empty (including platform super admins)."
         }
       },
       "required": [
         "id",
         "name",
         "companyName",
-        "status"
+        "status",
+        "feishuWikiNodeToken",
+        "template",
+        "claimedSchoolIds"
       ]
     },
     "CooperationContentInput": {
@@ -136,13 +178,16 @@
         },
         "linksVisible": {
           "type": "boolean",
-          "default": false
+          "default": false,
+          "deprecated": true,
+          "description": "Legacy fallback for stored links without public. Use links[].public for per-link visibility."
         },
         "links": {
           "type": "array",
           "items": {
             "$ref": "#/schemas/CooperationLink"
-          }
+          },
+          "description": "Every submitted link requires title, a valid URL, and an explicit public boolean; old editors must refresh before saving."
         },
         "imagesVisible": {
           "type": "boolean",
@@ -177,6 +222,17 @@
         "published": {
           "type": "boolean",
           "default": false
+        },
+        "tags": {
+          "type": "array",
+          "uniqueItems": true,
+          "description": "Ordered names from the shared project_tag library. New names are inserted atomically when saving cooperation content. Omit to preserve existing tags; send an empty array to clear.",
+          "maxItems": 5,
+          "items": {
+            "type": "string",
+            "maxLength": 12,
+            "minLength": 1
+          }
         }
       },
       "required": [
@@ -237,7 +293,9 @@
         },
         "linksVisible": {
           "type": "boolean",
-          "default": false
+          "default": false,
+          "deprecated": true,
+          "description": "Legacy fallback for stored links without public. Use links[].public for per-link visibility."
         },
         "links": {
           "type": "array",
@@ -285,6 +343,39 @@
             "type": "string"
           },
           "description": "Resolved preview URLs in the same order as images; saving still uses registered object keys."
+        },
+        "tags": {
+          "type": "array",
+          "uniqueItems": true,
+          "description": "Ordered tag names from the shared project_tag library.",
+          "maxItems": 5,
+          "items": {
+            "type": "string",
+            "maxLength": 12,
+            "minLength": 1
+          }
+        },
+        "viewCount": {
+          "description": "Number of distinct authenticated users who successfully accessed this school-scoped cooperation detail. Repeated views do not increment it.",
+          "type": "integer",
+          "minimum": 0,
+          "format": "int64"
+        },
+        "orderStatus": {
+          "type": "string",
+          "enum": [
+            "available",
+            "closed",
+            "ended"
+          ]
+        },
+        "orderTemplate": {
+          "$ref": "#/schemas/CooperationTemplate"
+        },
+        "feishuWikiNodeToken": {
+          "type": "string",
+          "nullable": true,
+          "maxLength": 128
         }
       },
       "required": [
@@ -293,7 +384,12 @@
         "schoolId",
         "companyName",
         "schoolName",
-        "published"
+        "published",
+        "tags",
+        "viewCount",
+        "orderStatus",
+        "orderTemplate",
+        "feishuWikiNodeToken"
       ]
     },
     "CooperationPublicView": {
@@ -323,13 +419,15 @@
         },
         "linksVisible": {
           "type": "boolean",
-          "default": false
+          "default": false,
+          "description": "True when the filtered links array contains at least one link visible to the current user. Retained for client compatibility."
         },
         "links": {
           "type": "array",
           "items": {
             "$ref": "#/schemas/CooperationLink"
-          }
+          },
+          "description": "Only links accessible to the current user; approval-only titles and URLs are omitted until approval."
         },
         "imagesVisible": {
           "type": "boolean",
@@ -372,6 +470,23 @@
         "canApply": {
           "type": "boolean",
           "default": false
+        },
+        "tags": {
+          "type": "array",
+          "uniqueItems": true,
+          "description": "Ordered tag names from the shared project_tag library.",
+          "maxItems": 5,
+          "items": {
+            "type": "string",
+            "maxLength": 12,
+            "minLength": 1
+          }
+        },
+        "viewCount": {
+          "description": "Number of distinct authenticated users who successfully accessed this school-scoped cooperation detail. Repeated views do not increment it.",
+          "type": "integer",
+          "minimum": 0,
+          "format": "int64"
         }
       },
       "required": [
@@ -386,9 +501,11 @@
         "contactsVisible",
         "applicationRequired",
         "applicationStatus",
-        "canApply"
+        "canApply",
+        "tags",
+        "viewCount"
       ],
-      "description": "Contacts are omitted by the server until approval when applicationRequired=true. Links remain public according to their visibility switch. Internal admin IDs and card snapshots are never included."
+      "description": "In application mode the server filters links per public flag and current user approval, and omits contacts until approval. Normal mode returns all links. Contact and image visibility switches are unchanged. Internal admin IDs and card snapshots are never included."
     },
     "CooperationApplication": {
       "type": "object",
@@ -593,6 +710,119 @@
         "id",
         "type",
         "priority"
+      ]
+    },
+    "CooperationTemplate": {
+      "type": "object",
+      "nullable": true,
+      "description": "Optional school draft template. Title and introduction are validated like cooperation content. Publication and image visibility must be false, imageTitle must be null/omitted and images empty/omitted. No automatic publication or copying occurs.",
+      "properties": {
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 20
+        },
+        "introduction": {
+          "type": "string",
+          "minLength": 1
+        },
+        "tags": {
+          "type": "array",
+          "uniqueItems": true,
+          "description": "Ordered tag names copied into the school draft. Saving a template alone does not insert names into the shared tag library.",
+          "maxItems": 5,
+          "items": {
+            "type": "string",
+            "maxLength": 12,
+            "minLength": 1
+          }
+        },
+        "linksVisible": {
+          "type": "boolean",
+          "default": false,
+          "deprecated": true,
+          "description": "Legacy fallback for stored links without public. Use links[].public for per-link visibility."
+        },
+        "links": {
+          "type": "array",
+          "items": {
+            "$ref": "#/schemas/CooperationLink"
+          },
+          "description": "Every submitted link requires title, a valid URL, and an explicit public boolean; old editors must refresh before saving."
+        },
+        "contactsVisible": {
+          "type": "boolean",
+          "default": true
+        },
+        "contacts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/schemas/CooperationContact"
+          }
+        },
+        "applicationRequired": {
+          "type": "boolean",
+          "default": false
+        }
+      },
+      "required": [
+        "title",
+        "introduction"
+      ]
+    },
+    "CooperationFeishuSync": {
+      "type": "object",
+      "description": "School-authorized cooperation export status. Remote app/table tokens and record mappings are never returned.",
+      "properties": {
+        "cooperationId": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 1
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "idle",
+            "running",
+            "succeeded",
+            "failed",
+            "needs_attention"
+          ]
+        },
+        "message": {
+          "type": "string"
+        },
+        "syncedAt": {
+          "type": "string",
+          "format": "date-time",
+          "nullable": true
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Last persisted target update; idle without a target returns the Go zero timestamp."
+        },
+        "wikiUrl": {
+          "type": "string",
+          "format": "uri",
+          "description": "Present when the order has a bound Wiki document."
+        },
+        "baseUrl": {
+          "type": "string",
+          "format": "uri",
+          "description": "Present when a remote school Base is mapped."
+        },
+        "retryable": {
+          "type": "boolean",
+          "description": "Only present as true for needs_attention when all unresolved record creates can be safely replayed. failed is retryable after correcting the cause; running cannot start a second run."
+        }
+      },
+      "required": [
+        "cooperationId",
+        "status",
+        "message",
+        "syncedAt",
+        "updatedAt"
       ]
     }
   }

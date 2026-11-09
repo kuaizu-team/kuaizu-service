@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"log"
 	"net/url"
 	"strings"
@@ -119,6 +120,27 @@ func (s *EventService) ListEventTimeline(ctx context.Context, id int) ([]models.
 }
 
 func validateEvent(event *models.Event) error {
+	if event.TagsJSON != nil {
+		var tags []string
+		if err := json.Unmarshal([]byte(*event.TagsJSON), &tags); err != nil {
+			return ErrBadRequest("tags must be an array of strings")
+		}
+		if len(tags) > 3 {
+			return ErrBadRequest("赛事特色标签最多 3 个")
+		}
+		if err := validateProjectTags(&tags); err != nil {
+			return err
+		}
+		if tags == nil {
+			tags = []string{}
+		}
+		encoded, err := json.Marshal(tags)
+		if err != nil {
+			return err
+		}
+		value := string(encoded)
+		event.TagsJSON = &value
+	}
 	event.Name = strings.TrimSpace(event.Name)
 	if event.Name == "" {
 		return ErrBadRequest("event name is required")

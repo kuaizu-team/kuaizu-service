@@ -40,6 +40,8 @@ func TestCooperationDetailHTTPDoesNotLeakPendingContact(t *testing.T) {
 	m.ExpectQuery(`(?s)SELECT c.id.*WHERE c.id=\?`).WithArgs(int64(9)).WillReturnRows(sqlmock.NewRows([]string{"id", "school_id", "published", "application_required", "contacts_visible", "contacts", "links_visible", "links"}).AddRow(9, 42, true, true, true, `[{"type":"wechat","value":"private-contact"}]`, true, `[{"title":"公开链接","url":"https://example.org"}]`))
 	m.ExpectQuery(`SELECT EXISTS`).WithArgs(42).WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(true))
 	m.ExpectQuery(`(?s)SELECT id,cooperation_id.*WHERE cooperation_id=\? AND user_id=\?`).WithArgs(int64(9), 99).WillReturnRows(sqlmock.NewRows([]string{"status"}).AddRow("pending"))
+	m.ExpectExec("INSERT IGNORE INTO campus_cooperation_view").WithArgs(int64(9), 99).WillReturnResult(sqlmock.NewResult(0, 1))
+	m.ExpectQuery("SELECT COUNT.*FROM campus_cooperation_view").WithArgs(int64(9)).WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
 	req := httptest.NewRequest(http.MethodGet, "/api/v2/campus-cooperations/9?userId=123", nil)
 	rec := httptest.NewRecorder()
 	ctx := echo.New().NewContext(req, rec)
@@ -116,5 +118,95 @@ func TestCooperationInvalidParametersStopBeforeDatabaseAccess(t *testing.T) {
 		if err != nil || rec.Code != 400 {
 			t.Fatalf("%s: status=%d err=%v", url, rec.Code, err)
 		}
+	}
+}
+
+func TestCooperationDetailHTTPFiltersEachLinkByCurrentUserApproval(t *testing.T) {
+	for _, status := range []string{"", "pending", "rejected", "approved"} {
+		t.Run(status, func(t *testing.T) {
+			raw, m, err := sqlmock.New()
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer raw.Close()
+			school := 42
+			repo := repository.New(sqlx.NewDb(raw, "sqlmock"))
+			repo.User = cooperationUserStub{user: &models.User{ID: 99, SchoolID: &school}}
+			server := NewServer(repo, &service.Services{CampusCooperation: service.NewCampusCooperationService(repo, nil, nil)})
+			m.ExpectQuery("(?s)SELECT c.id.*WHERE c.id=\\?").WithArgs(int64(9)).
+				WillReturnRows(sqlmock.NewRows([]string{"id", "school_id", "published", "application_required", "links_visible", "links"}).
+					AddRow(9, 42, true, true, true, `[{"title":"公开介绍","url":"https://example.org/public","public":true},{"title":"专属入口","url":"https://example.org/approval-only","public":false}]`))
+			m.ExpectQuery("SELECT EXISTS").WithArgs(42).WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(true))
+			rows := sqlmock.NewRows([]string{"status"})
+			if status != "" {
+				rows.AddRow(status)
+			}
+			m.ExpectQuery("(?s)SELECT id,cooperation_id.*WHERE cooperation_id=\\? AND user_id=\\?").WithArgs(int64(9), 99).WillReturnRows(rows)
+			m.ExpectExec("INSERT IGNORE INTO campus_cooperation_view").WithArgs(int64(9), 99).WillReturnResult(sqlmock.NewResult(0, 1))
+			m.ExpectQuery("SELECT COUNT.*FROM campus_cooperation_view").WithArgs(int64(9)).WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(4))
+			rec := httptest.NewRecorder()
+			ctx := echo.New().NewContext(httptest.NewRequest(http.MethodGet, "/api/v2/campus-cooperations/9?applicationStatus=approved&userId=123", nil), rec)
+			ctx.Set("userID", 99)
+			ctx.SetParamNames("id")
+			ctx.SetParamValues("9")
+			if err := server.GetCampusCooperation(ctx); err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(rec.Body.String(), `"viewCount":4`) || !strings.Contains(rec.Body.String(), `"tags":[]`) {
+				t.Fatalf("missing card metadata: %s", rec.Body)
+			}
+			if rec.Code != 200 || !strings.Contains(rec.Body.String(), "公开介绍") {
+				t.Fatalf("public link missing: %s", rec.Body)
+			}
+			if strings.Contains(rec.Body.String(), "approval-only") != (status == "approved") || strings.Contains(rec.Body.String(), "专属入口") != (status == "approved") {
+				t.Fatalf("incorrect per-user projection: %s", rec.Body)
+			}
+			if err := m.ExpectationsWereMet(); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
+func TestCooperationUnauthorizedDetailsDoNotRecordReaders(t *testing.T) {
+	for _, mode := range []string{"cross-school", "unpublished", "no-team"} {
+		t.Run(mode, func(t *testing.T) {
+			raw, m, err := sqlmock.New()
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer raw.Close()
+			school, resourceSchool, published := 42, 42, true
+			if mode == "cross-school" {
+				resourceSchool = 43
+			}
+			if mode == "unpublished" {
+				published = false
+			}
+			repo := repository.New(sqlx.NewDb(raw, "sqlmock"))
+			repo.User = cooperationUserStub{user: &models.User{ID: 99, SchoolID: &school}}
+			server := NewServer(repo, &service.Services{CampusCooperation: service.NewCampusCooperationService(repo, nil, nil)})
+			m.ExpectQuery("(?s)SELECT c.id.*WHERE c.id=\\?").WithArgs(int64(9)).
+				WillReturnRows(sqlmock.NewRows([]string{"id", "school_id", "published"}).AddRow(9, resourceSchool, published))
+			if mode == "no-team" {
+				m.ExpectQuery("SELECT EXISTS").WithArgs(42).WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(false))
+			}
+			taskForbidden := m.ExpectExec("INSERT IGNORE INTO campus_cooperation_view")
+			taskForbidden.WillReturnError(fmt.Errorf("forbidden view write"))
+			rec := httptest.NewRecorder()
+			ctx := echo.New().NewContext(httptest.NewRequest(http.MethodGet, "/campus-cooperations/9", nil), rec)
+			ctx.Set("userID", 99)
+			ctx.SetParamNames("id")
+			ctx.SetParamValues("9")
+			if err := server.GetCampusCooperation(ctx); err != nil {
+				t.Fatal(err)
+			}
+			if rec.Code != 404 {
+				t.Fatalf("access unexpectedly succeeded: %d %s", rec.Code, rec.Body)
+			}
+			if err := m.ExpectationsWereMet(); err == nil || !strings.Contains(err.Error(), "INSERT IGNORE INTO campus_cooperation_view") {
+				t.Fatalf("unauthorized request attempted a view write: %v", err)
+			}
+		})
 	}
 }
