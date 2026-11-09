@@ -60,6 +60,8 @@ paths:
     $ref: './paths/campus_cooperation.yaml#/detail'
   /campus-cooperations/{id}/applications:
     $ref: './paths/campus_cooperation.yaml#/applications'
+  /campus-cooperations/{id}/feishu-sync:
+    $ref: './paths/campus_cooperation.yaml#/feishuSync'
   /campus-cooperation-applications/{id}:
     $ref: './paths/campus_cooperation.yaml#/review'
   /campus-cooperations/{id}/images:

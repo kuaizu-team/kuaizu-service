@@ -267,6 +267,24 @@ func (s *Service) run(cooperationID int64, adminID int) {
 
 var errNeedsAttention = errors.New("remote operation result needs reconciliation")
 
+// Only confirmed authorization/rate-limit rejections are safe to retry without
+// a remote ID. A generic 4xx can still be an internal error (e.g. 1255001).
+// Keep this local to cooperation creation; user sync and record replay are unchanged.
+func creationError(err error) error {
+	var apiErr *feishusync.APIError
+	if errors.As(err, &apiErr) && apiErr.Code != 0 &&
+		(apiErr.Status >= 200 && apiErr.Status < 300 || apiErr.Status >= 400 && apiErr.Status < 500 && apiErr.Status != http.StatusRequestTimeout) {
+		if apiErr.Status == http.StatusUnauthorized || apiErr.Status == http.StatusForbidden || apiErr.Status == http.StatusTooManyRequests {
+			return err
+		}
+		switch apiErr.Code {
+		case 131006, 1254302, 99991672: // Wiki permission, Base permission, missing API scope.
+			return err
+		}
+	}
+	return fmt.Errorf("%w: %w", errNeedsAttention, err)
+}
+
 func (s *Service) sync(ctx context.Context, cooperationID int64, adminID int) error {
 	c, err := s.cooperation.AdminDetail(ctx, adminID, cooperationID, false)
 	if err != nil {
@@ -293,7 +311,7 @@ func (s *Service) sync(ctx context.Context, cooperationID int64, adminID int) er
 		title := fmt.Sprintf("%s · %s · 合作申请", c.CompanyName, c.SchoolName)
 		nodeToken, appToken, createErr := s.createWikiBase(ctx, *c.FeishuWikiNodeToken, title)
 		if createErr != nil {
-			return errNeedsAttention
+			return creationError(createErr)
 		}
 		if err = s.replaceTargetBase(cooperationID, nodeToken, appToken); err != nil {
 			return errNeedsAttention
@@ -309,7 +327,7 @@ func (s *Service) sync(ctx context.Context, cooperationID int64, adminID int) er
 		path := "/open-apis/bitable/v1/apps/" + url.PathEscape(*t.AppToken) + "/tables"
 		body := map[string]any{"table": map[string]any{"name": "合作申请", "default_view_name": "合作申请", "fields": fields()}}
 		if err = s.client.Call(ctx, http.MethodPost, path, body, &out); err != nil {
-			return errNeedsAttention
+			return creationError(err)
 		}
 		if out.TableID == "" {
 			return errNeedsAttention

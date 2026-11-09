@@ -105,7 +105,8 @@
             "type": "string",
             "enum": [
               "available",
-              "closed"
+              "closed",
+              "ended"
             ]
           }
         }
@@ -980,6 +981,138 @@
         },
         "403": {
           "description": "Role or account forbidden"
+        }
+      }
+    }
+  },
+  "feishuSync": {
+    "get": {
+      "tags": [
+        "CampusCooperations"
+      ],
+      "operationId": "getCooperationFeishuSync",
+      "summary": "Read cooperation Feishu synchronization status",
+      "description": "Uses the same live administrator and school authorization as the cooperation review. A running target older than 21 minutes is marked needs_attention; unresolved record writes are checked before exposing retryable.",
+      "security": [
+        {
+          "bearerAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Current synchronization target",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "code": {
+                    "type": "integer"
+                  },
+                  "message": {
+                    "type": "string"
+                  },
+                  "data": {
+                    "$ref": "../../common/campus_cooperation.yaml#/schemas/CooperationFeishuSync"
+                  }
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data"
+                ]
+              }
+            }
+          }
+        },
+        "400": {
+          "description": "Invalid ID, synchronization disabled/unconfigured, missing order binding, worker busy or unsafe retry"
+        },
+        "401": {
+          "description": "Authentication required"
+        },
+        "403": {
+          "description": "Role/account forbidden"
+        },
+        "404": {
+          "description": "Cooperation absent or outside the current school scope"
+        }
+      }
+    },
+    "post": {
+      "tags": [
+        "CampusCooperations"
+      ],
+      "operationId": "startCooperationFeishuSync",
+      "summary": "Start or retry cooperation application export to Feishu",
+      "description": "No request body. Platform super admins, current school owners and bound school administrators can export accessible cooperation applications. Starts a background run (20 minute timeout), returning current status. Only one cooperation export runs per process; an existing running target is not launched again. Confirmed permission/rate-limit creation rejections produce failed and allow retry after correction; uncertain remote creation or mapping persistence failures require reconciliation. No application review or notification is performed.",
+      "security": [
+        {
+          "bearerAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Current synchronization target",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "code": {
+                    "type": "integer"
+                  },
+                  "message": {
+                    "type": "string"
+                  },
+                  "data": {
+                    "$ref": "../../common/campus_cooperation.yaml#/schemas/CooperationFeishuSync"
+                  }
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data"
+                ]
+              }
+            }
+          }
+        },
+        "400": {
+          "description": "Invalid ID, synchronization disabled/unconfigured, missing order binding, worker busy or unsafe retry"
+        },
+        "401": {
+          "description": "Authentication required"
+        },
+        "403": {
+          "description": "Role/account forbidden"
+        },
+        "404": {
+          "description": "Cooperation absent or outside the current school scope"
         }
       }
     }
