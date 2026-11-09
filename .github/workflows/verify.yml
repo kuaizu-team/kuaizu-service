@@ -9,6 +9,9 @@ on:
       image_id:
         description: Immutable ID of the verified Docker image
         value: ${{ jobs.verify.outputs.image_id }}
+      archive_sha256:
+        description: SHA-256 of the complete verified image archive
+        value: ${{ jobs.verify.outputs.archive_sha256 }}
 
 permissions:
   contents: read
@@ -20,6 +23,7 @@ jobs:
     outputs:
       image_version: ${{ steps.version.outputs.image_version }}
       image_id: ${{ steps.image.outputs.image_id }}
+      archive_sha256: ${{ steps.package.outputs.archive_sha256 }}
     env:
       GOTOOLCHAIN: local
       CGO_ENABLED: '0'
@@ -106,12 +110,14 @@ jobs:
             > bin/release/release-metadata.json
 
       - name: Package verified image
+        id: package
         env:
           VERSION: ${{ steps.version.outputs.image_version }}
         run: |
           docker save "kuaizu-server:$VERSION" | gzip > bin/release/kuaizu-server.tar.gz
           cd bin/release
           sha256sum kuaizu-server.tar.gz > kuaizu-server.tar.gz.sha256
+          echo "archive_sha256=$(cut -d ' ' -f 1 kuaizu-server.tar.gz.sha256)" >> "$GITHUB_OUTPUT"
           rm kuaizu-server kuaizu-admin
 
       - name: Upload verified release

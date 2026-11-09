@@ -74,8 +74,10 @@ jobs:
         working-directory: verified-release
         env:
           EXPECTED_IMAGE_ID: ${{ needs.verify.outputs.image_id }}
+          EXPECTED_ARCHIVE_SHA256: ${{ needs.verify.outputs.archive_sha256 }}
         run: |
           sha256sum -c kuaizu-server.tar.gz.sha256
+          printf '%s  %s\n' "$EXPECTED_ARCHIVE_SHA256" kuaizu-server.tar.gz | sha256sum -c -
           test "$(jq -r .commit release-metadata.json)" = "$GITHUB_SHA"
           test "$(jq -r .version release-metadata.json)" = "$VERSION"
           test "$(jq -r .image_id release-metadata.json)" = "$EXPECTED_IMAGE_ID"
@@ -182,9 +184,28 @@ jobs:
             }
 
             sha256sum -c kuaizu-server.tar.gz.sha256
+            printf '%s  %s\n' '${{ needs.verify.outputs.archive_sha256 }}' kuaizu-server.tar.gz | sha256sum -c -
             gunzip -c kuaizu-server.tar.gz | docker load
             export VERSION=${{ env.VERSION }}
-            test "$(docker image inspect -f '{{.Id}}' "kuaizu-server:$VERSION")" = '${{ needs.verify.outputs.image_id }}'
+            # Image IDs are local to the Docker image store: containerd may return
+            # an index digest while the classic store returns a config digest.
+            # The trusted job-output checksum binds the entire loaded archive to
+            # the verified release independently of its bundled checksum file.
+            loaded_image_id="$(docker image inspect -f '{{.Id}}' "kuaizu-server:$VERSION")"
+            echo "Verified runner image ID: ${{ needs.verify.outputs.image_id }}; loaded server image ID: $loaded_image_id"
+            test "$(docker image inspect -f '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "$loaded_image_id")" = '${{ github.sha }}' || fail_with_logs "Loaded image revision does not match the release"
+            test "$(docker image inspect -f '{{ index .Config.Labels "org.opencontainers.image.version" }}' "$loaded_image_id")" = "$VERSION" || fail_with_logs "Loaded image version does not match the release"
+
+            # Check audited binaries before stopping the current services. This
+            # container is never started and receives no production environment.
+            probe="$(docker create "$loaded_image_id")"
+            trap 'docker rm "$probe" >/dev/null' EXIT
+            mkdir -p .release-preflight
+            docker cp "$probe:/app/kuaizu-server" .release-preflight/kuaizu-server
+            docker cp "$probe:/app/kuaizu-admin" .release-preflight/kuaizu-admin
+            (cd .release-preflight && sha256sum -c ../binaries.sha256) || fail_with_logs "Loaded image binaries do not match the audited release"
+            docker rm "$probe" >/dev/null
+            trap - EXIT
 
             ensure_compose_owned_or_absent kuaizu-api
             ensure_compose_owned_or_absent kuaizu-console
@@ -202,14 +223,15 @@ jobs:
             docker cp kuaizu-console:/app/kuaizu-admin .release-runtime/kuaizu-admin
             (cd .release-runtime && sha256sum -c ../binaries.sha256)
             for name in kuaizu-api kuaizu-console; do
-              test "$(docker inspect -f '{{.Image}}' "$name")" = '${{ needs.verify.outputs.image_id }}'
+              test "$(docker inspect -f '{{.Image}}' "$name")" = "$loaded_image_id" || fail_with_logs "${name} is not running the loaded release image"
             done
             cp release-metadata.json .release-runtime/
+            printf '%s\n' "$loaded_image_id" > .release-runtime/server-image-id.txt
 
             rm kuaizu-server.tar.gz
 
             # Compose defaults to latest; advance it only after every release check passes.
-            docker tag '${{ needs.verify.outputs.image_id }}' kuaizu-server:latest
+            docker tag "$loaded_image_id" kuaizu-server:latest
           EOF
 
       # Keep the previous tagged images and restricted backups for recovery.

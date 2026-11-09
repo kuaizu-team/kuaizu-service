@@ -275,10 +275,16 @@ alive. Any `5xx` response should fail the deploy.
 After a manual deployment or rollback, update `latest` only after both health
 checks pass and both running image IDs and binary checksums have been verified
 against the selected release's evidence (or its recorded rollback image ID).
-Using the exact image ID prevents accidentally selecting a different local tag:
+Use the server-local image ID, not the verification runner's ID in release metadata.
+Containerd-backed stores can identify the same release by an index digest while
+classic stores identify it by a config digest. Verify the selected release's
+archive checksum, revision/version labels and audited binaries before restarting.
+Actions checks the binaries in a stopped, environment-free probe container before
+Compose is stopped, and records the loaded ID in `.release-runtime/server-image-id.txt`.
+Using that local ID prevents accidentally selecting a different local tag:
 
 ```bash
-expected_image_id=<verified-image-id>
+expected_image_id=<verified-server-local-image-id>
 test "$(docker inspect -f '{{.Image}}' kuaizu-api)" = "$expected_image_id" && \
 test "$(docker inspect -f '{{.Image}}' kuaizu-console)" = "$expected_image_id" && \
 docker tag "$expected_image_id" kuaizu-server:latest
@@ -287,6 +293,27 @@ docker tag "$expected_image_id" kuaizu-server:latest
 This keeps a later Compose recreation with no version override on that selected
 release. Actions performs the checks and alias update automatically. Keep the
 versioned and rollback image tags for explicit recovery.
+
+### 2026-11-10: image identity across Docker stores
+
+Run 42651386807 loaded `build-main-6b93faecc809` successfully, then exited at the
+first image-ID comparison, before `compose down`, startup or health checks.
+The build log identifies `sha256:7b3bf2ca...` (the expected ID) as the manifest-list
+digest, distinct from the image config `sha256:fadfd673...`. The failed workflow
+did not print the server's actual ID, so its Docker storage backend cannot be
+confirmed from this log alone. Comparing store-dependent IDs across machines was
+an invalid assumption and hid the useful diagnostic values.
+
+The verification job now independently passes the full archive's SHA-256 through
+its reusable-workflow output. Both the deployment runner and the server check
+that digest before loading, so a replacement archive cannot pass merely by
+replacing its bundled checksum file. The deployment also verifies the loaded image's
+commit/version labels plus both audited binary hashes before stopping services.
+After startup it verifies both binaries again and compares container image IDs
+against the server-local loaded ID. Only then is `latest` advanced to that local
+ID. A mismatch still blocks deployment; the cross-machine ID comparison is not
+used as a content-integrity check. No application routes, database migrations,
+credentials, business logic or automatic rollback behavior are changed.
 
 ## Rollback
 
