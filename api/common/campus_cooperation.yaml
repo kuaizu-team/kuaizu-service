@@ -286,6 +286,19 @@
         "orderName": {
           "type": "string"
         },
+        "orderDescription": {
+          "type": "string",
+          "nullable": true,
+          "description": "Commercial order details available from the scoped claimed row."
+        },
+        "orderOriginSchoolId": {
+          "type": "integer",
+          "nullable": true
+        },
+        "orderPromotionStatus": {
+          "type": "string",
+          "description": "Source order promotion state: local, submitted or national. Used to manage school-created orders from the existing claim list."
+        },
         "companyName": {
           "type": "string"
         },

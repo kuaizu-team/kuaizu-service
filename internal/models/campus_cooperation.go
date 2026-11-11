@@ -57,38 +57,41 @@ type CooperationContact struct {
 }
 
 type CampusCooperation struct {
-	ImageURLs           []string             `db:"-" json:"imageUrls"`
-	ID                  int64                `db:"id" json:"id"`
-	CommercialOrderID   int64                `db:"commercial_order_id" json:"commercialOrderId"`
-	SchoolID            int                  `db:"school_id" json:"schoolId"`
-	ClaimedBy           *int                 `db:"claimed_by" json:"claimedBy"`
-	ClaimedAt           time.Time            `db:"claimed_at" json:"claimedAt"`
-	Title               *string              `db:"title" json:"title"`
-	Introduction        *string              `db:"introduction" json:"introduction"`
-	TagsJSON            *string              `db:"tags" json:"-"`
-	Tags                []string             `db:"-" json:"tags"`
-	ViewCount           int64                `db:"view_count" json:"viewCount"`
-	LinksVisible        bool                 `db:"links_visible" json:"linksVisible"`
-	LinksJSON           *string              `db:"links" json:"-"`
-	ImagesVisible       bool                 `db:"images_visible" json:"imagesVisible"`
-	ImageTitle          *string              `db:"image_title" json:"imageTitle"`
-	ImagesJSON          *string              `db:"images" json:"-"`
-	ContactsVisible     bool                 `db:"contacts_visible" json:"contactsVisible"`
-	ContactsJSON        *string              `db:"contacts" json:"-"`
-	ApplicationRequired bool                 `db:"application_required" json:"applicationRequired"`
-	Published           bool                 `db:"published" json:"published"`
-	UpdatedBy           *int                 `db:"updated_by" json:"updatedBy"`
-	UpdatedAt           time.Time            `db:"updated_at" json:"updatedAt"`
-	OrderName           string               `db:"order_name" json:"orderName"`
-	OrderStatus         string               `db:"order_status" json:"orderStatus"`
-	OrderTemplateJSON   *string              `db:"order_template" json:"-"`
-	FeishuWikiNodeToken *string              `db:"feishu_wiki_node_token" json:"feishuWikiNodeToken"`
-	OrderTemplate       json.RawMessage      `db:"-" json:"orderTemplate"`
-	CompanyName         string               `db:"company_name" json:"companyName"`
-	SchoolName          string               `db:"school_name" json:"schoolName"`
-	Links               []CooperationLink    `db:"-" json:"links"`
-	Images              []string             `db:"-" json:"images"`
-	Contacts            []CooperationContact `db:"-" json:"contacts"`
+	OrderDescription     *string              `db:"order_description" json:"orderDescription"`
+	OrderOriginSchoolID  *int                 `db:"order_origin_school_id" json:"orderOriginSchoolId"`
+	OrderPromotionStatus string               `db:"order_promotion_status" json:"orderPromotionStatus"`
+	ImageURLs            []string             `db:"-" json:"imageUrls"`
+	ID                   int64                `db:"id" json:"id"`
+	CommercialOrderID    int64                `db:"commercial_order_id" json:"commercialOrderId"`
+	SchoolID             int                  `db:"school_id" json:"schoolId"`
+	ClaimedBy            *int                 `db:"claimed_by" json:"claimedBy"`
+	ClaimedAt            time.Time            `db:"claimed_at" json:"claimedAt"`
+	Title                *string              `db:"title" json:"title"`
+	Introduction         *string              `db:"introduction" json:"introduction"`
+	TagsJSON             *string              `db:"tags" json:"-"`
+	Tags                 []string             `db:"-" json:"tags"`
+	ViewCount            int64                `db:"view_count" json:"viewCount"`
+	LinksVisible         bool                 `db:"links_visible" json:"linksVisible"`
+	LinksJSON            *string              `db:"links" json:"-"`
+	ImagesVisible        bool                 `db:"images_visible" json:"imagesVisible"`
+	ImageTitle           *string              `db:"image_title" json:"imageTitle"`
+	ImagesJSON           *string              `db:"images" json:"-"`
+	ContactsVisible      bool                 `db:"contacts_visible" json:"contactsVisible"`
+	ContactsJSON         *string              `db:"contacts" json:"-"`
+	ApplicationRequired  bool                 `db:"application_required" json:"applicationRequired"`
+	Published            bool                 `db:"published" json:"published"`
+	UpdatedBy            *int                 `db:"updated_by" json:"updatedBy"`
+	UpdatedAt            time.Time            `db:"updated_at" json:"updatedAt"`
+	OrderName            string               `db:"order_name" json:"orderName"`
+	OrderStatus          string               `db:"order_status" json:"orderStatus"`
+	OrderTemplateJSON    *string              `db:"order_template" json:"-"`
+	FeishuWikiNodeToken  *string              `db:"feishu_wiki_node_token" json:"feishuWikiNodeToken"`
+	OrderTemplate        json.RawMessage      `db:"-" json:"orderTemplate"`
+	CompanyName          string               `db:"company_name" json:"companyName"`
+	SchoolName           string               `db:"school_name" json:"schoolName"`
+	Links                []CooperationLink    `db:"-" json:"links"`
+	Images               []string             `db:"-" json:"images"`
+	Contacts             []CooperationContact `db:"-" json:"contacts"`
 }
 
 func (c *CampusCooperation) DecodeContent() error {
