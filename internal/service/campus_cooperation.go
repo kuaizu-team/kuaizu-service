@@ -35,6 +35,8 @@ func NewCampusCooperationService(repo *repository.Repository, message *MessageSe
 }
 
 type CommercialOrderInput struct {
+	SchoolID            int             `json:"schoolId"`
+	Action              string          `json:"action"`
 	Name                string          `json:"name"`
 	CompanyName         string          `json:"companyName"`
 	Description         *string         `json:"description"`
@@ -179,7 +181,7 @@ func (s *CampusCooperationService) adminScope(ctx context.Context, q sqlx.Querye
 	}
 	return scope, err
 }
-func (s *CampusCooperationService) AdminOrders(ctx context.Context, adminID, page, size int, status string) ([]models.CommercialOrder, int64, error) {
+func (s *CampusCooperationService) AdminOrders(ctx context.Context, adminID, page, size int, status string, views ...string) ([]models.CommercialOrder, int64, error) {
 	scope, err := s.adminScope(ctx, s.repo.DB(), adminID, false)
 	if err != nil {
 		return nil, 0, err
@@ -190,9 +192,16 @@ func (s *CampusCooperationService) AdminOrders(ctx context.Context, adminID, pag
 	if status != "" && status != "available" && status != "closed" && status != "ended" {
 		return nil, 0, ErrBadRequest("商单状态无效")
 	}
-	return s.repo.CampusCooperation.ListOrders(ctx, page, size, status, scope.SchoolIDs)
+	ids := scope.SchoolIDs
+	if scope.Role == models.AdminRoleSuperAdmin {
+		ids = nil
+	}
+	if len(views) > 0 && views[0] != "" && views[0] != "owned" && views[0] != "pool" {
+		return nil, 0, ErrBadRequest("商单视图无效")
+	}
+	return s.repo.CampusCooperation.ListOrders(ctx, page, size, status, ids, views...)
 }
-func (s *CampusCooperationService) AdminList(ctx context.Context, adminID, page, size int) ([]models.CampusCooperation, int64, error) {
+func (s *CampusCooperationService) AdminList(ctx context.Context, adminID, page, size int, orderIDs ...int64) ([]models.CampusCooperation, int64, error) {
 	scope, err := s.adminScope(ctx, s.repo.DB(), adminID, false)
 	if err != nil {
 		return nil, 0, err
@@ -201,7 +210,7 @@ func (s *CampusCooperationService) AdminList(ctx context.Context, adminID, page,
 	if scope.Role == models.AdminRoleSuperAdmin {
 		ids = nil
 	}
-	return s.repo.CampusCooperation.List(ctx, ids, false, page, size)
+	return s.repo.CampusCooperation.List(ctx, ids, false, page, size, orderIDs...)
 }
 func (s *CampusCooperationService) AdminDetail(ctx context.Context, adminID int, id int64, edit bool) (*models.CampusCooperation, error) {
 	scope, err := s.adminScope(ctx, s.repo.DB(), adminID, false)
@@ -367,6 +376,9 @@ func (s *CampusCooperationService) MyApplications(ctx context.Context, userID, p
 }
 
 func (s *CampusCooperationService) SaveOrder(ctx context.Context, adminID int, id int64, in CommercialOrderInput) (int64, error) {
+	if in.Action != "" {
+		return s.changeOrderPromotion(ctx, adminID, id, in.Action)
+	}
 	if err := in.Validate(); err != nil {
 		return 0, err
 	}
@@ -378,6 +390,9 @@ func (s *CampusCooperationService) SaveOrder(ctx context.Context, adminID int, i
 	scope, err := s.adminScope(ctx, tx, adminID, true)
 	if err != nil {
 		return 0, err
+	}
+	if scope.Role == models.AdminRoleSchoolSuperAdmin {
+		return s.saveSchoolOrder(ctx, tx, scope, adminID, id, in)
 	}
 	if scope.Role != models.AdminRoleSuperAdmin {
 		return 0, ErrForbidden("只有平台超管可以录入或更新商单")
@@ -435,7 +450,7 @@ func (s *CampusCooperationService) SaveOrder(ctx context.Context, adminID int, i
 		if in.FeishuWikiNodeToken != nil && *in.FeishuWikiNodeToken == "" {
 			in.FeishuWikiNodeToken = nil
 		}
-		if _, err := tx.ExecContext(ctx, `UPDATE commercial_order SET name=?,company_name=?,description=?,feishu_wiki_node_token=?,status=?,content_template=?,updated_by=? WHERE id=?`, in.Name, in.CompanyName, in.Description, in.FeishuWikiNodeToken, in.Status, templateValue, adminID, id); err != nil {
+		if _, err := tx.ExecContext(ctx, `UPDATE commercial_order SET name=?,company_name=?,description=?,feishu_wiki_node_token=?,status=?,content_template=?,updated_by=?,promotion_status=IF(origin_school_id IS NOT NULL AND promotion_status='submitted','local',promotion_status) WHERE id=?`, in.Name, in.CompanyName, in.Description, in.FeishuWikiNodeToken, in.Status, templateValue, adminID, id); err != nil {
 			return 0, err
 		}
 		if in.Status == "ended" && existing.Status != "ended" {
@@ -459,9 +474,16 @@ func (s *CampusCooperationService) Claim(ctx context.Context, adminID, schoolID 
 	if scope.Role != models.AdminRoleSchoolSuperAdmin || !scope.CanAccess(schoolID, true) {
 		return nil, ErrForbidden("只有该校当前唯一负责人可以接单")
 	}
-	var status string
-	if err := tx.GetContext(ctx, &status, `SELECT status FROM commercial_order WHERE id=? FOR UPDATE`, orderID); err != nil {
+	var order struct {
+		Status    string `db:"status"`
+		Origin    *int   `db:"origin_school_id"`
+		Promotion string `db:"promotion_status"`
+	}
+	if err := tx.GetContext(ctx, &order, `SELECT status,origin_school_id,promotion_status FROM commercial_order WHERE id=? FOR UPDATE`, orderID); err != nil {
 		return nil, cooperationError(err)
+	}
+	if order.Origin != nil && *order.Origin != schoolID && order.Promotion != "national" {
+		return nil, ErrNotFound("商单不存在或尚未向其他学校开放")
 	}
 	var id int64
 	err = tx.GetContext(ctx, &id, `SELECT id FROM campus_cooperation WHERE commercial_order_id=? AND school_id=?`, orderID, schoolID)
@@ -469,7 +491,7 @@ func (s *CampusCooperationService) Claim(ctx context.Context, adminID, schoolID 
 		return nil, err
 	}
 	if errors.Is(err, sql.ErrNoRows) {
-		if status != "available" {
+		if order.Status != "available" {
 			return nil, ErrBadRequest("该商单已停止接单")
 		}
 		result, err := tx.ExecContext(ctx, `INSERT INTO campus_cooperation(commercial_order_id,school_id,claimed_by) VALUES(?,?,?)`, orderID, schoolID, adminID)

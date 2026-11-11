@@ -15,6 +15,10 @@ const (
 )
 
 type CommercialOrder struct {
+	OriginSchoolID      *int            `db:"origin_school_id" json:"originSchoolId"`
+	OriginSchoolName    *string         `db:"origin_school_name" json:"originSchoolName"`
+	PromotionStatus     string          `db:"promotion_status" json:"promotionStatus"`
+	ClaimCount          int             `db:"claim_count" json:"claimCount"`
 	ClaimedSchoolIDs    []int           `db:"-" json:"claimedSchoolIds"`
 	Template            json.RawMessage `db:"-" json:"template"`
 	TemplateJSON        *string         `db:"content_template" json:"-"`

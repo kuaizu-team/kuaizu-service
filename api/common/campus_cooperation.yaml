@@ -84,6 +84,10 @@
             }
           ],
           "description": "Omit to preserve the existing template on update; null clears it. School editors explicitly copy the template into a draft."
+        },
+        "schoolId": {
+          "type": "integer",
+          "description": "Required for school-owner creation; must be a currently owned school. Automatically creates its local cooperation draft."
         }
       },
       "required": [
@@ -152,6 +156,21 @@
             "minimum": 1
           },
           "description": "Claimed schools within the current administrator ownership scope; null when that scope is empty (including platform super admins)."
+        },
+        "originSchoolId": {
+          "type": "integer",
+          "nullable": true
+        },
+        "originSchoolName": {
+          "type": "string",
+          "nullable": true
+        },
+        "promotionStatus": {
+          "type": "string",
+          "description": "local: source school only; submitted: source owner consent recorded, platform may promote; national: all school owners may claim. Existing platform orders are national."
+        },
+        "claimCount": {
+          "type": "integer"
         }
       },
       "required": [
@@ -824,6 +843,23 @@
         "syncedAt",
         "updatedAt"
       ]
+    },
+    "CommercialOrderAction": {
+      "type": "object",
+      "required": [
+        "action"
+      ],
+      "properties": {
+        "action": {
+          "type": "string",
+          "enum": [
+            "submit",
+            "withdraw",
+            "promote"
+          ],
+          "description": "submit/withdraw: current source-school owner only; promote: platform only after submitted consent. Proposal edits invalidate pending consent; national promotion is irreversible."
+        }
+      }
     }
   }
 }

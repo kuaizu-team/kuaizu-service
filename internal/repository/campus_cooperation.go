@@ -97,19 +97,45 @@ func GetCampusCooperation(ctx context.Context, q sqlx.QueryerContext, id int64, 
 	return &c, nil
 }
 
-func (r *CampusCooperationRepository) ListOrders(ctx context.Context, page, size int, status string, schoolIDs []int) ([]models.CommercialOrder, int64, error) {
+func (r *CampusCooperationRepository) ListOrders(ctx context.Context, page, size int, status string, schoolIDs []int, views ...string) ([]models.CommercialOrder, int64, error) {
 	where, args := "1=1", []interface{}{}
 	if status != "" {
 		where = "status=?"
 		args = append(args, status)
 	}
+	view := ""
+	if len(views) > 0 {
+		view = views[0]
+	}
+	if schoolIDs != nil {
+		if len(schoolIDs) == 0 {
+			return []models.CommercialOrder{}, 0, nil
+		}
+		if view == "owned" {
+			where += " AND origin_school_id IN (?)"
+			args = append(args, schoolIDs)
+		} else if view == "pool" {
+			where += " AND promotion_status='national'"
+		} else {
+			where += " AND (promotion_status='national' OR origin_school_id IN (?))"
+			args = append(args, schoolIDs)
+		}
+	}
+	countQuery, countArgs, err := sqlx.In(`SELECT COUNT(*) FROM commercial_order WHERE `+where, args...)
+	if err != nil {
+		return nil, 0, err
+	}
 	var total int64
-	if err := r.db.GetContext(ctx, &total, `SELECT COUNT(*) FROM commercial_order WHERE `+where, args...); err != nil {
+	if err := r.db.GetContext(ctx, &total, countQuery, countArgs...); err != nil {
 		return nil, 0, err
 	}
 	rows := []models.CommercialOrder{}
 	args = append(args, size, (page-1)*size)
-	err := r.db.SelectContext(ctx, &rows, `SELECT id,name,company_name,description,feishu_wiki_node_token,status,content_template,created_by,updated_by,created_at,updated_at FROM commercial_order WHERE `+where+` ORDER BY created_at DESC,id DESC LIMIT ? OFFSET ?`, args...)
+	query, listArgs, err := sqlx.In(`SELECT id,name,company_name,description,feishu_wiki_node_token,status,content_template,created_by,updated_by,created_at,updated_at,origin_school_id,promotion_status,(SELECT school_name FROM school WHERE school.id=commercial_order.origin_school_id) AS origin_school_name,(SELECT COUNT(*) FROM campus_cooperation WHERE commercial_order_id=commercial_order.id) AS claim_count FROM commercial_order WHERE `+where+` ORDER BY created_at DESC,id DESC LIMIT ? OFFSET ?`, args...)
+	if err != nil {
+		return nil, 0, err
+	}
+	err = r.db.SelectContext(ctx, &rows, query, listArgs...)
 	if err == nil {
 		for i := range rows {
 			if err := rows[i].DecodeTemplate(); err != nil {
@@ -144,7 +170,7 @@ func (r *CampusCooperationRepository) ListOrders(ctx context.Context, page, size
 	return rows, total, err
 }
 
-func (r *CampusCooperationRepository) List(ctx context.Context, schoolIDs []int, publishedOnly bool, page, size int) ([]models.CampusCooperation, int64, error) {
+func (r *CampusCooperationRepository) List(ctx context.Context, schoolIDs []int, publishedOnly bool, page, size int, orderIDs ...int64) ([]models.CampusCooperation, int64, error) {
 	where, args := "1=1", []interface{}{}
 	if schoolIDs != nil {
 		if len(schoolIDs) == 0 {
@@ -155,6 +181,14 @@ func (r *CampusCooperationRepository) List(ctx context.Context, schoolIDs []int,
 	}
 	if publishedOnly {
 		where += " AND c.published=1 AND o.status<>'ended'"
+	}
+	var orderID int64
+	if len(orderIDs) > 0 {
+		orderID = orderIDs[0]
+	}
+	if orderID > 0 {
+		where += " AND c.commercial_order_id=?"
+		args = append(args, orderID)
 	}
 	query, args, err := sqlx.In(`SELECT COUNT(*)`+cooperationJoins+` WHERE `+where, args...)
 	if err != nil {
@@ -169,6 +203,9 @@ func (r *CampusCooperationRepository) List(ctx context.Context, schoolIDs []int,
 	listArgs := []interface{}{}
 	if schoolIDs != nil {
 		listArgs = append(listArgs, schoolIDs)
+	}
+	if orderID > 0 {
+		listArgs = append(listArgs, orderID)
 	}
 	listQuery, listArgs, err = sqlx.In(listQuery, listArgs...)
 	if err != nil {
