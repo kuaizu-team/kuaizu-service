@@ -3,6 +3,7 @@ package models
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/kuaizu-team/kuaizu-service/internal/oss"
@@ -51,9 +52,25 @@ type CooperationLink struct {
 }
 
 type CooperationContact struct {
-	Type  string `json:"type"`
-	Label string `json:"label"`
-	Value string `json:"value"`
+	Type      string     `json:"type"`
+	Label     string     `json:"label"`
+	Value     string     `json:"value"`
+	ImageURL  string     `json:"imageUrl,omitempty"`
+	ExpiresAt *time.Time `json:"expiresAt,omitempty"`
+	Expired   bool       `json:"expired,omitempty"`
+}
+
+const CooperationQRPrefix = "campus-cooperation-qrcodes/"
+
+func (c *CooperationContact) RefreshQRCode(now time.Time) {
+	if c.Type != "wechat_group" {
+		return
+	}
+	c.Expired = c.ExpiresAt == nil || !now.Before(*c.ExpiresAt)
+	c.ImageURL = ""
+	if !c.Expired && strings.HasPrefix(c.Value, CooperationQRPrefix) {
+		c.ImageURL = oss.FullURL(c.Value)
+	}
 }
 
 type CampusCooperation struct {
@@ -128,6 +145,9 @@ func (c *CampusCooperation) DecodeContent() error {
 	}
 	if c.Contacts == nil {
 		c.Contacts = []CooperationContact{}
+	}
+	for i := range c.Contacts {
+		c.Contacts[i].RefreshQRCode(time.Now())
 	}
 	c.ImageURLs = make([]string, 0, len(c.Images))
 	for _, key := range c.Images {

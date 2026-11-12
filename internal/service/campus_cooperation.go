@@ -24,10 +24,14 @@ type CampusCooperationService struct {
 	message           *MessageService
 	commons           *CommonsService
 	dispatchSubscribe func(int64)
+	deleteQRFile      func(context.Context, string) error
 }
 
 func NewCampusCooperationService(repo *repository.Repository, message *MessageService, commons *CommonsService) *CampusCooperationService {
 	s := &CampusCooperationService{repo: repo, message: message, commons: commons}
+	if commons != nil {
+		s.deleteQRFile = commons.deleteCooperationQRCode
+	}
 	if message != nil {
 		s.dispatchSubscribe = message.DispatchCommittedSubscribe
 	}
@@ -96,6 +100,11 @@ func (in *CommercialOrderInput) Validate() error {
 		if err := template.Validate(); err != nil {
 			return err
 		}
+		for _, contact := range template.Contacts {
+			if contact.Type == "wechat_group" {
+				return ErrBadRequest("微信群二维码须由校区上传，不能写入商单模板")
+			}
+		}
 		if template.Tags == nil {
 			tags := []string{}
 			template.Tags = &tags
@@ -141,15 +150,25 @@ func (in *CooperationContentInput) Validate() error {
 			return ErrBadRequest("请刷新后台，为每条链接设置是否无需申请即可查看")
 		}
 	}
+	hasQR, hasBackup := false, false
 	for _, contact := range in.Contacts {
 		switch contact.Type {
 		case "qq_group", "wechat", "qq", "email":
+			hasBackup = hasBackup || strings.TrimSpace(contact.Value) != ""
+		case "wechat_group":
+			hasQR = true
+			if !strings.HasPrefix(contact.Value, models.CooperationQRPrefix) || strings.Contains(contact.Value, "..") || len(contact.Value) > 255 {
+				return ErrBadRequest("请上传本校微信群二维码图片")
+			}
 		default:
 			return ErrBadRequest("联系方式类型无效")
 		}
 		if strings.TrimSpace(contact.Value) == "" {
 			return ErrBadRequest("已添加的联系方式不能为空")
 		}
+	}
+	if hasQR && !hasBackup {
+		return ErrBadRequest("微信群二维码须同时提供至少一种其他保底联系方式")
 	}
 	seen := map[string]bool{}
 	for _, key := range in.Images {
@@ -278,7 +297,13 @@ func cooperationPublic(c *models.CampusCooperation, status string) CooperationPu
 		}
 	}
 	if v.ContactsVisible {
-		v.Contacts = c.Contacts
+		for _, contact := range c.Contacts {
+			if contact.Type == "wechat_group" {
+				contact.RefreshQRCode(time.Now())
+				contact.Value = ""
+			}
+			v.Contacts = append(v.Contacts, contact)
+		}
 	}
 	return v
 }
@@ -547,6 +572,9 @@ func (s *CampusCooperationService) SaveContent(ctx context.Context, adminID int,
 			return ErrBadRequest("图片不存在或不属于该校合作")
 		}
 	}
+	if err := s.prepareQRContacts(ctx, tx, id, in.Contacts, c.Contacts); err != nil {
+		return err
+	}
 	links, err := json.Marshal(in.Links)
 	if err != nil {
 		return err
@@ -582,7 +610,11 @@ func (s *CampusCooperationService) SaveContent(ctx context.Context, adminID int,
 			return err
 		}
 	}
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	s.removeReplacedQRCodes(ctx, id, c.Contacts, in.Contacts)
+	return nil
 }
 
 func (s *CampusCooperationService) Apply(ctx context.Context, userID int, id int64) (*models.CooperationApplication, error) {
@@ -731,11 +763,30 @@ func (s *CampusCooperationService) Review(ctx context.Context, adminID int, appl
 	return nil
 }
 
-func (s *CampusCooperationService) UploadImage(ctx context.Context, adminID int, id int64, file multipart.File, header *multipart.FileHeader) (*oss.UploadResult, error) {
+type CooperationImageUpload struct {
+	URL       string
+	Key       string
+	ExpiresAt *time.Time
+}
+
+func (s *CampusCooperationService) UploadImage(ctx context.Context, adminID int, id int64, file multipart.File, header *multipart.FileHeader, kinds ...string) (*CooperationImageUpload, error) {
 	if _, err := s.AdminDetail(ctx, adminID, id, true); err != nil {
 		return nil, err
 	}
-	result, err := s.commons.UploadCooperationImage(file, header)
+	kind := ""
+	if len(kinds) > 0 {
+		kind = kinds[0]
+	}
+	if kind != "" && kind != "wechat_group" {
+		return nil, ErrBadRequest("图片用途无效")
+	}
+	var result *oss.UploadResult
+	var err error
+	if kind == "wechat_group" {
+		result, err = s.commons.UploadCooperationQRCode(file, header)
+	} else {
+		result, err = s.commons.UploadCooperationImage(file, header)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -755,8 +806,16 @@ func (s *CampusCooperationService) UploadImage(ctx context.Context, adminID int,
 			err = ErrForbidden("学校负责人已变更，无法上传")
 		}
 	}
+	var expiresAt *time.Time
 	if err == nil {
-		_, err = tx.ExecContext(ctx, `INSERT INTO campus_cooperation_image(object_key,cooperation_id,uploaded_by) VALUES(?,?,?)`, result.Key, id, adminID)
+		if kind == "wechat_group" {
+			now := time.Now().Truncate(time.Second)
+			expiry := now.Add(cooperationQRValidity)
+			expiresAt = &expiry
+			_, err = tx.ExecContext(ctx, `INSERT INTO campus_cooperation_image(object_key,cooperation_id,uploaded_by,created_at,expires_at) VALUES(?,?,?,?,?)`, result.Key, id, adminID, now, expiry)
+		} else {
+			_, err = tx.ExecContext(ctx, `INSERT INTO campus_cooperation_image(object_key,cooperation_id,uploaded_by) VALUES(?,?,?)`, result.Key, id, adminID)
+		}
 	}
 	if err == nil {
 		err = tx.Commit()
@@ -765,7 +824,7 @@ func (s *CampusCooperationService) UploadImage(ctx context.Context, adminID int,
 		_ = s.commons.DeleteFile(result.Key)
 		return nil, cooperationError(err)
 	}
-	return result, nil
+	return &CooperationImageUpload{URL: result.URL, Key: result.Key, ExpiresAt: expiresAt}, nil
 }
 
 func (s *CampusCooperationService) SearchTags(ctx context.Context, adminID int, keyword string, limit int) ([]models.ProjectTag, error) {

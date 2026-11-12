@@ -866,6 +866,11 @@
                       },
                       "key": {
                         "type": "string"
+                      },
+                      "expiresAt": {
+                        "type": "string",
+                        "format": "date-time",
+                        "description": "Present for kind=wechat_group; seven-day expiry derived by the server."
                       }
                     },
                     "required": [
@@ -918,6 +923,11 @@
                 "file": {
                   "type": "string",
                   "format": "binary"
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": ["wechat_group"],
+                  "description": "Omit for ordinary images; wechat_group uploads a seven-day contact QR image in an isolated prefix."
                 }
               },
               "required": [

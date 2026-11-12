@@ -29,7 +29,8 @@
             "qq_group",
             "wechat",
             "qq",
-            "email"
+            "email",
+            "wechat_group"
           ]
         },
         "label": {
@@ -37,7 +38,20 @@
         },
         "value": {
           "type": "string",
-          "minLength": 1
+          "description": "Text contact value; for wechat_group input, an owned uploaded QR object key. QR keys are omitted from public contact values. QR contacts require at least one non-QR backup contact."
+        },
+        "imageUrl": {
+          "type": "string",
+          "description": "Server-derived QR preview URL; absent after expiry and hidden until contact access is authorized. Ignored on input."
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server-derived upload expiry, seven days after upload; cannot be extended by editing or resaving."
+        },
+        "expired": {
+          "type": "boolean",
+          "description": "Expired QR has no usable imageUrl. Non-QR backup contacts remain available."
         }
       },
       "required": [
