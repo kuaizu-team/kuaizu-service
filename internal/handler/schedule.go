@@ -3,9 +3,11 @@ package handler
 import (
 	"database/sql"
 	"errors"
+	"fmt"
 	"github.com/kuaizu-team/kuaizu-service/internal/models"
 	"github.com/kuaizu-team/kuaizu-service/internal/repository"
 	"github.com/labstack/echo/v4"
+	"net/http"
 	"strconv"
 	"time"
 )
@@ -14,8 +16,36 @@ import (
 func (s *Server) RegisterScheduleRoutes(g *echo.Group) {
 	g.GET("/users/me/schedules", s.listSchedules)
 	g.POST("/users/me/schedules", s.saveSchedule)
+	g.POST("/users/me/schedules/import", s.importSchedules)
 	g.PUT("/users/me/schedules/:id", s.saveSchedule)
 	g.DELETE("/users/me/schedules/:id", s.deleteSchedule)
+}
+
+type scheduleImportRequest struct {
+	Items []models.Schedule `json:"items"`
+}
+
+func (s *Server) importSchedules(c echo.Context) error {
+	c.Request().Body = http.MaxBytesReader(c.Response(), c.Request().Body, 1024*1024)
+	var request scheduleImportRequest
+	if err := c.Bind(&request); err != nil {
+		return BadRequest(c, "导入数据格式错误或超过 1MB")
+	}
+	if len(request.Items) == 0 || len(request.Items) > 500 {
+		return BadRequest(c, "一次需导入 1—500 次课程")
+	}
+	for i := range request.Items {
+		request.Items[i].ID = 0
+		if err := request.Items[i].Validate(); err != nil {
+			return BadRequest(c, fmt.Sprintf("第 %d 条课程：%s", i+1, err.Error()))
+		}
+	}
+	created, skipped, err := s.scheduleRepo().Import(c.Request().Context(), GetUserID(c), request.Items)
+	if err != nil {
+		c.Logger().Error("schedule import transaction failed")
+		return InternalError(c, "课表导入失败，请稍后重试")
+	}
+	return Success(c, map[string]int{"created": created, "skipped": skipped})
 }
 func (s *Server) scheduleRepo() *repository.ScheduleRepository {
 	return repository.NewScheduleRepository(s.repo.DB())

@@ -8,6 +8,42 @@ servers:
 security:
   - bearerAuth: []
 paths:
+  /users/me/schedules/import:
+    post:
+      operationId: importSchedules
+      description: Atomically insert 1-500 normalized items for the logged-in user. Exact re-imports are skipped using a per-user content hash. Does not overwrite manual schedules or synchronize source changes. Requires migration 20261114_schedule_import.sql.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [items]
+              properties:
+                items:
+                  type: array
+                  minItems: 1
+                  maxItems: 500
+                  items: {$ref: '#/components/schemas/ScheduleInput'}
+      responses:
+        '200':
+          description: Import committed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code: {type: integer}
+                  message: {type: string}
+                  data:
+                    type: object
+                    required: [created, skipped]
+                    properties:
+                      created: {type: integer, minimum: 0}
+                      skipped: {type: integer, minimum: 0}
+        '400': {description: Invalid items or payload over 1MB}
+        '401': {description: Login required}
+        '500': {description: Import failed; transaction not committed}
   /users/me/schedules:
     get:
       operationId: listSchedules
