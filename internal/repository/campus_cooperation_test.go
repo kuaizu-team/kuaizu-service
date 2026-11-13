@@ -179,3 +179,40 @@ func TestCooperationNullLinksCannotEraseTags(t *testing.T) {
 		t.Fatalf("unrelated null links changed tags: %+v", c)
 	}
 }
+
+func TestCommercialOrderListingScopesLocalProposalsToSourceSchools(t *testing.T) {
+	for _, view := range []string{"", "owned", "pool"} {
+		t.Run(view, func(t *testing.T) {
+			raw, m, err := sqlmock.New()
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer raw.Close()
+			repo := NewCampusCooperationRepository(sqlx.NewDb(raw, "sqlmock"))
+			where := "1=1 AND (promotion_status='national' OR origin_school_id IN (?))"
+			if view == "owned" {
+				where = "1=1 AND origin_school_id IN (?)"
+			}
+			if view == "pool" {
+				where = "1=1 AND promotion_status='national'"
+			}
+			count := m.ExpectQuery(regexp.QuoteMeta("SELECT COUNT(*) FROM commercial_order WHERE " + where))
+			list := m.ExpectQuery("(?s)SELECT id,name.*FROM commercial_order WHERE " + regexp.QuoteMeta(where) + " ORDER BY")
+			if view == "pool" {
+				count.WithArgs()
+				list.WithArgs(20, 0)
+			} else {
+				count.WithArgs(42)
+				list.WithArgs(42, 20, 0)
+			}
+			count.WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
+			list.WillReturnRows(sqlmock.NewRows([]string{"id"}))
+			if _, _, err := repo.ListOrders(context.Background(), 1, 20, "", []int{42}, view); err != nil {
+				t.Fatal(err)
+			}
+			if err := m.ExpectationsWereMet(); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}

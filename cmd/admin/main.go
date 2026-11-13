@@ -63,6 +63,7 @@ func main() {
 	}
 
 	svc := service.New(repo, deps)
+	svc.CampusCooperation.StartQRCodeCleanup(ctx)
 	if err := svc.Message.CheckSubscribeDeliverySchema(ctx); err != nil {
 		log.Fatalf("Failed to initialize WeChat subscribe delivery: %v", err)
 	}

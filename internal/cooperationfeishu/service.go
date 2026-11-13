@@ -243,12 +243,16 @@ func (s *Service) run(cooperationID int64, adminID int) {
 	defer cancel()
 	ctx = withAdminID(ctx, adminID)
 	err := s.sync(ctx, cooperationID, adminID)
-	status, message := "succeeded", "申请已同步到商单文档下的学校表格"
+	status, message := "succeeded", "报名数据已同步到商单文档下的学校报名表"
 	if err != nil {
 		status, message = "failed", "同步失败，请检查应用授权和表格权限"
 	}
 	if errors.Is(err, errNeedsAttention) {
 		status, message = "needs_attention", "远端创建结果待核对，请联系技术人员确认后重试"
+	}
+	var warning *syncWarning
+	if errors.As(err, &warning) {
+		status, message = "succeeded", warning.Error()
 	}
 	finishCtx, finishCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer finishCancel()
@@ -266,6 +270,10 @@ func (s *Service) run(cooperationID int64, adminID int) {
 }
 
 var errNeedsAttention = errors.New("remote operation result needs reconciliation")
+
+type syncWarning struct{ message string }
+
+func (w *syncWarning) Error() string { return w.message }
 
 // Only confirmed authorization/rate-limit rejections are safe to retry without
 // a remote ID. A generic 4xx can still be an internal error (e.g. 1255001).
@@ -307,8 +315,8 @@ func (s *Service) sync(ctx context.Context, cooperationID int64, adminID int) er
 			return err
 		}
 	}
+	title := fmt.Sprintf("%s · %s · 活动报名", c.OrderName, c.SchoolName)
 	if needsWikiBase {
-		title := fmt.Sprintf("%s · %s · 合作申请", c.CompanyName, c.SchoolName)
 		nodeToken, appToken, createErr := s.createWikiBase(ctx, *c.FeishuWikiNodeToken, title)
 		if createErr != nil {
 			return creationError(createErr)
@@ -325,7 +333,7 @@ func (s *Service) sync(ctx context.Context, cooperationID int64, adminID int) er
 			ViewID  string `json:"default_view_id"`
 		}
 		path := "/open-apis/bitable/v1/apps/" + url.PathEscape(*t.AppToken) + "/tables"
-		body := map[string]any{"table": map[string]any{"name": "合作申请", "default_view_name": "合作申请", "fields": fields()}}
+		body := map[string]any{"table": map[string]any{"name": "活动报名", "default_view_name": "活动报名", "fields": fields()}}
 		if err = s.client.Call(ctx, http.MethodPost, path, body, &out); err != nil {
 			return creationError(err)
 		}
@@ -340,12 +348,33 @@ func (s *Service) sync(ctx context.Context, cooperationID int64, adminID int) er
 	if err = s.syncRecords(ctx, cooperationID, *t.AppToken, *t.TableID); err != nil {
 		return err
 	}
-	_, err = s.cleanup.CleanupDefaultBlocks(ctx, feishusync.Target{AppToken: *t.AppToken, TableID: *t.TableID}, func() error {
+	if _, err := s.cooperation.AdminDetail(ctx, adminID, cooperationID, false); err != nil {
+		return err
+	}
+	warnings := []string{}
+	node := strings.TrimPrefix(*t.DocBlockID, "wiki:")
+	if err := s.client.Call(ctx, http.MethodPatch, "/open-apis/drive/v1/files/"+url.PathEscape(node)+"?type=wiki", map[string]any{"new_title": title}, nil); err != nil {
+		warnings = append(warnings, "表格文件名称未更新")
+	}
+	exportTarget := feishusync.Target{AppToken: *t.AppToken, TableID: *t.TableID}
+	if t.ViewID != nil {
+		exportTarget.ViewID = *t.ViewID
+	}
+	if err := s.cleanup.RenameExportTable(ctx, exportTarget, "活动报名"); err != nil {
+		warnings = append(warnings, "数据表或默认视图名称未更新")
+	}
+	cleanupWarning, err := s.cleanup.CleanupDefaultBlocks(ctx, exportTarget, func() error {
 		_, err := s.cooperation.AdminDetail(ctx, adminID, cooperationID, false)
 		return err
 	})
 	if err != nil {
 		return err
+	}
+	if cleanupWarning {
+		warnings = append(warnings, "默认项目未清理，请检查飞书权限及服务日志")
+	}
+	if len(warnings) > 0 {
+		return &syncWarning{message: "报名数据已同步；" + strings.Join(warnings, "；")}
 	}
 	return nil
 }
