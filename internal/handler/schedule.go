@@ -18,6 +18,7 @@ func (s *Server) RegisterScheduleRoutes(g *echo.Group) {
 	g.POST("/users/me/schedules", s.saveSchedule)
 	g.POST("/users/me/schedules/import", s.importSchedules)
 	g.PUT("/users/me/schedules/:id", s.saveSchedule)
+	g.PUT("/users/me/schedules/:id/completion", s.completeSchedule)
 	g.DELETE("/users/me/schedules/:id", s.deleteSchedule)
 }
 
@@ -68,9 +69,16 @@ func (s *Server) listSchedules(c echo.Context) error {
 	return Success(c, items)
 }
 func (s *Server) saveSchedule(c echo.Context) error {
-	var item models.Schedule
-	if err := c.Bind(&item); err != nil {
+	var request struct {
+		models.Schedule
+		Completion *bool `json:"completed"`
+	}
+	if err := c.Bind(&request); err != nil {
 		return BadRequest(c, "日程格式错误")
+	}
+	item := request.Schedule
+	if request.Completion != nil {
+		item.Completed = *request.Completion
 	}
 	if err := item.Validate(); err != nil {
 		return BadRequest(c, err.Error())
@@ -87,7 +95,7 @@ func (s *Server) saveSchedule(c echo.Context) error {
 	if item.ID == 0 {
 		err = s.scheduleRepo().Create(c.Request().Context(), GetUserID(c), &item)
 	} else {
-		err = s.scheduleRepo().Update(c.Request().Context(), GetUserID(c), &item)
+		err = s.scheduleRepo().Update(c.Request().Context(), GetUserID(c), &item, request.Completion)
 	}
 	if errors.Is(err, sql.ErrNoRows) {
 		return NotFound(c, "日程不存在")
@@ -111,4 +119,26 @@ func (s *Server) deleteSchedule(c echo.Context) error {
 		return InternalError(c, "日程删除失败")
 	}
 	return SuccessMessage(c, "已删除日程")
+}
+
+// Complete updates only the authenticated owner's completion flag.
+func (s *Server) completeSchedule(c echo.Context) error {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || id <= 0 {
+		return BadRequest(c, "无效日程")
+	}
+	var request struct {
+		Completed *bool `json:"completed"`
+	}
+	if err := c.Bind(&request); err != nil || request.Completed == nil {
+		return BadRequest(c, "请选择是否完成")
+	}
+	err = s.scheduleRepo().Complete(c.Request().Context(), GetUserID(c), id, *request.Completed)
+	if errors.Is(err, sql.ErrNoRows) {
+		return NotFound(c, "日程不存在")
+	}
+	if err != nil {
+		return InternalError(c, "完成状态更新失败")
+	}
+	return Success(c, map[string]bool{"completed": *request.Completed})
 }

@@ -7,15 +7,18 @@ import (
 	"unicode/utf8"
 )
 
-// Schedule is a private, single-day item. Date and clock time use Asia/Shanghai.
+// Schedule is a private item. Date and clock time use Asia/Shanghai.
 type Schedule struct {
-	ID       int64   `db:"id" json:"id"`
-	Title    string  `db:"title" json:"title"`
-	Date     string  `db:"date" json:"date"`
-	AllDay   bool    `db:"all_day" json:"allDay"`
-	Time     *string `db:"time" json:"time"`
-	Location string  `db:"location" json:"location"`
-	Notes    string  `db:"notes" json:"notes"`
+	ID        int64   `db:"id" json:"id"`
+	Title     string  `db:"title" json:"title"`
+	Date      string  `db:"date" json:"date"`
+	AllDay    bool    `db:"all_day" json:"allDay"`
+	Time      *string `db:"time" json:"time"`
+	EndDate   *string `db:"end_date" json:"endDate"`
+	EndTime   *string `db:"end_time" json:"endTime"`
+	Completed bool    `db:"completed" json:"completed"`
+	Location  string  `db:"location" json:"location"`
+	Notes     string  `db:"notes" json:"notes"`
 }
 
 func (s *Schedule) Validate() error {
@@ -34,6 +37,7 @@ func (s *Schedule) Validate() error {
 	}
 	if s.AllDay {
 		s.Time = nil
+		s.EndDate, s.EndTime = nil, nil
 		return nil
 	}
 	if s.Time == nil {
@@ -42,6 +46,21 @@ func (s *Schedule) Validate() error {
 	t, err := time.Parse("15:04", *s.Time)
 	if err != nil || t.Format("15:04") != *s.Time {
 		return fmt.Errorf("时间格式需为 HH:mm")
+	}
+	// Nullable ends preserve legacy point-in-time schedules.
+	if s.EndDate == nil && s.EndTime == nil {
+		return nil
+	}
+	if s.EndDate == nil || s.EndTime == nil {
+		return fmt.Errorf("请同时填写结束日期和结束时间")
+	}
+	end, err := time.Parse("2006-01-02 15:04", *s.EndDate+" "+*s.EndTime)
+	start, _ := time.Parse("2006-01-02 15:04", s.Date+" "+*s.Time)
+	if err != nil || end.Format("2006-01-02 15:04") != *s.EndDate+" "+*s.EndTime || end.Year() < 2000 || end.Year() > 2100 {
+		return fmt.Errorf("结束日期或时间格式无效")
+	}
+	if !end.After(start) {
+		return fmt.Errorf("结束时间必须晚于开始时间")
 	}
 	return nil
 }
