@@ -9,16 +9,19 @@ import (
 
 // Schedule is a private item. Date and clock time use Asia/Shanghai.
 type Schedule struct {
-	ID        int64   `db:"id" json:"id"`
-	Title     string  `db:"title" json:"title"`
-	Date      string  `db:"date" json:"date"`
-	AllDay    bool    `db:"all_day" json:"allDay"`
-	Time      *string `db:"time" json:"time"`
-	EndDate   *string `db:"end_date" json:"endDate"`
-	EndTime   *string `db:"end_time" json:"endTime"`
-	Completed bool    `db:"completed" json:"completed"`
-	Location  string  `db:"location" json:"location"`
-	Notes     string  `db:"notes" json:"notes"`
+	JointID          *int64  `db:"joint_id" json:"jointId,omitempty"`
+	CreatedBy        *int    `db:"created_by" json:"createdBy,omitempty"`
+	ParticipantCount int     `db:"participant_count" json:"participantCount,omitempty"`
+	ID               int64   `db:"id" json:"id"`
+	Title            string  `db:"title" json:"title"`
+	Date             string  `db:"date" json:"date"`
+	AllDay           bool    `db:"all_day" json:"allDay"`
+	Time             *string `db:"time" json:"time"`
+	EndDate          *string `db:"end_date" json:"endDate"`
+	EndTime          *string `db:"end_time" json:"endTime"`
+	Completed        bool    `db:"completed" json:"completed"`
+	Location         string  `db:"location" json:"location"`
+	Notes            string  `db:"notes" json:"notes"`
 }
 
 func (s *Schedule) Validate() error {

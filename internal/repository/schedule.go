@@ -77,7 +77,7 @@ func NewScheduleRepository(db *sqlx.DB) *ScheduleRepository { return &ScheduleRe
 
 func (r *ScheduleRepository) List(ctx context.Context, userID int, from, to string) ([]models.Schedule, error) {
 	items := make([]models.Schedule, 0)
-	err := r.db.SelectContext(ctx, &items, `SELECT id,title,DATE_FORMAT(schedule_date,'%Y-%m-%d') AS date,all_day,TIME_FORMAT(schedule_time,'%H:%i') AS time,location,notes,DATE_FORMAT(end_date,'%Y-%m-%d') AS end_date,TIME_FORMAT(end_time,'%H:%i') AS end_time,completed FROM user_schedule WHERE user_id=? AND schedule_date<=? AND (schedule_date>=? OR end_date>? OR (end_date=? AND end_time>'00:00:00')) ORDER BY schedule_date,all_day DESC,schedule_time,id LIMIT 2001`, userID, to, from, from, from)
+	err := r.db.SelectContext(ctx, &items, `SELECT id,title,DATE_FORMAT(schedule_date,'%Y-%m-%d') AS date,all_day,TIME_FORMAT(schedule_time,'%H:%i') AS time,location,notes,DATE_FORMAT(end_date,'%Y-%m-%d') AS end_date,TIME_FORMAT(end_time,'%H:%i') AS end_time,completed,joint_id,(SELECT creator_id FROM schedule_joint j WHERE j.id=user_schedule.joint_id) AS created_by,(SELECT COUNT(*) FROM user_schedule m WHERE m.joint_id=user_schedule.joint_id) AS participant_count FROM user_schedule WHERE user_id=? AND schedule_date<=? AND (schedule_date>=? OR end_date>? OR (end_date=? AND end_time>'00:00:00')) ORDER BY schedule_date,all_day DESC,schedule_time,id LIMIT 2001`, userID, to, from, from, from)
 	return items, err
 }
 func (r *ScheduleRepository) Create(ctx context.Context, userID int, s *models.Schedule) error {
@@ -90,11 +90,11 @@ func (r *ScheduleRepository) Create(ctx context.Context, userID int, s *models.S
 }
 func (r *ScheduleRepository) Update(ctx context.Context, userID int, s *models.Schedule, completion *bool) error {
 	// updated_at also changes for real changes. An identical PUT must still succeed.
-	_, err := r.db.ExecContext(ctx, `UPDATE user_schedule SET title=?,schedule_date=?,all_day=?,schedule_time=?,location=?,notes=?,end_date=?,end_time=?,completed=COALESCE(?,completed) WHERE id=? AND user_id=?`, s.Title, s.Date, s.AllDay, s.Time, s.Location, s.Notes, s.EndDate, s.EndTime, completion, s.ID, userID)
+	_, err := r.db.ExecContext(ctx, `UPDATE user_schedule SET title=?,schedule_date=?,all_day=?,schedule_time=?,location=?,notes=?,end_date=?,end_time=?,completed=COALESCE(?,completed) WHERE id=? AND user_id=? AND joint_id IS NULL`, s.Title, s.Date, s.AllDay, s.Time, s.Location, s.Notes, s.EndDate, s.EndTime, completion, s.ID, userID)
 	if err != nil {
 		return err
 	}
-	return r.db.GetContext(ctx, &s.Completed, `SELECT completed FROM user_schedule WHERE id=? AND user_id=?`, s.ID, userID)
+	return r.db.GetContext(ctx, &s.Completed, `SELECT completed FROM user_schedule WHERE id=? AND user_id=? AND joint_id IS NULL`, s.ID, userID)
 }
 func (r *ScheduleRepository) Complete(ctx context.Context, userID int, id int64, completed bool) error {
 	_, err := r.db.ExecContext(ctx, `UPDATE user_schedule SET completed=? WHERE id=? AND user_id=?`, completed, id, userID)
@@ -106,7 +106,7 @@ func (r *ScheduleRepository) Complete(ctx context.Context, userID int, id int64,
 }
 
 func (r *ScheduleRepository) Delete(ctx context.Context, userID int, id int64) error {
-	res, err := r.db.ExecContext(ctx, `DELETE FROM user_schedule WHERE id=? AND user_id=?`, id, userID)
+	res, err := r.db.ExecContext(ctx, `DELETE FROM user_schedule WHERE id=? AND user_id=? AND joint_id IS NULL`, id, userID)
 	if err != nil {
 		return err
 	}

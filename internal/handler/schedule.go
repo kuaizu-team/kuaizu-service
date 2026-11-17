@@ -14,6 +14,7 @@ import (
 
 // RegisterScheduleRoutes uses the existing authenticated API group.
 func (s *Server) RegisterScheduleRoutes(g *echo.Group) {
+	s.registerScheduleSocial(g)
 	g.GET("/users/me/schedules", s.listSchedules)
 	g.POST("/users/me/schedules", s.saveSchedule)
 	g.POST("/users/me/schedules/import", s.importSchedules)
@@ -77,6 +78,9 @@ func (s *Server) saveSchedule(c echo.Context) error {
 		return BadRequest(c, "日程格式错误")
 	}
 	item := request.Schedule
+	item.JointID = nil
+	item.CreatedBy = nil
+	item.ParticipantCount = 0
 	if request.Completion != nil {
 		item.Completed = *request.Completion
 	}
