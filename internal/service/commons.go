@@ -103,6 +103,17 @@ func (s *CommonsService) UploadCooperationImage(file multipart.File, header *mul
 	return s.uploadFileTo(file, header, "campus-cooperation-images", maxFileSize)
 }
 
+func (s *CommonsService) UploadCooperationQRCode(file multipart.File, header *multipart.FileHeader) (*oss.UploadResult, error) {
+	return s.uploadFileTo(file, header, "campus-cooperation-qrcodes", maxFileSize)
+}
+
+func (s *CommonsService) deleteCooperationQRCode(ctx context.Context, key string) error {
+	if !strings.HasPrefix(key, "campus-cooperation-qrcodes/") {
+		return ErrBadRequest("二维码图片标识无效")
+	}
+	return s.ossClient.DeleteContext(ctx, key)
+}
+
 // DeleteFile removes a file from OSS by its key. Errors are logged but treated as
 // non-fatal so they do not roll back an otherwise successful operation.
 func (s *CommonsService) DeleteFile(key string) error {

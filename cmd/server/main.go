@@ -217,6 +217,7 @@ func main() {
 	apiGroup.GET("/recommendations/podcasts", server.ListRecommendationPodcasts)
 	apiGroup.GET("/recommendations/news", server.ListRecommendationNews)
 
+	server.RegisterScheduleRoutes(apiGroup)
 	api.RegisterHandlers(apiGroup, server)
 
 	// WeChat Pay callback (no auth required)

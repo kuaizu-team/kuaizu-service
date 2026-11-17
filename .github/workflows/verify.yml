@@ -39,7 +39,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.26.10'
+          go-version: '1.26.11'
           cache: true
 
       - name: Set up Node
@@ -101,11 +101,11 @@ jobs:
         env:
           VERSION: ${{ steps.version.outputs.image_version }}
         run: |
-          bash .github/scripts/audit-image.sh "kuaizu-server:$VERSION" bin/release go1.26.10
+          bash .github/scripts/audit-image.sh "kuaizu-server:$VERSION" bin/release go1.26.11
           image_id="$(cat bin/release/image-id.txt)"
           echo "image_id=$image_id" >> "$GITHUB_OUTPUT"
           jq -n --arg version "$VERSION" --arg image_id "$image_id" \
-            --arg commit "$GITHUB_SHA" --arg go_version go1.26.10 \
+            --arg commit "$GITHUB_SHA" --arg go_version go1.26.11 \
             '{version:$version,image_id:$image_id,commit:$commit,go_version:$go_version}' \
             > bin/release/release-metadata.json
 

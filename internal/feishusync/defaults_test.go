@@ -100,7 +100,7 @@ func (f *defaultsFixture) client(t *testing.T) *Client {
 		case strings.HasSuffix(path, "/views"):
 			data = f.views
 		case strings.HasSuffix(path, "/records"):
-			require.Equal(t, []string{"f1", "f2", "f3", "f4"}, r.URL.Query()["field_id"])
+			require.ElementsMatch(t, []string{"f1", "f2", "f3", "f4"}, r.URL.Query()["field_id"])
 			require.Equal(t, "11", r.URL.Query().Get("limit"))
 			data = f.records
 		case strings.HasSuffix(path, "/dashboards/defaults-dashboard"):
@@ -144,6 +144,67 @@ func TestDefaultCleanupRemovesTenEmptyPlaceholdersAndIsRepeatable(t *testing.T) 
 	require.Equal(t, before+1, f.lists)
 	require.Equal(t, 1, f.auths)
 	require.Len(t, f.deleted, 3)
+}
+
+func TestDefaultCleanupAcceptsLiveFieldOrderAndNullDefaults(t *testing.T) {
+	f := newDefaultsFixture()
+	f.blocks[3]["name"] = "活动报名"
+	fields := f.schema["fields"].([]map[string]any)
+	fields[2]["default_value"] = nil
+	f.schema["fields"] = []map[string]any{fields[2], fields[3], fields[0], fields[1]}
+	f.records["field_id_list"] = []string{"f3", "f4", "f1", "f2"}
+	warning, err := f.client(t).CleanupDefaultBlocks(context.Background(), cleanupTarget(), func() error { return nil })
+	require.NoError(t, err)
+	require.False(t, warning)
+	require.Contains(t, f.deleted, "defaults-table")
+	require.NotContains(t, f.deleted, "business")
+}
+
+func TestRenameExportTableKeepsResourceIDsAndOnlyChangesNames(t *testing.T) {
+	c := NewClient("app", "secret", "space", "parent")
+	c.baseToken, c.baseExpires = "token", time.Now().Add(time.Hour)
+	calls := 0
+	c.http = &http.Client{Transport: cleanupTransport(func(r *http.Request) (*http.Response, error) {
+		c.nextRequest = time.Time{}
+		calls++
+		if calls == 1 {
+			require.Equal(t, http.MethodPost, r.Method)
+			require.Equal(t, "/open-apis/base/v3/bases/base/blocks/business/rename", r.URL.Path)
+		} else {
+			require.Equal(t, http.MethodPatch, r.Method)
+			require.Equal(t, "/open-apis/base/v3/bases/base/tables/business/views/view", r.URL.Path)
+		}
+		var body map[string]any
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&body))
+		require.Equal(t, map[string]any{"name": "活动报名"}, body)
+		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(`{"code":0,"data":{}}`)), Header: make(http.Header)}, nil
+	})}
+	require.NoError(t, c.RenameExportTable(context.Background(), Target{AppToken: "base", TableID: "business", ViewID: "view"}, "活动报名"))
+	require.Equal(t, 2, calls)
+}
+
+func TestRenameExportTableConfirmsNoOpBeforeAcceptingIt(t *testing.T) {
+	for _, currentName := range []string{"活动报名", "其他名称"} {
+		t.Run(currentName, func(t *testing.T) {
+			c := NewClient("app", "secret", "space", "parent")
+			c.baseToken, c.baseExpires = "token", time.Now().Add(time.Hour)
+			calls := 0
+			c.http = &http.Client{Transport: cleanupTransport(func(r *http.Request) (*http.Response, error) {
+				c.nextRequest = time.Time{}
+				calls++
+				body := `{"code":800070003}`
+				if calls == 2 {
+					require.Equal(t, "/open-apis/base/v3/bases/base/blocks/list", r.URL.Path)
+					encoded, _ := json.Marshal(map[string]any{"code": 0, "data": map[string]any{"total": 1, "blocks": []map[string]any{{"id": "business", "type": "table", "name": currentName}}}})
+					body = string(encoded)
+				}
+				return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(body)), Header: make(http.Header)}, nil
+			})}
+			err := c.RenameExportTable(context.Background(), Target{AppToken: "base", TableID: "business"}, "活动报名")
+			require.Equal(t, currentName != "活动报名", err != nil)
+			require.Equal(t, 2, calls)
+		})
+	}
 }
 
 func TestDefaultCleanupPreservesUsedModifiedAndIncompleteResources(t *testing.T) {

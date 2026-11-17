@@ -39,7 +39,7 @@ func (s *AdminServer) ListCommercialOrders(ctx echo.Context) error {
 	if err != nil {
 		return mapServiceError(ctx, err)
 	}
-	list, total, err := s.svc.CampusCooperation.AdminOrders(ctx.Request().Context(), currentAdminID(ctx), page, size, ctx.QueryParam("status"))
+	list, total, err := s.svc.CampusCooperation.AdminOrders(ctx.Request().Context(), currentAdminID(ctx), page, size, ctx.QueryParam("status"), ctx.QueryParam("view"))
 	if err != nil {
 		return mapServiceError(ctx, err)
 	}
@@ -86,7 +86,14 @@ func (s *AdminServer) ListCampusCooperations(ctx echo.Context) error {
 	if err != nil {
 		return mapServiceError(ctx, err)
 	}
-	list, total, err := s.svc.CampusCooperation.AdminList(ctx.Request().Context(), currentAdminID(ctx), page, size)
+	var orderID int64
+	if raw := ctx.QueryParam("orderId"); raw != "" {
+		orderID, err = strconv.ParseInt(raw, 10, 64)
+		if err != nil || orderID <= 0 {
+			return response.BadRequest(ctx, "商单ID无效")
+		}
+	}
+	list, total, err := s.svc.CampusCooperation.AdminList(ctx.Request().Context(), currentAdminID(ctx), page, size, orderID)
 	if err != nil {
 		return mapServiceError(ctx, err)
 	}
@@ -176,11 +183,15 @@ func (s *AdminServer) UploadCampusCooperationImage(ctx echo.Context) error {
 		return response.BadRequest(ctx, "无法读取图片")
 	}
 	defer file.Close()
-	data, err := s.svc.CampusCooperation.UploadImage(ctx.Request().Context(), currentAdminID(ctx), id, file, header)
+	data, err := s.svc.CampusCooperation.UploadImage(ctx.Request().Context(), currentAdminID(ctx), id, file, header, ctx.FormValue("kind"))
 	if err != nil {
 		return mapServiceError(ctx, err)
 	}
-	return response.Success(ctx, map[string]string{"url": data.URL, "key": data.Key})
+	result := map[string]interface{}{"url": data.URL, "key": data.Key}
+	if data.ExpiresAt != nil {
+		result["expiresAt"] = data.ExpiresAt
+	}
+	return response.Success(ctx, result)
 }
 
 func (s *AdminServer) SearchCooperationTags(ctx echo.Context) error {

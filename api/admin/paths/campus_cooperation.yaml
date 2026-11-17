@@ -109,6 +109,18 @@
               "ended"
             ]
           }
+        },
+        {
+          "name": "view",
+          "in": "query",
+          "schema": {
+            "type": "string",
+            "enum": [
+              "owned",
+              "pool"
+            ]
+          },
+          "description": "School owners: owned limits to their source schools; pool contains nationally published orders. Platform always sees all orders."
         }
       ]
     },
@@ -117,7 +129,7 @@
         "CampusCooperations"
       ],
       "operationId": "createCommercialOrder",
-      "summary": "Platform super admin creates commercial order",
+      "summary": "Platform or current school owner creates an order; school orders stay local and auto-create a school draft",
       "security": [
         {
           "bearerAuth": []
@@ -190,7 +202,7 @@
         "CampusCooperations"
       ],
       "operationId": "updateCommercialOrder",
-      "summary": "Platform super admin updates order; closing stops only new claims",
+      "summary": "Update order or submit/withdraw source-school consent or promote nationally",
       "security": [
         {
           "bearerAuth": []
@@ -262,7 +274,14 @@
         "content": {
           "application/json": {
             "schema": {
-              "$ref": "../../common/campus_cooperation.yaml#/schemas/CommercialOrderInput"
+              "oneOf": [
+                {
+                  "$ref": "../../common/campus_cooperation.yaml#/schemas/CommercialOrderInput"
+                },
+                {
+                  "$ref": "../../common/campus_cooperation.yaml#/schemas/CommercialOrderAction"
+                }
+              ]
             }
           }
         }
@@ -453,6 +472,15 @@
             "default": 20
           },
           "description": "Capped at 50."
+        },
+        {
+          "name": "orderId",
+          "in": "query",
+          "schema": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "description": "Filter claims by commercial order, within current administrator school scope."
         }
       ]
     }
@@ -838,6 +866,11 @@
                       },
                       "key": {
                         "type": "string"
+                      },
+                      "expiresAt": {
+                        "type": "string",
+                        "format": "date-time",
+                        "description": "Present for kind=wechat_group; seven-day expiry derived by the server."
                       }
                     },
                     "required": [
@@ -890,6 +923,11 @@
                 "file": {
                   "type": "string",
                   "format": "binary"
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": ["wechat_group"],
+                  "description": "Omit for ordinary images; wechat_group uploads a seven-day contact QR image in an isolated prefix."
                 }
               },
               "required": [

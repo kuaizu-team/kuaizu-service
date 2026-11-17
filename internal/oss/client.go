@@ -1,6 +1,7 @@
 package oss
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -75,11 +76,15 @@ func (c *Client) UploadTo(r io.Reader, directory, filename string) (*UploadResul
 
 // Delete removes an object from OSS by its key (the path under basePath).
 func (c *Client) Delete(key string) error {
+	return c.DeleteContext(context.Background(), key)
+}
+
+func (c *Client) DeleteContext(ctx context.Context, key string) error {
 	objectKey := strings.TrimLeft(key, "/")
 	if basePath := strings.Trim(strings.TrimSpace(c.basePath), "/"); basePath != "" {
 		objectKey = fmt.Sprintf("%s/%s", basePath, objectKey)
 	}
-	if err := c.bucket.DeleteObject(objectKey); err != nil {
+	if err := c.bucket.DeleteObject(objectKey, alioss.WithContext(ctx)); err != nil {
 		return fmt.Errorf("oss delete object: %w", err)
 	}
 	return nil

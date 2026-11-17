@@ -33,13 +33,13 @@ export -f docker go govulncheck
 
 for scenario in pass wrong-go scanner-failure unknown-vuln incomplete-scan; do
   export AUDIT_TEST_CASE="$scenario"
-  export AUDIT_TEST_GO=go1.26.10
+  export AUDIT_TEST_GO=go1.26.11
   export AUDIT_TEST_SCAN_STATUS=0
   case "$scenario" in
     wrong-go) AUDIT_TEST_GO=go1.25.0 ;;
     scanner-failure) AUDIT_TEST_SCAN_STATUS=3 ;;
   esac
-  if bash "$audit_script" test-image "$AUDIT_TEST_ROOT/$scenario" go1.26.10 > "$AUDIT_TEST_ROOT/$scenario.log" 2>&1; then
+  if bash "$audit_script" test-image "$AUDIT_TEST_ROOT/$scenario" go1.26.11 > "$AUDIT_TEST_ROOT/$scenario.log" 2>&1; then
     if [ "$scenario" != pass ]; then
       echo "Gate incorrectly accepted $scenario"
       exit 1

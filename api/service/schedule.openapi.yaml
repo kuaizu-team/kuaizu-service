@@ -1,0 +1,731 @@
+openapi: 3.0.3
+info:
+  title: Personal schedules (manual route contract)
+  version: 1.2.0
+  description: Registered by RegisterScheduleRoutes on the existing JWT-protected API group. All dates and times use Asia/Shanghai. This contract is separate from the generated server interface.
+servers:
+  - url: /api/v2
+security:
+  - bearerAuth: []
+paths:
+  /users/me/schedules/import:
+    post:
+      operationId: importSchedules
+      description: Atomically insert 1-500 normalized items for the logged-in user. Exact re-imports are skipped using a per-user content hash. Does not overwrite manual schedules or synchronize source changes. Requires migration 20261114_schedule_import.sql.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [items]
+              properties:
+                items:
+                  type: array
+                  minItems: 1
+                  maxItems: 500
+                  items: {$ref: '#/components/schemas/ScheduleInput'}
+      responses:
+        '200':
+          description: Import committed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code: {type: integer}
+                  message: {type: string}
+                  data:
+                    type: object
+                    required: [created, skipped]
+                    properties:
+                      created: {type: integer, minimum: 0}
+                      skipped: {type: integer, minimum: 0}
+        '400': {description: Invalid items or payload over 1MB}
+        '401': {description: Login required}
+        '500': {description: Import failed; transaction not committed}
+  /users/me/schedules:
+    get:
+      operationId: listSchedules
+      parameters:
+        - {name: from, in: query, required: true, schema: {type: string, format: date}}
+        - {name: to, in: query, required: true, schema: {type: string, format: date}}
+      description: Includes items overlapping the inclusive date range (midnight end is exclusive). Requires 20261114_schedule_duration_completion.sql. Maximum 93 days apart. More than 2000 results returns 400; callers must narrow the range.
+      responses:
+        '200':
+          description: Current user's schedules, ordered by date, all-day first, then time and ID.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [code, message, data]
+                properties:
+                  code: {type: integer}
+                  message: {type: string}
+                  data: {type: array, items: {$ref: '#/components/schemas/Schedule'}}
+        '400': {description: Invalid range or too many items}
+        '401': {description: Login required}
+    post:
+      operationId: createSchedule
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ScheduleInput'}
+      responses:
+        '200': {$ref: '#/components/responses/Saved'}
+        '400': {description: Invalid schedule}
+        '401': {description: Login required}
+  /users/me/schedules/{id}:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: integer, format: int64, minimum: 1}}
+    put:
+      operationId: updateSchedule
+      description: Content replacement; omitted completed preserves existing completion. Nullable end fields support legacy point items. Identical content also succeeds. Another user's ID is treated as not found.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ScheduleInput'}
+      responses:
+        '200': {$ref: '#/components/responses/Saved'}
+        '400': {description: Invalid schedule}
+        '401': {description: Login required}
+        '404': {description: Not found}
+    delete:
+      operationId: deleteSchedule
+      responses:
+        '200': {description: Deleted (standard code/message envelope)}
+        '401': {description: Login required}
+        '404': {description: Not found or belongs to another user}
+  /users/me/schedules/{id}/completion:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: integer, format: int64, minimum: 1}}
+    put:
+      operationId: completeSchedule
+      description: Updates only completion for the authenticated owner. Time passing never marks completion.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [completed]
+              properties:
+                completed: {type: boolean}
+      responses:
+        '200': {description: Standard code/message envelope with data.completed boolean}
+        '400': {description: Missing boolean or invalid ID}
+        '401': {description: Login required}
+        '404': {description: Not found or belongs to another user}
+  /users/me/schedule-social/privacy:
+    get:
+      operationId: schedulePrivacyGet
+      description: Authenticated schedule social operation; requires 20261117_schedule_social.sql.
+      responses:
+        '200':
+          description: Standard code/message/data envelope
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                  message:
+                    type: string
+                  data:
+                    $ref: '#/components/schemas/SchedulePrivacy'
+        '400':
+          description: Invalid input or business limit
+        '401':
+          description: Login required
+        '404':
+          description: Revoked/expired share, missing item or unauthorized viewer
+    put:
+      operationId: schedulePrivacyPut
+      description: Authenticated schedule social operation; requires 20261117_schedule_social.sql.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SchedulePrivacy'
+      responses:
+        '200':
+          description: Standard code/message/data envelope
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                  message:
+                    type: string
+                  data:
+                    $ref: '#/components/schemas/SchedulePrivacy'
+        '400':
+          description: Invalid input or business limit
+        '401':
+          description: Login required
+        '404':
+          description: Revoked/expired share, missing item or unauthorized viewer
+  /users/me/schedule-social/shares:
+    get:
+      operationId: scheduleSharesList
+      description: Authenticated schedule social operation; requires 20261117_schedule_social.sql.
+      responses:
+        '200':
+          description: Standard code/message/data envelope
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                  message:
+                    type: string
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ScheduleShare'
+        '400':
+          description: Invalid input or business limit
+        '401':
+          description: Login required
+        '404':
+          description: Revoked/expired share, missing item or unauthorized viewer
+    post:
+      operationId: scheduleShareCreate
+      description: >-
+        Creates a revocable, 7-day random bearer link after explicit user sharing. Maximum 100 active links.
+        Item is an immutable snapshot; joint snapshots do not grant membership or contacts. Calendar views mask joint content.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                kind:
+                  type: string
+                  enum:
+                    - item
+                    - day
+                    - calendar
+                date:
+                  type: string
+                  format: date
+                id:
+                  type: integer
+                  format: int64
+              required:
+                - kind
+      responses:
+        '200':
+          description: Standard code/message/data envelope
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                  message:
+                    type: string
+                  data:
+                    $ref: '#/components/schemas/ScheduleShare'
+        '400':
+          description: Invalid input or business limit
+        '401':
+          description: Login required
+        '404':
+          description: Revoked/expired share, missing item or unauthorized viewer
+  /users/me/schedule-social/shares/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+          minimum: 1
+    delete:
+      operationId: scheduleShareRevoke
+      description: Authenticated schedule social operation; requires 20261117_schedule_social.sql.
+      responses:
+        '200':
+          description: Standard code/message/data envelope
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                  message:
+                    type: string
+                  data:
+                    type: object
+                    properties: {}
+        '400':
+          description: Invalid input or business limit
+        '401':
+          description: Login required
+        '404':
+          description: Revoked/expired share, missing item or unauthorized viewer
+  /users/me/schedule-social/view/{token}:
+    parameters:
+      - name: token
+        in: path
+        required: true
+        schema:
+          type: string
+          pattern: ^[a-f0-9]{64}$
+      - name: date
+        in: query
+        required: true
+        schema:
+          type: string
+          format: date
+    get:
+      operationId: scheduleShareView
+      description: Authenticated schedule social operation; requires 20261117_schedule_social.sql.
+      responses:
+        '200':
+          description: Standard code/message/data envelope
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                  message:
+                    type: string
+                  data:
+                    type: object
+                    properties:
+                      kind:
+                        type: string
+                      date:
+                        type: string
+                      ownerId:
+                        type: integer
+                      items:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Schedule'
+        '400':
+          description: Invalid input or business limit
+        '401':
+          description: Login required
+        '404':
+          description: Revoked/expired share, missing item or unauthorized viewer
+  /users/me/schedule-social/copy/{token}:
+    parameters:
+      - name: token
+        in: path
+        required: true
+        schema:
+          type: string
+          pattern: ^[a-f0-9]{64}$
+    post:
+      operationId: scheduleShareCopy
+      description: >-
+        Single-item links only. Checks overlapping intervals; needsConfirmation=true performs no writes. Retry
+        with allowConflicts=true to proceed. Idempotent while the existing copy remains. Recipient cannot choose
+        the source owner.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                allowConflicts:
+                  type: boolean
+                  default: false
+      responses:
+        '200':
+          description: Standard code/message/data envelope
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                  message:
+                    type: string
+                  data:
+                    $ref: '#/components/schemas/ScheduleAddResult'
+        '400':
+          description: Invalid input or business limit
+        '401':
+          description: Login required
+        '404':
+          description: Revoked/expired share, missing item or unauthorized viewer
+  /users/me/schedule-social/teams:
+    get:
+      operationId: scheduleTeamsList
+      description: Authenticated schedule social operation; requires 20261117_schedule_social.sql.
+      responses:
+        '200':
+          description: Standard code/message/data envelope
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                  message:
+                    type: string
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: integer
+                        name:
+                          type: string
+        '400':
+          description: Invalid input or business limit
+        '401':
+          description: Login required
+        '404':
+          description: Revoked/expired share, missing item or unauthorized viewer
+  /users/me/schedule-social/teams/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+          minimum: 1
+      - name: date
+        in: query
+        required: false
+        schema:
+          type: string
+          format: date
+      - name: users
+        in: query
+        schema:
+          type: string
+        description: Comma-separated 1-20 distinct user IDs. Omit to list current members.
+    get:
+      operationId: scheduleTeamBusy
+      description: >-
+        Requires current project creator/member status for viewer and every selected user. Defaults to busy-only
+        (title/location/notes/IDs/completion redacted). Details require target opt-in.
+      responses:
+        '200':
+          description: Standard code/message/data envelope
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                  message:
+                    type: string
+                  data:
+                    type: object
+                    properties:
+                      people:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/SchedulePerson'
+                      busy:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            userId:
+                              type: integer
+                            details:
+                              type: boolean
+                            items:
+                              type: array
+                              items:
+                                $ref: '#/components/schemas/Schedule'
+        '400':
+          description: Invalid input or business limit
+        '401':
+          description: Login required
+        '404':
+          description: Revoked/expired share, missing item or unauthorized viewer
+  /users/me/schedule-social/joint:
+    post:
+      operationId: scheduleJointCreate
+      description: >-
+        Provide a calendar/day token OR projectId with selected userIds. Token derives exactly viewer + owner;
+        team selection must include creator. 2-20 participants, 50 creations per day. Copies and page-local
+        notifications commit atomically; completion is per user. needsConfirmation=true means no write; explicit
+        acknowledgement allows conflicts. requestKey makes retries idempotent.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                item:
+                  $ref: '#/components/schemas/ScheduleInput'
+                requestKey:
+                  type: string
+                  pattern: ^[a-zA-Z0-9-]{16,64}$
+                projectId:
+                  type: integer
+                token:
+                  type: string
+                userIds:
+                  type: array
+                  minItems: 2
+                  maxItems: 20
+                  uniqueItems: true
+                  items:
+                    type: integer
+                allowConflicts:
+                  type: boolean
+                  default: false
+              required:
+                - item
+                - requestKey
+      responses:
+        '200':
+          description: Standard code/message/data envelope
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                  message:
+                    type: string
+                  data:
+                    $ref: '#/components/schemas/ScheduleAddResult'
+        '400':
+          description: Invalid input or business limit
+        '401':
+          description: Login required
+        '404':
+          description: Revoked/expired share, missing item or unauthorized viewer
+  /users/me/schedule-social/joint/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+          minimum: 1
+    get:
+      operationId: scheduleJointPeople
+      description: >-
+        Only current participants may see people. Contact fields are returned only for people who explicitly
+        enabled memberContacts. Existing public profile routes and contact policies are not modified.
+      responses:
+        '200':
+          description: Standard code/message/data envelope
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                  message:
+                    type: string
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/SchedulePerson'
+        '400':
+          description: Invalid input or business limit
+        '401':
+          description: Login required
+        '404':
+          description: Revoked/expired share, missing item or unauthorized viewer
+    delete:
+      operationId: scheduleJointLeave
+      description: >-
+        Creator cancels all copies; another participant leaves only their own copy. Remaining participants
+        receive durable page-local notices. Joint content cannot be changed through ordinary schedule
+        PUT/DELETE.
+      responses:
+        '200':
+          description: Standard code/message/data envelope
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                  message:
+                    type: string
+                  data:
+                    type: object
+                    properties: {}
+        '400':
+          description: Invalid input or business limit
+        '401':
+          description: Login required
+        '404':
+          description: Revoked/expired share, missing item or unauthorized viewer
+  /users/me/schedule-social/notices:
+    get:
+      operationId: scheduleNoticesList
+      description: >-
+        Latest 100 personal notices, polled while schedule page is visible. Does not send external WeChat
+        subscription messages.
+      responses:
+        '200':
+          description: Standard code/message/data envelope
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                  message:
+                    type: string
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: integer
+                          format: int64
+                        jointId:
+                          type: integer
+                          format: int64
+                        message:
+                          type: string
+                        read:
+                          type: boolean
+        '400':
+          description: Invalid input or business limit
+        '401':
+          description: Login required
+        '404':
+          description: Revoked/expired share, missing item or unauthorized viewer
+    put:
+      operationId: scheduleNoticesRead
+      description: Authenticated schedule social operation; requires 20261117_schedule_social.sql.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                through:
+                  type: integer
+                  format: int64
+                  minimum: 1
+              required:
+                - through
+      responses:
+        '200':
+          description: Standard code/message/data envelope
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                  message:
+                    type: string
+                  data:
+                    type: object
+                    properties: {}
+        '400':
+          description: Invalid input or business limit
+        '401':
+          description: Login required
+        '404':
+          description: Revoked/expired share, missing item or unauthorized viewer
+components:
+  securitySchemes:
+    bearerAuth: {type: http, scheme: bearer, bearerFormat: JWT}
+  responses:
+    Saved:
+      description: Saved
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [code, message, data]
+            properties:
+              code: {type: integer}
+              message: {type: string}
+              data: {$ref: '#/components/schemas/Schedule'}
+  schemas:
+    ScheduleInput:
+      type: object
+      required: [title, date, allDay]
+      properties:
+        title: {type: string, minLength: 1, maxLength: 100}
+        date: {type: string, format: date, description: '2000-01-01 through 2100-12-31'}
+        allDay: {type: boolean}
+        time: {type: string, nullable: true, pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$', description: 'Required for timed items; normalized to null for all-day items'}
+        endDate: {type: string, format: date, nullable: true, description: 'Provide together with endTime; end must be later than start. Null for all-day/legacy point items.'}
+        endTime:
+          type: string
+          nullable: true
+          pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$'
+        completed: {type: boolean, default: false}
+        location: {type: string, maxLength: 200, default: ''}
+        notes: {type: string, maxLength: 2000, default: ''}
+    Schedule:
+      allOf:
+        - {$ref: '#/components/schemas/ScheduleInput'}
+        - type: object
+          required: [id]
+          properties:
+            id: {type: integer, format: int64}
+            jointId: {type: integer, format: int64, nullable: true}
+            createdBy: {type: integer, nullable: true}
+            participantCount: {type: integer}
+    SchedulePrivacy:
+      type: object
+      properties:
+        teamDetails: {type: boolean, default: false}
+        memberContacts: {type: boolean, default: false}
+    ScheduleShare:
+      type: object
+      properties:
+        id: {type: integer, format: int64}
+        token: {type: string}
+        ownerId: {type: integer}
+        kind: {type: string, enum: [item, day, calendar]}
+        date: {type: string}
+    SchedulePerson:
+      type: object
+      properties:
+        id: {type: integer}
+        name: {type: string}
+        profileId: {type: integer}
+        phone: {type: string}
+        wechat: {type: string}
+        email: {type: string}
+    ScheduleAddResult:
+      type: object
+      properties:
+        id: {type: integer, format: int64}
+        needsConfirmation: {type: boolean}
+        conflicts: {type: array, items: {type: integer}}
+        existing: {type: boolean}

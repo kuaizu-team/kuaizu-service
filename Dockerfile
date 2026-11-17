@@ -1,5 +1,5 @@
 # Keep both build toolchains on their patched release lines.
-FROM golang:1.26.10-alpine AS go-toolchain
+FROM golang:1.26.11-alpine AS go-toolchain
 FROM node:22.23.4-alpine AS builder
 
 COPY --from=go-toolchain /usr/local/go /usr/local/go

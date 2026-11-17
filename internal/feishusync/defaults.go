@@ -239,9 +239,13 @@ func (c *Client) isDefaultTable(ctx context.Context, t Target, b baseBlock) (boo
 		{"name": "Date", "type": "datetime", "style": map[string]any{"format": "yyyy/MM/dd"}, "default_value": nil},
 		{"name": "Attachment", "type": "attachment", "style": map[string]any{"type": "plain"}},
 	}
+	for _, template := range templates {
+		delete(template, "default_value")
+	}
 	query := url.Values{"offset": {"0"}, "limit": {"11"}}
 	ids := make([]string, 4)
 	seenFields := map[string]bool{}
+	seenNames := map[string]bool{}
 	for i, field := range schema.Fields {
 		id, ok := field["id"].(string)
 		if !ok || id == "" || seenFields[id] {
@@ -249,8 +253,24 @@ func (c *Client) isDefaultTable(ctx context.Context, t Target, b baseBlock) (boo
 		}
 		seenFields[id] = true
 		ids[i] = id
+		name, ok := field["name"].(string)
+		if !ok || seenNames[name] {
+			return false, nil
+		}
+		seenNames[name] = true
 		delete(field, "id")
-		if !reflect.DeepEqual(field, templates[i]) {
+		// Omitted and explicit null defaults both mean no default value.
+		if field["default_value"] == nil {
+			delete(field, "default_value")
+		}
+		matched := false
+		for _, template := range templates {
+			if reflect.DeepEqual(field, template) {
+				matched = true
+				break
+			}
+		}
+		if !matched {
 			return false, nil
 		}
 		query.Add("field_id", id)
@@ -307,4 +327,33 @@ func (c *Client) isDefaultTable(ctx context.Context, t Target, b baseBlock) (boo
 		}
 	}
 	return true, nil
+}
+
+// Rename existing export resources in place; IDs and record mappings stay intact.
+func (c *Client) RenameExportTable(ctx context.Context, t Target, name string) error {
+	if err := c.baseCall(ctx, http.MethodPost, basePath(t)+"/blocks/"+url.PathEscape(t.TableID)+"/rename", map[string]any{"name": name}, nil); err != nil {
+		// Feishu reports an error when the requested table name already matches.
+		// Confirm the current name before accepting this as an idempotent no-op.
+		apiErr, ok := err.(*APIError)
+		if !ok || apiErr.Code != 800070003 {
+			return err
+		}
+		blocks, readErr := c.defaultBlocks(ctx, t)
+		if readErr != nil {
+			return readErr
+		}
+		confirmed := false
+		for _, block := range blocks {
+			if block.ID == t.TableID && block.Name == name {
+				confirmed = true
+			}
+		}
+		if !confirmed {
+			return err
+		}
+	}
+	if t.ViewID != "" {
+		return c.baseCall(ctx, http.MethodPatch, basePath(t)+"/tables/"+url.PathEscape(t.TableID)+"/views/"+url.PathEscape(t.ViewID), map[string]any{"name": name}, nil)
+	}
+	return nil
 }
